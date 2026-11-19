@@ -330,4 +330,23 @@ class CvBoardRecognizerTest {
             }
         }
     }
+
+    @Test
+    fun `live 1080x2400 emulator ToS battle screenshot achieves 30-of-30 recognition with zero false question orbs`() {
+        val frame = loadRealVisionFrame("real_tos_samples/emu_battle_01.png") ?: return
+        val geom = BoardGeometry(0f, 1267.7f, 1080f, 2167.7f, 6, 5)
+        val rec = CvBoardRecognizer().recognizeFrames(listOf(frame), geom)
+        val expected = parseGrid(
+            "D G F W W L",
+            "W G H W F D",
+            "W H F D G W",
+            "G H D F D D",
+            "D L D L H W"
+        )
+        for (i in 0 until 30) {
+            assertEquals("emu_battle_01 (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
+        }
+        assertEquals("emu_battle_01 must have zero false question orbs", 0, rec.questionOrbsDetected)
+        assertTrue("emu_battle_01 average confidence should be high (actual=${rec.averageConfidence})", rec.averageConfidence >= 0.80f)
+    }
 }

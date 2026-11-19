@@ -221,6 +221,8 @@ class OverlayControllerService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            // Android 12+ requires <= 0.80 alpha for FLAG_NOT_TOUCHABLE overlays so game touches always pass cleanly
+            alpha = 0.80f
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
@@ -236,9 +238,15 @@ class OverlayControllerService : Service() {
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
 
+        // CRITICAL: Must explicitly use WRAP_CONTENT width! Default in vertical LinearLayout is MATCH_PARENT,
+        // which causes Android measureVertical() to crush topRow to the narrower modeChipRow width and clip right buttons!
         val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         }
 
         statusOrbView = TextView(this).apply {
@@ -259,49 +267,54 @@ class OverlayControllerService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(3), dp(3), dp(3))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
             background = roundedBg(Color.argb(222, 16, 21, 31), dp(14).toFloat(), Color.argb(105, 110, 185, 255))
         }
 
-        toolbarContainer.addView(makeChipBtn("算", Color.rgb(0, 137, 123)) { startCaptureAndSolve() })
-        toolbarContainer.addView(makeChipBtn("◀", Color.argb(190, 52, 63, 80), minW = 20, padH = 4) { switchSolution(-1) })
+        toolbarContainer.addView(makeChipBtn("算", Color.rgb(0, 137, 123), minW = 22, padH = 4) { startCaptureAndSolve() })
+        toolbarContainer.addView(makeChipBtn("◀", Color.argb(190, 52, 63, 80), minW = 19, padH = 3) { switchSolution(-1) })
         pagerText = TextView(this).apply {
             text = "0/0"
-            textSize = 9.5f
+            textSize = 9f
             setSingleLine(true)
             setTextColor(Color.rgb(210, 228, 255))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(dp(2), 0, dp(2), 0)
         }
         toolbarContainer.addView(pagerText)
-        toolbarContainer.addView(makeChipBtn("▶", Color.argb(190, 52, 63, 80), minW = 20, padH = 4) { switchSolution(+1) })
+        toolbarContainer.addView(makeChipBtn("▶", Color.argb(190, 52, 63, 80), minW = 19, padH = 3) { switchSolution(+1) })
 
-        executeBtn = makeChipBtn("行", Color.rgb(46, 125, 50)) { executeSelectedSolution() }
+        executeBtn = makeChipBtn("行", Color.rgb(46, 125, 50), minW = 22, padH = 4) { executeSelectedSolution() }
         toolbarContainer.addView(executeBtn)
 
         // Integrated Emergency Stop right inside main toolbar!
-        stopChipBtn = makeChipBtn("停", Color.rgb(165, 36, 36), strokeColor = Color.argb(160, 255, 160, 160)) {
+        stopChipBtn = makeChipBtn("停", Color.rgb(165, 36, 36), minW = 22, padH = 4, strokeColor = Color.argb(160, 255, 160, 160)) {
             triggerEmergencyStop()
             toast("已急停中止！")
         }
         toolbarContainer.addView(stopChipBtn)
 
-        pathToggleBtn = makeChipBtn("线", Color.rgb(57, 73, 171)) {
+        pathToggleBtn = makeChipBtn("线", Color.rgb(57, 73, 171), minW = 22, padH = 4) {
             showPath = !showPath
             pathToggleBtn.alpha = if (showPath) 1.0f else 0.45f
             refreshPathCanvas()
         }
         toolbarContainer.addView(pathToggleBtn)
 
-        toolbarContainer.addView(makeChipBtn("校", Color.rgb(121, 85, 72)) { toggleCalibrationMode() })
+        toolbarContainer.addView(makeChipBtn("校", Color.rgb(121, 85, 72), minW = 22, padH = 4) { toggleCalibrationMode() })
 
-        moreToggleBtn = makeChipBtn("⋯", Color.argb(210, 62, 76, 94), minW = 22, padH = 4) {
+        moreToggleBtn = makeChipBtn("⋯", Color.argb(210, 62, 76, 94), minW = 20, padH = 3) {
             modeRowExpanded = !modeRowExpanded
             modeChipRow.visibility = if (modeRowExpanded && toolbarExpanded) View.VISIBLE else View.GONE
             moreToggleBtn.alpha = if (modeRowExpanded) 1.0f else 0.80f
+            clampControlWindowToScreen()
         }
         toolbarContainer.addView(moreToggleBtn)
 
-        toolbarContainer.addView(makeChipBtn("✕", Color.argb(200, 75, 85, 99), minW = 22, padH = 4, marginEndDp = 0) { stopSelf() })
+        toolbarContainer.addView(makeChipBtn("✕", Color.argb(200, 75, 85, 99), minW = 20, padH = 3, marginEndDp = 0) { stopSelf() })
 
         topRow.addView(toolbarContainer)
         controlRoot.addView(topRow)
@@ -453,8 +466,10 @@ class OverlayControllerService : Service() {
                     val dy = (ev.rawY - touchY).toInt()
                     if (abs(dx) > 8 || abs(dy) > 8) {
                         moved = true
-                        controlParams.x = (initX + dx).coerceIn(0, screenW - dp(40))
-                        controlParams.y = (initY + dy).coerceIn(0, screenH - dp(60))
+                        val maxX = (screenW - controlRoot.width.coerceAtLeast(dp(40))).coerceAtLeast(0)
+                        val maxY = (screenH - controlRoot.height.coerceAtLeast(dp(48))).coerceAtLeast(0)
+                        controlParams.x = (initX + dx).coerceIn(0, maxX)
+                        controlParams.y = (initY + dy).coerceIn(0, maxY)
                         windowManager.updateViewLayout(controlRoot, controlParams)
                     }
                     true
@@ -471,6 +486,7 @@ class OverlayControllerService : Service() {
                             if (calibrationMode) calibrationBar.visibility = View.VISIBLE
                             if (lastSolveOutput != null) summaryStrip.visibility = View.VISIBLE
                         }
+                        clampControlWindowToScreen()
                     }
                     true
                 }
@@ -504,6 +520,7 @@ class OverlayControllerService : Service() {
             val frames = capturer.captureMultiFrames(count = settings.multiFrameCount, intervalMs = 50L)
             if (frames.isEmpty()) {
                 setPhase(OverlayPhase.IDLE)
+                refreshPathCanvas()
                 toast("截屏失败，请确认录屏授权仍有效")
                 return@launch
             }
@@ -701,6 +718,7 @@ class OverlayControllerService : Service() {
                 setControlBarTouchable(true)
                 setPhase(OverlayPhase.IDLE)
                 updateQuickModeChips()
+                refreshPathCanvas()
             }
         }
     }
@@ -884,6 +902,11 @@ class OverlayControllerService : Service() {
             flashWatchJob?.cancel()
             flashWatchJob = null
             flashMemoryTracker.resetAll()
+            if (usedMemorizedSnapshot) {
+                usedMemorizedSnapshot = false
+                updateSummaryStrip()
+                refreshPathCanvas()
+            }
             updateQuickModeChips()
             return
         }
@@ -1042,6 +1065,26 @@ class OverlayControllerService : Service() {
                 statusOrbView.background = circleBg(Color.rgb(46, 125, 50))
                 if (::stopChipBtn.isInitialized) {
                     stopChipBtn.background = roundedBg(Color.rgb(229, 57, 53), dp(7).toFloat(), Color.WHITE)
+                }
+            }
+        }
+    }
+
+    private fun clampControlWindowToScreen() {
+        controlRoot.post {
+            val w = controlRoot.width
+            val h = controlRoot.height
+            if (w <= 0 || h <= 0) return@post
+            val maxX = (screenW - w).coerceAtLeast(0)
+            val maxY = (screenH - h).coerceAtLeast(0)
+            val clampedX = controlParams.x.coerceIn(0, maxX)
+            val clampedY = controlParams.y.coerceIn(0, maxY)
+            if (clampedX != controlParams.x || clampedY != controlParams.y) {
+                controlParams.x = clampedX
+                controlParams.y = clampedY
+                try {
+                    windowManager.updateViewLayout(controlRoot, controlParams)
+                } catch (_: Exception) {
                 }
             }
         }

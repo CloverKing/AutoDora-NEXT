@@ -127,9 +127,12 @@ class FlashRevealMemoryTracker(
     }
 
     companion object {
+        /**
+         * Only count genuine '?' Question / Hidden orbs (NEVER menu/fade-out UNKNOWN frames!),
+         * so stage-entry loading screens or animations never falsely lock a stale board snapshot.
+         */
         fun countHiddenOrQuestion(board: BoardState): Int = board.cells.count {
             it.element == Element.HIDDEN ||
-                it.element == Element.UNKNOWN ||
                 (it.hazards and HazardBits.QUESTION) != 0
         }
     }

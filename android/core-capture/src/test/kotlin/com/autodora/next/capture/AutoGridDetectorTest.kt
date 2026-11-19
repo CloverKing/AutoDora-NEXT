@@ -212,4 +212,22 @@ class AutoGridDetectorTest {
             assertEquals("$rel snapped bottomPx should match auto 9:16 baseline", detected.bottomPx, snapped.bottomPx, 5.5f)
         }
     }
+
+    @Test
+    fun `live 1080x2400 emulator ToS battle screenshot snaps within 3px via both auto 9-to-16 and coral HP bar`() {
+        val frame = loadRealFrame("real_tos_samples/emu_battle_01.png") ?: return
+        val detected = AutoGridDetector.detect(frame, BoardCalibration())
+        assertEquals(6, detected.cols)
+        assertEquals(5, detected.rows)
+        assertFalse("Coral HP bar must prevent false Weijian", detected.isWeijianExpanded)
+        assertEquals(1267.7f, detected.topPx, 3f)
+        assertEquals(2167.7f, detected.bottomPx, 3f)
+
+        val snapped = AutoGridDetector.autoCalibrateFromRealScreen(frame)
+        assertNotNull("Auto-calibrate must snap to Coral HP bar on 1080x2400 emulator", snapped)
+        assertEquals(6, snapped!!.cols)
+        assertEquals(5, snapped.rows)
+        assertEquals(1268f, snapped.topPx, 4f)
+        assertEquals(2168f, snapped.bottomPx, 4f)
+    }
 }

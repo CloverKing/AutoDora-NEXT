@@ -24,7 +24,7 @@ data class AppSettings(
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
     val showOrbBadgesOnPath: Boolean = true,
-    val flashRevealMemoryEnabled: Boolean = true,
+    val flashRevealMemoryEnabled: Boolean = false, // Opt-in via '⋯ -> 记忆' for 先露后藏 stages (saves battery & avoids stale snaps)
     val holdReplanDelayMs: Long = 360L,
     val holdReplanNudge: Boolean = true,
     val invertDragX: Boolean = false,
@@ -94,7 +94,7 @@ class SettingsRepository(private val context: Context) {
         humanMode = p[Keys.HUMAN_MODE] ?: false,
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
         showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
-        flashRevealMemoryEnabled = p[Keys.FLASH_REVEAL_MEMORY] ?: true,
+        flashRevealMemoryEnabled = p[Keys.FLASH_REVEAL_MEMORY] ?: false,
         holdReplanDelayMs = p[Keys.HOLD_REPLAN_DELAY_MS] ?: 360L,
         holdReplanNudge = p[Keys.HOLD_REPLAN_NUDGE] ?: true,
         invertDragX = p[Keys.INVERT_DRAG_X] ?: false,
