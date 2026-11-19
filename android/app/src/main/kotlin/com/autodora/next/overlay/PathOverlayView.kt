@@ -96,9 +96,19 @@ class PathOverlayView(context: Context) : View(context) {
         invalidate()
     }
 
+    private val screenLoc = IntArray(2)
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val g = geometry ?: return
+
+        // Bulletproof 1:1 physical screen coordinate alignment across Android 15 / HyperOS / notch devices:
+        // counter-translate if the window manager applied any non-zero origin inset.
+        getLocationOnScreen(screenLoc)
+        canvas.save()
+        if (screenLoc[0] != 0 || screenLoc[1] != 0) {
+            canvas.translate(-screenLoc[0].toFloat(), -screenLoc[1].toFloat())
+        }
 
         // 1. Calibration or subtle active grid frame
         if (calibrationMode || (showPath && (boardState != null || solution != null))) {
@@ -124,6 +134,8 @@ class PathOverlayView(context: Context) : View(context) {
             val cy = (g.topPx + g.bottomPx) * 0.5f
             canvas.drawText(cd, cx, cy, countdownPaint)
         }
+
+        canvas.restore()
     }
 
     private fun drawGrid(canvas: Canvas, g: BoardGeometry) {

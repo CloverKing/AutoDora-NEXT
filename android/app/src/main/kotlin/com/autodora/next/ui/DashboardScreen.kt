@@ -65,11 +65,13 @@ fun DashboardScreen(
                     onClick = onToggleOverlayService,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .height(54.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (health.overlayRunning) Color(0xFFD32F2F) else Color(0xFF00897B)
+                        containerColor = if (health.overlayRunning) Color(0xFFD32F2F) else Color(0xFF00897B),
+                        contentColor = Color.White
                     )
                 ) {
                     Icon(

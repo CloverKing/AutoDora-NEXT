@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.os.Build
@@ -13,19 +14,19 @@ import android.os.HandlerThread
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.withContext
 
 /**
- * Android 14/15 compliant MediaProjection screen capturer.
- * Keeps a single persistent VirtualDisplay + ImageReader to avoid Android 14+ single-use token errors
- * and handles rowStride padding cleanly on Qualcomm Adreno (e.g. Xiaomi 15) & Mali GPUs.
+ * Android 14/15 compliant MediaProjection screen capturer with Zero-Copy Idle Frame Holding:
+ *  - Keeps a single persistent VirtualDisplay + ImageReader (maxImages = 4) to avoid Android 14+ single-use token errors
+ *  - While idle at 60/120Hz (e.g. Xiaomi 15), swaps only the latest native Image reference (0 Bitmap allocations, 0 heap churn)
+ *    while ALWAYS preserving the exact latest settled screen frame (never stale!).
+ *  - Converts to ARGB_8888 Bitmap strictly on demand in captureSingleFrame() with Qualcomm rowStride padding support.
  */
 class MediaProjectionCapturer(
     context: Context,
@@ -46,16 +47,13 @@ class MediaProjectionCapturer(
 
     private var imageReader: ImageReader? = null
     private var virtualDisplay: VirtualDisplay? = null
-    private val latestFrameLock = Any()
-    private val latestBitmapRef = AtomicReference<Bitmap?>(null)
-    private val pendingCaptureRef = AtomicReference<CompletableDeferred<Bitmap?>?>(null)
-    private val lastIdleConvertMs = AtomicLong(0L)
+    private val imageLock = Any()
+    private var latestImage: Image? = null
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
             Log.w(TAG, "MediaProjection stopped by system or user")
             _isReady.value = false
-            pendingCaptureRef.getAndSet(null)?.complete(null)
             cleanupVirtualDisplay()
             onProjectionStopped?.invoke()
         }
@@ -83,68 +81,22 @@ class MediaProjectionCapturer(
     }
 
     private fun setupVirtualDisplay() {
-        val reader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 3)
+        val reader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 4)
         reader.setOnImageAvailableListener({ r ->
-            val image = try {
+            val incoming = try {
                 r.acquireLatestImage()
             } catch (e: Exception) {
                 Log.w(TAG, "acquireLatestImage failed: ${e.message}")
                 null
             } ?: return@setOnImageAvailableListener
 
-            try {
-                // On 120Hz devices (e.g. Xiaomi 15), skip heavy ARGB Bitmap allocation while idle
-                // unless a capture was requested or >= 450ms elapsed since last cached fallback frame.
-                val pending = pendingCaptureRef.getAndSet(null)
-                val now = System.currentTimeMillis()
-                val shouldConvert = pending != null ||
-                    latestBitmapRef.get() == null ||
-                    (now - lastIdleConvertMs.get() >= IDLE_CACHE_INTERVAL_MS)
-
-                if (!shouldConvert) {
-                    return@setOnImageAvailableListener
-                }
-
-                val plane = image.planes[0]
-                val buffer = plane.buffer
-                val pixelStride = plane.pixelStride
-                val rowStride = plane.rowStride
-                val rowPadding = rowStride - pixelStride * screenWidth
-
-                val paddedWidth = screenWidth + rowPadding / pixelStride
-                val fullBmp = Bitmap.createBitmap(paddedWidth, screenHeight, Bitmap.Config.ARGB_8888)
-                fullBmp.copyPixelsFromBuffer(buffer)
-
-                val cropped = if (paddedWidth != screenWidth) {
-                    val c = Bitmap.createBitmap(fullBmp, 0, 0, screenWidth, screenHeight)
-                    fullBmp.recycle()
-                    c
-                } else {
-                    fullBmp
-                }
-
-                lastIdleConvertMs.set(now)
-                val deliveredCopy = if (pending != null) {
-                    cropped.copy(Bitmap.Config.ARGB_8888, false)
-                } else {
-                    null
-                }
-
-                synchronized(latestFrameLock) {
-                    val prev = latestBitmapRef.getAndSet(cropped)
-                    if (prev != null && prev !== cropped && !prev.isRecycled) {
-                        prev.recycle()
-                    }
-                }
-                pending?.complete(deliveredCopy)
+            synchronized(imageLock) {
                 if (!_isReady.value) {
-                    _isReady.value = true
+                    incoming.close()
+                    return@synchronized
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Frame conversion error", e)
-                pendingCaptureRef.getAndSet(null)?.complete(null)
-            } finally {
-                image.close()
+                latestImage?.close()
+                latestImage = incoming
             }
         }, handler)
 
@@ -163,25 +115,58 @@ class MediaProjectionCapturer(
         Log.i(TAG, "VirtualDisplay active: ${screenWidth}x${screenHeight} @ ${densityDpi}dpi")
     }
 
-    override suspend fun captureSingleFrame(): Bitmap? {
-        if (!_isReady.value) return null
+    override suspend fun captureSingleFrame(): Bitmap? = withContext(Dispatchers.Default) {
+        if (!_isReady.value) return@withContext null
 
-        // Request an immediate fresh frame from VirtualDisplay; fall back to cached frame if display is completely static
-        val deferred = CompletableDeferred<Bitmap?>()
-        pendingCaptureRef.getAndSet(deferred)?.complete(null)
-        val fresh = withTimeoutOrNull(95L) { deferred.await() }
-        if (fresh != null) return fresh
-        pendingCaptureRef.compareAndSet(deferred, null)
-
+        // Wait briefly if the very first frame hasn't arrived yet
         var retries = 0
-        while (latestBitmapRef.get() == null && retries < 12 && _isReady.value) {
+        while (retries < 15 && _isReady.value) {
+            val hasFrame = synchronized(imageLock) { latestImage != null }
+            if (hasFrame) break
             delay(25)
             retries++
         }
-        synchronized(latestFrameLock) {
-            val bmp = latestBitmapRef.get() ?: return null
-            if (bmp.isRecycled) return null
-            return bmp.copy(Bitmap.Config.ARGB_8888, false)
+
+        synchronized(imageLock) {
+            // Pull one last time if an even fresher image just landed in the queue
+            try {
+                val fresher = imageReader?.acquireLatestImage()
+                if (fresher != null) {
+                    latestImage?.close()
+                    latestImage = fresher
+                }
+            } catch (_: Exception) {
+            }
+
+            val img = latestImage ?: return@synchronized null
+            return@synchronized imageToBitmap(img)
+        }
+    }
+
+    private fun imageToBitmap(image: Image): Bitmap? {
+        return try {
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            buffer.rewind()
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * screenWidth
+            val paddedWidth = screenWidth + rowPadding / pixelStride
+
+            val fullBmp = Bitmap.createBitmap(paddedWidth, screenHeight, Bitmap.Config.ARGB_8888)
+            fullBmp.copyPixelsFromBuffer(buffer)
+            buffer.rewind()
+
+            if (paddedWidth != screenWidth) {
+                val cropped = Bitmap.createBitmap(fullBmp, 0, 0, screenWidth, screenHeight)
+                fullBmp.recycle()
+                cropped
+            } else {
+                fullBmp
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "imageToBitmap conversion error", e)
+            null
         }
     }
 
@@ -201,18 +186,16 @@ class MediaProjectionCapturer(
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.setOnImageAvailableListener(null, null)
+        synchronized(imageLock) {
+            latestImage?.close()
+            latestImage = null
+        }
         imageReader?.close()
         imageReader = null
-        synchronized(latestFrameLock) {
-            latestBitmapRef.getAndSet(null)?.let {
-                if (!it.isRecycled) it.recycle()
-            }
-        }
     }
 
     override fun release() {
         _isReady.value = false
-        pendingCaptureRef.getAndSet(null)?.complete(null)
         try {
             mediaProjection.unregisterCallback(projectionCallback)
         } catch (_: Exception) {
@@ -227,6 +210,5 @@ class MediaProjectionCapturer(
 
     companion object {
         private const val TAG = "MediaProjCapturer"
-        private const val IDLE_CACHE_INTERVAL_MS = 450L
     }
 }

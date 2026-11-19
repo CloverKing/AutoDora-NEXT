@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(AUTODORA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(../../../../../solver-core ${CMAKE_CURRENT_BINARY_DIR}/solver-core-build)
 
+# Always optimize the C++20 solver core even in Debug APKs for real-time on-device performance
+target_compile_options(autodora_solver PRIVATE -O3)
+
 add_library(autodora_jni SHARED
     solver_jni.cpp
 )

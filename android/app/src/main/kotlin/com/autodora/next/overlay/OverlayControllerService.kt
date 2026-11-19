@@ -185,6 +185,9 @@ class OverlayControllerService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                fitInsetsTypes = 0
+            }
         }
         windowManager.addView(pathOverlayView, pathParams)
 
@@ -201,13 +204,13 @@ class OverlayControllerService : Service() {
 
         statusOrbView = TextView(this).apply {
             text = "D"
-            textSize = 15f
+            textSize = 14f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            val size = dp(42)
+            val size = dp(38)
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                marginEnd = dp(6)
+                marginEnd = dp(5)
             }
             background = circleBg(Color.rgb(25, 118, 210))
         }
@@ -216,11 +219,11 @@ class OverlayControllerService : Service() {
         toolbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(4), dp(6), dp(4))
+            setPadding(dp(5), dp(4), dp(3), dp(4))
             background = roundedBg(Color.argb(225, 22, 26, 36), dp(14).toFloat(), Color.argb(120, 100, 180, 255))
         }
 
-        toolbarContainer.addView(makeChipBtn("识图算路", Color.rgb(0, 150, 136)) { startCaptureAndSolve() })
+        toolbarContainer.addView(makeChipBtn("算路", Color.rgb(0, 150, 136)) { startCaptureAndSolve() })
         toolbarContainer.addView(makeChipBtn("◀", Color.rgb(55, 65, 81)) { switchSolution(-1) })
         pagerText = TextView(this).apply {
             text = "0/0"
@@ -259,9 +262,10 @@ class OverlayControllerService : Service() {
             background = roundedBg(Color.argb(220, 16, 20, 30), dp(10).toFloat(), Color.argb(90, 255, 255, 255))
         }
         summaryTitle = TextView(this).apply {
-            textSize = 12f
+            textSize = 11.5f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
+            maxWidth = screenW - dp(88)
         }
         summaryStrip.addView(summaryTitle)
 
@@ -354,7 +358,7 @@ class OverlayControllerService : Service() {
         }
         windowManager.addView(controlRoot, controlParams)
 
-        // 3. Independent Red Emergency Stop Button (always crisp and immediately tappable during auto-swipe!)
+        // 3. Independent Draggable Red Emergency Stop Button (positioned cleanly below toolbar, never clips '✕')
         emergencyBtn = TextView(this).apply {
             text = "急停"
             textSize = 12f
@@ -364,10 +368,6 @@ class OverlayControllerService : Service() {
             val size = dp(44)
             layoutParams = LinearLayout.LayoutParams(size, size)
             background = circleBg(Color.argb(235, 211, 47, 47))
-            setOnClickListener {
-                triggerEmergencyStop()
-                toast("已急停中止！")
-            }
         }
         emergencyParams = WindowManager.LayoutParams(
             dp(44),
@@ -378,7 +378,43 @@ class OverlayControllerService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.END
             x = dp(10)
-            y = dp(48)
+            y = dp(108)
+        }
+        var emInitX = 0
+        var emInitY = 0
+        var emTouchX = 0f
+        var emTouchY = 0f
+        var emMoved = false
+        emergencyBtn.setOnTouchListener { _, ev ->
+            when (ev.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    emInitX = emergencyParams.x
+                    emInitY = emergencyParams.y
+                    emTouchX = ev.rawX
+                    emTouchY = ev.rawY
+                    emMoved = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (ev.rawX - emTouchX).toInt()
+                    val dy = (ev.rawY - emTouchY).toInt()
+                    if (abs(dx) > 10 || abs(dy) > 10) {
+                        emMoved = true
+                        emergencyParams.x = (emInitX - dx).coerceIn(0, screenW - dp(50))
+                        emergencyParams.y = (emInitY + dy).coerceIn(0, screenH - dp(80))
+                        windowManager.updateViewLayout(emergencyBtn, emergencyParams)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!emMoved) {
+                        triggerEmergencyStop()
+                        toast("已急停中止！")
+                    }
+                    true
+                }
+                else -> false
+            }
         }
         windowManager.addView(emergencyBtn, emergencyParams)
     }
@@ -711,16 +747,19 @@ class OverlayControllerService : Service() {
     private fun makeChipBtn(label: String, bgColor: Int, onClick: () -> Unit): TextView {
         return TextView(this).apply {
             text = label
-            textSize = 11.5f
+            textSize = 11f
+            setSingleLine(true)
+            gravity = Gravity.CENTER
+            minWidth = dp(26)
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(7), dp(5), dp(7), dp(5))
+            setPadding(dp(6), dp(5), dp(6), dp(5))
             background = roundedBg(bgColor, dp(8).toFloat(), null)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                marginEnd = dp(4)
+                marginEnd = dp(3)
             }
             setOnClickListener { onClick() }
         }
