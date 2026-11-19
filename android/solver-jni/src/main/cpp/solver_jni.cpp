@@ -5,6 +5,7 @@
 #include "autodora/rules.hpp"
 #include "autodora/solver.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <sstream>
@@ -181,8 +182,8 @@ Java_com_autodora_next_jni_NativeSolver_nativeSolve(
     auto rdAt = [&](size_t idx, double defVal = 0.0) -> double { return idx < rd.size() ? rd[idx] : defVal; };
 
     rules.allowDiagonalMove               = riAt(0, 1) != 0;
-    rules.maxSteps                        = static_cast<uint8_t>(riAt(1, 30));
-    rules.exactSteps                      = static_cast<int8_t>(riAt(2, -1));
+    rules.maxSteps                        = static_cast<uint16_t>(std::clamp(riAt(1, 30), 1, 300));
+    rules.exactSteps                      = static_cast<int16_t>(riAt(2, -1));
     rules.startPreset                     = static_cast<StartPointPreset>(riAt(3, 0));
     rules.allowHitWeatheredToClear        = riAt(4, 0) != 0;
     rules.useCharacterOrb                 = riAt(5, 0) != 0;

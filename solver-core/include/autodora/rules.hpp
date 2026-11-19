@@ -114,8 +114,8 @@ struct ShapeShieldRule {
 struct RuleConfig {
     // --- Movement & Step Controls ---
     bool allowDiagonalMove = true;         // 允许斜转 (8 向移动)
-    uint8_t maxSteps = 30;                 // 步数上限 (1..120; 违建/排珠可达 80~120)
-    int8_t exactSteps = -1;                // 精确步数盾 (-1 = 关闭)
+    uint16_t maxSteps = 30;                // 步数上限 (1..300; 违建/排珠/长手转可达 100~300)
+    int16_t exactSteps = -1;               // 精确步数盾 (-1 = 关闭)
     double stepPenaltyWeight = 0.08;       // 一步一伤时可调高至 5.0+
     double diagonalPenaltyWeight = 0.05;   // 同分时略偏向直线
     StartPointPreset startPreset = StartPointPreset::Any;

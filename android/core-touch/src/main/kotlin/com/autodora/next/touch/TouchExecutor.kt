@@ -10,8 +10,25 @@ enum class HoldReplanTrigger {
     NUDGE_ONE_CELL_HOLD   // 按住微移1格触发并继续按住不松手 (问号‧转等需起手移动才翻转显形的关卡)
 }
 
+/**
+ * Single source of truth for swipe speed presets shared 1-to-1 between DashboardScreen and OverlayControllerService.
+ */
+enum class SwipeSpeedPreset(val label: String, val stepDurationMs: Long) {
+    TURBO_2S("2秒极速", 24L),
+    FAST_3S("3秒快转", 38L),
+    STANDARD("标准", 68L),
+    STEADY("稳健", 95L);
+
+    fun next(): SwipeSpeedPreset = entries[(ordinal + 1) % entries.size]
+
+    companion object {
+        fun fromStepDurationMs(ms: Long): SwipeSpeedPreset =
+            entries.minByOrNull { kotlin.math.abs(it.stepDurationMs - ms) } ?: STANDARD
+    }
+}
+
 data class SwipeConfig(
-    val stepDurationMs: Long = 68L,        // Milliseconds per orthogonal cell move (20..140ms; 24ms=2秒极速, 38ms=3秒极速)
+    val stepDurationMs: Long = SwipeSpeedPreset.STANDARD.stepDurationMs,
     val diagonalSpeedFactor: Float = 0.85f, // Slightly brisker across 4-cell diagonal intersection
     val startHoldMs: Long = 55L,           // Grab hold at starting orb before moving
     val endHoldMs: Long = 45L,             // Settle hold at destination orb before lifting finger
@@ -21,10 +38,10 @@ data class SwipeConfig(
     val invertY: Boolean = false           // 颠倒操控: 上下镜像划屏
 ) {
     companion object {
-        const val TURBO_2S_STEP_MS = 24L
-        const val FAST_3S_STEP_MS = 38L
-        const val NORMAL_STEP_MS = 68L
-        const val SAFE_STEP_MS = 95L
+        val TURBO_2S_STEP_MS = SwipeSpeedPreset.TURBO_2S.stepDurationMs
+        val FAST_3S_STEP_MS = SwipeSpeedPreset.FAST_3S.stepDurationMs
+        val NORMAL_STEP_MS = SwipeSpeedPreset.STANDARD.stepDurationMs
+        val SAFE_STEP_MS = SwipeSpeedPreset.STEADY.stepDurationMs
     }
 }
 

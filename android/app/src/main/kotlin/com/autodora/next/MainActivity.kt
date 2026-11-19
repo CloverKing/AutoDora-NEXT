@@ -14,9 +14,8 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -29,6 +28,7 @@ import com.autodora.next.model.*
 import com.autodora.next.overlay.OverlayControllerService
 import com.autodora.next.overlay.OverlayServiceState
 import com.autodora.next.touch.AccessibilityServiceBridge
+import com.autodora.next.ui.AutoDoraTheme
 import com.autodora.next.ui.DashboardScreen
 import com.autodora.next.ui.PermissionHealthState
 import dagger.hilt.android.AndroidEntryPoint
@@ -66,17 +66,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         refreshPermissions()
 
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            val settings by settingsRepository.settingsFlow.collectAsState(initial = AppSettings())
+            AutoDoraTheme(themeMode = settings.themeMode) {
                 val overlayGranted by overlayGrantedState.collectAsState()
                 val notifGranted by notificationsGrantedState.collectAsState()
                 val a11yConnected by AccessibilityServiceBridge.isConnected.collectAsState()
                 val capturer by ScreenCaptureSession.capturer.collectAsState()
                 val mediaReady by (capturer?.isReady ?: remember { MutableStateFlow(false) }).collectAsState()
                 val overlayRunning by OverlayServiceState.isRunning.collectAsState()
-                val settings by settingsRepository.settingsFlow.collectAsState(initial = AppSettings())
                 val benchReport by benchmarkReportState.collectAsState()
                 val isBench by isBenchmarkingState.collectAsState()
 

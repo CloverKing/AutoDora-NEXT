@@ -14,7 +14,7 @@ namespace autodora {
 
 namespace {
 
-constexpr uint8_t kMaxMoveSteps = 120;
+constexpr uint16_t kMaxMoveSteps = 300;
 constexpr uint8_t kMaxTrailWindow = 16;
 
 constexpr uint64_t splitmix64(uint64_t x) noexcept {
@@ -69,8 +69,8 @@ struct SearchNode {
     uint8_t curIdx = 0;
     Direction lastDir = Direction::None;
 
-    uint8_t stepCount = 0;
-    uint8_t diagonalSteps = 0;
+    uint16_t stepCount = 0;
+    uint16_t diagonalSteps = 0;
     uint8_t burningHits = 0;
     uint8_t trailHits = 0;
     uint8_t miasmaHits = 0;
@@ -163,7 +163,7 @@ SolutionPath buildSolutionPath(const SearchNode& node, const RuleConfig& rules, 
     sp.usedCharacterOrb = node.usedCharacterOrb;
     sp.characterOrbCol = rules.characterOrbCol;
     sp.moves.reserve(node.stepCount);
-    for (uint8_t i = 0; i < node.stepCount; ++i) {
+    for (uint16_t i = 0; i < node.stepCount; ++i) {
         sp.moves.push_back(static_cast<Direction>(node.moves[i]));
     }
     sp.metrics = makeMetrics(node);
@@ -213,7 +213,7 @@ SolveOutput PuzzleSolver::solve(
     const uint8_t cols = baseBoard.cols;
     const uint8_t totalCells = baseBoard.cellCount();
     const uint8_t dirCount = rules.allowDiagonalMove ? 8 : 4;
-    const uint8_t maxSteps = std::min<uint8_t>(rules.maxSteps, kMaxMoveSteps);
+    const uint16_t maxSteps = std::min<uint16_t>(rules.maxSteps, kMaxMoveSteps);
     // Scale effective beam width safely while staying well inside maxTimeMs budget
     const uint32_t beamWidth = std::clamp<uint32_t>(rules.beamWidth * 2, 32, 2400);
     const auto& zt = zobrist();
@@ -342,12 +342,12 @@ SolveOutput PuzzleSolver::solve(
     const uint32_t threadCount = (rules.numThreads > 0) ? rules.numThreads : std::min<uint32_t>(hwThreads, 6);
 
     std::unordered_set<uint64_t> globalVisited;
-    globalVisited.reserve(static_cast<size_t>(beamWidth) * std::min<uint8_t>(maxSteps, 36));
+    globalVisited.reserve(static_cast<size_t>(beamWidth) * std::min<uint16_t>(maxSteps, 36));
     for (const auto& n : frontier) {
         globalVisited.insert(n.stateHash);
     }
 
-    for (uint8_t depth = 1; depth <= maxSteps && !frontier.empty() && !foundGoalEarly; ++depth) {
+    for (uint16_t depth = 1; depth <= maxSteps && !frontier.empty() && !foundGoalEarly; ++depth) {
         if (isCancelled()) {
             out.interrupted = true;
             break;
@@ -458,7 +458,7 @@ SolveOutput PuzzleSolver::solve(
                     child.curIdx = nextIdx;
                     child.lastDir = dir;
                     child.moves[parent.stepCount] = d;
-                    child.stepCount = static_cast<uint8_t>(parent.stepCount + 1);
+                    child.stepCount = static_cast<uint16_t>(parent.stepCount + 1);
                     if (isDiagonal(dir)) child.diagonalSteps++;
                     child.burningHits = nextBurn;
                     child.miasmaHits = nextMiasma;

@@ -41,8 +41,8 @@ constexpr uint32_t MiasmaLimit       = 1u << 26;
 } // namespace ShieldStatusBits
 
 struct PathMetrics {
-    uint8_t stepCount = 0;            // Effective game steps (Character orb pull is step 0!)
-    uint8_t diagonalSteps = 0;
+    uint16_t stepCount = 0;           // Effective game steps (Character orb pull is step 0!)
+    uint16_t diagonalSteps = 0;
     uint8_t startIdx = 0;
     uint8_t endIdx = 0;
     uint8_t burningTileHits = 0;

@@ -12,7 +12,19 @@ import kotlinx.coroutines.flow.map
 
 private val Context.autoDoraDataStore: DataStore<Preferences> by preferencesDataStore(name = "autodora_prefs")
 
+enum class ThemeMode(val label: String) {
+    SYSTEM("随系统"),
+    LIGHT("明亮"),
+    DARK("黑暗");
+
+    companion object {
+        fun fromOrdinalSafe(ord: Int?): ThemeMode =
+            entries.getOrNull(ord ?: 0) ?: SYSTEM
+    }
+}
+
 data class AppSettings(
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val calibration: BoardCalibration = BoardCalibration(),
     val maxSteps: Int = 28,
     val beamWidth: Int = 180,
@@ -30,13 +42,16 @@ data class AppSettings(
     val invertDragX: Boolean = false,
     val invertDragY: Boolean = false
 ) {
-    fun toRuleConfig(): RuleConfig = RuleConfig(
-        allowDiagonalMove = allowDiagonalMove,
-        maxSteps = maxSteps,
-        beamWidth = beamWidth,
-        maxTimeMs = 550,
-        topK = 5
-    )
+    fun toRuleConfig(): RuleConfig {
+        val scaledTimeMs = (550 + (maxSteps - 40).coerceAtLeast(0) * 8).coerceIn(550, 2200)
+        return RuleConfig(
+            allowDiagonalMove = allowDiagonalMove,
+            maxSteps = maxSteps.coerceIn(8, 300),
+            beamWidth = beamWidth,
+            maxTimeMs = scaledTimeMs,
+            topK = 5
+        )
+    }
 
     fun toSwipeConfig(): SwipeConfig = SwipeConfig(
         stepDurationMs = stepDurationMs,
@@ -49,6 +64,7 @@ data class AppSettings(
 class SettingsRepository(private val context: Context) {
 
     private object Keys {
+        val THEME_MODE = intPreferencesKey("ui_theme_mode")
         val LEFT_RATIO = floatPreferencesKey("calib_left_ratio")
         val RIGHT_RATIO = floatPreferencesKey("calib_right_ratio")
         val BOTTOM_RATIO = floatPreferencesKey("calib_bottom_ratio_v2")
@@ -76,6 +92,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     private fun readFromPrefs(p: Preferences): AppSettings = AppSettings(
+        themeMode = ThemeMode.fromOrdinalSafe(p[Keys.THEME_MODE]),
         calibration = BoardCalibration(
             leftRatio = p[Keys.LEFT_RATIO] ?: 0.0f,
             rightRatio = p[Keys.RIGHT_RATIO] ?: 1.0f,
@@ -84,7 +101,7 @@ class SettingsRepository(private val context: Context) {
             autoDetectWeijian = p[Keys.AUTO_WEIJIAN] ?: true,
             autoDetectArbitraryGrid = p[Keys.AUTO_ARBITRARY] ?: false
         ),
-        maxSteps = p[Keys.MAX_STEPS] ?: 28,
+        maxSteps = (p[Keys.MAX_STEPS] ?: 28).coerceIn(8, 300),
         beamWidth = p[Keys.BEAM_WIDTH] ?: 180,
         allowDiagonalMove = p[Keys.ALLOW_DIAGONAL] ?: true,
         testModeOnlyDraw = p[Keys.TEST_MODE_ONLY_DRAW] ?: true,
@@ -107,6 +124,7 @@ class SettingsRepository(private val context: Context) {
         context.autoDoraDataStore.edit { p ->
             val current = readFromPrefs(p)
             val next = transform(current)
+            p[Keys.THEME_MODE] = next.themeMode.ordinal
             p[Keys.LEFT_RATIO] = next.calibration.leftRatio.coerceIn(0f, 0.35f)
             p[Keys.RIGHT_RATIO] = next.calibration.rightRatio.coerceIn(0.65f, 1f)
             p[Keys.BOTTOM_RATIO] = if (next.calibration.bottomRatio < 0f) {
@@ -117,7 +135,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.HEIGHT_SCALE] = next.calibration.heightScale.coerceIn(0.75f, 1.25f)
             p[Keys.AUTO_WEIJIAN] = next.calibration.autoDetectWeijian
             p[Keys.AUTO_ARBITRARY] = next.calibration.autoDetectArbitraryGrid
-            p[Keys.MAX_STEPS] = next.maxSteps.coerceIn(8, 100)
+            p[Keys.MAX_STEPS] = next.maxSteps.coerceIn(8, 300)
             p[Keys.BEAM_WIDTH] = next.beamWidth.coerceIn(32, 800)
             p[Keys.ALLOW_DIAGONAL] = next.allowDiagonalMove
             p[Keys.TEST_MODE_ONLY_DRAW] = next.testModeOnlyDraw

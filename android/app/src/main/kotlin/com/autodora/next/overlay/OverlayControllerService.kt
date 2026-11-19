@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -35,9 +36,11 @@ import com.autodora.next.jni.NativeCancelToken
 import com.autodora.next.jni.NativeSolver
 import com.autodora.next.model.*
 import com.autodora.next.touch.HoldReplanTrigger
-import com.autodora.next.touch.SwipeConfig
+import com.autodora.next.touch.SwipeSpeedPreset
 import com.autodora.next.touch.TouchExecutionResult
 import com.autodora.next.touch.TouchExecutor
+import com.autodora.next.ui.OverlayPalette
+import com.autodora.next.ui.OverlayThemeResolver
 import com.autodora.next.vision.BoardRecognizer
 import com.autodora.next.vision.FlashRevealMemoryTracker
 import com.autodora.next.vision.RecognitionResult
@@ -73,6 +76,7 @@ class OverlayControllerService : Service() {
     private var screenW = 1200
     private var screenH = 2670
     private var settings = AppSettings()
+    private lateinit var palette: OverlayPalette
 
     // Overlay views
     private lateinit var pathOverlayView: PathOverlayView
@@ -82,19 +86,28 @@ class OverlayControllerService : Service() {
     private lateinit var statusOrbView: TextView
     private lateinit var toolbarContainer: LinearLayout
     private lateinit var modeChipRow: LinearLayout
-    private lateinit var moreToggleBtn: TextView
+    private lateinit var solveBtn: TextView
+    private lateinit var prevBtn: TextView
+    private lateinit var nextBtn: TextView
+    private lateinit var executeBtn: TextView
     private lateinit var stopChipBtn: TextView
+    private lateinit var pathToggleBtn: TextView
+    private lateinit var calibToggleBtn: TextView
+    private lateinit var moreToggleBtn: TextView
+    private lateinit var closeBtn: TextView
     private lateinit var memoryChipBtn: TextView
+    private lateinit var holdReplanBtn: TextView
     private lateinit var invertChipBtn: TextView
-    private lateinit var turboChipBtn: TextView
+    private lateinit var speedChipBtn: TextView
     private lateinit var calibrationBar: LinearLayout
+    private val calibNudgeBtns = ArrayList<TextView>()
+    private lateinit var calibAutoBtn: TextView
+    private lateinit var calibResetBtn: TextView
     private lateinit var summaryStrip: LinearLayout
     private lateinit var summaryTitle: TextView
     private lateinit var groupsScroll: HorizontalScrollView
     private lateinit var groupsRow: LinearLayout
     private lateinit var pagerText: TextView
-    private lateinit var pathToggleBtn: TextView
-    private lateinit var executeBtn: TextView
 
     // Turn state
     private var currentPhase = OverlayPhase.IDLE
@@ -118,17 +131,19 @@ class OverlayControllerService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        palette = OverlayThemeResolver.resolve(this, settings.themeMode)
         resolvePhysicalScreenSize()
         createNotificationChannel()
         startForegroundCompat()
         setupOverlayViews()
+        applyOverlayTheme()
         OverlayServiceState.setRunning(true)
 
         serviceScope.launch {
             settingsRepository.settingsFlow.collectLatest { latest ->
                 settings = latest
                 stopChipBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
-                updateQuickModeChips()
+                applyOverlayTheme()
                 syncFlashRevealWatcher()
                 if (calibrationMode) {
                     currentGeometry = latest.calibration.toBase6x5Geometry(screenW, screenH)
@@ -136,6 +151,13 @@ class OverlayControllerService : Service() {
                 }
             }
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        resolvePhysicalScreenSize()
+        applyOverlayTheme()
+        clampControlWindowToScreen()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -252,69 +274,75 @@ class OverlayControllerService : Service() {
         statusOrbView = TextView(this).apply {
             text = "D"
             textSize = 12f
-            setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
+            elevation = dp(3).toFloat()
             val size = dp(30)
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
                 marginEnd = dp(4)
             }
-            background = circleBg(Color.rgb(25, 118, 210))
         }
         topRow.addView(statusOrbView)
 
         toolbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            elevation = dp(3).toFloat()
             setPadding(dp(4), dp(3), dp(3), dp(3))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            background = roundedBg(Color.argb(222, 16, 21, 31), dp(14).toFloat(), Color.argb(105, 110, 185, 255))
         }
 
-        toolbarContainer.addView(makeChipBtn("算", Color.rgb(0, 137, 123), minW = 22, padH = 4) { startCaptureAndSolve() })
-        toolbarContainer.addView(makeChipBtn("◀", Color.argb(190, 52, 63, 80), minW = 19, padH = 3) { switchSolution(-1) })
+        solveBtn = makeChipBtn("算", minW = 24, padH = 5) { startCaptureAndSolve() }
+        toolbarContainer.addView(solveBtn)
+
+        prevBtn = makeChipBtn("◀", minW = 18, padH = 3) { switchSolution(-1) }
+        toolbarContainer.addView(prevBtn)
+
         pagerText = TextView(this).apply {
             text = "0/0"
             textSize = 9f
             setSingleLine(true)
-            setTextColor(Color.rgb(210, 228, 255))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(dp(2), 0, dp(2), 0)
         }
         toolbarContainer.addView(pagerText)
-        toolbarContainer.addView(makeChipBtn("▶", Color.argb(190, 52, 63, 80), minW = 19, padH = 3) { switchSolution(+1) })
 
-        executeBtn = makeChipBtn("行", Color.rgb(46, 125, 50), minW = 22, padH = 4) { executeSelectedSolution() }
+        nextBtn = makeChipBtn("▶", minW = 18, padH = 3) { switchSolution(+1) }
+        toolbarContainer.addView(nextBtn)
+
+        executeBtn = makeChipBtn("行", minW = 24, padH = 5) { executeSelectedSolution() }
         toolbarContainer.addView(executeBtn)
 
         // Integrated Emergency Stop right inside main toolbar!
-        stopChipBtn = makeChipBtn("停", Color.rgb(165, 36, 36), minW = 22, padH = 4, strokeColor = Color.argb(160, 255, 160, 160)) {
+        stopChipBtn = makeChipBtn("停", minW = 24, padH = 5) {
             triggerEmergencyStop()
             toast("已急停中止！")
         }
         toolbarContainer.addView(stopChipBtn)
 
-        pathToggleBtn = makeChipBtn("线", Color.rgb(57, 73, 171), minW = 22, padH = 4) {
+        pathToggleBtn = makeChipBtn("●线", minW = 28, padH = 4) {
             showPath = !showPath
-            pathToggleBtn.alpha = if (showPath) 1.0f else 0.45f
+            refreshMainToggleChips()
             refreshPathCanvas()
         }
         toolbarContainer.addView(pathToggleBtn)
 
-        toolbarContainer.addView(makeChipBtn("校", Color.rgb(121, 85, 72), minW = 22, padH = 4) { toggleCalibrationMode() })
+        calibToggleBtn = makeChipBtn("○校", minW = 28, padH = 4) { toggleCalibrationMode() }
+        toolbarContainer.addView(calibToggleBtn)
 
-        moreToggleBtn = makeChipBtn("⋯", Color.argb(210, 62, 76, 94), minW = 20, padH = 3) {
+        moreToggleBtn = makeChipBtn("⋯", minW = 20, padH = 3) {
             modeRowExpanded = !modeRowExpanded
             modeChipRow.visibility = if (modeRowExpanded && toolbarExpanded) View.VISIBLE else View.GONE
-            moreToggleBtn.alpha = if (modeRowExpanded) 1.0f else 0.80f
+            refreshMainToggleChips()
             clampControlWindowToScreen()
         }
         toolbarContainer.addView(moreToggleBtn)
 
-        toolbarContainer.addView(makeChipBtn("✕", Color.argb(200, 75, 85, 99), minW = 20, padH = 3, marginEndDp = 0) { stopSelf() })
+        closeBtn = makeChipBtn("✕", minW = 20, padH = 3, marginEndDp = 0) { stopSelf() }
+        toolbarContainer.addView(closeBtn)
 
         topRow.addView(toolbarContainer)
         controlRoot.addView(topRow)
@@ -323,25 +351,28 @@ class OverlayControllerService : Service() {
         modeChipRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            elevation = dp(2).toFloat()
             visibility = View.GONE
-            setPadding(dp(4), dp(2), dp(4), dp(2))
+            setPadding(dp(4), dp(3), dp(4), dp(3))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(2)
+                topMargin = dp(3)
                 marginStart = dp(34)
             }
-            background = roundedBg(Color.argb(208, 16, 21, 31), dp(9).toFloat(), Color.argb(75, 120, 190, 255))
         }
-        memoryChipBtn = makeChipBtn("记忆", Color.rgb(38, 120, 95), padH = 5) {
+        memoryChipBtn = makeChipBtn("○记忆", padH = 5) {
             serviceScope.launch {
                 settingsRepository.update { it.copy(flashRevealMemoryEnabled = !it.flashRevealMemoryEnabled) }
             }
         }
         modeChipRow.addView(memoryChipBtn)
-        modeChipRow.addView(makeChipBtn("按住转", Color.rgb(142, 36, 170), padH = 5) { startHoldAndReplanExecution() })
-        invertChipBtn = makeChipBtn("颠倒:关", Color.rgb(69, 90, 100), padH = 5) {
+
+        holdReplanBtn = makeChipBtn("按住转", padH = 5) { startHoldAndReplanExecution() }
+        modeChipRow.addView(holdReplanBtn)
+
+        invertChipBtn = makeChipBtn("○颠倒", padH = 5) {
             serviceScope.launch {
                 settingsRepository.update {
                     val next = !(it.invertDragX || it.invertDragY)
@@ -350,34 +381,32 @@ class OverlayControllerService : Service() {
             }
         }
         modeChipRow.addView(invertChipBtn)
-        turboChipBtn = makeChipBtn("标准", Color.rgb(55, 71, 79), padH = 5, marginEndDp = 0) {
+
+        // 1-to-1 synced with DashboardScreen SwipeSpeedPreset!
+        speedChipBtn = makeChipBtn("标准", padH = 5, marginEndDp = 0) {
             serviceScope.launch {
                 settingsRepository.update { s ->
-                    val nextMs = when {
-                        s.stepDurationMs > 50L -> SwipeConfig.FAST_3S_STEP_MS
-                        s.stepDurationMs > 30L -> SwipeConfig.TURBO_2S_STEP_MS
-                        else -> SwipeConfig.NORMAL_STEP_MS
-                    }
-                    s.copy(stepDurationMs = nextMs)
+                    val nextPreset = SwipeSpeedPreset.fromStepDurationMs(s.stepDurationMs).next()
+                    s.copy(stepDurationMs = nextPreset.stepDurationMs)
                 }
             }
         }
-        modeChipRow.addView(turboChipBtn)
+        modeChipRow.addView(speedChipBtn)
         controlRoot.addView(modeChipRow)
 
-        // Ultra-Compact Frosted Solution HUD Strip (tap to fold/unfold orb pills row!)
+        // Ultra-Compact System-Themed Solution HUD Strip (tap to fold/unfold orb pills row!)
         summaryStrip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            elevation = dp(2).toFloat()
             visibility = View.GONE
             setPadding(dp(7), dp(3), dp(7), dp(3))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(2)
+                topMargin = dp(3)
                 marginStart = dp(34)
             }
-            background = roundedBg(Color.argb(200, 14, 18, 28), dp(8).toFloat(), Color.argb(70, 160, 205, 255))
             setOnClickListener {
                 summaryPillsExpanded = !summaryPillsExpanded
                 groupsScroll.visibility = if (summaryPillsExpanded) View.VISIBLE else View.GONE
@@ -387,7 +416,6 @@ class OverlayControllerService : Service() {
             textSize = 9.5f
             setSingleLine(true)
             ellipsize = TextUtils.TruncateAt.END
-            setTextColor(Color.rgb(235, 243, 255))
             typeface = Typeface.DEFAULT_BOLD
             maxWidth = screenW - dp(54)
         }
@@ -412,25 +440,35 @@ class OverlayControllerService : Service() {
         // Slim In-place Calibration Bar
         calibrationBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            elevation = dp(2).toFloat()
             visibility = View.GONE
             setPadding(dp(5), dp(3), dp(5), dp(3))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(2)
+                topMargin = dp(3)
                 marginStart = dp(34)
             }
-            background = roundedBg(Color.argb(228, 14, 34, 48), dp(9).toFloat(), Color.argb(200, 0, 229, 255))
         }
-        calibrationBar.addView(makeChipBtn("上", Color.rgb(0, 120, 150), minW = 22, padH = 4) { nudgeCalib(bottomDelta = -0.005f) })
-        calibrationBar.addView(makeChipBtn("下", Color.rgb(0, 120, 150), minW = 22, padH = 4) { nudgeCalib(bottomDelta = +0.005f) })
-        calibrationBar.addView(makeChipBtn("窄", Color.rgb(0, 100, 130), minW = 22, padH = 4) { nudgeCalib(sideInsetDelta = +0.004f) })
-        calibrationBar.addView(makeChipBtn("宽", Color.rgb(0, 100, 130), minW = 22, padH = 4) { nudgeCalib(sideInsetDelta = -0.004f) })
-        calibrationBar.addView(makeChipBtn("高-", Color.rgb(0, 90, 110), minW = 24, padH = 4) { nudgeCalib(heightScaleDelta = -0.01f) })
-        calibrationBar.addView(makeChipBtn("高+", Color.rgb(0, 90, 110), minW = 24, padH = 4) { nudgeCalib(heightScaleDelta = +0.01f) })
-        calibrationBar.addView(makeChipBtn("自动", Color.rgb(46, 125, 50), padH = 5) { runAutoCalibration() })
-        calibrationBar.addView(makeChipBtn("重置", Color.rgb(160, 60, 50), padH = 5, marginEndDp = 0) { resetCalibration() })
+        calibNudgeBtns.clear()
+        val nudgeSpecs = listOf(
+            Triple("上", 22, { nudgeCalib(bottomDelta = -0.005f) }),
+            Triple("下", 22, { nudgeCalib(bottomDelta = +0.005f) }),
+            Triple("窄", 22, { nudgeCalib(sideInsetDelta = +0.004f) }),
+            Triple("宽", 22, { nudgeCalib(sideInsetDelta = -0.004f) }),
+            Triple("高-", 24, { nudgeCalib(heightScaleDelta = -0.01f) }),
+            Triple("高+", 24, { nudgeCalib(heightScaleDelta = +0.01f) })
+        )
+        for ((lbl, mw, action) in nudgeSpecs) {
+            val btn = makeChipBtn(lbl, minW = mw, padH = 4, onClick = action)
+            calibNudgeBtns.add(btn)
+            calibrationBar.addView(btn)
+        }
+        calibAutoBtn = makeChipBtn("自动", padH = 5) { runAutoCalibration() }
+        calibrationBar.addView(calibAutoBtn)
+        calibResetBtn = makeChipBtn("重置", padH = 5, marginEndDp = 0) { resetCalibration() }
+        calibrationBar.addView(calibResetBtn)
         controlRoot.addView(calibrationBar)
 
         controlParams = WindowManager.LayoutParams(
@@ -602,7 +640,7 @@ class OverlayControllerService : Service() {
                 lastSolveOutput = solveOut
                 selectedSolutionIdx = 0
                 showPath = true
-                pathToggleBtn.alpha = 1.0f
+                refreshMainToggleChips()
                 updateSummaryStrip()
                 refreshPathCanvas()
 
@@ -719,6 +757,7 @@ class OverlayControllerService : Service() {
                         selectedSolutionIdx = 0
                         withContext(Dispatchers.Main) {
                             showPath = true
+                            refreshMainToggleChips()
                             updateSummaryStrip()
                             refreshPathCanvas()
                         }
@@ -815,9 +854,7 @@ class OverlayControllerService : Service() {
 
     private fun hidePathOverlay() {
         showPath = false
-        if (::pathToggleBtn.isInitialized) {
-            pathToggleBtn.alpha = 0.45f
-        }
+        refreshMainToggleChips()
         refreshPathCanvas(countdown = null)
     }
 
@@ -853,7 +890,9 @@ class OverlayControllerService : Service() {
             currentGeometry = settings.calibration.toBase6x5Geometry(screenW, screenH)
             showPath = true
         }
+        refreshMainToggleChips()
         refreshPathCanvas()
+        clampControlWindowToScreen()
     }
 
     private fun nudgeCalib(
@@ -977,44 +1016,113 @@ class OverlayControllerService : Service() {
         }
     }
 
+    /**
+     * Re-applies Android System Material 3 palette (Light / Dark / Follow System + Android 12+ Material You)
+     * across every floating container, button, toggle chip, and text element live without restart.
+     */
+    private fun applyOverlayTheme() {
+        if (!::toolbarContainer.isInitialized) return
+        palette = OverlayThemeResolver.resolve(this, settings.themeMode)
+        val p = palette
+
+        // Material 3 containers
+        toolbarContainer.background = roundedBg(p.containerBg, dp(16).toFloat(), p.containerStroke)
+        modeChipRow.background = roundedBg(p.containerBg, dp(11).toFloat(), p.containerStroke)
+        summaryStrip.background = roundedBg(p.containerBg, dp(10).toFloat(), p.containerStroke)
+        calibrationBar.background = roundedBg(p.containerBg, dp(11).toFloat(), p.tertiary)
+
+        // Typography
+        pagerText.setTextColor(p.onSurface)
+        summaryTitle.setTextColor(p.onSurface)
+
+        // Main bar action buttons (distinct Material 3 emphasis hierarchy)
+        styleChip(solveBtn, p.primary, p.onPrimary, null)
+        styleChip(prevBtn, p.chipOffBg, p.onSurface, p.chipOffStroke)
+        styleChip(nextBtn, p.chipOffBg, p.onSurface, p.chipOffStroke)
+        styleChip(executeBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
+        styleChip(closeBtn, p.chipOffBg, p.onSurfaceVariant, p.chipOffStroke)
+
+        // Quick-mode action button
+        styleChip(holdReplanBtn, p.secondaryContainer, p.onSecondaryContainer, null)
+
+        // Calibration bar buttons
+        for (btn in calibNudgeBtns) {
+            styleChip(btn, p.secondaryContainer, p.onSecondaryContainer, null)
+        }
+        styleChip(calibAutoBtn, p.primary, p.onPrimary, null)
+        styleChip(calibResetBtn, p.errorContainer, p.onErrorContainer, null)
+
+        // Sync phase orb + stop button + all ON/OFF toggle chips
+        setPhase(currentPhase)
+        refreshMainToggleChips()
+        updateQuickModeChips()
+    }
+
+    /**
+     * Clearly distinguishes ON vs OFF for every toggle button in the main toolbar using BOTH
+     * Material 3 solid-vs-tonal contrast AND explicit '●' / '○' state indicators.
+     */
+    private fun refreshMainToggleChips() {
+        if (!::pathToggleBtn.isInitialized || !::palette.isInitialized) return
+        val p = palette
+
+        // Path overlay toggle (线)
+        pathToggleBtn.text = if (showPath) "●线" else "○线"
+        styleToggleChip(pathToggleBtn, isOn = showPath, onBg = p.primary, onText = p.onPrimary)
+
+        // Calibration mode toggle (校)
+        calibToggleBtn.text = if (calibrationMode) "●校" else "○校"
+        styleToggleChip(calibToggleBtn, isOn = calibrationMode, onBg = p.tertiary, onText = p.onTertiary)
+
+        // Quick-mode drawer expand toggle (⋯ / ▾)
+        moreToggleBtn.text = if (modeRowExpanded) "▾" else "⋯"
+        if (modeRowExpanded) {
+            styleChip(moreToggleBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
+        } else {
+            styleChip(moreToggleBtn, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+        }
+    }
+
     private fun updateQuickModeChips() {
-        if (!::memoryChipBtn.isInitialized) return
+        if (!::memoryChipBtn.isInitialized || !::palette.isInitialized) return
+        val p = palette
+
+        // Flash-Reveal Memory toggle (记忆) — unmistakable ON vs OFF + live status!
         val memLocked = flashMemoryTracker.currentLockedSnapshot() != null
         val memFresh = flashMemoryTracker.hasFreshClearMemory()
         when {
             !settings.flashRevealMemoryEnabled -> {
-                memoryChipBtn.text = "记忆:关"
-                memoryChipBtn.background = roundedBg(Color.rgb(69, 90, 100), dp(8).toFloat(), null)
+                memoryChipBtn.text = "○记忆"
+                styleToggleChip(memoryChipBtn, isOn = false, onBg = p.primary, onText = p.onPrimary)
             }
             memLocked -> {
-                memoryChipBtn.text = "透视?"
-                memoryChipBtn.background = roundedBg(Color.rgb(230, 145, 0), dp(8).toFloat(), null)
+                memoryChipBtn.text = "●透视?"
+                styleToggleChip(memoryChipBtn, isOn = true, onBg = p.tertiary, onText = p.onTertiary, onStroke = p.onTertiary)
             }
             memFresh -> {
-                memoryChipBtn.text = "记忆●"
-                memoryChipBtn.background = roundedBg(Color.rgb(46, 125, 50), dp(8).toFloat(), null)
+                memoryChipBtn.text = "●记忆✓"
+                styleToggleChip(memoryChipBtn, isOn = true, onBg = p.primary, onText = p.onPrimary, onStroke = p.onPrimary)
             }
             else -> {
-                memoryChipBtn.text = "记忆"
-                memoryChipBtn.background = roundedBg(Color.rgb(0, 121, 107), dp(8).toFloat(), null)
+                memoryChipBtn.text = "●记忆"
+                styleToggleChip(memoryChipBtn, isOn = true, onBg = p.primary, onText = p.onPrimary)
             }
         }
 
+        // Inverted Drag Controls toggle (颠倒)
         val invOn = settings.invertDragX || settings.invertDragY
-        invertChipBtn.text = if (invOn) "颠倒:开" else "颠倒:关"
-        invertChipBtn.background = roundedBg(
-            if (invOn) Color.rgb(216, 67, 21) else Color.rgb(69, 90, 100),
-            dp(8).toFloat(),
-            null
-        )
+        invertChipBtn.text = if (invOn) "●颠倒" else "○颠倒"
+        styleToggleChip(invertChipBtn, isOn = invOn, onBg = p.tertiary, onText = p.onTertiary)
 
-        val (spdLabel, spdColor) = when {
-            settings.stepDurationMs <= 28L -> "2秒极速" to Color.rgb(198, 40, 40)
-            settings.stepDurationMs <= 45L -> "3秒快转" to Color.rgb(239, 108, 0)
-            else -> "标准" to Color.rgb(55, 71, 79)
+        // Swipe speed selector — 1:1 synchronized with DashboardScreen SwipeSpeedPreset!
+        val preset = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
+        speedChipBtn.text = preset.label
+        when (preset) {
+            SwipeSpeedPreset.TURBO_2S -> styleChip(speedChipBtn, p.errorContainer, p.onErrorContainer, p.error)
+            SwipeSpeedPreset.FAST_3S -> styleChip(speedChipBtn, p.tertiaryContainer, p.onTertiaryContainer, p.tertiary)
+            SwipeSpeedPreset.STANDARD -> styleChip(speedChipBtn, p.primaryContainer, p.onPrimaryContainer, null)
+            SwipeSpeedPreset.STEADY -> styleChip(speedChipBtn, p.secondaryContainer, p.onSecondaryContainer, null)
         }
-        turboChipBtn.text = spdLabel
-        turboChipBtn.background = roundedBg(spdColor, dp(8).toFloat(), null)
     }
 
     private fun currentSolution(): SolutionPath? {
@@ -1084,28 +1192,54 @@ class OverlayControllerService : Service() {
 
     private fun setPhase(phase: OverlayPhase) {
         currentPhase = phase
+        if (!::palette.isInitialized || !::statusOrbView.isInitialized) return
+        val p = palette
         when (phase) {
             OverlayPhase.IDLE -> {
                 statusOrbView.text = "D"
-                statusOrbView.background = circleBg(Color.rgb(25, 118, 210))
+                statusOrbView.setTextColor(p.onPrimary)
+                statusOrbView.background = circleBg(p.primary, p.orbStroke)
                 if (::stopChipBtn.isInitialized) {
-                    stopChipBtn.background = roundedBg(Color.rgb(138, 36, 36), dp(7).toFloat(), Color.argb(110, 255, 150, 150))
+                    styleChip(stopChipBtn, p.errorContainer, p.onErrorContainer, null)
                 }
             }
             OverlayPhase.CALCULATING -> {
                 statusOrbView.text = "算"
-                statusOrbView.background = circleBg(Color.rgb(245, 124, 0))
+                statusOrbView.setTextColor(p.onTertiary)
+                statusOrbView.background = circleBg(p.tertiary, p.orbStroke)
                 if (::stopChipBtn.isInitialized) {
-                    stopChipBtn.background = roundedBg(Color.rgb(229, 57, 53), dp(7).toFloat(), Color.WHITE)
+                    styleChip(stopChipBtn, p.error, p.onError, p.onError)
                 }
             }
             OverlayPhase.MOVING -> {
                 statusOrbView.text = "转"
-                statusOrbView.background = circleBg(Color.rgb(46, 125, 50))
+                statusOrbView.setTextColor(p.onPrimaryContainer)
+                statusOrbView.background = circleBg(p.primaryContainer, p.primary)
                 if (::stopChipBtn.isInitialized) {
-                    stopChipBtn.background = roundedBg(Color.rgb(229, 57, 53), dp(7).toFloat(), Color.WHITE)
+                    styleChip(stopChipBtn, p.error, p.onError, p.onError)
                 }
             }
+        }
+    }
+
+    private fun styleChip(view: TextView, bgColor: Int, textColor: Int, strokeColor: Int?) {
+        view.setTextColor(textColor)
+        view.background = roundedBg(bgColor, dp(8).toFloat(), strokeColor)
+        view.alpha = 1.0f
+    }
+
+    private fun styleToggleChip(
+        view: TextView,
+        isOn: Boolean,
+        onBg: Int,
+        onText: Int,
+        onStroke: Int? = null
+    ) {
+        val p = palette
+        if (isOn) {
+            styleChip(view, onBg, onText, onStroke)
+        } else {
+            styleChip(view, p.chipOffBg, p.chipOffText, p.chipOffStroke)
         }
     }
 
@@ -1160,11 +1294,9 @@ class OverlayControllerService : Service() {
 
     private fun makeChipBtn(
         label: String,
-        bgColor: Int,
         minW: Int = 24,
         padH: Int = 5,
         marginEndDp: Int = 2,
-        strokeColor: Int? = null,
         onClick: () -> Unit
     ): TextView {
         return TextView(this).apply {
@@ -1173,13 +1305,11 @@ class OverlayControllerService : Service() {
             setSingleLine(true)
             gravity = Gravity.CENTER
             minWidth = dp(minW)
-            setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
             setPadding(dp(padH), dp(3), dp(padH), dp(3))
-            background = roundedBg(bgColor, dp(7).toFloat(), strokeColor)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(23)
+                dp(24)
             ).apply {
                 marginEnd = dp(marginEndDp)
             }
@@ -1187,10 +1317,10 @@ class OverlayControllerService : Service() {
         }
     }
 
-    private fun circleBg(color: Int) = GradientDrawable().apply {
+    private fun circleBg(color: Int, strokeColor: Int) = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(color)
-        setStroke(dp(1) + 1, Color.argb(235, 255, 255, 255))
+        setStroke(dp(1) + 1, strokeColor)
     }
 
     private fun roundedBg(color: Int, radius: Float, strokeColor: Int?) = GradientDrawable().apply {
