@@ -64,4 +64,53 @@ class EnemySkillRuleParserTest {
         assertTrue(ids.contains("char_orb_terrain"))
         assertTrue(ids.contains("zero_combo"))
     }
+
+    @Test
+    fun `gear stage info screen with no-skill enemy and stats ending in zero never falsely triggers zero_combo`() {
+        val parser = loadBundledParser()
+
+        // Exact OCR text structure observed on real ToS 「齿轮 → 關卡資訊」 screen (emu_gear.png):
+        // HP/DEF end in '0' right next to 'CD 2' and 'CURRENT' which previously falsely matched "0\s*c"!
+        val noSkillGearOcr = """
+            WAVE 1
+            CURRENT
+            霧象龍
+            1,935,820
+            3,198
+            82,000
+            CD 2
+            沒有技能
+            WAVE 2
+            NEXT
+            BOSS
+        """.trimIndent()
+
+        val parsed = parser.parse(noSkillGearOcr)
+        assertTrue("No-skill enemy must produce ZERO shield chips (got ${parsed.chips})", parsed.chips.isEmpty())
+        assertTrue("Must detect '沒有技能' banner", parsed.hasNoSkillBanner)
+
+        // Same-line stats + CD edge case (in case OCR merges adjacent blocks onto one line)
+        val mergedLineOcr = "霧象龍 82,000 CD 2\n1,935,820 CURRENT\n沒有技能"
+        val parsedMerged = parser.parse(mergedLineOcr)
+        assertTrue("Merged stats+CD line must NEVER trigger zero_combo (got ${parsedMerged.chips})", parsedMerged.chips.isEmpty())
+    }
+
+    @Test
+    fun `10 Combo shield and HK-TW combo wording never falsely trigger zero_combo or duplicate anti-first-wave`() {
+        val parser = loadBundledParser()
+
+        val sample = """
+            首批消除 10 連擊 (Combo) 或以上
+            首批禁消火符石
+        """.trimIndent()
+
+        val parsed = parser.parse(sample)
+        val byId = parsed.chips.associateBy { it.id }
+
+        assertFalse("10 Combo must NEVER falsely match zero_combo", byId.containsKey("zero_combo"))
+        assertEquals("Should parse >= 10 Combo", 10, byId["min_combo"]?.paramInt)
+        assertFalse("8+ / 10+ Combo should not duplicate exact_first_combo", byId.containsKey("exact_first_combo"))
+        assertTrue("Should parse anti_first_wave for 首批禁消火", byId.containsKey("anti_first_wave"))
+        assertFalse("首批禁消火 must NOT falsely also trigger forbid_all", byId.containsKey("forbid_all"))
+    }
 }

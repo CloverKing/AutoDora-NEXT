@@ -913,8 +913,13 @@ class OverlayControllerService : Service() {
                 }
                 val greyNote = if (parsed.skippedGreyLines > 0) "（已自动过滤 ${parsed.skippedGreyLines} 条灰字已无视敌技）" else ""
                 if (parsed.chips.isEmpty()) {
-                    ActiveStrategyStore.applyOcrChips(emptyList(), "未匹配到已知敌技词条$greyNote")
-                    toast("未识别到已知敌技盾，请打开「齿轮 → 關卡資訊」或长按敌人技能弹窗后再扫$greyNote")
+                    if (parsed.hasNoSkillBanner) {
+                        ActiveStrategyStore.applyOcrChips(emptyList(), "当前敌人没有技能$greyNote")
+                        toast("OCR：当前敌人「没有技能」，无需挂载解盾$greyNote")
+                    } else {
+                        ActiveStrategyStore.applyOcrChips(emptyList(), "未匹配到已知敌技词条$greyNote")
+                        toast("未识别到已知敌技盾，请打开「齿轮 → 關卡資訊」或长按敌人技能弹窗后再扫$greyNote")
+                    }
                 } else {
                     val names = parsed.chips.joinToString(" · ") { it.label }
                     ActiveStrategyStore.applyOcrChips(parsed.chips, "OCR 已启用：${names}$greyNote")

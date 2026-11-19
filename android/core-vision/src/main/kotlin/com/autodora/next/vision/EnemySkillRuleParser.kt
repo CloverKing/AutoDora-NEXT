@@ -28,7 +28,8 @@ data class ParsedEnemySkillResult(
     val normalizedText: String,
     val chips: List<WaveShieldChip>,
     val matchedRuleIds: List<String>,
-    val skippedGreyLines: Int = 0
+    val skippedGreyLines: Int = 0,
+    val hasNoSkillBanner: Boolean = false
 )
 
 /**
@@ -50,7 +51,10 @@ class EnemySkillRuleParser(ruleSet: EnemySkillRuleSet) {
     }
 
     fun parse(rawText: String, skippedGreyLines: Int = 0): ParsedEnemySkillResult {
-        val norm = normalizeText(rawText)
+        val normFull = normalizeText(rawText)
+        val filteredLines = stripStageInfoChromeLines(normFull)
+        val hasNoSkillBanner = filteredLines.any { it == "没有技能" || it == "无技能" }
+        val norm = filteredLines.joinToString("\n")
         val resultChips = LinkedHashMap<String, WaveShieldChip>()
         val matchedIds = ArrayList<String>()
 
@@ -114,12 +118,31 @@ class EnemySkillRuleParser(ruleSet: EnemySkillRuleSet) {
             normalizedText = norm,
             chips = resultChips.values.toList(),
             matchedRuleIds = matchedIds,
-            skippedGreyLines = skippedGreyLines
+            skippedGreyLines = skippedGreyLines,
+            hasNoSkillBanner = hasNoSkillBanner
         )
     }
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
+
+        // Chrome / stat-bar lines from ToS 「齿轮 → 關卡資訊」 that never contain enemy skill rules
+        private val STAGE_INFO_CHROME_REGEX = Regex(
+            "^(?:wave\\s*\\d+(?:\\s*(?:current|next))?|current|next|boss|cd\\s*\\d+|基本资讯|关卡资讯|队伍资讯|离开战斗|取消)$",
+            RegexOption.IGNORE_CASE
+        )
+        private val PURE_STATS_NUMBERS_REGEX = Regex("^[\\d,./+\\-\\s]+$")
+
+        fun stripStageInfoChromeLines(normalizedText: String): List<String> {
+            return normalizedText.lineSequence()
+                .map { it.trim() }
+                .filter { line ->
+                    line.isNotEmpty() &&
+                        !STAGE_INFO_CHROME_REGEX.matches(line) &&
+                        !PURE_STATS_NUMBERS_REGEX.matches(line)
+                }
+                .toList()
+        }
 
         fun fromJson(jsonText: String): EnemySkillRuleParser {
             val set = runCatching { json.decodeFromString<EnemySkillRuleSet>(jsonText) }
@@ -138,12 +161,14 @@ class EnemySkillRuleParser(ruleSet: EnemySkillRuleSet) {
                 '鎖' to '锁', '風' to '风', '電' to '电', '體' to '体', '無' to '无',
                 '視' to '视', '計' to '计', '僅' to '仅', '隻' to '只', '與' to '与',
                 '類' to '类', '龍' to '龙', '獸' to '兽', '機' to '机', '術' to '术',
-                '個' to '个', '粒' to '粒', '組' to '组', '黏' to '黏', '連' to '连',
+                '個' to '个', '粒' to '粒', '組' to '组', '黏' to '黏', '沒' to '没',
                 '嚴' to '严', '格' to '格', '剛' to '刚', '須' to '须', '為' to '为',
                 '開' to '开', '關' to '关', '點' to '点', '線' to '线', '場' to '场',
                 '滿' to '满', '動' to '动', '傷' to '伤', '減' to '减', '區' to '区',
                 '域' to '域', '異' to '异', '變' to '变', '換' to '换', '經' to '经',
                 '過' to '过', '對' to '对', '應' to '应', '於' to '于', '會' to '会',
+                '資' to '资', '訊' to '讯', '離' to '离', '戰' to '战', '鬥' to '斗',
+                '隊' to '队', '敵' to '敌', '護' to '护', '圍' to '围', '繞' to '绕',
                 '０' to '0', '１' to '1', '２' to '2', '３' to '3', '４' to '4',
                 '５' to '5', '６' to '6', '７' to '7', '８' to '8', '９' to '9',
                 '＋' to '+', '－' to '-', '×' to 'x'
