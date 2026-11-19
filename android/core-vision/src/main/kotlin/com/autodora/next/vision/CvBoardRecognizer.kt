@@ -67,6 +67,8 @@ class CvBoardRecognizer : BoardRecognizer {
         var raceBadgeCount = 0
 
         val puzzleBorderScores = FloatArray(total)
+        val stormWeakFlags = BooleanArray(total)
+        val stormStrongFlags = BooleanArray(total)
 
         for (r in 0 until rows) {
             for (c in 0 until cols) {
@@ -75,20 +77,63 @@ class CvBoardRecognizer : BoardRecognizer {
                 val cy = geometry.cellCenterY(r)
 
                 val (cellState, borderGlow) = classifyCellMultiFrame(frames, cx, cy, radius, cellW, cellH)
+                val (isStormStrong, isStormWeak) = detectStormMultiFrame(frames, cx, cy, cellW, cellH)
+                stormStrongFlags[idx] = isStormStrong
+                stormWeakFlags[idx] = isStormWeak
+
                 cells.add(cellState)
                 puzzleBorderScores[idx] = borderGlow
-                confSum += cellState.confidence
-                if (cellState.element == Element.HIDDEN || (cellState.hazards and HazardBits.QUESTION) != 0) {
-                    questionCount++
-                }
-                if (cellState.variant == Variant.RACE) {
-                    raceBadgeCount++
-                }
-                if (cellState.confidence < LOW_CONFIDENCE_THRESHOLD) {
-                    lowConfIndices.add(idx)
+                if (isStormStrong) {
+                    tileFlags[idx] = tileFlags[idx] or TileFlagBits.STORM
                 }
             }
         }
+
+        // Full-column tornado tip refinement: if >= (rows - 1) cells in a column are Storm and the last tip cell
+        // shows partial grey mist (weak storm), promote that tip cell to Storm as well!
+        for (c in 0 until cols) {
+            var strongInCol = 0
+            for (r in 0 until rows) {
+                if (stormStrongFlags[r * cols + c]) strongInCol++
+            }
+            if (strongInCol >= (rows - 1).coerceAtLeast(3)) {
+                for (r in 0 until rows) {
+                    val idx = r * cols + c
+                    if (!stormStrongFlags[idx] && stormWeakFlags[idx]) {
+                        tileFlags[idx] = tileFlags[idx] or TileFlagBits.STORM
+                    }
+                }
+            }
+        }
+
+        // Normalize Storm cells and compute summary metrics after full-column Storm refinement:
+        // Storm tiles are known forbidden terrain (impassable & non-matchable), NEVER '?' Question orbs or low-confidence menu noise!
+        for (idx in 0 until total) {
+            val isStorm = (tileFlags[idx] and TileFlagBits.STORM) != 0
+            val cell = if (isStorm) {
+                val orig = cells[idx]
+                val sanitized = orig.copy(
+                    element = if (orig.element == Element.HIDDEN) Element.UNKNOWN else orig.element,
+                    hazards = orig.hazards and HazardBits.QUESTION.inv(),
+                    confidence = max(orig.confidence, 0.88f)
+                )
+                cells[idx] = sanitized
+                sanitized
+            } else {
+                cells[idx]
+            }
+            confSum += cell.confidence
+            if (!isStorm && (cell.element == Element.HIDDEN || (cell.hazards and HazardBits.QUESTION) != 0)) {
+                questionCount++
+            }
+            if (cell.variant == Variant.RACE) {
+                raceBadgeCount++
+            }
+            if (!isStorm && cell.confidence < LOW_CONFIDENCE_THRESHOLD) {
+                lowConfIndices.add(idx)
+            }
+        }
+        val stormCount = tileFlags.count { (it and TileFlagBits.STORM) != 0 }
 
         // Only mark Puzzle1 if a coherent cluster of >= 3 cells exhibits golden glowing borders
         val candidatePuzzle = BooleanArray(total) { puzzleBorderScores[it] >= PUZZLE_BORDER_THRESHOLD }
@@ -103,8 +148,70 @@ class CvBoardRecognizer : BoardRecognizer {
             engineName = name,
             elapsedMs = elapsedMs,
             questionOrbsDetected = questionCount,
-            raceBadgesDetected = raceBadgeCount
+            raceBadgesDetected = raceBadgeCount,
+            stormCellsDetected = stormCount
         )
+    }
+
+    /**
+     * Real-screenshot calibrated Storm / Tornado (暴风 / 龙卷风区域) detector:
+     * A real ToS tornado veil covers BOTH the normally pitch-dark tile corners/edges AND the orb interior
+     * with mid-grey desaturated mist (V in 0.28..0.78, S <= 0.24), separating cleanly by ~5x from normal orbs,
+     * white-rimmed Shield orbs, Race orbs, Question orbs, and Black-and-White orbs.
+     *
+     * Returns Pair(isStrongStorm, isWeakStormTip).
+     */
+    private fun detectStormMultiFrame(
+        frames: List<VisionFrame>,
+        cx: Float,
+        cy: Float,
+        cellW: Float,
+        cellH: Float
+    ): Pair<Boolean, Boolean> {
+        val offX = cellW * 0.44f
+        val offY = cellH * 0.44f
+        val innerR = min(cellW, cellH) * 0.26f
+        val cornerOffsets = arrayOf(
+            -offX to -offY, 0f to -offY, offX to -offY,
+            -offX to offY, 0f to offY, offX to offY
+        )
+
+        var strong = false
+        var weak = false
+
+        for (f in frames) {
+            var greyCorner = 0
+            for ((dx, dy) in cornerOffsets) {
+                val px = (cx + dx).roundToInt()
+                val py = (cy + dy).roundToInt()
+                val (_, s, v) = rgbToHsv(f.getArgb(px, py))
+                if (v in 0.28f..0.78f && s <= 0.24f) {
+                    greyCorner++
+                }
+            }
+
+            var greyInner = 0
+            var innerSatSum = 0f
+            for (a in 0 until 8) {
+                val theta = (2.0 * PI * a / 8).toFloat()
+                val px = (cx + cos(theta) * innerR).roundToInt()
+                val py = (cy + sin(theta) * innerR).roundToInt()
+                val (_, s, v) = rgbToHsv(f.getArgb(px, py))
+                innerSatSum += s
+                if (v in 0.28f..0.78f && s <= 0.24f) {
+                    greyInner++
+                }
+            }
+            val avgInnerSat = innerSatSum / 8f
+
+            if (greyCorner >= 3 && greyInner >= 3 && avgInnerSat <= 0.34f) {
+                strong = true
+            }
+            if (greyCorner >= 2 && greyInner >= 2 && avgInnerSat <= 0.42f) {
+                weak = true
+            }
+        }
+        return strong to weak
     }
 
     private fun classifyCellMultiFrame(

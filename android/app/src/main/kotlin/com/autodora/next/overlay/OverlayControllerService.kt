@@ -778,8 +778,10 @@ class OverlayControllerService : Service() {
                 }
 
                 val totalCells = (boardToSolve.cols * boardToSolve.rows).coerceAtLeast(1)
-                val unknownCells = boardToSolve.cells.count {
-                    it.element == Element.UNKNOWN || it.element == Element.EMPTY
+                val unknownCells = boardToSolve.cells.indices.count { i ->
+                    val el = boardToSolve.cells[i].element
+                    val isStorm = (boardToSolve.tileFlags[i] and TileFlagBits.STORM) != 0
+                    !isStorm && (el == Element.UNKNOWN || el == Element.EMPTY)
                 }
                 val isGenuineQuestionBoard = resolvedFromMemory || liveRec.questionOrbsDetected >= 6
                 val notInBattleBoard = !isGenuineQuestionBoard && (
@@ -892,13 +894,15 @@ class OverlayControllerService : Service() {
         }
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.CALCULATING)
-            val wasDrawerOpen = tuningDrawerOpen
-            if (wasDrawerOpen) tuningDrawer.setVisible(false)
-            delay(50)
+            // Temporarily hide our entire floating HUD so ML Kit OCR never accidentally reads our own shield pills!
+            controlRoot.visibility = View.INVISIBLE
+            pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
+            delay(55)
 
             val bmp = capturer.captureSingleFrame()
+            controlRoot.visibility = View.VISIBLE
+            refreshPathCanvas()
             if (bmp == null) {
-                if (wasDrawerOpen) tuningDrawer.setVisible(true)
                 setPhase(OverlayPhase.IDLE)
                 toast("截屏失败，请重试")
                 return@launch
@@ -910,7 +914,7 @@ class OverlayControllerService : Service() {
                 val greyNote = if (parsed.skippedGreyLines > 0) "（已自动过滤 ${parsed.skippedGreyLines} 条灰字已无视敌技）" else ""
                 if (parsed.chips.isEmpty()) {
                     ActiveStrategyStore.applyOcrChips(emptyList(), "未匹配到已知敌技词条$greyNote")
-                    toast("未识别到已知敌技盾，请先长按敌人打开技能弹窗$greyNote")
+                    toast("未识别到已知敌技盾，请打开「齿轮 → 關卡資訊」或长按敌人技能弹窗后再扫$greyNote")
                 } else {
                     val names = parsed.chips.joinToString(" · ") { it.label }
                     ActiveStrategyStore.applyOcrChips(parsed.chips, "OCR 已启用：${names}$greyNote")
@@ -921,7 +925,6 @@ class OverlayControllerService : Service() {
                 toast("离线 OCR 识别异常：${e.message}")
             } finally {
                 if (!bmp.isRecycled) bmp.recycle()
-                if (wasDrawerOpen) tuningDrawer.setVisible(true)
                 setPhase(OverlayPhase.IDLE)
             }
         }
@@ -1488,10 +1491,12 @@ class OverlayControllerService : Service() {
         val sizeBadge = if (geom.isWeijianExpanded) "${geom.cols}×${geom.rows} 违建" else "${geom.cols}×${geom.rows}"
         val shieldBadge = if (sol.allHardConstraintsMet) "✓" else "!"
         val memTag = if (usedMemorizedSnapshot) " · 记忆" else ""
+        val stormCnt = lastRecognition?.stormCellsDetected ?: 0
+        val stormTag = if (stormCnt > 0) " · 暴风$stormCnt" else ""
         val lowWarn = if (usedMemorizedSnapshot) 0 else (lastRecognition?.lowConfidenceIndices?.size ?: 0)
         val lowStr = if (lowWarn > 0) " · 低置信 $lowWarn" else ""
 
-        summaryTitle.text = "$sizeBadge · ${sol.totalCombo}C(首${sol.firstWaveCombo}) · ${sol.stepCount}步 · ${out.elapsedMs.toInt()}ms $shieldBadge$memTag$lowStr"
+        summaryTitle.text = "$sizeBadge · ${sol.totalCombo}C(首${sol.firstWaveCombo}) · ${sol.stepCount}步 · ${out.elapsedMs.toInt()}ms $shieldBadge$memTag$stormTag$lowStr"
 
         groupsRow.removeAllViews()
         for (grp in sol.groups) {

@@ -407,6 +407,17 @@ class PathOverlayView(context: Context) : View(context) {
                 if ((flags and TileFlagBits.PUZZLE_1) != 0) {
                     canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, puzzlePaint)
                 }
+                if ((flags and TileFlagBits.STORM) != 0) {
+                    fillPaint.color = Color.argb(82, 120, 144, 156)
+                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, fillPaint)
+                    gridBorderPaint.color = Color.argb(230, 176, 190, 197)
+                    gridBorderPaint.strokeWidth = 5f
+                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, gridBorderPaint)
+                    val tagR = (g.cellWidth * 0.16f).coerceIn(12f, 24f)
+                    textPaint.color = Color.WHITE
+                    textPaint.textSize = tagR
+                    canvas.drawText("暴风", (left + right) * 0.5f, top + tagR + 8f, textPaint)
+                }
                 if (idx in lowConfidenceIndices) {
                     canvas.drawRect(left + 7f, top + 7f, right - 7f, bottom - 7f, lowConfPaint)
                 }

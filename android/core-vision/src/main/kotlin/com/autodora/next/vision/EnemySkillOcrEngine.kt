@@ -57,12 +57,16 @@ class EnemySkillOcrEngine(private val context: Context) {
     }
 
     /**
-     * Runs offline Chinese OCR on [screenBitmap] (typically upper 70% where enemy skill popups render),
-     * filters out greyed-out bypassed enemy skills, and returns structured WaveShieldChips.
+     * Runs offline Chinese OCR on [screenBitmap] across BOTH:
+     *  - 「齿轮 ⚙ → 關卡資訊」 full-screen stage info modal (expanded enemy skill panel spans ~8%..87% height)
+     *  - Long-press enemy skill popup in battle (~15%..72% height)
+     * Automatically skips top chrome/floating toolbar (<8%) and bottom action buttons (>87%), filters out
+     * ToS 2025.41 / 2026.2 greyed-out bypassed skills, and returns structured WaveShieldChips.
      */
     suspend fun recognizeEnemySkills(screenBitmap: Bitmap): ParsedEnemySkillResult {
-        val cropH = (screenBitmap.height * 0.72f).toInt().coerceIn(64, screenBitmap.height)
-        val roi = Bitmap.createBitmap(screenBitmap, 0, 0, screenBitmap.width, cropH)
+        val cropTop = (screenBitmap.height * 0.08f).toInt().coerceIn(0, screenBitmap.height - 64)
+        val cropBottom = (screenBitmap.height * 0.87f).toInt().coerceIn(cropTop + 64, screenBitmap.height)
+        val roi = Bitmap.createBitmap(screenBitmap, 0, cropTop, screenBitmap.width, cropBottom - cropTop)
         try {
             val visionText = runMlKitOcr(roi)
             val activeLines = ArrayList<String>()

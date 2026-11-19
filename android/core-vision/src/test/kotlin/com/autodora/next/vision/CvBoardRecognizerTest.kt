@@ -218,6 +218,7 @@ class CvBoardRecognizerTest {
         }
         assertTrue("Real Human-race orbs must detect Race badges (detected=${rec.raceBadgesDetected})", rec.raceBadgesDetected >= 18)
         assertEquals("Real vivid Water orbs must NOT be falsely flagged as Question orbs", 0, rec.questionOrbsDetected)
+        assertEquals("Real clean battle board must have zero false Storm flags", 0, rec.stormCellsDetected)
     }
 
     private fun loadRealVisionFrame(relPath: String): VisionFrame? {
@@ -281,6 +282,7 @@ class CvBoardRecognizerTest {
                 assertEquals("nov10_clean (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
             }
             assertEquals("nov10_clean zero false question orbs", 0, rec.questionOrbsDetected)
+            assertEquals("nov10_clean zero false storm cells", 0, rec.stormCellsDetected)
         }
 
         // 2) 2026 Disaster stage clean 30/30 all 6 elements
@@ -297,6 +299,7 @@ class CvBoardRecognizerTest {
                 assertEquals("disaster_clean (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
             }
             assertEquals("disaster_clean zero false question orbs", 0, rec.questionOrbsDetected)
+            assertEquals("disaster_clean zero false storm cells", 0, rec.stormCellsDetected)
         }
 
         // 3) Nov 2026 Lv.10 with white-rimmed Shield Heart (4) & Shield Light (3) & Enchanted Water (2)
@@ -313,6 +316,7 @@ class CvBoardRecognizerTest {
                 assertEquals("nov10_shield (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
             }
             assertEquals("nov10_shield zero false question orbs", 0, rec.questionOrbsDetected)
+            assertEquals("nov10_shield zero false storm cells", 0, rec.stormCellsDetected)
         }
 
         // 4) 2026 Extra 2 with heavily Enchanted orbs across all 6 elements (rows 0..3 unobscured; row 4 has subtitle overlay, (1,4) is active drag gap)
@@ -328,6 +332,7 @@ class CvBoardRecognizerTest {
                 if (expected[i] == Element.UNKNOWN) continue
                 assertEquals("extra2_ench (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
             }
+            assertEquals("extra2_ench zero false storm cells", 0, rec.stormCellsDetected)
         }
     }
 
@@ -347,6 +352,39 @@ class CvBoardRecognizerTest {
             assertEquals("emu_battle_01 (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
         }
         assertEquals("emu_battle_01 must have zero false question orbs", 0, rec.questionOrbsDetected)
+        assertEquals("emu_battle_01 must have zero false storm cells", 0, rec.stormCellsDetected)
         assertTrue("emu_battle_01 average confidence should be high (actual=${rec.averageConfidence})", rec.averageConfidence >= 0.80f)
+    }
+
+    @Test
+    fun `live 1080x2400 emulator Storm tornado column detects all 5 storm cells and recognizes all 25 unobscured orbs`() {
+        val frame = loadRealVisionFrame("real_tos_samples/emu_mech_check.png") ?: return
+        val geom = BoardGeometry(0f, 1267.7f, 1080f, 2167.7f, 6, 5)
+        val rec = CvBoardRecognizer().recognizeFrames(listOf(frame), geom)
+
+        // Column 0 (rows 0..4) is covered by a full-column Storm / Tornado overlay
+        assertEquals("Should detect exactly 5 Storm cells on Col 0", 5, rec.stormCellsDetected)
+        for (r in 0 until 5) {
+            val idx = r * 6 + 0
+            assertTrue("Cell ($r,0) must have TileFlagBits.STORM", (rec.board.tileFlags[idx] and TileFlagBits.STORM) != 0)
+            assertFalse("Storm cell ($r,0) must NOT be falsely flagged as low-confidence", idx in rec.lowConfidenceIndices)
+        }
+
+        // Columns 1..5 (25 unobscured orbs) must have ZERO Storm flags and 25/25 exact element recognition
+        val expectedCols1to5 = parseGrid(
+            "D L L D H",
+            "D W G D W",
+            "L H D G D",
+            "G D D G G",
+            "H D G W F"
+        )
+        for (r in 0 until 5) {
+            for (c in 1 until 6) {
+                val idx = r * 6 + c
+                assertEquals("Non-storm cell ($r,$c) must NOT have TileFlagBits.STORM", 0, rec.board.tileFlags[idx] and TileFlagBits.STORM)
+                assertEquals("emu_mech_check ($r,$c) mismatch", expectedCols1to5[r * 5 + (c - 1)], rec.board.cells[idx].element)
+            }
+        }
+        assertEquals("Storm board must have zero false question orbs", 0, rec.questionOrbsDetected)
     }
 }

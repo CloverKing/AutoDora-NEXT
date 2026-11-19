@@ -17,7 +17,7 @@
   - `:core-model`：跨层不可变数据模型与两层规则组合器（`TeamBasePreset` + `WaveShieldChip`）
   - `:solver-jni`：C++20 解盘核心 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`，开启 `-O3` 优化）
   - `:core-capture`：Android 14/15/16+ 合规 `MediaProjection` 零拷贝前台屏幕采集 + 三色/残血血条锚定与动态棋盘规格探测
-  - `:core-vision`：多帧时间融合 CV 识盘（6 属性 + 强化星芒 + 白边护盾珠 + 问号/种族角标 + 拼图金边）、先露后藏问号记忆快照、以及 **ML Kit 离线中文 OCR 敌技识盾引擎**（热更新 `tos_enemy_skill_rules.json` + 2026 灰字已无视敌技自动过滤）
+  - `:core-vision`：多帧时间融合 CV 识盘（6 属性 + 强化星芒 + 白边护盾珠 + 问号/种族角标 + 拼图金边 + 暴风/龙卷风区域自动识别）、先露后藏问号记忆快照、以及 **ML Kit 离线中文 OCR 敌技识盾引擎**（覆盖「齿轮 ⚙ → 關卡資訊」与「长按敌技弹窗」双场景 `8%~87%` ROI + 截屏自动隐藏悬浮栏 + 热更新 `tos_enemy_skill_rules.json` + 2026 灰字已无视敌技自动过滤）
   - `:core-touch`：免 Root `AccessibilityService` 连续手势分段执行、45° 斜转优化、角色珠垂直下拉、按珠显形心跳续接、四档统一速度预设（`极速 2s` / `快转 3s` / `标准 5s` / `稳健 7s`）、方向逆转与急停强制抬手
   - `:core-data`：DataStore 设置持久化（含明亮/黑暗/随系统三主题、8~300 步上限、按住转开关）+ Room 队伍基底预设库（`AutoDoraDatabase` / `TeamPresetRepository`）+ `WaveShieldCatalog` / `ActiveStrategyStore`
   - `:app`：Material 3 4-Tab 启动台（概览 / 队伍 / 解盾 / 设置）、系统配色三态悬浮胶囊（`算` / `◀▶` / 统一 `行` / 内嵌 `停` / 仅路径 `线` / 仅网格 `校`）、游戏内 4-Tab 悬浮调参抽屉与 1:1 盘面编绘画笔

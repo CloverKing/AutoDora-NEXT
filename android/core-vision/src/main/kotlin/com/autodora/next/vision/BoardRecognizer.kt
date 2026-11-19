@@ -16,7 +16,8 @@ data class RecognitionResult(
     val questionOrbsDetected: Int = board.cells.count {
         it.element == Element.HIDDEN || (it.hazards and HazardBits.QUESTION) != 0
     },
-    val raceBadgesDetected: Int = 0
+    val raceBadgesDetected: Int = 0,
+    val stormCellsDetected: Int = 0
 )
 
 /**
