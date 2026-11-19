@@ -58,6 +58,7 @@
 - **无法辨识珠子的兜底策略**：`不处理 / 视为问号珠 / 问号珠 + 风化珠`。
 - **常用起点快速约束**：`无 / 左下 / 右下`（配合单格手选起终点形成完整红绿灯支持）。
 - **排珠 / 主角技长步数模式**：支持一键切换到高步数上限（20~80 步）并可配置延迟。
+- **按珠变盘 / 显形模式（`FullscreenQuestion` 问号‧转 / `WeatheringTurn` 风化‧转 / `SmokeMode` 烟雾）**：旧版 `DoraService` 支持先按住起手珠触发变盘/显形动画（`DELAY_WEATHERING_AND_QUESTION_TURN`），再截屏按变化后的盘面重新算路（旧版因 Java 算力慢需 Root 暂停游戏进程；AutoDora-NEXT 升级为免 Root `AccessibilityService` `continueStroke` 微心跳保活不抬手 + ~80ms C++20 原地急速重算 + 同一根手指无缝接续滑完）。
 
 #### 5. 算力、手感与预设管理（`page_main.xml`）
 - **算力复杂度档位（Beam Width）**：`微(10) / 低(30) / 中(50) / 高(100) / 超(300) / 极(500)` — 玩家无需懂算法就能在「秒出」与「极高 Combo」间权衡。
@@ -89,3 +90,4 @@
 4. **单格标记补齐「优先 / 保留 / 锁定」**：在 `CellState` 与悬浮编辑网中保留 `CELL_PRIORITY`（指定单颗必消）、`CELL_RESERVE`（指定单颗保留）以及「跨回合锁定标记」开关。
 5. **游戏内原地悬浮调参 + Top-K 多方案翻页 + 消珠预览条**：保留旧版最受老玩家好评的悬浮窗工作流。
 6. **搜索复杂度档位 + 最快解/最佳解模式**：在 C++ Beam Search 引擎中直接暴露 `beamWidth` 档位（10 ~ 500）与 `earlyStopOnGoal`（满足指定 Combo / 盾牌即早停的最快解模式）。
+7. **按珠显形‧即时重算模式（Hold-and-Replan）**：将旧版 `FullscreenQuestion`（问号‧转）/ `WeatheringTurn`（风化‧转）/ `SmokeMode`（烟雾）升级为纯免 Root 实现——按住（或轻移 1 格）触发变盘动画并用 `willContinue = true` 心跳保活，变盘后零拷贝截屏、锁定当前按住格为 `fixedStartCell` 进行 ~80ms C++20 急速重算，再经 `continueStroke()` 无缝接续滑完。
