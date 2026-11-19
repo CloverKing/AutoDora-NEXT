@@ -125,15 +125,16 @@ class CvBoardRecognizer : BoardRecognizer {
         var outerRingSatSum = 0f
         var outerRingCount = 0
 
-        // Sample 2 concentric rings inside the rune orb (0.36*r and 0.62*r, 16 angles each)
-        // IMPORTANT: Exclude top-right quadrant (dx > 0 && dy < 0) where modern ToS renders
-        // black-and-white Race Badges (人类/神/魔/龙/兽/妖/机械) so they NEVER pollute orb color or enchanted gleam!
-        val ringRadii = floatArrayOf(radius * 0.36f, radius * 0.62f)
-        val angles = 16
+        // Sample 3 concentric rings inside the rune orb (0.18*r, 0.36*r, and 0.62*r)
+        //  - 0.18*r inner ring captures vivid Heart/Light core even inside white-rimmed Shield/Enchanted orbs!
+        //  - Strictly exclude top-right quadrant (dx > 0 && dy < 0) where modern ToS renders B&W Race Badges!
+        val ringRadii = floatArrayOf(radius * 0.18f, radius * 0.36f, radius * 0.62f)
+        val ringAngles = intArrayOf(8, 16, 16)
 
         for (f in frames) {
             var frameStarPixels = 0
             for ((ringIdx, ringR) in ringRadii.withIndex()) {
+                val angles = ringAngles[ringIdx]
                 for (a in 0 until angles) {
                     val theta = (2.0 * PI * a / angles).toFloat()
                     val dx = cos(theta) * ringR
@@ -147,14 +148,14 @@ class CvBoardRecognizer : BoardRecognizer {
                     val (h, s, v) = rgbToHsv(argb)
                     sampleCount++
 
-                    if (ringIdx == 1) {
+                    if (ringIdx == 2) {
                         outerRingValSum += v
                         outerRingSatSum += s
                         outerRingCount++
                     }
 
-                    // Detect bright white specular star sparkle (only on inner ring outside race badge)
-                    if (ringIdx == 0 && v >= 0.93f && s <= 0.18f) {
+                    // Detect bright white specular star sparkle (only on middle ring outside race badge)
+                    if (ringIdx == 1 && v >= 0.93f && s <= 0.18f) {
                         frameStarPixels++
                     }
 
@@ -163,7 +164,7 @@ class CvBoardRecognizer : BoardRecognizer {
                         continue
                     }
 
-                    val weight = s * (0.4f + 0.6f * v)
+                    val weight = s * (0.4f + 0.6f * v) * (if (ringIdx == 0) 1.25f else 1.0f)
                     totalSatWeight += weight
                     val elIdx = classifyHueToElement(h, s, v)
                     if (elIdx >= 0) {
@@ -294,14 +295,14 @@ class CvBoardRecognizer : BoardRecognizer {
     }
 
     /**
-     * Real-game calibrated Hue-Saturation-Value classifier for Tower of Saviors 6 rune elements:
-     * Verified on real Xiaomi 15 battle screenshot:
+     * Multi-screenshot calibrated Hue-Saturation-Value classifier for Tower of Saviors 6 rune elements:
+     * Verified across Xiaomi 15 real battle, 2026 App Store official HD, and 2026 @towerofsaviors YouTube gameplay:
      *  - Fire (红):  H < 22° or >= 346°
      *  - Light (黄): H ∈ [22°, 74°]
      *  - Wood (绿):  H ∈ [74°, 162°]
      *  - Water (蓝): H ∈ [162°, 248°]
-     *  - Dark (紫):  H ∈ [248°, 316°] (modern ToS bright magenta-purple Dark reaches ~314°!)
-     *  - Heart (粉): H ∈ [316°, 346°]
+     *  - Dark (紫):  H ∈ [248°, 310°] (real 2026 Dark peaks at 285°..303°)
+     *  - Heart (粉): H ∈ [310°, 346°] (real 2026 Heart spans 310°..331°, peak ~326°)
      */
     private fun classifyHueToElement(h: Float, s: Float, v: Float): Int {
         return when {
@@ -309,8 +310,8 @@ class CvBoardRecognizer : BoardRecognizer {
             h in 22f..74f -> Element.LIGHT.code
             h in 74f..162f -> Element.WOOD.code
             h in 162f..248f -> Element.WATER.code
-            h in 248f..316f -> Element.DARK.code
-            h in 316f..346f -> Element.HEART.code
+            h in 248f..310f -> Element.DARK.code
+            h in 310f..346f -> Element.HEART.code
             else -> -1
         }
     }

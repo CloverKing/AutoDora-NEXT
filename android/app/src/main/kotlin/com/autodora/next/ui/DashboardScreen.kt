@@ -300,8 +300,8 @@ fun DashboardScreen(
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                     CompactSwitchRow(
-                        title = "独立红色急停按钮",
-                        subtitle = "算路或划屏时一键中止",
+                        title = "主工具栏内嵌急停按钮（停）",
+                        subtitle = "算路或划屏时在悬浮主栏一键中止",
                         checked = settings.showEmergencyStop,
                         onCheckedChange = { v -> onUpdateSettings { it.copy(showEmergencyStop = v) } }
                     )

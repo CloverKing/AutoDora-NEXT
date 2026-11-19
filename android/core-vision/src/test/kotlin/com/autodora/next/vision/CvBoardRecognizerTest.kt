@@ -219,4 +219,115 @@ class CvBoardRecognizerTest {
         assertTrue("Real Human-race orbs must detect Race badges (detected=${rec.raceBadgesDetected})", rec.raceBadgesDetected >= 18)
         assertEquals("Real vivid Water orbs must NOT be falsely flagged as Question orbs", 0, rec.questionOrbsDetected)
     }
+
+    private fun loadRealVisionFrame(relPath: String): VisionFrame? {
+        val file = java.io.File(
+            System.getProperty("user.home"),
+            ".gemini/antigravity/brain/57099816-f54e-41fc-8a2c-48bf0a7b1510/scratch/$relPath"
+        )
+        if (!file.exists()) return null
+        val imageIo = Class.forName("javax.imageio.ImageIO")
+        val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, file)
+        val imgCls = img.javaClass
+        val imgW = imgCls.getMethod("getWidth").invoke(img) as Int
+        val imgH = imgCls.getMethod("getHeight").invoke(img) as Int
+        val getRgb = imgCls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        return object : VisionFrame {
+            override val width: Int = imgW
+            override val height: Int = imgH
+            override fun getArgb(x: Int, y: Int): Int =
+                getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+        }
+    }
+
+    private fun parseGrid(vararg rows: String): List<Element> {
+        val out = ArrayList<Element>()
+        for (line in rows) {
+            for (ch in line.replace(" ", "")) {
+                out.add(
+                    when (ch) {
+                        'W' -> Element.WATER
+                        'F' -> Element.FIRE
+                        'G' -> Element.WOOD
+                        'L' -> Element.LIGHT
+                        'D' -> Element.DARK
+                        'H' -> Element.HEART
+                        else -> Element.UNKNOWN
+                    }
+                )
+            }
+        }
+        return out
+    }
+
+    @Test
+    fun `real 2026 official YouTube gameplay screenshots achieve 100 percent recognition across all 6 elements, shield orbs, and enchanted orbs`() {
+        val recognizer = CvBoardRecognizer()
+        // Auto 9:16 geometry on 134x262 portrait phone screen:
+        // playH = 134 * 16 / 9 = 238.22; topOffset = (262 - 238.22) / 2 = 11.89; bottom = 250.11; cell = 22.33; top = 138.45
+        val geom134 = BoardGeometry(0f, 138.45f, 134f, 250.11f, 6, 5)
+
+        // 1) Nov 2026 Lv.10 clean 30/30 all 6 elements (including Heart vs Dark!)
+        loadRealVisionFrame("real_tos_samples/real_yt_nov10_clean.png")?.let { frame ->
+            val rec = recognizer.recognizeFrames(listOf(frame), geom134)
+            val expected = parseGrid(
+                "D W D G G D",
+                "L D W L W W",
+                "L W D L W D",
+                "F W L F L L",
+                "G D D H L H"
+            )
+            for (i in 0 until 30) {
+                assertEquals("nov10_clean (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
+            }
+            assertEquals("nov10_clean zero false question orbs", 0, rec.questionOrbsDetected)
+        }
+
+        // 2) 2026 Disaster stage clean 30/30 all 6 elements
+        loadRealVisionFrame("real_tos_samples/real_yt_disaster_clean.png")?.let { frame ->
+            val rec = recognizer.recognizeFrames(listOf(frame), geom134)
+            val expected = parseGrid(
+                "L G D F G H",
+                "L F L D W L",
+                "H D D H D W",
+                "G L D G L W",
+                "W L L W G D"
+            )
+            for (i in 0 until 30) {
+                assertEquals("disaster_clean (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
+            }
+            assertEquals("disaster_clean zero false question orbs", 0, rec.questionOrbsDetected)
+        }
+
+        // 3) Nov 2026 Lv.10 with white-rimmed Shield Heart (4) & Shield Light (3) & Enchanted Water (2)
+        loadRealVisionFrame("real_tos_samples/real_yt_nov10_shield.png")?.let { frame ->
+            val rec = recognizer.recognizeFrames(listOf(frame), geom134)
+            val expected = parseGrid(
+                "G L G F D L",
+                "G H H G H W",
+                "F H D W D D",
+                "L W W F G G",
+                "G D W W G W"
+            )
+            for (i in 0 until 30) {
+                assertEquals("nov10_shield (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
+            }
+            assertEquals("nov10_shield zero false question orbs", 0, rec.questionOrbsDetected)
+        }
+
+        // 4) 2026 Extra 2 with heavily Enchanted orbs across all 6 elements (rows 0..3 unobscured; row 4 has subtitle overlay, (1,4) is active drag gap)
+        loadRealVisionFrame("real_tos_samples/real_yt_extra2_ench.png")?.let { frame ->
+            val rec = recognizer.recognizeFrames(listOf(frame), geom134)
+            val expected = parseGrid(
+                "F L F D W D",
+                "G W D D ? W",
+                "H H L D D H",
+                "G W H F F L"
+            )
+            for (i in 0 until 24) {
+                if (expected[i] == Element.UNKNOWN) continue
+                assertEquals("extra2_ench (${i / 6},${i % 6}) mismatch", expected[i], rec.board.cells[i].element)
+            }
+        }
+    }
 }

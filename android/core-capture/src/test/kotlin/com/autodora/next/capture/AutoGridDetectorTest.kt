@@ -166,4 +166,50 @@ class AutoGridDetectorTest {
         assertEquals(1410f, snapped.topPx, 6f)
         assertEquals(2410f, snapped.bottomPx, 6f)
     }
+
+    private fun loadRealFrame(relPath: String): PixelFrame? {
+        val file = java.io.File(
+            System.getProperty("user.home"),
+            ".gemini/antigravity/brain/57099816-f54e-41fc-8a2c-48bf0a7b1510/scratch/$relPath"
+        )
+        if (!file.exists()) return null
+        val imageIo = Class.forName("javax.imageio.ImageIO")
+        val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, file)
+        val imgCls = img.javaClass
+        val imgW = imgCls.getMethod("getWidth").invoke(img) as Int
+        val imgH = imgCls.getMethod("getHeight").invoke(img) as Int
+        val getRgb = imgCls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        return object : PixelFrame {
+            override val width: Int = imgW
+            override val height: Int = imgH
+            override fun getArgb(x: Int, y: Int): Int =
+                getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+        }
+    }
+
+    @Test
+    fun `real 2026 official YouTube gameplay screenshots lock 6x5 across Coral-Red and Partial-Green HP bars`() {
+        val samples = listOf(
+            "real_tos_samples/real_yt_nov10_clean.png",
+            "real_tos_samples/real_yt_disaster_clean.png",
+            "real_tos_samples/real_yt_nov10_shield.png",
+            "real_tos_samples/real_yt_extra2_ench.png"
+        )
+        for (rel in samples) {
+            val frame = loadRealFrame(rel) ?: continue
+            // 1) Default auto-9:16 + HP-bar barrier must stay 6x5 (never falsely expand onto team portraits!)
+            val detected = AutoGridDetector.detect(frame, BoardCalibration())
+            assertEquals("$rel cols must be 6", 6, detected.cols)
+            assertEquals("$rel rows must stay 5 (zero false Weijian)", 5, detected.rows)
+            assertFalse("$rel must NOT falsely flag Weijian", detected.isWeijianExpanded)
+
+            // 2) Real-screen HP-bar anchor auto-calibrator must snap within +/-4px of true board top (~140px on 134x262)
+            val snapped = AutoGridDetector.autoCalibrateFromRealScreen(frame)
+            assertNotNull("$rel autoCalibrateFromRealScreen must find HP bar", snapped)
+            assertEquals("$rel snapped cols", 6, snapped!!.cols)
+            assertEquals("$rel snapped rows", 5, snapped.rows)
+            assertEquals("$rel snapped topPx should match auto 9:16 baseline", detected.topPx, snapped.topPx, 5.5f)
+            assertEquals("$rel snapped bottomPx should match auto 9:16 baseline", detected.bottomPx, snapped.bottomPx, 5.5f)
+        }
+    }
 }

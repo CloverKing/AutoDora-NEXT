@@ -161,10 +161,83 @@ object AutoGridDetector {
     }
 
     /**
+     * Checks whether horizontal scanline [y] matches a Tower of Saviors HP bar:
+     *  - Full/mid HP bar in Coral-Pink/Red, Bright Green, or Cyan Shield
+     *  - Low-HP partially-filled bar (vivid green/coral/cyan on the left + dark empty track on the right)
+     */
+    private fun isHpBarScanline(
+        frame: PixelFrame,
+        y: Int,
+        scanLeft: Int,
+        scanRight: Int,
+        stepX: Int
+    ): Boolean {
+        val span = (scanRight - scanLeft).coerceAtLeast(1)
+        val leftCut = scanLeft + (span * 0.24f).roundToInt()
+
+        var greenHits = 0
+        var coralRedHits = 0
+        var cyanHits = 0
+        var totalX = 0
+
+        var leftHpHits = 0
+        var leftTotal = 0
+        var rightDarkHits = 0
+        var rightVividHits = 0
+        var rightTotal = 0
+
+        var x = scanLeft
+        while (x <= scanRight) {
+            totalX++
+            val argb = frame.getArgb(x, y)
+            val r = (argb ushr 16) and 0xFF
+            val g = (argb ushr 8) and 0xFF
+            val b = argb and 0xFF
+
+            val isGreen = g >= 115 && (g - r) >= 32 && (g - b) >= 32
+            val isCoral = r >= 155 && (r - g) >= 32 && (r - b) >= 18
+            val isCyan = b >= 145 && g >= 125 && (b - r) >= 40
+            if (isGreen) greenHits++
+            else if (isCoral) coralRedHits++
+            else if (isCyan) cyanHits++
+
+            if (x <= leftCut) {
+                leftTotal++
+                if (isGreen || isCoral || isCyan) leftHpHits++
+            } else {
+                rightTotal++
+                val maxCh = max(r, max(g, b))
+                val minCh = min(r, min(g, b))
+                // Empty HP track is a dark charcoal slot (allow white monochrome HP text on far right)
+                if (maxCh <= 85) rightDarkHits++
+                // Vivid colored pixels indicate an orb row (e.g. Weijian 6x6..6x8), NEVER an empty HP track!
+                if ((maxCh - minCh) >= 50 && maxCh >= 95) rightVividHits++
+            }
+            x += stepX
+        }
+        if (totalX == 0) return false
+
+        val greenRatio = greenHits.toFloat() / totalX
+        val coralRatio = coralRedHits.toFloat() / totalX
+        val cyanRatio = cyanHits.toFloat() / totalX
+        if (greenRatio >= 0.30f || coralRatio >= 0.32f || cyanRatio >= 0.35f) {
+            return true
+        }
+
+        // Low-HP partial player HP bar (e.g. 15%..30% remaining HP on left, dark empty track with ZERO vivid orbs on right)
+        val leftRatio = if (leftTotal > 0) leftHpHits.toFloat() / leftTotal else 0f
+        val rightDarkRatio = if (rightTotal > 0) rightDarkHits.toFloat() / rightTotal else 0f
+        val rightVividRatio = if (rightTotal > 0) rightVividHits.toFloat() / rightTotal else 1f
+        return leftRatio >= 0.42f && rightDarkRatio >= 0.45f && rightVividRatio <= 0.12f
+    }
+
+    /**
      * Detects the horizontal Tower of Saviors team HP bar directly above [rowTopPx]
      * (band: [rowTopPx - 0.30*cellH .. rowTopPx - 0.02*cellH]).
-     * On real Xiaomi 15 1200x2670 battle screenshots, the green HP bar sits at y=1364..1398
-     * directly above row 0 (y=1410), spanning >60% of board width.
+     * Multi-screenshot calibrated across ALL 3 authentic ToS HP-bar styles (including low-HP partial bars!):
+     *  - Classic Coral-Pink / Red HP bar (verified on official 2026 App Store & YouTube gameplay)
+     *  - Bright Green HP bar (full & partial, verified on real Xiaomi 15 & 2026 YouTube Extra 2)
+     *  - Cyan / Blue Shielded HP bar
      */
     internal fun hasHpBarBarrier(
         frame: PixelFrame,
@@ -175,13 +248,13 @@ object AutoGridDetector {
     ): Boolean {
         val bandTop = (rowTopPx - cellH * 0.30f).roundToInt().coerceAtLeast(0)
         val bandBottom = (rowTopPx - cellH * 0.02f).roundToInt().coerceIn(bandTop, frame.height - 1)
-        if (bandBottom - bandTop < 4) return false
+        if (bandBottom - bandTop < 3) return false
 
         val scanLeft = (leftPx + (rightPx - leftPx) * 0.08f).roundToInt().coerceAtLeast(0)
         val scanRight = (rightPx - (rightPx - leftPx) * 0.08f).roundToInt().coerceAtMost(frame.width - 1)
-        if (scanRight - scanLeft < 40) return false
+        if (scanRight - scanLeft < 30) return false
 
-        val stepX = max(4, (scanRight - scanLeft) / 80)
+        val stepX = max(2, (scanRight - scanLeft) / 80)
         val stepY = max(1, (bandBottom - bandTop) / 18)
 
         var hpLikeRows = 0
@@ -189,111 +262,105 @@ object AutoGridDetector {
         var y = bandTop
         while (y <= bandBottom) {
             scannedRows++
-            var greenHits = 0
-            var lowHpRedYellowHits = 0
-            var totalX = 0
-            var x = scanLeft
-            while (x <= scanRight) {
-                totalX++
-                val argb = frame.getArgb(x, y)
-                val r = (argb ushr 16) and 0xFF
-                val g = (argb ushr 8) and 0xFF
-                val b = argb and 0xFF
-                // Classic ToS bright green HP bar (even behind white HP numbers!)
-                if (g >= 115 && (g - r) >= 35 && (g - b) >= 35) {
-                    greenHits++
-                } else if (r >= 160 && b <= 75 && (r - b) >= 95 && g in 20..195) {
-                    // Low-HP warning bar (yellow/orange/red)
-                    lowHpRedYellowHits++
-                }
-                x += stepX
-            }
-            if (totalX > 0) {
-                val greenRatio = greenHits.toFloat() / totalX
-                val lowHpRatio = lowHpRedYellowHits.toFloat() / totalX
-                if (greenRatio >= 0.32f || lowHpRatio >= 0.45f) {
-                    hpLikeRows++
-                }
+            if (isHpBarScanline(frame, y, scanLeft, scanRight, stepX)) {
+                hpLikeRows++
             }
             y += stepY
         }
-        return scannedRows > 0 && hpLikeRows >= max(3, scannedRows / 4)
+        return scannedRows > 0 && hpLikeRows >= max(2, scannedRows / 4)
     }
 
     /**
-     * Real-game screenshot auto-calibrator: locates the ToS horizontal green HP bar directly
-     * above the 6x5 battle board, snaps topPx = hpBarBottomY + 0.06 * cellSize, and validates
-     * all 5 rows contain real orbs before returning pixel-accurate 6x5 BoardGeometry.
+     * Multi-screenshot calibrated auto-calibrator: collects ALL candidate horizontal HP bars
+     * (Coral-Pink/Red, Green full/partial, Cyan) in the middle third of the screen, validates
+     * each candidate against the 5-row orb grid directly below it (cleanly distinguishing the
+     * Player HP bar right above row 0 from any Boss HP bar above team portraits!), and picks
+     * the highest-scoring true 6x5 board geometry.
      */
     fun autoCalibrateFromRealScreen(frame: PixelFrame): BoardGeometry? {
         val w = frame.width
         val h = frame.height
-        if (w < 240 || h < 360) return null
+        if (w < 120 || h < 200) return null
 
         val cellSize = w / 6f
+        val autoBase = BoardCalibration().toBase6x5Geometry(w, h)
         val yStart = (h * 0.34f).roundToInt()
-        val yEnd = (h * 0.66f).roundToInt()
+        val yEnd = min((h * 0.64f).roundToInt(), (h - cellSize * 4.85f).roundToInt()).coerceAtLeast(yStart)
         val xStart = (w * 0.08f).roundToInt()
         val xEnd = (w * 0.92f).roundToInt()
-        val stepX = max(4, (xEnd - xStart) / 90)
+        val stepX = max(2, (xEnd - xStart) / 90)
+        val stepY = if (h >= 600) 2 else 1
 
-        var bestRunStart = -1
-        var bestRunEnd = -1
+        val minBarH = (cellSize * 0.06f).roundToInt().coerceAtLeast(2)
+        val maxBarH = (cellSize * 0.35f).roundToInt().coerceAtLeast(minBarH + 2)
+
+        val candidates = ArrayList<Pair<Int, Int>>() // (runStart, runEnd)
         var curStart = -1
-
-        for (y in yStart..yEnd step 2) {
-            var greenHits = 0
-            var totalX = 0
-            var x = xStart
-            while (x <= xEnd) {
-                totalX++
-                val argb = frame.getArgb(x, y)
-                val r = (argb ushr 16) and 0xFF
-                val g = (argb ushr 8) and 0xFF
-                val b = argb and 0xFF
-                if (g >= 115 && (g - r) >= 35 && (g - b) >= 35) greenHits++
-                x += stepX
-            }
-            val isGreenBarRow = totalX > 0 && (greenHits.toFloat() / totalX) >= 0.34f
-            if (isGreenBarRow) {
+        var y = yStart
+        while (y <= yEnd) {
+            if (isHpBarScanline(frame, y, xStart, xEnd, stepX)) {
                 if (curStart < 0) curStart = y
-                val curHeight = y - curStart + 2
-                val bestHeight = if (bestRunStart >= 0) bestRunEnd - bestRunStart + 2 else 0
-                if (curHeight >= bestHeight) {
-                    bestRunStart = curStart
-                    bestRunEnd = y
-                }
             } else {
-                curStart = -1
+                if (curStart >= 0) {
+                    val runEnd = y - stepY
+                    val barH = runEnd - curStart + stepY
+                    if (barH in minBarH..maxBarH) {
+                        candidates.add(curStart to runEnd)
+                    }
+                    curStart = -1
+                }
+            }
+            y += stepY
+        }
+        if (curStart >= 0) {
+            val runEnd = yEnd
+            val barH = runEnd - curStart + stepY
+            if (barH in minBarH..maxBarH) {
+                candidates.add(curStart to runEnd)
             }
         }
 
-        val barHeight = if (bestRunStart >= 0) bestRunEnd - bestRunStart + 2 else 0
-        val minBarH = (cellSize * 0.07f).roundToInt().coerceAtLeast(8)
-        val maxBarH = (cellSize * 0.32f).roundToInt()
-        if (barHeight !in minBarH..maxBarH) return null
+        if (candidates.isEmpty()) return null
 
-        val boardTop = (bestRunEnd + cellSize * 0.06f).coerceIn(0f, h - cellSize * 5f)
-        val boardBottom = boardTop + cellSize * 5f
-        if (boardBottom > h + 4f) return null
+        var bestGeom: BoardGeometry? = null
+        var bestScore = Float.NEGATIVE_INFINITY
 
-        // Verify at least 4 of 5 rows exhibit strong orb vitality
-        var goodRows = 0
-        for (r in 0 until 5) {
-            val vit = rowOrbVitality(frame, 0f, boardTop + r * cellSize, cellSize, cellSize, 6)
-            if (vit >= 0.25f) goodRows++
+        for ((_, runEnd) in candidates) {
+            val boardTop = (runEnd + cellSize * 0.06f).coerceIn(0f, h - cellSize * 5f)
+            val boardBottom = boardTop + cellSize * 5f
+            if (boardBottom > h + 4f) continue
+
+            var goodRows = 0
+            var vitSum = 0f
+            var row0Vit = 0f
+            for (r in 0 until 5) {
+                val vit = rowOrbVitality(frame, 0f, boardTop + r * cellSize, cellSize, cellSize, 6)
+                if (r == 0) row0Vit = vit
+                vitSum += vit
+                if (vit >= 0.25f) goodRows++
+            }
+            if (goodRows < 4 || row0Vit < 0.22f) continue
+
+            val avgVit = vitSum / 5f
+            // Prefer candidates whose 5-row board has strong circular orb vitality AND sits near ToS's 9:16 layout
+            // (cleanly rejects Boss HP bars sitting ~1.2 cells higher above the square team portraits!)
+            val distCells = abs(boardTop - autoBase.topPx) / cellSize
+            val score = avgVit * 2.0f + (goodRows / 5f) * 0.8f - distCells * 0.65f
+            if (score > bestScore) {
+                bestScore = score
+                bestGeom = BoardGeometry(
+                    leftPx = 0f,
+                    topPx = boardTop,
+                    rightPx = w.toFloat(),
+                    bottomPx = boardBottom.coerceAtMost(h.toFloat()),
+                    cols = 6,
+                    rows = 5,
+                    isWeijianExpanded = false
+                )
+            }
         }
-        if (goodRows < 4) return null
 
-        return BoardGeometry(
-            leftPx = 0f,
-            topPx = boardTop,
-            rightPx = w.toFloat(),
-            bottomPx = boardBottom.coerceAtMost(h.toFloat()),
-            cols = 6,
-            rows = 5,
-            isWeijianExpanded = false
-        )
+        return bestGeom
     }
 
     /**

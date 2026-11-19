@@ -1,4 +1,4 @@
-$GradleArgs = if ($args.Count -gt 0) { $args } else { @(":core-model:test", ":app:assembleDebug") }
+$GradleArgs = if ($args.Count -gt 0) { @($args) } else { @(":core-model:test", ":app:assembleDebug") }
 
 $toolsRoot = Join-Path $env:USERPROFILE "Programs"
 
