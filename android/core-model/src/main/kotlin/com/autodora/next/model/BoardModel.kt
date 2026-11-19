@@ -51,6 +51,15 @@ object HazardBits {
     const val QUESTION = 1 shl 11
     const val PRIORITY = 1 shl 12
     const val RESERVE = 1 shl 13
+    const val FOAM = 1 shl 14
+    const val PURGATORY_FIRE = 1 shl 15
+    const val LIGHT_PRISON = 1 shl 16
+    const val CORRODED = 1 shl 17
+    const val LOCKED_HURT = 1 shl 18
+    const val LOCKED_ATK_DOWN = 1 shl 19
+    const val WITHERED_VINE = 1 shl 20
+    const val SLEEP = 1 shl 21
+    const val LUMINOUS = 1 shl 22
 }
 
 object TileFlagBits {
@@ -67,6 +76,13 @@ object TileFlagBits {
     const val BLACK_HOLE = 1 shl 9
     const val NO_PASS = 1 shl 10
     const val VOID_TILE = 1 shl 11
+    const val BARRIER_FIRST_WAVE_ONLY = 1 shl 12
+    const val SEALED_STONE = 1 shl 13
+    const val METAMORPHOSIS = 1 shl 14
+    const val TRAIL_CORROSION = 1 shl 15
+    const val MIASMA = 1 shl 16
+    const val CHAR_ORB_PASS = 1 shl 17
+    const val CHAR_ORB_END = 1 shl 18
 }
 
 @Serializable

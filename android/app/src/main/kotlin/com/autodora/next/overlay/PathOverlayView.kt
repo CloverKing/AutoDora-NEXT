@@ -1,31 +1,50 @@
 package com.autodora.next.overlay
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
+import android.view.MotionEvent
 import android.view.View
 import com.autodora.next.model.*
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 
 /**
- * Full-screen click-through overlay canvas aligned 1:1 with physical display pixels (including cutout/nav areas).
+ * Full-screen overlay canvas aligned 1:1 with physical display pixels (including cutout/nav areas).
  * Renders:
  *  - Dynamic Cols x Rows grid (highlights cyan border on 6x8 Weijian auto-expansion)
- *  - Recognized orb color corner badges + enchanted '+' star + golden puzzle borders + low-confidence yellow alert
+ *  - Recognized orb color corner badges + enchanted '+' star + race '族' tag + golden puzzle borders
+ *  - Flash-Reveal memorized translucent board overlay (sees straight through '?' Question Orbs!)
  *  - High-contrast gradient swipe trajectory with start ring, arrows, diagonal cues, character pull & end ring
- *  - Calibration mode interactive alignment guide
+ *  - Interactive direct touch-drag Calibration Mode (drag corners, edges, or pan box directly with finger!)
  */
 class PathOverlayView(context: Context) : View(context) {
 
+    enum class DragHandle { NONE, MOVE, LEFT, RIGHT, TOP, BOTTOM, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+
+    var onCalibrationBoundsChanged: ((leftPx: Float, topPx: Float, rightPx: Float, bottomPx: Float, finished: Boolean) -> Unit)? = null
+
     private var geometry: BoardGeometry? = null
     private var boardState: BoardState? = null
+    private var memorizedOverlayBoard: BoardState? = null
     private var lowConfidenceIndices: Set<Int> = emptySet()
     private var solution: SolutionPath? = null
     private var showPath: Boolean = true
     private var showOrbBadges: Boolean = true
     private var calibrationMode: Boolean = false
     private var countdownText: String? = null
+
+    // Touch-drag calibration state
+    private var activeHandle: DragHandle = DragHandle.NONE
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var dragInitLeft = 0f
+    private var dragInitTop = 0f
+    private var dragInitRight = 0f
+    private var dragInitBottom = 0f
 
     private val gridBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -83,10 +102,12 @@ class PathOverlayView(context: Context) : View(context) {
         showPath: Boolean,
         showOrbBadges: Boolean,
         calibrationMode: Boolean,
-        countdownText: String? = null
+        countdownText: String? = null,
+        memorizedOverlayBoard: BoardState? = null
     ) {
         this.geometry = geometry
         this.boardState = board
+        this.memorizedOverlayBoard = memorizedOverlayBoard
         this.lowConfidenceIndices = lowConfidence.toSet()
         this.solution = solution
         this.showPath = showPath
@@ -94,6 +115,115 @@ class PathOverlayView(context: Context) : View(context) {
         this.calibrationMode = calibrationMode
         this.countdownText = countdownText
         invalidate()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!calibrationMode) return false
+        val g = geometry ?: return false
+        val x = event.rawX
+        val y = event.rawY
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                activeHandle = hitTestHandle(x, y, g)
+                if (activeHandle == DragHandle.NONE) return false
+                dragStartX = x
+                dragStartY = y
+                dragInitLeft = g.leftPx
+                dragInitTop = g.topPx
+                dragInitRight = g.rightPx
+                dragInitBottom = g.bottomPx
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (activeHandle == DragHandle.NONE) return false
+                applyDragDelta(x - dragStartX, y - dragStartY, finished = false)
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (activeHandle == DragHandle.NONE) return false
+                applyDragDelta(x - dragStartX, y - dragStartY, finished = true)
+                activeHandle = DragHandle.NONE
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun hitTestHandle(x: Float, y: Float, g: BoardGeometry): DragHandle {
+        val cornerSlop = 64f
+        val edgeSlop = 44f
+        if (hypot(x - g.leftPx, y - g.topPx) <= cornerSlop) return DragHandle.TOP_LEFT
+        if (hypot(x - g.rightPx, y - g.topPx) <= cornerSlop) return DragHandle.TOP_RIGHT
+        if (hypot(x - g.leftPx, y - g.bottomPx) <= cornerSlop) return DragHandle.BOTTOM_LEFT
+        if (hypot(x - g.rightPx, y - g.bottomPx) <= cornerSlop) return DragHandle.BOTTOM_RIGHT
+        if (y in (g.topPx - edgeSlop)..(g.bottomPx + edgeSlop)) {
+            if (abs(x - g.leftPx) <= edgeSlop) return DragHandle.LEFT
+            if (abs(x - g.rightPx) <= edgeSlop) return DragHandle.RIGHT
+        }
+        if (x in (g.leftPx - edgeSlop)..(g.rightPx + edgeSlop)) {
+            if (abs(y - g.topPx) <= edgeSlop) return DragHandle.TOP
+            if (abs(y - g.bottomPx) <= edgeSlop) return DragHandle.BOTTOM
+        }
+        if (x in g.leftPx..g.rightPx && y in g.topPx..g.bottomPx) return DragHandle.MOVE
+        return DragHandle.NONE
+    }
+
+    private fun applyDragDelta(dx: Float, dy: Float, finished: Boolean) {
+        val maxW = width.toFloat().coerceAtLeast(300f)
+        val maxH = height.toFloat().coerceAtLeast(500f)
+        val minBoardW = maxW * 0.45f
+        val minBoardH = minBoardW * (5f / 6f) * 0.75f
+
+        var l = dragInitLeft
+        var t = dragInitTop
+        var r = dragInitRight
+        var b = dragInitBottom
+
+        when (activeHandle) {
+            DragHandle.MOVE -> {
+                val w = r - l
+                val h = b - t
+                l = (l + dx).coerceIn(0f, maxW - w)
+                r = l + w
+                b = (b + dy).coerceIn(h, maxH)
+                t = b - h
+            }
+            DragHandle.LEFT -> l = (l + dx).coerceIn(0f, r - minBoardW)
+            DragHandle.RIGHT -> r = (r + dx).coerceIn(l + minBoardW, maxW)
+            DragHandle.TOP -> t = (t + dy).coerceIn(0f, b - minBoardH)
+            DragHandle.BOTTOM -> b = (b + dy).coerceIn(t + minBoardH, maxH)
+            DragHandle.TOP_LEFT -> {
+                l = (l + dx).coerceIn(0f, r - minBoardW)
+                t = (t + dy).coerceIn(0f, b - minBoardH)
+            }
+            DragHandle.TOP_RIGHT -> {
+                r = (r + dx).coerceIn(l + minBoardW, maxW)
+                t = (t + dy).coerceIn(0f, b - minBoardH)
+            }
+            DragHandle.BOTTOM_LEFT -> {
+                l = (l + dx).coerceIn(0f, r - minBoardW)
+                b = (b + dy).coerceIn(t + minBoardH, maxH)
+            }
+            DragHandle.BOTTOM_RIGHT -> {
+                r = (r + dx).coerceIn(l + minBoardW, maxW)
+                b = (b + dy).coerceIn(t + minBoardH, maxH)
+            }
+            DragHandle.NONE -> return
+        }
+
+        geometry = BoardGeometry(
+            leftPx = l,
+            topPx = t,
+            rightPx = r,
+            bottomPx = b,
+            cols = 6,
+            rows = 5,
+            isWeijianExpanded = false
+        )
+        invalidate()
+        onCalibrationBoundsChanged?.invoke(l, t, r, b, finished)
     }
 
     private val screenLoc = IntArray(2)
@@ -111,8 +241,14 @@ class PathOverlayView(context: Context) : View(context) {
         }
 
         // 1. Calibration or subtle active grid frame
-        if (calibrationMode || (showPath && (boardState != null || solution != null))) {
+        if (calibrationMode || (showPath && (boardState != null || memorizedOverlayBoard != null || solution != null))) {
             drawGrid(canvas, g)
+        }
+
+        // 1.5 Flash-Reveal Memorized Snapshot translucent overlay (透视全版问号珠!)
+        val mem = memorizedOverlayBoard
+        if (!calibrationMode && mem != null && mem.cols == g.cols && mem.rows == g.rows) {
+            drawMemorizedOverlay(canvas, g, mem)
         }
 
         // 2. Recognized orb badges & detected puzzle / low-confidence outlines
@@ -172,13 +308,51 @@ class PathOverlayView(context: Context) : View(context) {
                     canvas.drawLine(cx, cy - arm, cx, cy + arm, crossPaint)
                 }
             }
+            // Draw draggable corner handles & edge midpoint bars!
+            val handleR = 18f
+            val corners = arrayOf(
+                g.leftPx to g.topPx,
+                g.rightPx to g.topPx,
+                g.leftPx to g.bottomPx,
+                g.rightPx to g.bottomPx
+            )
+            for ((hx, hy) in corners) {
+                fillPaint.color = Color.argb(240, 0, 235, 255)
+                canvas.drawCircle(hx, hy, handleR, fillPaint)
+                gridBorderPaint.color = Color.WHITE
+                gridBorderPaint.strokeWidth = 4f
+                canvas.drawCircle(hx, hy, handleR, gridBorderPaint)
+            }
             // Banner label above grid
-            val label = "校准模式 ${g.cols}×${g.rows} (${g.cellWidth.toInt()}px)"
-            fillPaint.color = Color.argb(200, 0, 30, 45)
+            val label = "拖四角/边线对齐 ${g.cols}×${g.rows} (${g.cellWidth.toInt()}×${g.cellHeight.toInt()}px)"
+            fillPaint.color = Color.argb(215, 0, 30, 45)
             val bannerY = (g.topPx - 56f).coerceAtLeast(10f)
-            canvas.drawRoundRect(g.leftPx + 20f, bannerY, g.rightPx - 20f, bannerY + 46f, 12f, 12f, fillPaint)
-            textPaint.textSize = 28f
+            canvas.drawRoundRect(g.leftPx + 12f, bannerY, g.rightPx - 12f, bannerY + 46f, 12f, 12f, fillPaint)
+            textPaint.color = Color.WHITE
+            textPaint.textSize = 26f
             canvas.drawText(label, (g.leftPx + g.rightPx) * 0.5f, bannerY + 33f, textPaint)
+        }
+    }
+
+    private fun drawMemorizedOverlay(canvas: Canvas, g: BoardGeometry, mem: BoardState) {
+        val orbR = (minOf(g.cellWidth, g.cellHeight) * 0.34f).coerceIn(18f, 64f)
+        for (r in 0 until mem.rows) {
+            for (c in 0 until mem.cols) {
+                val cell = mem.cellAt(r, c)
+                if (!cell.element.isMatchable) continue
+                val cx = g.cellCenterX(c)
+                val cy = g.cellCenterY(r)
+                val baseColor = elementColor(cell.element)
+                fillPaint.color = Color.argb(135, Color.red(baseColor), Color.green(baseColor), Color.blue(baseColor))
+                canvas.drawCircle(cx, cy, orbR, fillPaint)
+                gridBorderPaint.color = Color.argb(220, 255, 255, 255)
+                gridBorderPaint.strokeWidth = 3f
+                canvas.drawCircle(cx, cy, orbR, gridBorderPaint)
+                textPaint.color = Color.WHITE
+                textPaint.textSize = orbR * 0.92f
+                val sym = elementShortZh(cell.element) + if (cell.variant == Variant.ENCHANTED) "+" else ""
+                canvas.drawText(sym, cx, cy + orbR * 0.32f, textPaint)
+            }
         }
     }
 

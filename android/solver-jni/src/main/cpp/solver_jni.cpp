@@ -158,8 +158,8 @@ Java_com_autodora_next_jni_NativeSolver_nativeSolve(
     for (int i = 0; i < n; ++i) {
         if (i < static_cast<int>(els.size()))  board.cells[i].element = static_cast<Element>(els[i]);
         if (i < static_cast<int>(vars.size())) board.cells[i].variant = static_cast<Variant>(vars[i]);
-        if (i < static_cast<int>(hazs.size())) board.cells[i].hazards = static_cast<uint16_t>(hazs[i]);
-        if (i < static_cast<int>(tflags.size())) board.tileFlags[i] = static_cast<uint16_t>(tflags[i]);
+        if (i < static_cast<int>(hazs.size())) board.cells[i].hazards = static_cast<uint32_t>(hazs[i]);
+        if (i < static_cast<int>(tflags.size())) board.tileFlags[i] = static_cast<uint32_t>(tflags[i]);
     }
     for (int cp : ckpts) {
         if (board.checkpointCount < kMaxCheckpoints) {
@@ -249,6 +249,30 @@ Java_com_autodora_next_jni_NativeSolver_nativeSolve(
     for (size_t e = 0; e < kNumElements; ++e) {
         rules.compatibleLinkMask[e] = static_cast<uint8_t>(riAt(60 + e, 1 << e));
     }
+
+    // Phase 2.5 extended 13-year ToS rules (indices 66..88)
+    rules.fixedStartCell                  = static_cast<int8_t>(riAt(66, -1));
+    rules.requireCharOrbPass              = riAt(67, 0) != 0;
+    rules.requireCharOrbEnd               = riAt(68, 0) != 0;
+    rules.minSecondWaveCombo              = static_cast<uint8_t>(riAt(69, 0));
+    rules.requiredSecondWaveElementsMask  = static_cast<uint8_t>(riAt(70, 0));
+    rules.requireEqualPairCombos          = riAt(71, 0) != 0;
+    rules.equalPairElemA                  = static_cast<uint8_t>(riAt(72, 3));
+    rules.equalPairElemB                  = static_cast<uint8_t>(riAt(73, 4));
+    rules.equalPairMustBeNonZero          = riAt(74, 1) != 0;
+    rules.requiredSameElementCombos       = static_cast<uint8_t>(riAt(75, 0));
+    rules.sameElementComboTarget          = static_cast<int8_t>(riAt(76, -1));
+    rules.requiredRaceElementsMask        = static_cast<uint8_t>(riAt(77, 0));
+    rules.requireAnyRaceOrb               = riAt(78, 0) != 0;
+    rules.maximizeElementOrbIndex         = static_cast<int8_t>(riAt(79, -1));
+    rules.trailCorrosionEnabled           = riAt(80, 0) != 0;
+    rules.requiredUniqueCellsVisited      = static_cast<uint8_t>(riAt(81, 0));
+    rules.maxMiasmaHits                   = static_cast<uint8_t>(riAt(82, 0));
+    rules.mustClearFoam                   = riAt(83, 1) != 0;
+    rules.mustClearLockedHurt             = riAt(84, 1) != 0;
+    rules.prioritizeLockedAtkDown         = riAt(85, 1) != 0;
+    rules.avoidCorroded                   = riAt(86, 1) != 0;
+    rules.prioritizeLuminous              = riAt(87, 1) != 0;
 
     rules.stepPenaltyWeight     = rdAt(0, 0.08);
     rules.diagonalPenaltyWeight = rdAt(1, 0.05);

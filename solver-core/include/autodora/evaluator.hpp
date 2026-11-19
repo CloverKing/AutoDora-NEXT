@@ -31,6 +31,13 @@ constexpr uint32_t TrafficLight      = 1u << 16;
 constexpr uint32_t StepLimit         = 1u << 17;
 constexpr uint32_t HazardsClear      = 1u << 18;
 constexpr uint32_t BurningLimit      = 1u << 19;
+constexpr uint32_t SecondWaveShield  = 1u << 20;
+constexpr uint32_t EqualPairCombo    = 1u << 21;
+constexpr uint32_t SameElemMultiC    = 1u << 22;
+constexpr uint32_t RaceOrbShield     = 1u << 23;
+constexpr uint32_t CharOrbTerrain    = 1u << 24;
+constexpr uint32_t TrailCellsGoal    = 1u << 25;
+constexpr uint32_t MiasmaLimit       = 1u << 26;
 } // namespace ShieldStatusBits
 
 struct PathMetrics {
@@ -40,8 +47,13 @@ struct PathMetrics {
     uint8_t endIdx = 0;
     uint8_t burningTileHits = 0;
     uint8_t trailBurningHits = 0;
+    uint8_t miasmaHits = 0;
+    uint8_t witheredVineHits = 0;
     uint8_t weatheredClearedByHit = 0;
     uint8_t checkpointsReached = 0;
+    uint8_t uniqueCellsVisited = 0;
+    uint64_t charOrbVisitedMask = 0;
+    uint8_t charOrbEndIdx = 255;
     bool usedCharacterOrb = false;
     bool endedOnSticky = false;
 };

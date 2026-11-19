@@ -22,10 +22,11 @@ inline uint8_t requiredRunForElement(Element e, const RuleConfig& rules) noexcep
     return (m >= 1 && m <= 6) ? m : 3;
 }
 
-inline bool canCellEliminate(const BoardState& board, uint8_t idx) noexcept {
+inline bool canCellEliminate(const BoardState& board, uint8_t idx, uint8_t wave = 1) noexcept {
     const uint64_t b = bitOf(idx);
     if ((b & board.validMask) == 0) return false;
-    if ((b & (board.stormMask | board.shatteredMask)) != 0) return false;
+    if ((b & (board.stormMask | board.shatteredMask | board.sealedStoneMask)) != 0) return false;
+    if (wave > 1 && (b & board.barrierMask) != 0) return false;
     const Cell& c = board.cells[idx];
     if (!c.isMatchable()) return false;
     if (c.isUnmatchableHazard()) return false;
@@ -210,28 +211,40 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
     uint64_t initialBloodDrainMask = 0;
     uint64_t initialBombMask = 0;
     uint64_t initialFrozenMask = 0;
+    uint64_t initialFoamMask = 0;
+    uint64_t initialLockedHurtMask = 0;
+    uint64_t initialLockedAtkDownMask = 0;
+    uint64_t initialLightPrisonMask = 0;
     uint64_t initialPriorityMask = 0;
-    uint64_t petrifiedMask = 0;
+    uint64_t petrifiedOrIceMask = 0;
 
     for (uint8_t i = 0; i < totalCells; ++i) {
         const uint64_t b = bitOf(i);
         const Cell& c = cur.cells[i];
-        if (canCellEliminate(cur, i)) {
+        if (canCellEliminate(cur, i, 1)) {
             res.matchableCellsAtStart++;
             res.initialElementCounts[static_cast<uint8_t>(c.element)]++;
         }
-        if (c.hazards & HazardBits::Electrified) initialElectrifiedMask |= b;
-        if (c.hazards & HazardBits::BloodDrain)  initialBloodDrainMask |= b;
-        if (c.hazards & HazardBits::Bomb)        initialBombMask |= b;
-        if (c.hazards & HazardBits::Frozen)      initialFrozenMask |= b;
-        if (c.hazards & HazardBits::Priority)    initialPriorityMask |= b;
-        if (c.hazards & HazardBits::Petrified)   petrifiedMask |= b;
+        if (c.hazards & HazardBits::Electrified)   initialElectrifiedMask |= b;
+        if (c.hazards & HazardBits::BloodDrain)    initialBloodDrainMask |= b;
+        if (c.hazards & HazardBits::Bomb)          initialBombMask |= b;
+        if (c.hazards & HazardBits::Frozen)        initialFrozenMask |= b;
+        if (c.hazards & HazardBits::Foam)          initialFoamMask |= b;
+        if (c.hazards & HazardBits::LockedHurt)    initialLockedHurtMask |= b;
+        if (c.hazards & HazardBits::LockedAtkDown) initialLockedAtkDownMask |= b;
+        if (c.hazards & HazardBits::LightPrison)   initialLightPrisonMask |= b;
+        if (c.hazards & HazardBits::Priority)      initialPriorityMask |= b;
+        if (c.hazards & (HazardBits::Petrified | HazardBits::IceSealed)) petrifiedOrIceMask |= b;
     }
 
     uint64_t clearedElectrified = 0;
     uint64_t clearedBloodFirst = 0;
     uint64_t clearedBombFirst = 0;
     uint64_t clearedFrozen = 0;
+    uint64_t clearedFoam = 0;
+    uint64_t clearedLockedHurtFirst = 0;
+    uint64_t clearedLockedAtkDown = 0;
+    uint64_t clearedLightPrison = 0;
     uint64_t clearedPriority = 0;
     uint64_t brokenReserve = 0;
 
@@ -241,11 +254,12 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
 
     uint8_t wave = 0;
     while (wave < 20) {
+        const uint8_t nextWave = static_cast<uint8_t>(wave + 1);
         uint64_t matchedMask = 0;
 
         // 1. Check 1-match elements first
         for (uint8_t i = 0; i < totalCells; ++i) {
-            if (!canCellEliminate(cur, i)) continue;
+            if (!canCellEliminate(cur, i, nextWave)) continue;
             if (requiredRunForElement(cur.cells[i].element, rules) == 1) {
                 matchedMask |= bitOf(i);
             }
@@ -257,7 +271,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
             int c = startC;
             while (cur.inBounds(r, c)) {
                 const uint8_t idx = cellIndex(static_cast<uint8_t>(r), static_cast<uint8_t>(c), cols);
-                if (!canCellEliminate(cur, idx)) {
+                if (!canCellEliminate(cur, idx, nextWave)) {
                     r += dr;
                     c += dc;
                     continue;
@@ -274,7 +288,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
 
                 while (cur.inBounds(nr, nc)) {
                     const uint8_t nIdx = cellIndex(static_cast<uint8_t>(nr), static_cast<uint8_t>(nc), cols);
-                    if (!canCellEliminate(cur, nIdx)) break;
+                    if (!canCellEliminate(cur, nIdx, nextWave)) break;
                     const Element nextEl = cur.cells[nIdx].element;
                     if (!areElementsCompatible(baseEl, nextEl, rules)) break;
                     runMask |= bitOf(nIdx);
@@ -327,6 +341,8 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
             MatchGroup g;
             g.wave = wave;
             g.element = cur.cells[start].element;
+            uint8_t groupEnchMask = 0;
+            uint8_t groupRaceMask = 0;
 
             std::array<uint8_t, kMaxCells> queueBuf{};
             uint8_t qHead = 0, qTail = 0;
@@ -340,8 +356,16 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
                 g.orbCount++;
 
                 const Cell& uc = cur.cells[u];
-                if (uc.variant == Variant::Enchanted) g.enchantedCount++;
-                if (uc.variant == Variant::Race) g.raceCount++;
+                const uint8_t uBit = elementBit(uc.element);
+                g.groupElementsMask |= uBit;
+                if (uc.variant == Variant::Enchanted) {
+                    g.enchantedCount++;
+                    groupEnchMask |= uBit;
+                }
+                if (uc.variant == Variant::Race) {
+                    g.raceCount++;
+                    groupRaceMask |= uBit;
+                }
 
                 const int ur = u / cols;
                 const int ucCol = u % cols;
@@ -360,31 +384,44 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
 
             analyzeGroupGeometry(g, cur);
 
-            // Track petrified adjacent hits per combo
-            if (petrifiedMask != 0) {
+            // Track petrified / ice-sealed / foam 4-neighbor orthogonal hits per combo
+            if (petrifiedOrIceMask != 0 || initialFoamMask != 0) {
                 const uint64_t adj = orthogonalNeighbors(g.cellMask, cols, rows);
-                res.petrifiedAdjacentHits += static_cast<uint16_t>(std::popcount(adj & petrifiedMask));
+                if (petrifiedOrIceMask != 0) {
+                    res.petrifiedAdjacentHits += static_cast<uint16_t>(std::popcount(adj & petrifiedOrIceMask));
+                }
+                if (initialFoamMask != 0) {
+                    const uint64_t popped = adj & initialFoamMask;
+                    if (popped != 0) {
+                        clearedFoam |= popped;
+                        res.foamAdjacentHits += static_cast<uint16_t>(std::popcount(popped));
+                    }
+                }
             }
 
             const uint8_t elIdx = static_cast<uint8_t>(g.element);
-            const uint8_t elBit = elementBit(g.element);
+            const uint8_t elMask = g.groupElementsMask;
 
             res.totalCombo++;
             res.totalOrbsEliminated += g.orbCount;
-            res.totalElementsMask |= elBit;
+            res.totalElementsMask |= elMask;
             res.totalElementCombos[elIdx]++;
             res.totalElementOrbs[elIdx] += g.orbCount;
-            if (g.enchantedCount > 0) res.totalEnchantedElementsMask |= elBit;
+            res.totalEnchantedElementsMask |= groupEnchMask;
 
             if (wave == 1) {
                 res.firstWaveCombo++;
                 res.firstWaveOrbsTotal += g.orbCount;
-                res.firstWaveElementsMask |= elBit;
+                res.firstWaveElementsMask |= elMask;
                 res.firstWaveElementCombos[elIdx]++;
                 res.firstWaveElementOrbs[elIdx] += g.orbCount;
-                if (g.enchantedCount > 0) res.firstWaveEnchantedElementsMask |= elBit;
-                if (g.raceCount > 0) res.firstWaveRaceElementsMask |= elBit;
+                res.firstWaveEnchantedElementsMask |= groupEnchMask;
+                res.firstWaveRaceElementsMask |= groupRaceMask;
+                res.totalRaceOrbsFirstWave += g.raceCount;
                 res.firstWaveClearedMask |= g.cellMask;
+            } else if (wave == 2) {
+                res.secondWaveCombo++;
+                res.secondWaveElementsMask |= elMask;
             }
             res.allWavesClearedMask |= g.cellMask;
 
@@ -397,20 +434,26 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
         for (uint8_t i = 0; i < totalCells; ++i) {
             if ((matchedMask & bitOf(i)) == 0) continue;
             const uint64_t origBit = bitOf(origSlot[i]);
-            if (cur.cells[i].hazards & HazardBits::Electrified) clearedElectrified |= origBit;
-            if (cur.cells[i].hazards & HazardBits::Frozen)      clearedFrozen |= origBit;
-            if (cur.cells[i].hazards & HazardBits::Priority)    clearedPriority |= origBit;
-            if (cur.cells[i].hazards & HazardBits::Reserve)     brokenReserve |= origBit;
+            const uint32_t hz = cur.cells[i].hazards;
+            if (hz & HazardBits::Electrified)   clearedElectrified |= origBit;
+            if (hz & HazardBits::Frozen)        clearedFrozen |= origBit;
+            if (hz & HazardBits::LockedAtkDown) clearedLockedAtkDown |= origBit;
+            if (hz & HazardBits::LightPrison)   clearedLightPrison |= origBit;
+            if (hz & HazardBits::Luminous)      res.luminousCleared++;
+            if (hz & HazardBits::Priority)      clearedPriority |= origBit;
+            if (hz & HazardBits::Reserve)       brokenReserve |= origBit;
+            if (cur.cells[i].variant == Variant::Weakened) res.weakenedEliminated++;
             if (wave == 1) {
-                if (cur.cells[i].hazards & HazardBits::BloodDrain) clearedBloodFirst |= origBit;
-                if (cur.cells[i].hazards & HazardBits::Bomb)       clearedBombFirst |= origBit;
+                if (hz & HazardBits::BloodDrain) clearedBloodFirst |= origBit;
+                if (hz & HazardBits::Bomb)       clearedBombFirst |= origBit;
+                if (hz & HazardBits::LockedHurt) clearedLockedHurtFirst |= origBit;
             }
             cur.cells[i] = Cell{Element::Empty, Variant::Normal, HazardBits::None};
         }
 
         if (wave == 1) {
             for (uint8_t i = 0; i < totalCells; ++i) {
-                if (canCellEliminate(cur, i)) {
+                if (canCellEliminate(cur, i, 1)) {
                     res.remainingAfterFirstWave[static_cast<uint8_t>(cur.cells[i].element)]++;
                 }
             }
@@ -463,6 +506,10 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
     res.bloodDrainRemainingFirstWave = static_cast<uint8_t>(std::popcount(initialBloodDrainMask & ~clearedBloodFirst));
     res.bombRemainingFirstWave = static_cast<uint8_t>(std::popcount(initialBombMask & ~clearedBombFirst));
     res.frozenRemaining = static_cast<uint8_t>(std::popcount(initialFrozenMask & ~clearedFrozen));
+    res.foamRemaining = static_cast<uint8_t>(std::popcount(initialFoamMask & ~clearedFoam));
+    res.lockedHurtRemainingFirstWave = static_cast<uint8_t>(std::popcount(initialLockedHurtMask & ~clearedLockedHurtFirst));
+    res.lockedAtkDownRemaining = static_cast<uint8_t>(std::popcount(initialLockedAtkDownMask & ~clearedLockedAtkDown));
+    res.lightPrisonRemaining = static_cast<uint8_t>(std::popcount(initialLightPrisonMask & ~clearedLightPrison));
     res.priorityOrbsRemaining = static_cast<uint8_t>(std::popcount(initialPriorityMask & ~clearedPriority));
     res.reserveOrbsBroken = static_cast<uint8_t>(std::popcount(brokenReserve));
     res.settledBoard = cur;

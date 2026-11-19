@@ -86,4 +86,84 @@ class AutoGridDetectorTest {
         assertEquals(7, detected!!.cols)
         assertEquals(6, detected.rows)
     }
+
+    @Test
+    fun `auto 9-to-16 bottom ratio matches real Xiaomi 15 1200x2670 ToS battle board within 2px`() {
+        val calib = BoardCalibration() // Default AUTO_BOTTOM_RATIO
+        val geom = calib.toBase6x5Geometry(1200, 2670)
+        assertEquals(0f, geom.leftPx, 0.5f)
+        assertEquals(1200f, geom.rightPx, 0.5f)
+        assertEquals(2410f, geom.bottomPx, 2.5f)
+        assertEquals(1410f, geom.topPx, 2.5f)
+        assertEquals(200f, geom.cellWidth, 0.5f)
+    }
+
+    @Test
+    fun `green HP bar barrier directly above row 0 locks 6x5 and prevents false 6x6 weijian`() {
+        val frame = SyntheticFrame(width = 600, height = 1335)
+        val calib = BoardCalibration() // 1/2 scale Xiaomi 15: top=705, bottom=1205, cell=100
+        val base = calib.toBase6x5Geometry(frame.width, frame.height)
+        val cell = base.cellWidth.toInt()
+        // Draw 5 real orb rows + colorful portrait-like row directly above!
+        frame.drawOrbGrid(0, base.topPx.toInt(), cell, 6, 5)
+        frame.drawOrbGrid(0, (base.topPx - cell * 1.25f).toInt(), cell, 6, 1)
+        // Draw authentic ToS green HP bar between row 0 and the portrait row (y = top - 23 .. top - 6)
+        val hpTop = (base.topPx - 23).toInt()
+        val hpBot = (base.topPx - 6).toInt()
+        for (y in hpTop..hpBot) {
+            for (x in 60 until 540) {
+                frame.pixels[y * frame.width + x] = 0xFF42D436.toInt()
+            }
+        }
+
+        // 1) HP-bar barrier must prevent false 6x6 Weijian expansion
+        val detected = AutoGridDetector.detect(frame, calib)
+        assertEquals(6, detected.cols)
+        assertEquals(5, detected.rows)
+        assertFalse("HP bar must lock 6x5 and prevent portrait row being misclassified as Weijian", detected.isWeijianExpanded)
+
+        // 2) Real-screen HP-bar anchor auto-calibrator must snap accurately to 6x5 board
+        val snapped = AutoGridDetector.autoCalibrateFromRealScreen(frame)
+        assertNotNull("autoCalibrateFromRealScreen must locate HP bar and snap board", snapped)
+        assertEquals(6, snapped!!.cols)
+        assertEquals(5, snapped.rows)
+        assertEquals(base.topPx, snapped.topPx, 4.0f)
+    }
+
+    @Test
+    fun `real Xiaomi 15 ToS battle screenshot locks 6x5 via HP bar with zero false Weijian`() {
+        val realPng = java.io.File(
+            System.getProperty("user.home"),
+            ".gemini/antigravity/brain/57099816-f54e-41fc-8a2c-48bf0a7b1510/scratch/mi15_now.png"
+        )
+        if (!realPng.exists()) return
+        val imageIo = Class.forName("javax.imageio.ImageIO")
+        val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, realPng)
+        val imgCls = img.javaClass
+        val imgW = imgCls.getMethod("getWidth").invoke(img) as Int
+        val imgH = imgCls.getMethod("getHeight").invoke(img) as Int
+        val getRgb = imgCls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        val frame = object : PixelFrame {
+            override val width: Int = imgW
+            override val height: Int = imgH
+            override fun getArgb(x: Int, y: Int): Int =
+                getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+        }
+
+        // 1) Default auto-calibration detect must NOT falsely expand onto portraits!
+        val detected = AutoGridDetector.detect(frame, BoardCalibration())
+        assertEquals("Real ToS screenshot must stay 6x5", 6, detected.cols)
+        assertEquals("Real ToS screenshot must NOT falsely trigger 6x6 Weijian", 5, detected.rows)
+        assertFalse(detected.isWeijianExpanded)
+        assertEquals(1410f, detected.topPx, 5f)
+        assertEquals(2410f, detected.bottomPx, 5f)
+
+        // 2) HP-bar real-screen auto-calibrator must snap accurately to 1410..2410!
+        val snapped = AutoGridDetector.autoCalibrateFromRealScreen(frame)
+        assertNotNull("HP-bar real-screen auto-calibrator must succeed on real ToS screenshot", snapped)
+        assertEquals(6, snapped!!.cols)
+        assertEquals(5, snapped.rows)
+        assertEquals(1410f, snapped.topPx, 6f)
+        assertEquals(2410f, snapped.bottomPx, 6f)
+    }
 }

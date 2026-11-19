@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -40,8 +41,8 @@ struct ZobristTable {
     static inline uint8_t cellSig(const Cell& c) noexcept {
         const uint8_t el = static_cast<uint8_t>(c.element) & 0x0Fu;
         const uint8_t var = static_cast<uint8_t>(c.variant) & 0x03u;
-        const uint8_t hazBit = (c.hazards != 0) ? 1u : 0u;
-        return static_cast<uint8_t>(((el << 2) | var) ^ (hazBit << 5)) & 0x3Fu;
+        const uint8_t hazBit = ((c.hazards & HazardBits::Sleep) != 0) ? 2u : ((c.hazards != 0) ? 1u : 0u);
+        return static_cast<uint8_t>(((el << 2) | var) ^ (hazBit << 4)) & 0x3Fu;
     }
 
     uint64_t hashBoardOnly(const BoardState& b) const noexcept {
@@ -72,12 +73,16 @@ struct SearchNode {
     uint8_t diagonalSteps = 0;
     uint8_t burningHits = 0;
     uint8_t trailHits = 0;
+    uint8_t miasmaHits = 0;
+    uint8_t witheredVineHits = 0;
     uint8_t weatheredCleared = 0;
     uint8_t checkpointsReached = 0;
     bool usedCharacterOrb = false;
     bool endedOnSticky = false;
 
     uint64_t visitedTrailMask = 0;
+    uint64_t visitedAllMask = 0;
+    uint64_t charOrbVisitedMask = 0;
     std::array<uint8_t, kMaxMoveSteps> moves{};
     std::array<uint8_t, kMaxTrailWindow> trailRing{};
     uint8_t trailCount = 0;
@@ -106,15 +111,21 @@ inline bool canEnterCell(const BoardState& board, uint8_t idx, const RuleConfig&
     if ((b & (board.stormMask | board.blackHoleMask | board.noPassMask)) != 0) return false;
     const Cell& c = board.cells[idx];
     if (c.isImmovable()) return false;
+    if ((c.hazards & HazardBits::PurgatoryFire) != 0) return false; // 炼狱之火: 触碰即死!
     if ((c.hazards & HazardBits::Electrified) != 0) return false;
+    if (rules.avoidCorroded && (c.hazards & HazardBits::Corroded) != 0) return false;
     if ((c.hazards & HazardBits::Weathered) != 0 && !rules.allowHitWeatheredToClear) return false;
     return true;
 }
 
 inline bool canStartAtCell(const BoardState& board, uint8_t idx, const RuleConfig& rules) noexcept {
+    if (rules.fixedStartCell >= 0) {
+        if (idx != static_cast<uint8_t>(rules.fixedStartCell)) return false;
+        return (bitOf(idx) & board.validMask) != 0 && !board.cells[idx].isImmovable();
+    }
     if (!canEnterCell(board, idx, rules)) return false;
     if ((board.stickyTileMask & bitOf(idx)) != 0) return false;
-    if ((board.cells[idx].hazards & HazardBits::StickyOrb) != 0) return false;
+    if ((board.cells[idx].hazards & (HazardBits::StickyOrb | HazardBits::Corroded)) != 0) return false;
     if (board.startMask != 0 && (board.startMask & bitOf(idx)) == 0) return false;
     if (rules.startPreset == StartPointPreset::BottomLeft) {
         return idx == board.index(static_cast<uint8_t>(board.rows - 1), 0);
@@ -133,8 +144,13 @@ inline PathMetrics makeMetrics(const SearchNode& node) noexcept {
     m.endIdx = node.curIdx;
     m.burningTileHits = node.burningHits;
     m.trailBurningHits = node.trailHits;
+    m.miasmaHits = node.miasmaHits;
+    m.witheredVineHits = node.witheredVineHits;
     m.weatheredClearedByHit = node.weatheredCleared;
     m.checkpointsReached = node.checkpointsReached;
+    m.uniqueCellsVisited = static_cast<uint8_t>(std::popcount(node.visitedAllMask));
+    m.charOrbVisitedMask = node.charOrbVisitedMask;
+    m.charOrbEndIdx = node.curIdx;
     m.usedCharacterOrb = node.usedCharacterOrb;
     m.endedOnSticky = node.endedOnSticky;
     return m;
@@ -214,7 +230,7 @@ SolveOutput PuzzleSolver::solve(
 
     // Build initial frontier (Step 0)
     std::vector<SearchNode> frontier;
-    if (rules.useCharacterOrb) {
+    if (rules.useCharacterOrb && rules.fixedStartCell < 0) {
         const uint8_t cCol = std::min<uint8_t>(rules.characterOrbCol, static_cast<uint8_t>(cols - 1));
         const uint8_t idx = baseBoard.index(0, cCol);
         if ((baseBoard.validMask & bitOf(idx)) != 0 &&
@@ -228,6 +244,11 @@ SolveOutput PuzzleSolver::solve(
             node.curIdx = idx;
             node.usedCharacterOrb = true;
             node.stepCount = 0;
+            node.visitedAllMask = bitOf(idx);
+            node.charOrbVisitedMask = bitOf(idx);
+            if ((baseBoard.miasmaMask & bitOf(idx)) != 0) {
+                node.miasmaHits = 1;
+            }
             if (node.board.checkpointCount > 0 && node.board.orderedCheckpoints[0] == idx) {
                 node.checkpointsReached = 1;
             }
@@ -237,7 +258,9 @@ SolveOutput PuzzleSolver::solve(
             }
             node.boardHash = zt.hashBoardOnly(node.board);
             node.stateHash = node.boardHash ^ zt.cursorKey[idx];
-            frontier.push_back(node);
+            if (node.miasmaHits <= rules.maxMiasmaHits) {
+                frontier.push_back(node);
+            }
         }
     } else {
         for (uint8_t idx = 0; idx < totalCells; ++idx) {
@@ -247,10 +270,23 @@ SolveOutput PuzzleSolver::solve(
             node.startIdx = idx;
             node.curIdx = idx;
             node.stepCount = 0;
+            node.visitedAllMask = bitOf(idx);
+            node.charOrbVisitedMask = bitOf(idx);
+            // Picking up a sleeping orb wakes it up immediately
+            if ((node.board.cells[idx].hazards & HazardBits::Sleep) != 0) {
+                node.board.cells[idx].hazards &= ~HazardBits::Sleep;
+            }
             if ((baseBoard.burningTileMask & bitOf(idx)) != 0 ||
                 (baseBoard.cells[idx].hazards & HazardBits::BurningOrb) != 0) {
                 node.burningHits = 1;
-                if (node.burningHits > rules.maxBurningTileHurts) continue;
+                if (rules.fixedStartCell < 0 && node.burningHits > rules.maxBurningTileHurts) continue;
+            }
+            if ((baseBoard.miasmaMask & bitOf(idx)) != 0) {
+                node.miasmaHits = 1;
+                if (rules.fixedStartCell < 0 && node.miasmaHits > rules.maxMiasmaHits) continue;
+            }
+            if ((baseBoard.cells[idx].hazards & HazardBits::WitheredVine) != 0) {
+                node.witheredVineHits = 1;
             }
             if (node.board.checkpointCount > 0 && node.board.orderedCheckpoints[0] == idx) {
                 node.checkpointsReached = 1;
@@ -358,11 +394,28 @@ SolveOutput PuzzleSolver::solve(
                     const uint8_t nextIdx = cellIndex(static_cast<uint8_t>(nr), static_cast<uint8_t>(nc), cols);
                     if (!canEnterCell(parent.board, nextIdx, rules)) continue;
 
+                    // Trail Corrosion self-avoiding path check (轨迹腐蚀: 不可回头重访!)
+                    if ((rules.trailCorrosionEnabled || (parent.board.trailCorrosionMask & bitOf(nextIdx)) != 0) &&
+                        (parent.visitedAllMask & bitOf(nextIdx)) != 0) {
+                        continue;
+                    }
+
                     uint8_t nextBurn = parent.burningHits;
                     if ((parent.board.burningTileMask & bitOf(nextIdx)) != 0 ||
                         (parent.board.cells[nextIdx].hazards & HazardBits::BurningOrb) != 0) {
                         nextBurn++;
                         if (nextBurn > rules.maxBurningTileHurts) continue;
+                    }
+
+                    uint8_t nextMiasma = parent.miasmaHits;
+                    if ((parent.board.miasmaMask & bitOf(nextIdx)) != 0) {
+                        nextMiasma++;
+                        if (nextMiasma > rules.maxMiasmaHits) continue;
+                    }
+
+                    uint8_t nextVine = parent.witheredVineHits;
+                    if ((parent.board.cells[nextIdx].hazards & HazardBits::WitheredVine) != 0) {
+                        nextVine++;
                     }
 
                     uint8_t nextTrailHits = parent.trailHits;
@@ -385,8 +438,12 @@ SolveOutput PuzzleSolver::solve(
 
                     if (rules.allowHitWeatheredToClear &&
                         (child.board.cells[nextIdx].hazards & HazardBits::Weathered) != 0) {
-                        child.board.cells[nextIdx].hazards &= static_cast<uint16_t>(~HazardBits::Weathered);
+                        child.board.cells[nextIdx].hazards &= ~HazardBits::Weathered;
                         child.weatheredCleared++;
+                    }
+                    // Stepping through a sleeping orb wakes it up so it can match!
+                    if ((child.board.cells[nextIdx].hazards & HazardBits::Sleep) != 0) {
+                        child.board.cells[nextIdx].hazards &= ~HazardBits::Sleep;
                     }
 
                     std::swap(child.board.cells[parent.curIdx], child.board.cells[nextIdx]);
@@ -404,9 +461,13 @@ SolveOutput PuzzleSolver::solve(
                     child.stepCount = static_cast<uint8_t>(parent.stepCount + 1);
                     if (isDiagonal(dir)) child.diagonalSteps++;
                     child.burningHits = nextBurn;
+                    child.miasmaHits = nextMiasma;
+                    child.witheredVineHits = nextVine;
                     child.trailHits = nextTrailHits;
+                    child.visitedAllMask |= bitOf(nextIdx);
+                    child.charOrbVisitedMask |= bitOf(nextIdx);
                     child.endedOnSticky = ((parent.board.stickyTileMask & bitOf(nextIdx)) != 0) ||
-                                          ((parent.board.cells[nextIdx].hazards & HazardBits::StickyOrb) != 0);
+                                          ((parent.board.cells[nextIdx].hazards & (HazardBits::StickyOrb | HazardBits::Corroded)) != 0);
 
                     if (child.checkpointsReached < child.board.checkpointCount &&
                         child.board.orderedCheckpoints[child.checkpointsReached] == nextIdx) {

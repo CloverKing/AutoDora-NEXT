@@ -33,9 +33,12 @@ import com.autodora.next.data.SettingsRepository
 import com.autodora.next.jni.NativeCancelToken
 import com.autodora.next.jni.NativeSolver
 import com.autodora.next.model.*
+import com.autodora.next.touch.HoldReplanTrigger
+import com.autodora.next.touch.SwipeConfig
 import com.autodora.next.touch.TouchExecutionResult
 import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.vision.BoardRecognizer
+import com.autodora.next.vision.FlashRevealMemoryTracker
 import com.autodora.next.vision.RecognitionResult
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -72,10 +75,15 @@ class OverlayControllerService : Service() {
 
     // Overlay views
     private lateinit var pathOverlayView: PathOverlayView
+    private lateinit var pathParams: WindowManager.LayoutParams
     private lateinit var controlRoot: LinearLayout
     private lateinit var controlParams: WindowManager.LayoutParams
     private lateinit var statusOrbView: TextView
     private lateinit var toolbarContainer: LinearLayout
+    private lateinit var modeChipRow: LinearLayout
+    private lateinit var memoryChipBtn: TextView
+    private lateinit var invertChipBtn: TextView
+    private lateinit var turboChipBtn: TextView
     private lateinit var calibrationBar: LinearLayout
     private lateinit var summaryStrip: LinearLayout
     private lateinit var summaryTitle: TextView
@@ -94,9 +102,12 @@ class OverlayControllerService : Service() {
     private var currentGeometry: BoardGeometry? = null
     private var lastRecognition: RecognitionResult? = null
     private var lastSolveOutput: SolveOutput? = null
+    private var usedMemorizedSnapshot = false
     private var selectedSolutionIdx = 0
     private var activeJob: Job? = null
+    private var flashWatchJob: Job? = null
     private var activeCancelToken: NativeCancelToken? = null
+    private val flashMemoryTracker = FlashRevealMemoryTracker()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -113,6 +124,8 @@ class OverlayControllerService : Service() {
             settingsRepository.settingsFlow.collectLatest { latest ->
                 settings = latest
                 emergencyBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
+                updateQuickModeChips()
+                syncFlashRevealWatcher()
                 if (calibrationMode) {
                     currentGeometry = latest.calibration.toBase6x5Geometry(screenW, screenH)
                     refreshPathCanvas()
@@ -130,6 +143,7 @@ class OverlayControllerService : Service() {
     }
 
     override fun onDestroy() {
+        flashWatchJob?.cancel()
         triggerEmergencyStop()
         serviceScope.cancel()
         removeOverlayViews()
@@ -169,9 +183,30 @@ class OverlayControllerService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupOverlayViews() {
-        // 1. Full-screen click-through PathOverlayView (exact 1:1 coordinate alignment with MediaProjection)
+        // 1. Full-screen PathOverlayView (click-through normally; touch-draggable in Calibration Mode!)
         pathOverlayView = PathOverlayView(this)
-        val pathParams = WindowManager.LayoutParams(
+        pathOverlayView.onCalibrationBoundsChanged = { l, t, r, b, finished ->
+            val bw = (r - l).coerceAtLeast(120f)
+            val bh = (b - t).coerceAtLeast(100f)
+            val cellW = bw / 6f
+            val cellH = bh / 5f
+            currentGeometry = BoardGeometry(l, t, r, b, 6, 5, false)
+            if (finished) {
+                serviceScope.launch {
+                    settingsRepository.update { s ->
+                        s.copy(
+                            calibration = s.calibration.copy(
+                                leftRatio = (l / screenW).coerceIn(0f, 0.35f),
+                                rightRatio = (r / screenW).coerceIn(0.65f, 1f),
+                                bottomRatio = (b / screenH).coerceIn(0.45f, 1f),
+                                heightScale = (cellH / cellW).coerceIn(0.75f, 1.25f)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        pathParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -249,6 +284,51 @@ class OverlayControllerService : Service() {
 
         topRow.addView(toolbarContainer)
         controlRoot.addView(topRow)
+
+        // Slim Quick-Mode Row: Flash-Reveal Memory, Hold-and-Replan (问号‧转/风化‧转), Inverted Controls, Turbo Speed
+        modeChipRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(3)
+                marginStart = dp(43)
+            }
+            background = roundedBg(Color.argb(205, 18, 22, 32), dp(10).toFloat(), Color.argb(80, 120, 190, 255))
+        }
+        memoryChipBtn = makeChipBtn("记忆", Color.rgb(38, 120, 95)) {
+            serviceScope.launch {
+                settingsRepository.update { it.copy(flashRevealMemoryEnabled = !it.flashRevealMemoryEnabled) }
+            }
+        }
+        modeChipRow.addView(memoryChipBtn)
+        modeChipRow.addView(makeChipBtn("按住转", Color.rgb(156, 39, 176)) { startHoldAndReplanExecution() })
+        invertChipBtn = makeChipBtn("颠倒:关", Color.rgb(69, 90, 100)) {
+            serviceScope.launch {
+                settingsRepository.update {
+                    val next = !(it.invertDragX || it.invertDragY)
+                    it.copy(invertDragX = next, invertDragY = next)
+                }
+            }
+        }
+        modeChipRow.addView(invertChipBtn)
+        turboChipBtn = makeChipBtn("标准", Color.rgb(55, 71, 79)) {
+            serviceScope.launch {
+                settingsRepository.update { s ->
+                    val nextMs = when {
+                        s.stepDurationMs > 50L -> SwipeConfig.FAST_3S_STEP_MS
+                        s.stepDurationMs > 30L -> SwipeConfig.TURBO_2S_STEP_MS
+                        else -> SwipeConfig.NORMAL_STEP_MS
+                    }
+                    s.copy(stepDurationMs = nextMs)
+                }
+            }
+        }
+        modeChipRow.addView(turboChipBtn)
+        controlRoot.addView(modeChipRow)
 
         // Live Combo & Elimination Summary Strip
         summaryStrip = LinearLayout(this).apply {
@@ -431,8 +511,7 @@ class OverlayControllerService : Service() {
         }
 
         if (calibrationMode) {
-            calibrationMode = false
-            calibrationBar.visibility = View.GONE
+            setCalibrationMode(false)
         }
 
         activeJob = serviceScope.launch {
@@ -449,28 +528,47 @@ class OverlayControllerService : Service() {
             }
 
             try {
-                // Stage 1/2 Dynamic Grid Size Auto-Detection (6x5 <-> 6x8 Weijian / Arbitrary!)
+                // Stage 1/2 Dynamic Grid Size Auto-Detection (HP-bar barrier prevents false Weijian!)
                 val geom = withContext(Dispatchers.Default) {
                     AutoGridDetector.detect(frames.first(), settings.calibration)
                 }
                 currentGeometry = geom
 
                 // Multi-frame CV / Hybrid Recognition
-                val rec = boardRecognizer.recognize(frames, geom)
-                lastRecognition = rec
+                val liveRec = boardRecognizer.recognize(frames, geom)
+                lastRecognition = liveRec
+
+                // Flash-Reveal Memory Resolution (先露后藏全版问号珠自动还原!)
+                val boardToSolve = if (settings.flashRevealMemoryEnabled) {
+                    when (val res = flashMemoryTracker.resolveForSolve(liveRec)) {
+                        is FlashRevealMemoryTracker.MemoryResolution.UseMemorizedSnapshot -> {
+                            usedMemorizedSnapshot = true
+                            toast("已从先露后藏记忆快照还原 ${res.liveHiddenCount} 颗问号珠！")
+                            res.rememberedBoard
+                        }
+                        is FlashRevealMemoryTracker.MemoryResolution.UseLiveBoard -> {
+                            usedMemorizedSnapshot = false
+                            liveRec.board
+                        }
+                    }
+                } else {
+                    usedMemorizedSnapshot = false
+                    liveRec.board
+                }
+                updateQuickModeChips()
 
                 // Compose RuleConfig (auto-enables Puzzle shield if golden puzzle borders were detected!)
                 val ruleConfig = RuleComposer.compose(
                     base = TeamBasePreset("active", "Active", baseConfig = settings.toRuleConfig()),
                     activeChips = emptyList(),
-                    board = rec.board
+                    board = boardToSolve
                 )
 
                 // C++20 JNI Solve with cooperative cancellation token
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
                 val solveOut = try {
-                    NativeSolver.solve(rec.board, ruleConfig, token)
+                    NativeSolver.solve(boardToSolve, ruleConfig, token)
                 } finally {
                     activeCancelToken = null
                     token.close()
@@ -507,6 +605,125 @@ class OverlayControllerService : Service() {
         }
     }
 
+    /**
+     * No-Root Hold-and-Replan Mode (问号‧转 / 风化‧转 / 烟雾):
+     * Presses and holds a safe orb continuously via AccessibilityService willContinue=true heartbeat,
+     * waits [settings.holdReplanDelayMs] for the board to transform/reveal, captures + fast-solves with
+     * fixedStartCell (~70ms), and seamlessly continues swiping without lifting the finger!
+     */
+    private fun startHoldAndReplanExecution() {
+        if (currentPhase != OverlayPhase.IDLE) {
+            toast("当前任务执行中，可点击红色急停中止")
+            return
+        }
+        val capturer = ScreenCaptureSession.capturer.value
+        if (capturer == null || !capturer.isReady.value) {
+            toast("请先在主界面授权「免 Root 录屏采集」")
+            return
+        }
+        if (!touchExecutor.isAvailable.value) {
+            toast("按住重算需要开启 AutoDora-NEXT 无障碍服务")
+            return
+        }
+        if (calibrationMode) setCalibrationMode(false)
+
+        activeJob = serviceScope.launch {
+            setPhase(OverlayPhase.MOVING)
+            pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
+            delay(35)
+
+            // Estimate current board geometry cleanly before grabbing
+            val preBmp = capturer.captureSingleFrame()
+            val geom = if (preBmp != null) {
+                try {
+                    withContext(Dispatchers.Default) {
+                        AutoGridDetector.detect(preBmp, settings.calibration)
+                    }
+                } finally {
+                    if (!preBmp.isRecycled) preBmp.recycle()
+                }
+            } else {
+                settings.calibration.toBase6x5Geometry(screenW, screenH)
+            }
+            currentGeometry = geom
+
+            val startRow = (geom.rows / 2).coerceIn(0, geom.rows - 1)
+            val startCol = ((geom.cols - 1) / 2).coerceIn(0, geom.cols - 1)
+            val startCell = CellCoord(startRow, startCol)
+            val nudgeCell = if (settings.holdReplanNudge && startCol + 1 < geom.cols) {
+                CellCoord(startRow, startCol + 1)
+            } else null
+            val trigger = if (nudgeCell != null) {
+                HoldReplanTrigger.NUDGE_ONE_CELL_HOLD
+            } else {
+                HoldReplanTrigger.HOLD_IN_PLACE
+            }
+
+            setControlBarTouchable(false)
+            try {
+                val result = touchExecutor.executeHoldAndReplan(
+                    startCell = startCell,
+                    geometry = geom,
+                    trigger = trigger,
+                    nudgeTarget = nudgeCell,
+                    revealDelayMs = settings.holdReplanDelayMs,
+                    config = settings.toSwipeConfig()
+                ) { heldCell ->
+                    // Captured mid-hold while virtual finger stays pressed!
+                    val revealedBmp = capturer.captureSingleFrame() ?: return@executeHoldAndReplan null
+                    try {
+                        val rec = boardRecognizer.recognize(listOf(revealedBmp), geom)
+                        lastRecognition = rec
+                        usedMemorizedSnapshot = false
+
+                        val heldIdx = heldCell.row * geom.cols + heldCell.col
+                        val fastRules = settings.toRuleConfig().copy(
+                            fixedStartCell = heldIdx,
+                            beamWidth = minOf(settings.beamWidth, 140),
+                            maxTimeMs = 170,
+                            topK = 2
+                        )
+                        val composed = RuleComposer.compose(
+                            base = TeamBasePreset("hold_replan", "HoldReplan", baseConfig = fastRules),
+                            activeChips = emptyList(),
+                            board = rec.board
+                        )
+                        val token = NativeSolver.createCancelToken()
+                        activeCancelToken = token
+                        val solveOut = try {
+                            NativeSolver.solve(rec.board, composed, token)
+                        } finally {
+                            activeCancelToken = null
+                            token.close()
+                        }
+                        lastSolveOutput = solveOut
+                        selectedSolutionIdx = 0
+                        withContext(Dispatchers.Main) {
+                            showPath = true
+                            updateSummaryStrip()
+                            refreshPathCanvas()
+                        }
+                        solveOut.solutions.firstOrNull()
+                    } finally {
+                        if (!revealedBmp.isRecycled) revealedBmp.recycle()
+                    }
+                }
+                when (result) {
+                    is TouchExecutionResult.Success -> {
+                        flashMemoryTracker.clearLock()
+                        Log.i(TAG, "Hold-and-Replan completed in ${result.elapsedMs}ms (${result.segmentsDispatched} segs)")
+                    }
+                    is TouchExecutionResult.Cancelled -> toast("按住重算已急停中止")
+                    is TouchExecutionResult.Failed -> toast("按住重算失败: ${result.reason}")
+                }
+            } finally {
+                setControlBarTouchable(true)
+                setPhase(OverlayPhase.IDLE)
+                updateQuickModeChips()
+            }
+        }
+    }
+
     private fun executeSelectedSolution() {
         if (currentPhase != OverlayPhase.IDLE) return
         val geom = currentGeometry ?: return
@@ -539,6 +756,9 @@ class OverlayControllerService : Service() {
                 val result = touchExecutor.executePath(sol, geom, settings.toSwipeConfig())
                 when (result) {
                     is TouchExecutionResult.Success -> {
+                        flashMemoryTracker.clearLock()
+                        usedMemorizedSnapshot = false
+                        updateQuickModeChips()
                         Log.i(TAG, "Auto-swipe completed in ${result.elapsedMs}ms (${result.segmentsDispatched} segs)")
                     }
                     is TouchExecutionResult.Cancelled -> {
@@ -574,8 +794,25 @@ class OverlayControllerService : Service() {
     }
 
     private fun toggleCalibrationMode() {
-        calibrationMode = !calibrationMode
+        setCalibrationMode(!calibrationMode)
+    }
+
+    private fun setCalibrationMode(enabled: Boolean) {
+        calibrationMode = enabled
         calibrationBar.visibility = if (calibrationMode) View.VISIBLE else View.GONE
+        // Allow direct finger-drag of calibration corners/edges while in Calibration Mode!
+        val nextFlags = if (calibrationMode) {
+            pathParams.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        } else {
+            pathParams.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
+        if (nextFlags != pathParams.flags) {
+            pathParams.flags = nextFlags
+            try {
+                windowManager.updateViewLayout(pathOverlayView, pathParams)
+            } catch (_: Exception) {
+            }
+        }
         if (calibrationMode) {
             currentGeometry = settings.calibration.toBase6x5Geometry(screenW, screenH)
             showPath = true
@@ -591,11 +828,12 @@ class OverlayControllerService : Service() {
         serviceScope.launch {
             settingsRepository.update { s ->
                 val c = s.calibration
+                val curBottom = c.effectiveBottomRatio(screenW, screenH)
                 s.copy(
                     calibration = c.copy(
                         leftRatio = (c.leftRatio + sideInsetDelta).coerceIn(0f, 0.25f),
                         rightRatio = (c.rightRatio - sideInsetDelta).coerceIn(0.75f, 1f),
-                        bottomRatio = (c.bottomRatio + bottomDelta).coerceIn(0.50f, 1f),
+                        bottomRatio = (curBottom + bottomDelta).coerceIn(0.50f, 1f),
                         heightScale = (c.heightScale + heightScaleDelta).coerceIn(0.80f, 1.20f)
                     )
                 )
@@ -610,10 +848,18 @@ class OverlayControllerService : Service() {
             return
         }
         serviceScope.launch {
-            val bmp = capturer.captureSingleFrame() ?: return@launch
+            // Hide overlay frame momentarily so cyan border doesn't affect HP bar / edge detection
+            pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
+            delay(40)
+            val bmp = capturer.captureSingleFrame() ?: run {
+                refreshPathCanvas()
+                return@launch
+            }
             try {
                 val detected = withContext(Dispatchers.Default) {
-                    AutoGridDetector.detectArbitraryGrid(com.autodora.next.capture.BitmapPixelFrame(bmp))
+                    val frame = com.autodora.next.capture.BitmapPixelFrame(bmp)
+                    AutoGridDetector.autoCalibrateFromRealScreen(frame)
+                        ?: AutoGridDetector.detectArbitraryGrid(frame)
                 }
                 if (detected != null) {
                     currentGeometry = detected
@@ -628,9 +874,10 @@ class OverlayControllerService : Service() {
                         )
                     }
                     refreshPathCanvas()
-                    toast("自动检测到 ${detected.cols}×${detected.rows} 棋盘！")
+                    toast("真实血条锚定成功：${detected.cols}×${detected.rows} 棋盘！")
                 } else {
-                    toast("未检测到明显棋盘，请进入神魔战斗盘面后重试或手动微调")
+                    refreshPathCanvas()
+                    toast("未检测到神魔战斗盘面，请进关卡后重试或直接拖拽四角校准")
                 }
             } finally {
                 if (!bmp.isRecycled) bmp.recycle()
@@ -641,8 +888,92 @@ class OverlayControllerService : Service() {
     private fun resetCalibration() {
         serviceScope.launch {
             settingsRepository.update { it.copy(calibration = BoardCalibration()) }
-            toast("已重置为默认 6×5 比例")
+            toast("已重置为自动 9:16 适配 6×5 比例")
         }
+    }
+
+    /**
+     * Lightweight background Flash-Reveal Memory Watcher (先露后藏问号珠实时监视):
+     * Samples every 420ms while idle; caches clear boards and automatically locks & displays
+     * translucent real-orb overlay the instant a stage flips to mass '?' orbs!
+     */
+    private fun syncFlashRevealWatcher() {
+        if (!settings.flashRevealMemoryEnabled) {
+            flashWatchJob?.cancel()
+            flashWatchJob = null
+            flashMemoryTracker.resetAll()
+            updateQuickModeChips()
+            return
+        }
+        if (flashWatchJob?.isActive == true) return
+        flashWatchJob = serviceScope.launch {
+            while (isActive) {
+                delay(420L)
+                if (currentPhase != OverlayPhase.IDLE || calibrationMode) continue
+                val capturer = ScreenCaptureSession.capturer.value ?: continue
+                if (!capturer.isReady.value) continue
+                // Skip polling while our own path overlay is covering the board unless waiting for flip
+                if (lastSolveOutput != null && showPath) continue
+
+                val bmp = capturer.captureSingleFrame() ?: continue
+                try {
+                    val (geom, rec) = withContext(Dispatchers.Default) {
+                        val g = AutoGridDetector.detect(bmp, settings.calibration)
+                        g to boardRecognizer.recognize(listOf(bmp), g)
+                    }
+                    val lockedNow = flashMemoryTracker.onWatchFrame(rec)
+                    if (lockedNow) {
+                        currentGeometry = geom
+                        refreshPathCanvas()
+                        toast("已捕捉先露后藏盘面！点「算路」可直接解全版问号珠")
+                    }
+                    updateQuickModeChips()
+                } catch (_: Exception) {
+                } finally {
+                    if (!bmp.isRecycled) bmp.recycle()
+                }
+            }
+        }
+    }
+
+    private fun updateQuickModeChips() {
+        if (!::memoryChipBtn.isInitialized) return
+        val memLocked = flashMemoryTracker.currentLockedSnapshot() != null
+        val memFresh = flashMemoryTracker.hasFreshClearMemory()
+        when {
+            !settings.flashRevealMemoryEnabled -> {
+                memoryChipBtn.text = "记忆:关"
+                memoryChipBtn.background = roundedBg(Color.rgb(69, 90, 100), dp(8).toFloat(), null)
+            }
+            memLocked -> {
+                memoryChipBtn.text = "透视?"
+                memoryChipBtn.background = roundedBg(Color.rgb(230, 145, 0), dp(8).toFloat(), null)
+            }
+            memFresh -> {
+                memoryChipBtn.text = "记忆●"
+                memoryChipBtn.background = roundedBg(Color.rgb(46, 125, 50), dp(8).toFloat(), null)
+            }
+            else -> {
+                memoryChipBtn.text = "记忆"
+                memoryChipBtn.background = roundedBg(Color.rgb(0, 121, 107), dp(8).toFloat(), null)
+            }
+        }
+
+        val invOn = settings.invertDragX || settings.invertDragY
+        invertChipBtn.text = if (invOn) "颠倒:开" else "颠倒:关"
+        invertChipBtn.background = roundedBg(
+            if (invOn) Color.rgb(216, 67, 21) else Color.rgb(69, 90, 100),
+            dp(8).toFloat(),
+            null
+        )
+
+        val (spdLabel, spdColor) = when {
+            settings.stepDurationMs <= 28L -> "2秒极速" to Color.rgb(198, 40, 40)
+            settings.stepDurationMs <= 45L -> "3秒快转" to Color.rgb(239, 108, 0)
+            else -> "标准" to Color.rgb(55, 71, 79)
+        }
+        turboChipBtn.text = spdLabel
+        turboChipBtn.background = roundedBg(spdColor, dp(8).toFloat(), null)
     }
 
     private fun currentSolution(): SolutionPath? {
@@ -663,10 +994,11 @@ class OverlayControllerService : Service() {
         pagerText.text = "${selectedSolutionIdx + 1}/${out.solutions.size}"
         val sizeBadge = if (geom.isWeijianExpanded) "${geom.cols}×${geom.rows} 违建" else "${geom.cols}×${geom.rows}"
         val shieldBadge = if (sol.allHardConstraintsMet) "✓" else "!"
-        val lowWarn = lastRecognition?.lowConfidenceIndices?.size ?: 0
+        val memTag = if (usedMemorizedSnapshot) " [记忆还原]" else ""
+        val lowWarn = if (usedMemorizedSnapshot) 0 else (lastRecognition?.lowConfidenceIndices?.size ?: 0)
         val lowStr = if (lowWarn > 0) " · 疑珠$lowWarn" else ""
 
-        summaryTitle.text = "[$sizeBadge] ${sol.totalCombo}C(首${sol.firstWaveCombo}C) · ${sol.stepCount}步 · ${out.elapsedMs.toInt()}ms $shieldBadge ${sol.tag}$lowStr"
+        summaryTitle.text = "[$sizeBadge]$memTag ${sol.totalCombo}C(首${sol.firstWaveCombo}C) · ${sol.stepCount}步 · ${out.elapsedMs.toInt()}ms $shieldBadge ${sol.tag}$lowStr"
 
         groupsRow.removeAllViews()
         for (grp in sol.groups) {
@@ -690,15 +1022,17 @@ class OverlayControllerService : Service() {
     }
 
     private fun refreshPathCanvas(countdown: String? = null) {
+        val memBoard = flashMemoryTracker.currentLockedSnapshot()
         pathOverlayView.updateState(
             geometry = currentGeometry,
-            board = lastRecognition?.board,
-            lowConfidence = lastRecognition?.lowConfidenceIndices ?: emptyList(),
+            board = if (usedMemorizedSnapshot && memBoard != null) memBoard else lastRecognition?.board,
+            lowConfidence = if (usedMemorizedSnapshot) emptyList() else (lastRecognition?.lowConfidenceIndices ?: emptyList()),
             solution = currentSolution(),
             showPath = showPath,
             showOrbBadges = settings.showOrbBadgesOnPath,
             calibrationMode = calibrationMode,
-            countdownText = countdown
+            countdownText = countdown,
+            memorizedOverlayBoard = memBoard
         )
     }
 

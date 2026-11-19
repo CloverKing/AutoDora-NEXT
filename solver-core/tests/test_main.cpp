@@ -55,11 +55,21 @@ void verifyPathReplay(const BoardState& initial, const RuleConfig& rules, const 
         require((b.blackHoleMask & bitOf(nextIdx)) == 0, "entered black hole");
         require((b.noPassMask & bitOf(nextIdx)) == 0, "entered no-pass tile");
         require(!b.cells[nextIdx].isImmovable(), "swapped immovable cell");
+        require((b.cells[nextIdx].hazards & HazardBits::PurgatoryFire) == 0, "touched purgatory fire orb");
         require((b.cells[nextIdx].hazards & HazardBits::Electrified) == 0, "touched electrified orb");
+        if (rules.avoidCorroded) {
+            require((b.cells[nextIdx].hazards & HazardBits::Corroded) == 0, "touched corroded orb");
+        }
         if (!rules.allowHitWeatheredToClear) {
             require((b.cells[nextIdx].hazards & HazardBits::Weathered) == 0, "touched weathered orb");
         } else {
-            b.cells[nextIdx].hazards &= static_cast<uint16_t>(~HazardBits::Weathered);
+            b.cells[nextIdx].hazards &= ~HazardBits::Weathered;
+        }
+        if ((b.cells[nextIdx].hazards & HazardBits::Sleep) != 0) {
+            b.cells[nextIdx].hazards &= ~HazardBits::Sleep;
+        }
+        if (i == 0 && (b.cells[curIdx].hazards & HazardBits::Sleep) != 0) {
+            b.cells[curIdx].hazards &= ~HazardBits::Sleep;
         }
         std::swap(b.cells[curIdx], b.cells[nextIdx]);
         cur = CellCoord{static_cast<uint8_t>(nr), static_cast<uint8_t>(nc)};
@@ -633,6 +643,328 @@ void testCancellation() {
     require(out.interrupted, "pre-set cancelFlag must mark interrupted=true");
 }
 
+// ============================================================================
+// 17. Fixed Start Cell (Hold-and-Replan 问号‧转/风化‧转/烟雾极速重算)
+// ============================================================================
+void testFixedStartCellHoldAndReplan() {
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.fixedStartCell = b.index(2, 3); // Finger already held at (2, 3)!
+    r.maxSteps = 22;
+    r.beamWidth = 140;
+    r.maxTimeMs = 200;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "fixedStartCell no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.start == (CellCoord{2, 3}), "must strictly start at fixedStartCell (2,3)");
+    require(best.simulation.totalCombo >= 6, "fixedStartCell should still achieve high combo");
+    std::cout << "       Hold-and-Replan (2,3): " << int(best.simulation.totalCombo)
+              << "C, steps=" << int(best.metrics.stepCount) << ", time=" << out.elapsedMs << "ms\n";
+}
+
+// ============================================================================
+// 18. Cross-Element Compatible Merge Mask (跨属兼珠: 水兼心互连消除)
+// ============================================================================
+void testCrossElementMergeMask() {
+    // Only 2 Water + 1 Heart in row 0 -> unmatchable normally, matches when Water <-> Heart compatible!
+    BoardState b = BoardState::fromString(
+        "WWHFLG"
+        "FLGDLF"
+        "DLGFGD"
+        "FGDLFG"
+        "LFGDFL",
+        6, 5
+    );
+    RuleConfig r;
+    const uint8_t whMask = elementBit(Element::Water) | elementBit(Element::Heart);
+    r.compatibleLinkMask[static_cast<uint8_t>(Element::Water)] = whMask;
+    r.compatibleLinkMask[static_cast<uint8_t>(Element::Heart)] = whMask;
+
+    auto sim = simulateBoard(b, r);
+    require(sim.firstWaveCombo >= 1, "W-W-H must eliminate as 1 merged combo");
+    require((sim.firstWaveElementsMask & whMask) == whMask, "merged cluster must credit BOTH Water and Heart elements");
+}
+
+// ============================================================================
+// 19. Dual-Element Equal Combos (双属首消 Combo 同等盾: 首消光暗同等)
+// ============================================================================
+void testDualElementEqualCombos() {
+    BoardState b = BoardState::fromString(
+        "LLDDWF"
+        "WFLDFG"
+        "GLWDHF"
+        "FDLGWH"
+        "HWGFDL",
+        6, 5
+    );
+    RuleConfig r;
+    r.requireEqualPairCombos = true;
+    r.equalPairElemA = static_cast<uint8_t>(Element::Light);
+    r.equalPairElemB = static_cast<uint8_t>(Element::Dark);
+    r.equalPairMustBeNonZero = true;
+    r.maxSteps = 20;
+    r.beamWidth = 180;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "equal pair combos no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "Light == Dark non-zero first-wave combo shield must pass");
+    const uint8_t cL = best.simulation.firstWaveElementCombos[static_cast<uint8_t>(Element::Light)];
+    const uint8_t cD = best.simulation.firstWaveElementCombos[static_cast<uint8_t>(Element::Dark)];
+    require(cL > 0 && cL == cD, "Light and Dark first-wave combos must be equal and > 0");
+}
+
+// ============================================================================
+// 20. Same-Element Multi-Combo Shield (同属连击盾: 首消 >= 3 组暗)
+// ============================================================================
+void testSameElementMultiCombo() {
+    BoardState b = BoardState::fromString(
+        "DWDWDF"
+        "FDGDFG"
+        "DLDWDH"
+        "WFDGDW"
+        "GFDLDH",
+        6, 5
+    );
+    RuleConfig r;
+    r.requiredSameElementCombos = 3;
+    r.sameElementComboTarget = static_cast<int8_t>(Element::Dark);
+    r.maxSteps = 24;
+    r.beamWidth = 220;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "same-element multi-combo no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "must achieve >= 3 Dark first-wave combos");
+    require(best.simulation.firstWaveElementCombos[static_cast<uint8_t>(Element::Dark)] >= 3, "Dark first-wave combos >= 3");
+}
+
+// ============================================================================
+// 21. Second-Wave Cascade Shield (次批消除盾: 第2波天降至少 1C)
+// ============================================================================
+void testSecondWaveCascadeShield() {
+    BoardState b = BoardState::fromString(
+        "FFGLDH"
+        "WWWDGF"
+        "FGLDHW"
+        "GLDHWF"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.minSecondWaveCombo = 1;
+    r.maxSteps = 16;
+    r.beamWidth = 180;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "second wave cascade no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "second wave cascade shield must be satisfied");
+    require(best.simulation.secondWaveCombo >= 1, "secondWaveCombo must be >= 1");
+}
+
+// ============================================================================
+// 22. Purgatory Fire (炼狱之火禁碰) + Foam (泡沫消四邻破裂) + Sleep (沉睡触碰唤醒)
+// ============================================================================
+void testNewHazardsPurgatoryFoamSleep() {
+    // 1) Sleep orb unmatchable until woken up
+    BoardState bs = BoardState::fromString(
+        "WWWFLG"
+        "FLGDLH"
+        "DLHFGD"
+        "FGDHLF"
+        "HLFDGH",
+        6, 5
+    );
+    bs.at(0, 1).hazards |= HazardBits::Sleep;
+    RuleConfig rs;
+    require(simulateBoard(bs, rs).firstWaveCombo == 0, "Unwoken Sleep orb must block match");
+
+    // 2) Purgatory Fire hard block + Foam 4-neighbor pop!
+    BoardState bf = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    bf.at(1, 2).hazards |= HazardBits::PurgatoryFire; // Instant death - must NEVER enter
+    bf.at(2, 3).hazards |= HazardBits::Foam;          // Must eliminate 4-neighbor to burst
+    bf.rebuildMasks();
+
+    RuleConfig rf;
+    rf.mustClearFoam = true;
+    rf.maxSteps = 20;
+    rf.beamWidth = 180;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(bf, rf);
+    require(!out.solutions.empty(), "purgatory+foam no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(bf, rf, best);
+    require(best.evaluation.allHardConstraintsMet, "must burst Foam without touching PurgatoryFire");
+    require(best.simulation.foamRemaining == 0, "Foam orb must be popped via 4-neighbor match");
+}
+
+// ============================================================================
+// 23. BarrierFirstWaveOnly (结界地型) + SealedStone (封界石阵)
+// ============================================================================
+void testBarrierAndSealedStoneTerrains() {
+    // SealedStone prevents elimination inside cell (0,1)
+    BoardState b1 = BoardState::fromString(
+        "WWWFLG"
+        "FLGDLH"
+        "DLHFGD"
+        "FGDHLF"
+        "HLFDGH",
+        6, 5
+    );
+    b1.setTileFlag(0, 1, TileFlagBits::SealedStone);
+    b1.rebuildMasks();
+    RuleConfig r;
+    require(simulateBoard(b1, r).firstWaveCombo == 0, "SealedStone must prevent elimination inside tile");
+
+    // BarrierFirstWaveOnly allows Wave 1 elimination, but blocks Wave 2 cascade inside the barrier tile!
+    BoardState b2 = BoardState::fromString(
+        "FFGLDH"
+        "WWWDGF"
+        "FGLDHW"
+        "DLHGWF"
+        "GHFDLW",
+        6, 5
+    );
+    // Normally col 0 has F(0,0), W(1,0), F(2,0) -> after W(1,0..2) clears in Wave 1, F(0,0) drops to (1,0),
+    // wait: put F(0,0), F(1,0), W(2,0), F(3,0) so after Wave 1 WWW on row 2 clears, F(0,0),F(1,0),F(3,0) form Wave 2 FFF at col 0!
+    BoardState b3 = BoardState::fromString(
+        "FGLDHW"
+        "FHDWLG"
+        "WWWLDF"
+        "FDLGWH"
+        "GHWFDL",
+        6, 5
+    );
+    // Without barrier, Wave 2 matches F at (1,0),(2,0),(3,0)
+    auto simNoBar = simulateBoard(b3, r);
+    require(simNoBar.secondWaveCombo >= 1, "Baseline board must have Wave 2 FFF cascade");
+    // Put BarrierFirstWaveOnly at (2,0) -> blocks Wave 2 match!
+    b3.setTileFlag(2, 0, TileFlagBits::BarrierFirstWaveOnly);
+    b3.rebuildMasks();
+    auto simWithBar = simulateBoard(b3, r);
+    require(simWithBar.secondWaveCombo == 0, "BarrierFirstWaveOnly must block Wave 2 elimination");
+}
+
+// ============================================================================
+// 24. Character Orb Pass + End Terrain (角色符石通行与停放地型)
+// ============================================================================
+void testCharOrbPassAndEndTerrain() {
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    b.setTileFlag(2, 1, TileFlagBits::CharOrbPass);
+    b.setTileFlag(4, 3, TileFlagBits::CharOrbEnd);
+    b.rebuildMasks();
+
+    RuleConfig r;
+    r.useCharacterOrb = true;
+    r.characterOrbCol = 0;
+    r.characterOrbElement = Element::Water;
+    r.requireCharOrbPass = true;
+    r.requireCharOrbEnd = true;
+    r.maxSteps = 18;
+    r.beamWidth = 180;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "charOrb pass+end no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "CharOrb must pass (2,1) and end at (4,3)");
+    require(best.waypoints.back() == (CellCoord{4, 3}), "CharOrb must end at (4,3)");
+    require((best.metrics.charOrbVisitedMask & bitOf(b.index(2, 1))) != 0, "CharOrb must pass through (2,1)");
+}
+
+// ============================================================================
+// 25. Trail Corrosion Self-Avoiding Walk + Unique Cells Goal (轨迹腐蚀走满 K 格)
+// ============================================================================
+void testTrailCorrosionUniqueCells() {
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.trailCorrosionEnabled = true;
+    r.requiredUniqueCellsVisited = 14;
+    r.maxSteps = 16;
+    r.beamWidth = 180;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "trail corrosion no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "must visit >= 14 unique cells without revisiting");
+    require(best.metrics.uniqueCellsVisited >= 14, "uniqueCellsVisited >= 14");
+    // Verify strictly self-avoiding waypoints
+    uint64_t seen = 0;
+    for (const auto& wp : best.waypoints) {
+        const uint64_t bit = bitOf(b.index(wp.row, wp.col));
+        require((seen & bit) == 0, "trailCorrosion path revisited a cell!");
+        seen |= bit;
+    }
+}
+
+// ============================================================================
+// 26. Race Orb Shield (种族符石首消盾)
+// ============================================================================
+void testRaceOrbShield() {
+    BoardState b = BoardState::fromString(
+        "W*FGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.requiredRaceElementsMask = elementBit(Element::Water);
+    r.maxSteps = 18;
+    r.beamWidth = 180;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "race orb shield no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "Water Race Orb shield must be met");
+    require((best.simulation.firstWaveRaceElementsMask & elementBit(Element::Water)) != 0, "Water Race orb must clear in wave 1");
+}
+
 } // namespace
 
 int main() {
@@ -654,6 +986,16 @@ int main() {
     runTest("14. Trail Burning (轨迹燃烧) + Traffic Light + Exact Steps", testTrailBurningAndTrafficLight);
     runTest("15. Character Orb Pull Start (角色珠下拉起手)", testCharacterOrbStart);
     runTest("16. Cooperative Cancellation", testCancellation);
+    runTest("17. Fixed Start Cell (Hold-and-Replan 问号‧转/风化‧转)", testFixedStartCellHoldAndReplan);
+    runTest("18. Cross-Element Compatible Merge Mask (跨属兼珠)", testCrossElementMergeMask);
+    runTest("19. Dual-Element Equal Combos (首消光暗同等盾)", testDualElementEqualCombos);
+    runTest("20. Same-Element Multi-Combo Shield (同属连击盾)", testSameElementMultiCombo);
+    runTest("21. Second-Wave Cascade Shield (次批消除盾)", testSecondWaveCascadeShield);
+    runTest("22. New Hazards (炼狱之火/泡沫四邻/沉睡唤醒)", testNewHazardsPurgatoryFoamSleep);
+    runTest("23. Terrains (结界地型/封界石阵)", testBarrierAndSealedStoneTerrains);
+    runTest("24. Character Orb Pass + End Terrain (角色珠通行/停放)", testCharOrbPassAndEndTerrain);
+    runTest("25. Trail Corrosion Self-Avoiding Walk (轨迹腐蚀)", testTrailCorrosionUniqueCells);
+    runTest("26. Race Orb Shield (种族符石盾)", testRaceOrbShield);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;

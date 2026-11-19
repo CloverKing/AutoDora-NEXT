@@ -18,26 +18,40 @@ void BoardState::rebuildMasks() noexcept {
     blackHoleMask = 0;
     noPassMask = 0;
     voidMask = 0;
+    barrierMask = 0;
+    sealedStoneMask = 0;
+    metamorphosisMask = 0;
+    trailCorrosionMask = 0;
+    miasmaMask = 0;
+    charOrbPassMask = 0;
+    charOrbEndMask = 0;
 
     const uint8_t n = cellCount();
     for (uint8_t i = 0; i < n; ++i) {
         const uint64_t b = bitOf(i);
-        const uint16_t f = tileFlags[i];
+        const uint32_t f = tileFlags[i];
         if ((f & TileFlagBits::VoidTile) != 0) {
             voidMask |= b;
             continue;
         }
         validMask |= b;
-        if (f & TileFlagBits::Puzzle1)      puzzleMask1 |= b;
-        if (f & TileFlagBits::Puzzle2)      puzzleMask2 |= b;
-        if (f & TileFlagBits::StartAllowed) startMask |= b;
-        if (f & TileFlagBits::EndRequired)  endMask |= b;
-        if (f & TileFlagBits::Storm)        stormMask |= b;
-        if (f & TileFlagBits::Shattered)    shatteredMask |= b;
-        if (f & TileFlagBits::BurningTile)  burningTileMask |= b;
-        if (f & TileFlagBits::StickyTile)   stickyTileMask |= b;
-        if (f & TileFlagBits::BlackHole)    blackHoleMask |= b;
-        if (f & TileFlagBits::NoPass)       noPassMask |= b;
+        if (f & TileFlagBits::Puzzle1)              puzzleMask1 |= b;
+        if (f & TileFlagBits::Puzzle2)              puzzleMask2 |= b;
+        if (f & TileFlagBits::StartAllowed)         startMask |= b;
+        if (f & TileFlagBits::EndRequired)          endMask |= b;
+        if (f & TileFlagBits::Storm)                stormMask |= b;
+        if (f & TileFlagBits::Shattered)            shatteredMask |= b;
+        if (f & TileFlagBits::BurningTile)          burningTileMask |= b;
+        if (f & TileFlagBits::StickyTile)           stickyTileMask |= b;
+        if (f & TileFlagBits::BlackHole)            blackHoleMask |= b;
+        if (f & TileFlagBits::NoPass)               noPassMask |= b;
+        if (f & TileFlagBits::BarrierFirstWaveOnly) barrierMask |= b;
+        if (f & TileFlagBits::SealedStone)          sealedStoneMask |= b;
+        if (f & TileFlagBits::Metamorphosis)        metamorphosisMask |= b;
+        if (f & TileFlagBits::TrailCorrosion)       trailCorrosionMask |= b;
+        if (f & TileFlagBits::Miasma)               miasmaMask |= b;
+        if (f & TileFlagBits::CharOrbPass)          charOrbPassMask |= b;
+        if (f & TileFlagBits::CharOrbEnd)           charOrbEndMask |= b;
     }
 }
 

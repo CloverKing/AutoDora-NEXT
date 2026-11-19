@@ -453,6 +453,62 @@ EvalResult evaluateCandidate(
         }
     }
 
+    if (boardAfterMoves.miasmaMask != 0) {
+        if (path.miasmaHits > rules.maxMiasmaHits) {
+            markFail(ShieldStatusBits::MiasmaLimit, static_cast<double>(path.miasmaHits - rules.maxMiasmaHits));
+        } else {
+            markSat(ShieldStatusBits::MiasmaLimit);
+        }
+    }
+
+    if (rules.requiredUniqueCellsVisited > 0) {
+        if (path.uniqueCellsVisited >= rules.requiredUniqueCellsVisited) {
+            markSat(ShieldStatusBits::TrailCellsGoal);
+            shaping += 1200.0;
+        } else {
+            markFail(ShieldStatusBits::TrailCellsGoal, 1.0);
+            shaping += static_cast<double>(path.uniqueCellsVisited) * 240.0;
+        }
+    }
+
+    // Character Orb Pass & End Terrain Constraints (角色符石通行/停放地型)
+    if ((rules.requireCharOrbPass || boardAfterMoves.charOrbPassMask != 0) && boardAfterMoves.charOrbPassMask != 0) {
+        const uint64_t missingPass = boardAfterMoves.charOrbPassMask & ~path.charOrbVisitedMask;
+        if (missingPass == 0) {
+            markSat(ShieldStatusBits::CharOrbTerrain);
+            shaping += 1400.0;
+        } else {
+            const uint8_t missCnt = static_cast<uint8_t>(std::popcount(missingPass));
+            const uint8_t hitCnt = static_cast<uint8_t>(std::popcount(boardAfterMoves.charOrbPassMask & path.charOrbVisitedMask));
+            markFail(ShieldStatusBits::CharOrbTerrain, static_cast<double>(missCnt));
+            shaping += static_cast<double>(hitCnt) * 420.0;
+            int minDist = 100;
+            for (uint8_t i = 0; i < totalCells; ++i) {
+                if (missingPass & bitOf(i)) {
+                    const int d = manhattanIdx(path.endIdx, i, boardAfterMoves.cols);
+                    if (d < minDist) minDist = d;
+                }
+            }
+            shaping -= static_cast<double>(minDist) * 140.0;
+        }
+    }
+    if ((rules.requireCharOrbEnd || boardAfterMoves.charOrbEndMask != 0) && boardAfterMoves.charOrbEndMask != 0) {
+        if (path.charOrbEndIdx < totalCells && (boardAfterMoves.charOrbEndMask & bitOf(path.charOrbEndIdx)) != 0) {
+            markSat(ShieldStatusBits::CharOrbTerrain);
+            shaping += 1200.0;
+        } else {
+            markFail(ShieldStatusBits::CharOrbTerrain, 1.5);
+            int minDist = 100;
+            for (uint8_t i = 0; i < totalCells; ++i) {
+                if (boardAfterMoves.charOrbEndMask & bitOf(i)) {
+                    const int d = manhattanIdx(path.endIdx, i, boardAfterMoves.cols);
+                    if (d < minDist) minDist = d;
+                }
+            }
+            shaping -= static_cast<double>(minDist) * 220.0;
+        }
+    }
+
     // =========================================================================
     // 2. HAZARD CLEARANCE
     // =========================================================================
@@ -487,11 +543,50 @@ EvalResult evaluateCandidate(
             }
         }
     }
+    if (rules.mustClearLockedHurt && sim.lockedHurtRemainingFirstWave > 0) {
+        hazardFail = true;
+        markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.lockedHurtRemainingFirstWave) * 1.2);
+        for (uint8_t i = 0; i < totalCells; ++i) {
+            if ((boardAfterMoves.cells[i].hazards & HazardBits::LockedHurt) != 0 &&
+                (sim.firstWaveClearedMask & bitOf(i)) == 0) {
+                shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 125.0);
+            }
+        }
+    }
+    if (rules.mustClearFoam && sim.foamRemaining > 0) {
+        hazardFail = true;
+        markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.foamRemaining) * 1.2);
+        shaping += static_cast<double>(sim.foamAdjacentHits) * 320.0;
+        // Guide matches adjacent to unpopped foam cells
+        for (uint8_t i = 0; i < totalCells; ++i) {
+            if ((boardAfterMoves.cells[i].hazards & HazardBits::Foam) == 0) continue;
+            const uint64_t adj = orthogonalNeighborsMask(bitOf(i), boardAfterMoves.cols, boardAfterMoves.rows);
+            if ((adj & sim.allWavesClearedMask) == 0) {
+                for (uint8_t j = 0; j < totalCells; ++j) {
+                    if ((adj & bitOf(j)) != 0 && boardAfterMoves.cells[j].isMatchable()) {
+                        shaping += computeAnchorOrbShaping(boardAfterMoves, j, path.endIdx, 40.0);
+                    }
+                }
+            }
+        }
+    }
     if (!hazardFail) {
         markSat(ShieldStatusBits::HazardsClear);
     }
     if (rules.prioritizeFrozen && sim.frozenRemaining > 0) {
         soft -= static_cast<double>(sim.frozenRemaining) * 35.0;
+    }
+    if (rules.prioritizeLockedAtkDown && sim.lockedAtkDownRemaining > 0) {
+        soft -= static_cast<double>(sim.lockedAtkDownRemaining) * 38.0;
+    }
+    if (sim.lightPrisonRemaining > 0) {
+        soft -= static_cast<double>(sim.lightPrisonRemaining) * 45.0;
+    }
+    if (rules.prioritizeLuminous && sim.luminousCleared > 0) {
+        soft += static_cast<double>(sim.luminousCleared) * 28.0;
+    }
+    if (sim.weakenedEliminated > 0) {
+        soft -= static_cast<double>(sim.weakenedEliminated) * 8.0;
     }
     if (rules.prioritizePetrifiedClear && sim.petrifiedAdjacentHits > 0) {
         soft += static_cast<double>(sim.petrifiedAdjacentHits) * 40.0;
@@ -582,6 +677,59 @@ EvalResult evaluateCandidate(
         }
     }
 
+    // Second-Wave (次批消除) Shield
+    if (rules.minSecondWaveCombo > 0 || rules.requiredSecondWaveElementsMask != 0) {
+        const uint8_t missingW2 = static_cast<uint8_t>(rules.requiredSecondWaveElementsMask & ~sim.secondWaveElementsMask);
+        const bool w2ComboOk = (sim.secondWaveCombo >= rules.minSecondWaveCombo);
+        if (w2ComboOk && missingW2 == 0) {
+            markSat(ShieldStatusBits::SecondWaveShield);
+            shaping += 1800.0;
+        } else {
+            markFail(ShieldStatusBits::SecondWaveShield, 1.2);
+            shaping += static_cast<double>(sim.secondWaveCombo) * 650.0;
+            shaping += static_cast<double>(std::popcount(static_cast<uint8_t>(rules.requiredSecondWaveElementsMask & sim.secondWaveElementsMask))) * 450.0;
+            if (sim.firstWaveCombo > 0) shaping += 180.0;
+        }
+    }
+
+    // Dual-Element Equal Combos (双属首消 Combo 同等盾，如首消光暗同等盾)
+    if (rules.requireEqualPairCombos && rules.equalPairElemA < kNumElements && rules.equalPairElemB < kNumElements) {
+        const uint8_t cA = sim.firstWaveElementCombos[rules.equalPairElemA];
+        const uint8_t cB = sim.firstWaveElementCombos[rules.equalPairElemB];
+        const bool pairOk = (cA == cB) && (!rules.equalPairMustBeNonZero || cA > 0);
+        if (pairOk) {
+            markSat(ShieldStatusBits::EqualPairCombo);
+            shaping += 1600.0;
+        } else {
+            markFail(ShieldStatusBits::EqualPairCombo, 1.0);
+            const int diff = std::abs(static_cast<int>(cA) - static_cast<int>(cB));
+            shaping -= static_cast<double>(diff) * 450.0;
+            shaping += static_cast<double>(std::min(cA, cB)) * 520.0;
+            if (rules.equalPairMustBeNonZero && (cA == 0 || cB == 0)) {
+                shaping -= 350.0;
+            }
+        }
+    }
+
+    // Same-Element Multi-Combo Shield (同属连击盾，如首消 3 组暗)
+    if (rules.requiredSameElementCombos > 0) {
+        uint8_t bestSameC = 0;
+        if (rules.sameElementComboTarget >= 0 && rules.sameElementComboTarget < kNumElements) {
+            bestSameC = sim.firstWaveElementCombos[static_cast<uint8_t>(rules.sameElementComboTarget)];
+        } else {
+            for (uint8_t e = 0; e < kNumElements; ++e) {
+                if (sim.firstWaveElementCombos[e] > bestSameC) bestSameC = sim.firstWaveElementCombos[e];
+            }
+        }
+        if (bestSameC >= rules.requiredSameElementCombos) {
+            markSat(ShieldStatusBits::SameElemMultiC);
+            shaping += 1700.0;
+        } else {
+            markFail(ShieldStatusBits::SameElemMultiC, static_cast<double>(rules.requiredSameElementCombos - bestSameC));
+            shaping += static_cast<double>(bestSameC) * 650.0;
+        }
+    }
+
     // =========================================================================
     // 4. DIGITAL ORB COUNT & FULL CLEAR & ELEMENT / ENCHANTED SHIELDS
     // =========================================================================
@@ -667,6 +815,28 @@ EvalResult evaluateCandidate(
                         if ((sim.totalElementsMask & eb) != 0) {
                             shaping -= 3000.0;
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (rules.requiredRaceElementsMask != 0 || rules.requireAnyRaceOrb) {
+        const uint8_t missingRace = static_cast<uint8_t>(rules.requiredRaceElementsMask & ~sim.firstWaveRaceElementsMask);
+        const bool anyRaceOk = !rules.requireAnyRaceOrb || sim.totalRaceOrbsFirstWave > 0;
+        if (missingRace == 0 && anyRaceOk) {
+            markSat(ShieldStatusBits::RaceOrbShield);
+            shaping += 1200.0;
+        } else {
+            unmetFocusShield = true;
+            const int missCnt = std::popcount(missingRace) + (anyRaceOk ? 0 : 1);
+            markFail(ShieldStatusBits::RaceOrbShield, static_cast<double>(missCnt));
+            for (uint8_t i = 0; i < totalCells; ++i) {
+                const Cell& c = boardAfterMoves.cells[i];
+                if (c.variant == Variant::Race && c.isMatchable()) {
+                    const uint8_t eb = elementBit(c.element);
+                    if ((missingRace & eb) != 0 || !anyRaceOk) {
+                        shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 130.0);
                     }
                 }
             }
@@ -1015,6 +1185,10 @@ EvalResult evaluateCandidate(
             soft += static_cast<double>(sim.groups[gi].enchantedCount) * 6.0 * sideComboScale;
         }
     }
+        if (rules.maximizeElementOrbIndex >= 0 && rules.maximizeElementOrbIndex < kNumElements) {
+            soft += static_cast<double>(sim.totalElementOrbs[static_cast<uint8_t>(rules.maximizeElementOrbIndex)]) * 95.0;
+        }
+
     if (rules.preferRace) {
         for (uint8_t gi = 0; gi < sim.groupCount; ++gi) {
             soft += static_cast<double>(sim.groups[gi].raceCount) * 6.0 * sideComboScale;
@@ -1025,6 +1199,8 @@ EvalResult evaluateCandidate(
     soft -= static_cast<double>(path.diagonalSteps) * rules.diagonalPenaltyWeight;
     soft -= static_cast<double>(path.burningTileHits) * 35.0;
     soft -= static_cast<double>(path.trailBurningHits) * 35.0;
+    soft -= static_cast<double>(path.miasmaHits) * 30.0;
+    soft -= static_cast<double>(path.witheredVineHits) * 22.0;
 
     ev.allHardConstraintsMet = (fail == 0);
     ev.satisfiedFlags = sat;

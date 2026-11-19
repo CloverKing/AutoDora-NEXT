@@ -23,7 +23,12 @@ data class AppSettings(
     val stepDurationMs: Long = 68L,
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
-    val showOrbBadgesOnPath: Boolean = true
+    val showOrbBadgesOnPath: Boolean = true,
+    val flashRevealMemoryEnabled: Boolean = true,
+    val holdReplanDelayMs: Long = 360L,
+    val holdReplanNudge: Boolean = true,
+    val invertDragX: Boolean = false,
+    val invertDragY: Boolean = false
 ) {
     fun toRuleConfig(): RuleConfig = RuleConfig(
         allowDiagonalMove = allowDiagonalMove,
@@ -35,7 +40,9 @@ data class AppSettings(
 
     fun toSwipeConfig(): SwipeConfig = SwipeConfig(
         stepDurationMs = stepDurationMs,
-        humanMode = humanMode
+        humanMode = humanMode,
+        invertX = invertDragX,
+        invertY = invertDragY
     )
 }
 
@@ -44,7 +51,7 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val LEFT_RATIO = floatPreferencesKey("calib_left_ratio")
         val RIGHT_RATIO = floatPreferencesKey("calib_right_ratio")
-        val BOTTOM_RATIO = floatPreferencesKey("calib_bottom_ratio")
+        val BOTTOM_RATIO = floatPreferencesKey("calib_bottom_ratio_v2")
         val HEIGHT_SCALE = floatPreferencesKey("calib_height_scale")
         val AUTO_WEIJIAN = booleanPreferencesKey("calib_auto_weijian")
         val AUTO_ARBITRARY = booleanPreferencesKey("calib_auto_arbitrary")
@@ -60,57 +67,53 @@ class SettingsRepository(private val context: Context) {
         val HUMAN_MODE = booleanPreferencesKey("touch_human_mode")
         val MULTI_FRAME_COUNT = intPreferencesKey("vision_multi_frames")
         val SHOW_ORB_BADGES = booleanPreferencesKey("ux_show_orb_badges")
+
+        val FLASH_REVEAL_MEMORY = booleanPreferencesKey("vision_flash_reveal_memory")
+        val HOLD_REPLAN_DELAY_MS = longPreferencesKey("touch_hold_replan_delay_ms")
+        val HOLD_REPLAN_NUDGE = booleanPreferencesKey("touch_hold_replan_nudge")
+        val INVERT_DRAG_X = booleanPreferencesKey("touch_invert_drag_x")
+        val INVERT_DRAG_Y = booleanPreferencesKey("touch_invert_drag_y")
     }
 
-    val settingsFlow: Flow<AppSettings> = context.autoDoraDataStore.data.map { p ->
-        AppSettings(
-            calibration = BoardCalibration(
-                leftRatio = p[Keys.LEFT_RATIO] ?: 0.008f,
-                rightRatio = p[Keys.RIGHT_RATIO] ?: 0.992f,
-                bottomRatio = p[Keys.BOTTOM_RATIO] ?: 0.968f,
-                heightScale = p[Keys.HEIGHT_SCALE] ?: 1.0f,
-                autoDetectWeijian = p[Keys.AUTO_WEIJIAN] ?: true,
-                autoDetectArbitraryGrid = p[Keys.AUTO_ARBITRARY] ?: false
-            ),
-            maxSteps = p[Keys.MAX_STEPS] ?: 28,
-            beamWidth = p[Keys.BEAM_WIDTH] ?: 180,
-            allowDiagonalMove = p[Keys.ALLOW_DIAGONAL] ?: true,
-            testModeOnlyDraw = p[Keys.TEST_MODE_ONLY_DRAW] ?: true,
-            countdownSeconds = p[Keys.COUNTDOWN_SECONDS] ?: 0,
-            showEmergencyStop = p[Keys.SHOW_EMERGENCY_STOP] ?: true,
-            stepDurationMs = p[Keys.STEP_DURATION_MS] ?: 68L,
-            humanMode = p[Keys.HUMAN_MODE] ?: false,
-            multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
-            showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true
-        )
-    }
+    private fun readFromPrefs(p: Preferences): AppSettings = AppSettings(
+        calibration = BoardCalibration(
+            leftRatio = p[Keys.LEFT_RATIO] ?: 0.0f,
+            rightRatio = p[Keys.RIGHT_RATIO] ?: 1.0f,
+            bottomRatio = p[Keys.BOTTOM_RATIO] ?: BoardCalibration.AUTO_BOTTOM_RATIO,
+            heightScale = p[Keys.HEIGHT_SCALE] ?: 1.0f,
+            autoDetectWeijian = p[Keys.AUTO_WEIJIAN] ?: true,
+            autoDetectArbitraryGrid = p[Keys.AUTO_ARBITRARY] ?: false
+        ),
+        maxSteps = p[Keys.MAX_STEPS] ?: 28,
+        beamWidth = p[Keys.BEAM_WIDTH] ?: 180,
+        allowDiagonalMove = p[Keys.ALLOW_DIAGONAL] ?: true,
+        testModeOnlyDraw = p[Keys.TEST_MODE_ONLY_DRAW] ?: true,
+        countdownSeconds = p[Keys.COUNTDOWN_SECONDS] ?: 0,
+        showEmergencyStop = p[Keys.SHOW_EMERGENCY_STOP] ?: true,
+        stepDurationMs = p[Keys.STEP_DURATION_MS] ?: 68L,
+        humanMode = p[Keys.HUMAN_MODE] ?: false,
+        multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
+        showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
+        flashRevealMemoryEnabled = p[Keys.FLASH_REVEAL_MEMORY] ?: true,
+        holdReplanDelayMs = p[Keys.HOLD_REPLAN_DELAY_MS] ?: 360L,
+        holdReplanNudge = p[Keys.HOLD_REPLAN_NUDGE] ?: true,
+        invertDragX = p[Keys.INVERT_DRAG_X] ?: false,
+        invertDragY = p[Keys.INVERT_DRAG_Y] ?: false
+    )
+
+    val settingsFlow: Flow<AppSettings> = context.autoDoraDataStore.data.map { p -> readFromPrefs(p) }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         context.autoDoraDataStore.edit { p ->
-            val current = AppSettings(
-                calibration = BoardCalibration(
-                    leftRatio = p[Keys.LEFT_RATIO] ?: 0.008f,
-                    rightRatio = p[Keys.RIGHT_RATIO] ?: 0.992f,
-                    bottomRatio = p[Keys.BOTTOM_RATIO] ?: 0.968f,
-                    heightScale = p[Keys.HEIGHT_SCALE] ?: 1.0f,
-                    autoDetectWeijian = p[Keys.AUTO_WEIJIAN] ?: true,
-                    autoDetectArbitraryGrid = p[Keys.AUTO_ARBITRARY] ?: false
-                ),
-                maxSteps = p[Keys.MAX_STEPS] ?: 28,
-                beamWidth = p[Keys.BEAM_WIDTH] ?: 180,
-                allowDiagonalMove = p[Keys.ALLOW_DIAGONAL] ?: true,
-                testModeOnlyDraw = p[Keys.TEST_MODE_ONLY_DRAW] ?: true,
-                countdownSeconds = p[Keys.COUNTDOWN_SECONDS] ?: 0,
-                showEmergencyStop = p[Keys.SHOW_EMERGENCY_STOP] ?: true,
-                stepDurationMs = p[Keys.STEP_DURATION_MS] ?: 68L,
-                humanMode = p[Keys.HUMAN_MODE] ?: false,
-                multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
-                showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true
-            )
+            val current = readFromPrefs(p)
             val next = transform(current)
             p[Keys.LEFT_RATIO] = next.calibration.leftRatio.coerceIn(0f, 0.35f)
             p[Keys.RIGHT_RATIO] = next.calibration.rightRatio.coerceIn(0.65f, 1f)
-            p[Keys.BOTTOM_RATIO] = next.calibration.bottomRatio.coerceIn(0.45f, 1f)
+            p[Keys.BOTTOM_RATIO] = if (next.calibration.bottomRatio < 0f) {
+                BoardCalibration.AUTO_BOTTOM_RATIO
+            } else {
+                next.calibration.bottomRatio.coerceIn(0.45f, 1f)
+            }
             p[Keys.HEIGHT_SCALE] = next.calibration.heightScale.coerceIn(0.75f, 1.25f)
             p[Keys.AUTO_WEIJIAN] = next.calibration.autoDetectWeijian
             p[Keys.AUTO_ARBITRARY] = next.calibration.autoDetectArbitraryGrid
@@ -120,10 +123,15 @@ class SettingsRepository(private val context: Context) {
             p[Keys.TEST_MODE_ONLY_DRAW] = next.testModeOnlyDraw
             p[Keys.COUNTDOWN_SECONDS] = next.countdownSeconds.coerceIn(0, 3)
             p[Keys.SHOW_EMERGENCY_STOP] = next.showEmergencyStop
-            p[Keys.STEP_DURATION_MS] = next.stepDurationMs.coerceIn(35L, 140L)
+            p[Keys.STEP_DURATION_MS] = next.stepDurationMs.coerceIn(20L, 140L)
             p[Keys.HUMAN_MODE] = next.humanMode
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)
             p[Keys.SHOW_ORB_BADGES] = next.showOrbBadgesOnPath
+            p[Keys.FLASH_REVEAL_MEMORY] = next.flashRevealMemoryEnabled
+            p[Keys.HOLD_REPLAN_DELAY_MS] = next.holdReplanDelayMs.coerceIn(150L, 900L)
+            p[Keys.HOLD_REPLAN_NUDGE] = next.holdReplanNudge
+            p[Keys.INVERT_DRAG_X] = next.invertDragX
+            p[Keys.INVERT_DRAG_Y] = next.invertDragY
         }
     }
 }

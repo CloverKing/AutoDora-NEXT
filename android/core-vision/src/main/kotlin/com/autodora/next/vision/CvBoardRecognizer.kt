@@ -30,15 +30,17 @@ class BitmapVisionFrame(bitmap: Bitmap) : VisionFrame {
 }
 
 /**
- * Phase 2 Zero-Training Cold-Start CV Recognizer with Multi-Frame Temporal Fusion:
- *  1) Classifies 6 base elements (Water, Fire, Wood, Light, Dark, Heart) via weighted circular-ring HSV histogram
- *  2) Detects Enchanted orbs (强化珠) via multi-frame peak specular star-gleam ratio
- *  3) Auto-detects Puzzle Shield golden glowing borders (拼图盾亮边) across multi-frame peak brightness
- *  4) Flags low-confidence cells (e.g., Question/Hidden/BlackWhite/Unseen skins) for manual grid fallback
+ * Phase 2.5 Real-Game-Calibrated CV Recognizer with Multi-Frame Temporal Fusion:
+ *  1) Classifies 6 base elements using real ToS HSV boundaries (Dark 248..316°, Heart 316..346°),
+ *     strictly excluding the top-right Race Badge quadrant from color & star-gleam sampling!
+ *  2) Detects modern ToS top-right Race Badges (种族符石徽章) separately via B&W contrast signature
+ *  3) Distinguishes dark-slate Question Orbs ('?') from vivid bright Water orbs (prevents false Water!)
+ *  4) Detects Enchanted orbs (强化珠) via multi-frame peak specular star-gleam ratio
+ *  5) Auto-detects Puzzle Shield golden glowing borders (拼图盾亮边) across multi-frame peak brightness
  */
 class CvBoardRecognizer : BoardRecognizer {
 
-    override val name: String = "CV-Rule-v1 (MultiFrame)"
+    override val name: String = "CV-Rule-v2.5 (RealGame+RaceFree)"
 
     override suspend fun recognize(frames: List<Bitmap>, geometry: BoardGeometry): RecognitionResult =
         withContext(Dispatchers.Default) {
@@ -61,6 +63,8 @@ class CvBoardRecognizer : BoardRecognizer {
         val tileFlags = MutableList(total) { TileFlagBits.NONE }
         val lowConfIndices = ArrayList<Int>()
         var confSum = 0f
+        var questionCount = 0
+        var raceBadgeCount = 0
 
         val puzzleBorderScores = FloatArray(total)
 
@@ -74,6 +78,12 @@ class CvBoardRecognizer : BoardRecognizer {
                 cells.add(cellState)
                 puzzleBorderScores[idx] = borderGlow
                 confSum += cellState.confidence
+                if (cellState.element == Element.HIDDEN || (cellState.hazards and HazardBits.QUESTION) != 0) {
+                    questionCount++
+                }
+                if (cellState.variant == Variant.RACE) {
+                    raceBadgeCount++
+                }
                 if (cellState.confidence < LOW_CONFIDENCE_THRESHOLD) {
                     lowConfIndices.add(idx)
                 }
@@ -91,7 +101,9 @@ class CvBoardRecognizer : BoardRecognizer {
             lowConfidenceIndices = lowConfIndices,
             puzzleCellsDetected = puzzleCount,
             engineName = name,
-            elapsedMs = elapsedMs
+            elapsedMs = elapsedMs,
+            questionOrbsDetected = questionCount,
+            raceBadgesDetected = raceBadgeCount
         )
     }
 
@@ -109,25 +121,40 @@ class CvBoardRecognizer : BoardRecognizer {
         var sampleCount = 0
         var lowSatCount = 0
         var maxBrightStarCount = 0
+        var outerRingValSum = 0f
+        var outerRingSatSum = 0f
+        var outerRingCount = 0
 
-        // Sample 2 concentric rings inside the rune orb (0.34*r and 0.62*r, 12 angles each = 24 points)
-        // Avoids outer tile border and dead-center dark/white emblem artifacts
-        val ringRadii = floatArrayOf(radius * 0.34f, radius * 0.62f)
-        val angles = 12
+        // Sample 2 concentric rings inside the rune orb (0.36*r and 0.62*r, 16 angles each)
+        // IMPORTANT: Exclude top-right quadrant (dx > 0 && dy < 0) where modern ToS renders
+        // black-and-white Race Badges (人类/神/魔/龙/兽/妖/机械) so they NEVER pollute orb color or enchanted gleam!
+        val ringRadii = floatArrayOf(radius * 0.36f, radius * 0.62f)
+        val angles = 16
 
         for (f in frames) {
             var frameStarPixels = 0
-            for (ringR in ringRadii) {
+            for ((ringIdx, ringR) in ringRadii.withIndex()) {
                 for (a in 0 until angles) {
                     val theta = (2.0 * PI * a / angles).toFloat()
-                    val px = (cx + cos(theta) * ringR).roundToInt()
-                    val py = (cy + sin(theta) * ringR).roundToInt()
+                    val dx = cos(theta) * ringR
+                    val dy = sin(theta) * ringR
+                    // Exclude top-right quadrant (screen +X right, -Y up)
+                    if (dx > radius * 0.08f && dy < -radius * 0.08f) continue
+
+                    val px = (cx + dx).roundToInt()
+                    val py = (cy + dy).roundToInt()
                     val argb = f.getArgb(px, py)
                     val (h, s, v) = rgbToHsv(argb)
                     sampleCount++
 
-                    // Detect bright white specular star sparkle (Enchanted orb indicator)
-                    if (v >= 0.92f && s <= 0.22f) {
+                    if (ringIdx == 1) {
+                        outerRingValSum += v
+                        outerRingSatSum += s
+                        outerRingCount++
+                    }
+
+                    // Detect bright white specular star sparkle (only on inner ring outside race badge)
+                    if (ringIdx == 0 && v >= 0.93f && s <= 0.18f) {
                         frameStarPixels++
                     }
 
@@ -144,16 +171,19 @@ class CvBoardRecognizer : BoardRecognizer {
                     }
                 }
             }
-            // Inner star-gleam scan (center + inner ring at 0.20*r, 8 angles) for ToS Enchanted orb sparkles
+            // Inner star-gleam scan (center + inner ring at 0.20*r, 8 angles, excluding TR) for ToS Enchanted orb sparkles
             val (_, cs, cv) = rgbToHsv(f.getArgb(cx.roundToInt(), cy.roundToInt()))
-            if (cv >= 0.93f && cs <= 0.20f) frameStarPixels += 2
+            if (cv >= 0.94f && cs <= 0.18f) frameStarPixels += 2
             val innerStarR = radius * 0.20f
             for (a in 0 until 8) {
                 val theta = (2.0 * PI * a / 8).toFloat()
-                val sx = (cx + cos(theta) * innerStarR).roundToInt()
-                val sy = (cy + sin(theta) * innerStarR).roundToInt()
+                val dx = cos(theta) * innerStarR
+                val dy = sin(theta) * innerStarR
+                if (dx > 0f && dy < 0f) continue
+                val sx = (cx + dx).roundToInt()
+                val sy = (cy + dy).roundToInt()
                 val (_, ss, sv) = rgbToHsv(f.getArgb(sx, sy))
-                if (sv >= 0.92f && ss <= 0.22f) frameStarPixels++
+                if (sv >= 0.93f && ss <= 0.18f) frameStarPixels++
             }
             if (frameStarPixels > maxBrightStarCount) {
                 maxBrightStarCount = frameStarPixels
@@ -162,6 +192,8 @@ class CvBoardRecognizer : BoardRecognizer {
 
         // Detect golden glowing puzzle border around the cell perimeter across multi-frame peak
         val borderGlow = computePuzzleBorderScore(frames, cx, cy, cellW, cellH)
+        // Detect modern ToS top-right B&W Race Badge
+        val hasRaceBadge = detectTopRightRaceBadge(frames.first(), cx, cy, radius)
 
         // Pick winning element
         var bestIdx = -1
@@ -178,14 +210,32 @@ class CvBoardRecognizer : BoardRecognizer {
         }
 
         val lowSatRatio = lowSatCount.toFloat() / max(1, sampleCount)
-        if (bestIdx < 0 || totalSatWeight < 0.5f || lowSatRatio > 0.85f) {
-            // Likely BlackWhite, Question, Hidden, or Petrified orb — flag low confidence for Phase 4 AI / manual grid
-            val haz = if (lowSatRatio > 0.85f) HazardBits.BLACK_WHITE else HazardBits.NONE
+        val outerAvgV = outerRingValSum / max(1, outerRingCount)
+        val outerAvgS = outerRingSatSum / max(1, outerRingCount)
+
+        if (bestIdx < 0 || totalSatWeight < 0.5f || lowSatRatio > 0.82f) {
+            // Likely BlackWhite, Question, Hidden, or Petrified orb — flag low confidence
+            val haz = if (lowSatRatio > 0.82f) HazardBits.BLACK_WHITE else HazardBits.QUESTION
             return CellState(
-                element = Element.UNKNOWN,
+                element = Element.HIDDEN,
                 variant = Variant.NORMAL,
                 hazards = haz,
-                confidence = 0.2f
+                confidence = 0.22f
+            ) to borderGlow
+        }
+
+        // Dedicated Question ('?') Orb Detector:
+        // Real ToS Water orbs are vivid bright sky-cyan (outerAvgV >= 0.78..1.00, outerAvgS >= 0.50).
+        // ToS blue/slate Question ('?') orbs have a noticeably dimmer slate-indigo body (outerAvgV < 0.68)
+        // and muted saturation (outerAvgS < 0.46) with pale-cyan/grey '?' mark pixels raising lowSatRatio.
+        val isSlateQuestionOrb = (bestIdx == Element.WATER.code) &&
+            ((outerAvgV < 0.66f && outerAvgS < 0.46f) || (outerAvgV < 0.70f && lowSatRatio > 0.36f))
+        if (isSlateQuestionOrb) {
+            return CellState(
+                element = Element.HIDDEN,
+                variant = Variant.NORMAL,
+                hazards = HazardBits.QUESTION,
+                confidence = 0.30f
             ) to borderGlow
         }
 
@@ -193,9 +243,15 @@ class CvBoardRecognizer : BoardRecognizer {
         val margin = (bestVote - secondVote) / max(1e-4f, bestVote)
         val confidence = (dominance * 0.65f + margin * 0.35f).coerceIn(0f, 1f)
 
-        // Enchanted orb heuristic: noticeable pure-white star cluster inside colored orb
-        val isEnchanted = maxBrightStarCount >= 3 && confidence >= 0.55f
-        val variant = if (isEnchanted) Variant.ENCHANTED else Variant.NORMAL
+        // Enchanted orb heuristic: strong pure-white star gleam beyond ordinary ToS center rune emblem
+        // (ordinary Fire/Dark/Water orbs have small white center glyphs; genuine Enchanted orbs sparkle intensely).
+        val starThreshold = if (bestIdx == Element.LIGHT.code) 8 else 7
+        val isEnchanted = maxBrightStarCount >= starThreshold && confidence >= 0.58f
+        val variant = when {
+            isEnchanted -> Variant.ENCHANTED
+            hasRaceBadge -> Variant.RACE
+            else -> Variant.NORMAL
+        }
 
         return CellState(
             element = Element.fromCode(bestIdx),
@@ -206,20 +262,55 @@ class CvBoardRecognizer : BoardRecognizer {
     }
 
     /**
-     * Tuned Hue-Saturation-Value classifier for Tower of Saviors 6 rune elements:
-     * 0=Water(Blue/Cyan), 1=Fire(Red/Orange-Red), 2=Wood(Green), 3=Light(Gold/Yellow), 4=Dark(Purple), 5=Heart(Pink/Magenta)
+     * Detects ToS top-right circular black-and-white Race Badge (种族符石徽章, e.g. 人类/神/魔/龙/兽/妖/机械).
+     * Verified against real Xiaomi 15 battle screenshot: badge sits around (+0.58r, -0.58r) with >= 20%
+     * bright neutral-white ring pixels (v >= 0.80, s <= 0.26) AND >= 20% deep dark silhouette pixels (v <= 0.28).
+     */
+    private fun detectTopRightRaceBadge(
+        frame: VisionFrame,
+        cx: Float,
+        cy: Float,
+        radius: Float
+    ): Boolean {
+        val minOff = radius * 0.28f
+        val maxOff = radius * 0.82f
+        val steps = 5
+        var whiteHits = 0
+        var darkHits = 0
+        var total = 0
+        for (iy in 0 until steps) {
+            val dy = -(minOff + (maxOff - minOff) * iy / (steps - 1))
+            for (ix in 0 until steps) {
+                val dx = minOff + (maxOff - minOff) * ix / (steps - 1)
+                val (_, s, v) = rgbToHsv(frame.getArgb((cx + dx).roundToInt(), (cy + dy).roundToInt()))
+                total++
+                if (v >= 0.80f && s <= 0.26f) whiteHits++
+                if (v <= 0.28f) darkHits++
+            }
+        }
+        return total > 0 &&
+            (whiteHits.toFloat() / total) >= 0.20f &&
+            (darkHits.toFloat() / total) >= 0.20f
+    }
+
+    /**
+     * Real-game calibrated Hue-Saturation-Value classifier for Tower of Saviors 6 rune elements:
+     * Verified on real Xiaomi 15 battle screenshot:
+     *  - Fire (红):  H < 22° or >= 346°
+     *  - Light (黄): H ∈ [22°, 74°]
+     *  - Wood (绿):  H ∈ [74°, 162°]
+     *  - Water (蓝): H ∈ [162°, 248°]
+     *  - Dark (紫):  H ∈ [248°, 316°] (modern ToS bright magenta-purple Dark reaches ~314°!)
+     *  - Heart (粉): H ∈ [316°, 346°]
      */
     private fun classifyHueToElement(h: Float, s: Float, v: Float): Int {
         return when {
-            h < 22f || h >= 338f -> Element.FIRE.code
+            h < 22f || h >= 346f -> Element.FIRE.code
             h in 22f..74f -> Element.LIGHT.code
             h in 74f..162f -> Element.WOOD.code
             h in 162f..248f -> Element.WATER.code
-            h in 248f..302f -> Element.DARK.code
-            h in 302f..338f -> {
-                // Distinguish bright pink Heart vs deep violet Dark
-                if (v >= 0.45f || h >= 312f) Element.HEART.code else Element.DARK.code
-            }
+            h in 248f..316f -> Element.DARK.code
+            h in 316f..346f -> Element.HEART.code
             else -> -1
         }
     }

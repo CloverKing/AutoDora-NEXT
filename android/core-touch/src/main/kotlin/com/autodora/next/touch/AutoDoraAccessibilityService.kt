@@ -6,7 +6,13 @@ import android.graphics.Path
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import com.autodora.next.model.BoardGeometry
+import com.autodora.next.model.CellCoord
+import com.autodora.next.model.SolutionPath
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -121,6 +127,156 @@ class AutoDoraAccessibilityService : AccessibilityService() {
         }
 
         return TouchExecutionResult.Success(dispatched, System.currentTimeMillis() - tStart)
+    }
+
+    /**
+     * No-Root Hold-and-Replan (问号‧转 / 风化‧转 / 烟雾):
+     * Keeps the virtual finger continuously pressed via chained willContinue=true micro-heartbeat strokes
+     * while capturing & re-solving the newly transformed board, then seamlessly continues swiping!
+     */
+    suspend fun dispatchHoldAndReplan(
+        startCell: CellCoord,
+        geometry: BoardGeometry,
+        trigger: HoldReplanTrigger,
+        nudgeTarget: CellCoord?,
+        revealDelayMs: Long,
+        config: SwipeConfig,
+        onBoardRevealed: suspend (heldCell: CellCoord) -> SolutionPath?
+    ): TouchExecutionResult = coroutineScope {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return@coroutineScope TouchExecutionResult.Failed("按住重算模式需要 Android 8.0+ 连续手势支持")
+        }
+        cancelRequested.set(false)
+        val tStart = System.currentTimeMillis()
+        var dispatched = 0
+
+        val startPt = ScreenPoint(geometry.cellCenterX(startCell.col), geometry.cellCenterY(startCell.row))
+        val effectiveNudgeCell = if (trigger == HoldReplanTrigger.NUDGE_ONE_CELL_HOLD && nudgeTarget != null) {
+            nudgeTarget
+        } else {
+            startCell
+        }
+        val heldPt = ScreenPoint(
+            geometry.cellCenterX(effectiveNudgeCell.col),
+            geometry.cellCenterY(effectiveNudgeCell.row)
+        )
+
+        // 1. Initial press-down (and optional 1-cell nudge) with willContinue=true
+        val initPath = Path().apply {
+            moveTo(startPt.x, startPt.y)
+            if (effectiveNudgeCell != startCell) {
+                lineTo(heldPt.x, heldPt.y)
+            } else {
+                lineTo(startPt.x + 0.5f, startPt.y + 0.5f)
+            }
+        }
+        val initDuration = if (effectiveNudgeCell != startCell) {
+            config.stepDurationMs.coerceIn(45L, 120L)
+        } else {
+            80L
+        }
+        var activeStroke = GestureDescription.StrokeDescription(initPath, 0L, initDuration, true)
+        var curFingerPt = if (effectiveNudgeCell != startCell) heldPt else ScreenPoint(startPt.x + 0.5f, startPt.y + 0.5f)
+        if (!dispatchSingleStroke(activeStroke, true, curFingerPt)) {
+            return@coroutineScope if (cancelRequested.get()) TouchExecutionResult.Cancelled
+            else TouchExecutionResult.Failed("按住起手被系统拒绝")
+        }
+        dispatched++
+
+        // 2. Launch parallel delayed capture + recognize + fixedStartCell C++20 solve!
+        val replanDeferred = async {
+            delay(revealDelayMs.coerceIn(120L, 1200L))
+            onBoardRevealed(effectiveNudgeCell)
+        }
+
+        // 3. Keep finger pressed seamlessly via 110ms micro-heartbeat strokes until replan completes!
+        var toggle = false
+        val maxWaitDeadline = System.currentTimeMillis() + revealDelayMs + 2200L
+        while (!replanDeferred.isCompleted && !cancelRequested.get() && System.currentTimeMillis() < maxWaitDeadline) {
+            val nextPt = if (toggle) {
+                ScreenPoint(heldPt.x + 0.5f, heldPt.y)
+            } else {
+                ScreenPoint(heldPt.x - 0.5f, heldPt.y)
+            }
+            toggle = !toggle
+            val holdPath = Path().apply {
+                moveTo(curFingerPt.x, curFingerPt.y)
+                lineTo(nextPt.x, nextPt.y)
+            }
+            val nextStroke = activeStroke.continueStroke(holdPath, 0L, 110L, true)
+            if (!dispatchSingleStroke(nextStroke, true, nextPt)) {
+                replanDeferred.cancel()
+                return@coroutineScope if (cancelRequested.get()) TouchExecutionResult.Cancelled
+                else TouchExecutionResult.Failed("按住保活中断")
+            }
+            activeStroke = nextStroke
+            curFingerPt = nextPt
+            dispatched++
+        }
+
+        val solution = if (replanDeferred.isCompleted && !cancelRequested.get()) {
+            try {
+                replanDeferred.await()
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            replanDeferred.cancel()
+            null
+        }
+
+        if (solution == null || cancelRequested.get()) {
+            // Always perform clean finger lift so touch NEVER sticks down!
+            val liftPath = Path().apply {
+                moveTo(curFingerPt.x, curFingerPt.y)
+                lineTo(curFingerPt.x + 0.5f, curFingerPt.y)
+            }
+            val liftStroke = activeStroke.continueStroke(liftPath, 0L, 14L, false)
+            dispatchSingleStroke(liftStroke, false, curFingerPt)
+            return@coroutineScope if (cancelRequested.get()) TouchExecutionResult.Cancelled
+            else TouchExecutionResult.Failed("重算未返回有效路线，已安全抬手")
+        }
+
+        // 4. Seamlessly continue swiping the freshly solved path without lifting the finger!
+        val contSegments = PathInterpolator.buildContinuationSegments(solution, geometry, config, curFingerPt)
+        if (contSegments.isEmpty()) {
+            val liftPath = Path().apply {
+                moveTo(curFingerPt.x, curFingerPt.y)
+                lineTo(curFingerPt.x + 0.5f, curFingerPt.y)
+            }
+            val liftStroke = activeStroke.continueStroke(liftPath, 0L, 14L, false)
+            dispatchSingleStroke(liftStroke, false, curFingerPt)
+            return@coroutineScope TouchExecutionResult.Success(dispatched, System.currentTimeMillis() - tStart)
+        }
+
+        for (seg in contSegments) {
+            if (cancelRequested.get()) {
+                val liftPath = Path().apply {
+                    moveTo(curFingerPt.x, curFingerPt.y)
+                    lineTo(curFingerPt.x + 0.5f, curFingerPt.y)
+                }
+                val liftStroke = activeStroke.continueStroke(liftPath, 0L, 12L, false)
+                dispatchSingleStroke(liftStroke, false, curFingerPt)
+                return@coroutineScope TouchExecutionResult.Cancelled
+            }
+            val segPath = Path().apply {
+                val p0 = seg.points.first()
+                moveTo(p0.x, p0.y)
+                for (i in 1 until seg.points.size) {
+                    lineTo(seg.points[i].x, seg.points[i].y)
+                }
+            }
+            val nextStroke = activeStroke.continueStroke(segPath, 0L, seg.durationMs, seg.willContinue)
+            if (!dispatchSingleStroke(nextStroke, seg.willContinue, seg.points.last())) {
+                return@coroutineScope if (cancelRequested.get()) TouchExecutionResult.Cancelled
+                else TouchExecutionResult.Failed("按住重算续滑失败")
+            }
+            activeStroke = nextStroke
+            curFingerPt = seg.points.last()
+            dispatched++
+        }
+
+        TouchExecutionResult.Success(dispatched, System.currentTimeMillis() - tStart)
     }
 
     private suspend fun dispatchSingleStroke(

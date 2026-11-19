@@ -69,38 +69,54 @@ enum class Variant : uint8_t {
 
 // Hazards attached to the orb itself (move when the orb is swapped)
 namespace HazardBits {
-constexpr uint16_t None        = 0;
-constexpr uint16_t Weathered   = 1u << 0;  // 风化珠 (触碰断珠/扣血; 可选撞掉解除)
-constexpr uint16_t Electrified = 1u << 1;  // 电击珠 (禁碰 + 未消必败/高优首消)
-constexpr uint16_t BurningOrb  = 1u << 2;  // 附着燃烧
-constexpr uint16_t StickyOrb   = 1u << 3;  // 附着黏腐
-constexpr uint16_t Frozen      = 1u << 4;  // 冻结 (未消下回合变冰封, 高优消除)
-constexpr uint16_t IceSealed   = 1u << 5;  // 冰封 (不可移动 + 不可消除)
-constexpr uint16_t Locked      = 1u << 6;  // 锁定/凝结 (不可移动)
-constexpr uint16_t Petrified   = 1u << 7;  // 石化 (不可移动 + 不可直消, 消四邻解层)
-constexpr uint16_t BloodDrain  = 1u << 8;  // 化血 (未消帮敌回血, 高优首消)
-constexpr uint16_t Bomb        = 1u << 9;  // 炸弹 (未消爆炸, 高优首消)
-constexpr uint16_t BlackWhite  = 1u << 10; // 黑白珠
-constexpr uint16_t Question    = 1u << 11; // 问号珠
-constexpr uint16_t Priority    = 1u << 12; // 单格优先必消 (继承旧版 OrbSetting)
-constexpr uint16_t Reserve     = 1u << 13; // 单格保留不消 (继承旧版 OrbSetting)
+constexpr uint32_t None          = 0;
+constexpr uint32_t Weathered     = 1u << 0;  // 风化珠 (触碰断珠/扣血; 可选撞掉解除)
+constexpr uint32_t Electrified   = 1u << 1;  // 电击珠 (禁碰 + 未消必败/高优首消)
+constexpr uint32_t BurningOrb    = 1u << 2;  // 附着燃烧
+constexpr uint32_t StickyOrb     = 1u << 3;  // 附着黏腐
+constexpr uint32_t Frozen        = 1u << 4;  // 冻结 (未消下回合变冰封, 高优消除)
+constexpr uint32_t IceSealed     = 1u << 5;  // 冰封 (不可移动 + 不可消除, 消四邻破冰)
+constexpr uint32_t Locked        = 1u << 6;  // 锁定/凝结 (不可移动)
+constexpr uint32_t Petrified     = 1u << 7;  // 石化 (不可移动 + 不可直消, 消四邻解层)
+constexpr uint32_t BloodDrain    = 1u << 8;  // 化血 (未消帮敌回血, 高优首消)
+constexpr uint32_t Bomb          = 1u << 9;  // 炸弹 (未消爆炸, 高优首消)
+constexpr uint32_t BlackWhite    = 1u << 10; // 黑白珠
+constexpr uint32_t Question      = 1u << 11; // 问号珠
+constexpr uint32_t Priority      = 1u << 12; // 单格优先必消 (继承旧版 OrbSetting)
+constexpr uint32_t Reserve       = 1u << 13; // 单格保留不消 (继承旧版 OrbSetting)
+constexpr uint32_t Foam          = 1u << 14; // 泡沫符石 (不可直消/移动, 消四邻破裂)
+constexpr uint32_t PurgatoryFire = 1u << 15; // 炼狱之火 (触碰即死, 绝对禁入硬障碍)
+constexpr uint32_t LightPrison   = 1u << 16; // 光牢符石 (未消封技/反伤, 高优消除)
+constexpr uint32_t Corroded      = 1u << 17; // 腐蚀符石 (触碰即停手并扣血, 默认硬避碰)
+constexpr uint32_t LockedHurt    = 1u << 18; // 受伤锁定 (可移动, 未首消反伤)
+constexpr uint32_t LockedAtkDown = 1u << 19; // 减攻锁定 (可移动, 未消减攻)
+constexpr uint32_t WitheredVine  = 1u << 20; // 枯萎藤蔓 (经过额外扣转珠秒数)
+constexpr uint32_t Sleep         = 1u << 21; // 沉睡符石 (未经路径触碰唤醒前不可消除)
+constexpr uint32_t Luminous      = 1u << 22; // 光晕/耀眼符石 (优先消除获得增益)
 } // namespace HazardBits
 
 // Fixed terrain / shield markers attached to grid coordinate (r, c) (do NOT move with orbs)
 namespace TileFlagBits {
-constexpr uint16_t None         = 0;
-constexpr uint16_t Puzzle1      = 1u << 0;  // 拼图盾区域 1
-constexpr uint16_t Puzzle2      = 1u << 1;  // 拼图盾区域 2 (双拼图支持)
-constexpr uint16_t StartAllowed = 1u << 2;  // 红绿灯: 允许起手格 (绿灯)
-constexpr uint16_t EndRequired  = 1u << 3;  // 红绿灯: 要求停手格 (红灯)
-constexpr uint16_t Checkpoint   = 1u << 4;  // 途经地形格
-constexpr uint16_t Storm        = 1u << 5;  // 暴风区域 (禁碰 + 不可消除)
-constexpr uint16_t Shattered    = 1u << 6;  // 碎裂格 (允许经过, 但该格不可消除!)
-constexpr uint16_t BurningTile  = 1u << 7;  // 灼热/燃烧地形 (经过扣血)
-constexpr uint16_t StickyTile   = 1u << 8;  // 黏腐地形 (触碰即停手)
-constexpr uint16_t BlackHole    = 1u << 9;  // 黑洞 (禁经过)
-constexpr uint16_t NoPass       = 1u << 10; // 绝对禁行
-constexpr uint16_t VoidTile     = 1u << 11; // 缩盘/无效格
+constexpr uint32_t None                 = 0;
+constexpr uint32_t Puzzle1              = 1u << 0;  // 拼图盾区域 1
+constexpr uint32_t Puzzle2              = 1u << 1;  // 拼图盾区域 2 (双拼图支持)
+constexpr uint32_t StartAllowed         = 1u << 2;  // 红绿灯: 允许起手格 (绿灯)
+constexpr uint32_t EndRequired          = 1u << 3;  // 红绿灯: 要求停手格 (红灯)
+constexpr uint32_t Checkpoint           = 1u << 4;  // 途经地形格
+constexpr uint32_t Storm                = 1u << 5;  // 暴风区域 (禁碰 + 不可消除)
+constexpr uint32_t Shattered            = 1u << 6;  // 碎裂格 (允许经过, 但该格不可消除!)
+constexpr uint32_t BurningTile          = 1u << 7;  // 灼热/燃烧地形 (经过扣血)
+constexpr uint32_t StickyTile           = 1u << 8;  // 黏腐地形 (触碰即停手)
+constexpr uint32_t BlackHole            = 1u << 9;  // 黑洞 (禁经过)
+constexpr uint32_t NoPass               = 1u << 10; // 绝对禁行
+constexpr uint32_t VoidTile             = 1u << 11; // 缩盘/无效格
+constexpr uint32_t BarrierFirstWaveOnly = 1u << 12; // 结界地型 (格内仅首批消除有效, 天降不消)
+constexpr uint32_t SealedStone          = 1u << 13; // 封界石阵 (格内符石不可被消除, 允许移出)
+constexpr uint32_t Metamorphosis        = 1u << 14; // 幻变空间 (经过地形变化区)
+constexpr uint32_t TrailCorrosion       = 1u << 15; // 轨迹腐蚀区 (走过不可回头)
+constexpr uint32_t Miasma               = 1u << 16; // 瘴气/毒雾地形 (经过扣血)
+constexpr uint32_t CharOrbPass          = 1u << 17; // 角色符石通行地型 (角色符石必须经过)
+constexpr uint32_t CharOrbEnd           = 1u << 18; // 角色符石停放地型 (角色符石必须停放)
 } // namespace TileFlagBits
 
 enum class Direction : uint8_t {

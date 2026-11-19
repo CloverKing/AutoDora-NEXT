@@ -128,6 +128,44 @@ object RuleComposer {
                 }
 
                 "zero_trail_burning" -> cfg = cfg.copy(trailBurningEnabled = true, trailLength = chip.paramInt, maxTrailHurts = 0)
+                "trail_corrosion" -> cfg = cfg.copy(
+                    trailCorrosionEnabled = true,
+                    requiredUniqueCellsVisited = maxOf(cfg.requiredUniqueCellsVisited, chip.paramInt)
+                )
+                "second_wave_combo" -> {
+                    cfg = cfg.copy(
+                        minSecondWaveCombo = maxOf(cfg.minSecondWaveCombo, chip.paramInt.coerceAtLeast(1)),
+                        requiredSecondWaveElementsMask = cfg.requiredSecondWaveElementsMask or chip.paramElementMask
+                    )
+                    highDifficultyShield = true
+                }
+                "equal_pair_light_dark" -> {
+                    cfg = cfg.copy(
+                        requireEqualPairCombos = true,
+                        equalPairElemA = Element.LIGHT.code,
+                        equalPairElemB = Element.DARK.code,
+                        equalPairMustBeNonZero = true
+                    )
+                    highDifficultyShield = true
+                }
+                "same_elem_combos" -> {
+                    cfg = cfg.copy(
+                        requiredSameElementCombos = maxOf(cfg.requiredSameElementCombos, chip.paramInt.coerceAtLeast(2))
+                    )
+                    highDifficultyShield = true
+                }
+                "race_orb_shield" -> {
+                    cfg = cfg.copy(
+                        requiredRaceElementsMask = cfg.requiredRaceElementsMask or chip.paramElementMask,
+                        requireAnyRaceOrb = chip.paramElementMask == 0
+                    )
+                    highDifficultyShield = true
+                }
+                "maximize_element_orbs" -> cfg = cfg.copy(maximizeElementOrbIndex = chip.paramInt)
+                "char_orb_terrain" -> {
+                    cfg = cfg.copy(requireCharOrbPass = true, requireCharOrbEnd = true)
+                    highDifficultyShield = true
+                }
                 "step_limit" -> cfg = cfg.copy(maxSteps = minOf(cfg.maxSteps, chip.paramInt.coerceAtLeast(1)))
                 "exact_steps" -> cfg = cfg.copy(exactSteps = chip.paramInt, maxSteps = maxOf(cfg.maxSteps, chip.paramInt))
                 "step_hurt_minimize" -> cfg = cfg.copy(stepPenaltyWeight = 5.0)

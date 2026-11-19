@@ -119,12 +119,15 @@ struct RuleConfig {
     double stepPenaltyWeight = 0.08;       // 一步一伤时可调高至 5.0+
     double diagonalPenaltyWeight = 0.05;   // 同分时略偏向直线
     StartPointPreset startPreset = StartPointPreset::Any;
+    int8_t fixedStartCell = -1;            // >=0 时强制从此格起手 (免 Root 问号‧转/风化‧转/烟雾重算专用!)
     bool allowHitWeatheredToClear = false; // 默认严避风化; 开启后允许故意撞掉风化解状态
 
-    // --- Character Orb (角色符石起手) ---
+    // --- Character Orb (角色符石起手与通行/停放地形) ---
     bool useCharacterOrb = false;
     uint8_t characterOrbCol = 0;           // 0..cols-1 (从该列头像下拉至 (0, col))
     Element characterOrbElement = Element::Fire;
+    bool requireCharOrbPass = false;       // 要求角色符石路径经过所有 CharOrbPass 格
+    bool requireCharOrbEnd = false;        // 要求角色符石停放在 CharOrbEnd 格之一
 
     // --- Matching & Link Mechanics ---
     bool allowDiagonalMatch = false;       // 斜消 (8 向相连消除, 独立于斜转!)
@@ -155,6 +158,14 @@ struct RuleConfig {
     bool comboParityFirstWaveOnly = true;
     bool sameComboAcrossEliminatedElements = false; // 同属同 C
     bool avoidSkyfallRisk = true;          // 固定 C / 奇偶盾时惩罚易意外天降残留结构
+    uint8_t minSecondWaveCombo = 0;        // 次批消除盾: 第2波(天降叠珠)最少 Combo
+    uint8_t requiredSecondWaveElementsMask = 0; // 次批消除盾: 第2波需含属性掩码
+    bool requireEqualPairCombos = false;   // 双属首消 Combo 同等盾 (如首消光暗同等盾)
+    uint8_t equalPairElemA = 3;            // 默认光 (Light)
+    uint8_t equalPairElemB = 4;            // 默认暗 (Dark)
+    bool equalPairMustBeNonZero = true;    // 要求双属各自均 > 0 且首消 Combo 数相等
+    uint8_t requiredSameElementCombos = 0; // 同属连击盾 (如首消 3 组暗)
+    int8_t sameElementComboTarget = -1;    // -1 = 任意单属达到 N 组, 0..5 = 指定属性
 
     // --- Count & Element Shields ---
     int16_t exactFirstWaveTotalOrbs = -1;  // 数字盾 (-1 = 关闭, 如 18 / 20 / 28)
@@ -162,7 +173,10 @@ struct RuleConfig {
     uint8_t requiredFirstWaveElementsMask = 0; // 位掩码 (如五属首消 = 0b011111)
     uint8_t requiredTotalElementsMask = 0;     // 全回合需消属性掩码
     uint8_t requiredEnchantedElementsMask = 0; // 五属强化盾等
+    uint8_t requiredRaceElementsMask = 0;      // 指定属性种族符石首消盾
+    bool requireAnyRaceOrb = false;            // 任意种族符石首消盾
     uint8_t minDistinctElements = 0;           // 3/4/5 色模式
+    int8_t maximizeElementOrbIndex = -1;       // 累积消除盾: 0..5 = 最大化该属性消珠数
 
     // --- Shape & Puzzle Shields ---
     PuzzleShieldRule puzzle1{};
@@ -170,16 +184,24 @@ struct RuleConfig {
     CrossShieldRule crossShield{};
     ShapeShieldRule shapeShield{};
 
-    // --- Terrain & Trail Burning ---
+    // --- Terrain, Trail Burning & 13-Year Hazards ---
     bool trailBurningEnabled = false;
     uint8_t trailLength = 0;               // 0 = 无限尾迹, 或 6
     uint8_t maxTrailHurts = 0;             // 允许轨迹碰撞次数 (0..10)
     uint8_t maxBurningTileHurts = 0;       // 允许踩燃烧格次数 (0..10)
+    bool trailCorrosionEnabled = false;    // 全局轨迹腐蚀: 严禁重访已走过格子 (自避路径)
+    uint8_t requiredUniqueCellsVisited = 0; // 要求路径踏过至少 K 个不重复格子 (如轨迹踏满)
+    uint8_t maxMiasmaHits = 0;             // 允许经过瘴气/毒雾格次数
     bool mustClearElectrified = true;      // 电击珠必消
     bool mustClearBloodDrain = true;       // 化血珠必首消
     bool mustClearBomb = true;             // 炸弹珠必首消
+    bool mustClearFoam = true;             // 泡沫珠需消四邻破裂
+    bool mustClearLockedHurt = true;       // 受伤锁定必首消
+    bool prioritizeLockedAtkDown = true;   // 减攻锁定高优清除
+    bool avoidCorroded = true;             // 腐蚀符石默认硬避碰
+    bool prioritizeLuminous = true;        // 光晕符石高优消除
     bool prioritizeFrozen = true;          // 冻结珠高优清除
-    bool prioritizePetrifiedClear = true;  // 石化珠四邻消除解层加权
+    bool prioritizePetrifiedClear = true;  // 石化/冰封珠四邻消除解层加权
 
     // --- Search Budget & Output ---
     uint32_t beamWidth = 180;              // 算力档位 (16 ~ 1000)

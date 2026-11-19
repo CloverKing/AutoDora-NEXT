@@ -1,6 +1,7 @@
 package com.autodora.next.touch
 
 import com.autodora.next.model.BoardGeometry
+import com.autodora.next.model.CellCoord
 import com.autodora.next.model.SolutionPath
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,28 @@ class AccessibilityTouchExecutor : TouchExecutor {
         return service.dispatchChainedSegments(segments)
     }
 
+    override suspend fun executeHoldAndReplan(
+        startCell: CellCoord,
+        geometry: BoardGeometry,
+        trigger: HoldReplanTrigger,
+        nudgeTarget: CellCoord?,
+        revealDelayMs: Long,
+        config: SwipeConfig,
+        onBoardRevealed: suspend (heldCell: CellCoord) -> SolutionPath?
+    ): TouchExecutionResult {
+        val service = AccessibilityServiceBridge.current()
+            ?: return TouchExecutionResult.Failed("无障碍服务未连接，请在系统设置中启用 AutoDora-NEXT 无障碍服务")
+        return service.dispatchHoldAndReplan(
+            startCell = startCell,
+            geometry = geometry,
+            trigger = trigger,
+            nudgeTarget = nudgeTarget,
+            revealDelayMs = revealDelayMs,
+            config = config,
+            onBoardRevealed = onBoardRevealed
+        )
+    }
+
     override fun emergencyStop() {
         AccessibilityServiceBridge.current()?.requestEmergencyStop()
     }
@@ -36,6 +59,18 @@ class ShizukuTouchExecutor : TouchExecutor {
         solution: SolutionPath,
         geometry: BoardGeometry,
         config: SwipeConfig
+    ): TouchExecutionResult {
+        return TouchExecutionResult.Failed("Shizuku 触控引擎将在 Phase 4 接入，请先使用无障碍引擎")
+    }
+
+    override suspend fun executeHoldAndReplan(
+        startCell: CellCoord,
+        geometry: BoardGeometry,
+        trigger: HoldReplanTrigger,
+        nudgeTarget: CellCoord?,
+        revealDelayMs: Long,
+        config: SwipeConfig,
+        onBoardRevealed: suspend (heldCell: CellCoord) -> SolutionPath?
     ): TouchExecutionResult {
         return TouchExecutionResult.Failed("Shizuku 触控引擎将在 Phase 4 接入，请先使用无障碍引擎")
     }

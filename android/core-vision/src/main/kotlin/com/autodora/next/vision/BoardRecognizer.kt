@@ -3,6 +3,8 @@ package com.autodora.next.vision
 import android.graphics.Bitmap
 import com.autodora.next.model.BoardGeometry
 import com.autodora.next.model.BoardState
+import com.autodora.next.model.Element
+import com.autodora.next.model.HazardBits
 
 data class RecognitionResult(
     val board: BoardState,
@@ -10,7 +12,11 @@ data class RecognitionResult(
     val lowConfidenceIndices: List<Int>,
     val puzzleCellsDetected: Int,
     val engineName: String,
-    val elapsedMs: Double
+    val elapsedMs: Double,
+    val questionOrbsDetected: Int = board.cells.count {
+        it.element == Element.HIDDEN || (it.hazards and HazardBits.QUESTION) != 0
+    },
+    val raceBadgesDetected: Int = 0
 )
 
 /**

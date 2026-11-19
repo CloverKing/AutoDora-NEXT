@@ -42,7 +42,7 @@ object NativeSolver {
         val tileFlags = IntArray(n) { board.tileFlags[it] }
         val checkpoints = board.orderedCheckpoints.toIntArray()
 
-        val ruleInts = IntArray(66)
+        val ruleInts = IntArray(88)
         ruleInts[0] = if (rules.allowDiagonalMove) 1 else 0
         ruleInts[1] = rules.maxSteps
         ruleInts[2] = rules.exactSteps
@@ -106,6 +106,28 @@ object NativeSolver {
         for (e in 0 until 6) {
             ruleInts[60 + e] = rules.compatibleLinkMask.getOrElse(e) { 1 shl e }
         }
+        ruleInts[66] = rules.fixedStartCell
+        ruleInts[67] = if (rules.requireCharOrbPass) 1 else 0
+        ruleInts[68] = if (rules.requireCharOrbEnd) 1 else 0
+        ruleInts[69] = rules.minSecondWaveCombo
+        ruleInts[70] = rules.requiredSecondWaveElementsMask
+        ruleInts[71] = if (rules.requireEqualPairCombos) 1 else 0
+        ruleInts[72] = rules.equalPairElemA
+        ruleInts[73] = rules.equalPairElemB
+        ruleInts[74] = if (rules.equalPairMustBeNonZero) 1 else 0
+        ruleInts[75] = rules.requiredSameElementCombos
+        ruleInts[76] = rules.sameElementComboTarget
+        ruleInts[77] = rules.requiredRaceElementsMask
+        ruleInts[78] = if (rules.requireAnyRaceOrb) 1 else 0
+        ruleInts[79] = rules.maximizeElementOrbIndex
+        ruleInts[80] = if (rules.trailCorrosionEnabled) 1 else 0
+        ruleInts[81] = rules.requiredUniqueCellsVisited
+        ruleInts[82] = rules.maxMiasmaHits
+        ruleInts[83] = if (rules.mustClearFoam) 1 else 0
+        ruleInts[84] = if (rules.mustClearLockedHurt) 1 else 0
+        ruleInts[85] = if (rules.prioritizeLockedAtkDown) 1 else 0
+        ruleInts[86] = if (rules.avoidCorroded) 1 else 0
+        ruleInts[87] = if (rules.prioritizeLuminous) 1 else 0
 
         val ruleDoubles = doubleArrayOf(rules.stepPenaltyWeight, rules.diagonalPenaltyWeight)
 

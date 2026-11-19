@@ -14,18 +14,18 @@ constexpr uint8_t kMaxCheckpoints = 8;
 struct Cell {
     Element element = Element::Empty;
     Variant variant = Variant::Normal;
-    uint16_t hazards = HazardBits::None;
+    uint32_t hazards = HazardBits::None;
 
     constexpr bool isMatchable() const noexcept {
         return isMatchableElement(element);
     }
 
     constexpr bool isImmovable() const noexcept {
-        return (hazards & (HazardBits::IceSealed | HazardBits::Locked | HazardBits::Petrified)) != 0;
+        return (hazards & (HazardBits::IceSealed | HazardBits::Locked | HazardBits::Petrified | HazardBits::Foam)) != 0;
     }
 
     constexpr bool isUnmatchableHazard() const noexcept {
-        return (hazards & (HazardBits::IceSealed | HazardBits::Petrified)) != 0;
+        return (hazards & (HazardBits::IceSealed | HazardBits::Petrified | HazardBits::Foam | HazardBits::Sleep)) != 0;
     }
 };
 
@@ -34,7 +34,7 @@ struct BoardState {
     uint8_t cols = 6;
     uint8_t rows = 5;
     std::array<Cell, kMaxCells> cells{};
-    std::array<uint16_t, kMaxCells> tileFlags{};
+    std::array<uint32_t, kMaxCells> tileFlags{};
     std::array<uint8_t, kMaxCheckpoints> orderedCheckpoints{};
     uint8_t checkpointCount = 0;
 
@@ -51,6 +51,13 @@ struct BoardState {
     uint64_t blackHoleMask = 0;
     uint64_t noPassMask = 0;
     uint64_t voidMask = 0;
+    uint64_t barrierMask = 0;
+    uint64_t sealedStoneMask = 0;
+    uint64_t metamorphosisMask = 0;
+    uint64_t trailCorrosionMask = 0;
+    uint64_t miasmaMask = 0;
+    uint64_t charOrbPassMask = 0;
+    uint64_t charOrbEndMask = 0;
 
     constexpr uint8_t cellCount() const noexcept {
         return static_cast<uint8_t>(cols * rows);
@@ -72,7 +79,7 @@ struct BoardState {
         return cells[index(r, c)];
     }
 
-    void setTileFlag(uint8_t r, uint8_t c, uint16_t flag) noexcept {
+    void setTileFlag(uint8_t r, uint8_t c, uint32_t flag) noexcept {
         tileFlags[index(r, c)] |= flag;
     }
 

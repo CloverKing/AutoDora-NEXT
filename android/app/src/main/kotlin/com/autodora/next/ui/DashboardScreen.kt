@@ -286,6 +286,20 @@ fun DashboardScreen(
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                     CompactSwitchRow(
+                        title = "先露后藏问号珠自动记忆",
+                        subtitle = "全版翻问号珠前自动锁定清晰盘面并透视还原",
+                        checked = settings.flashRevealMemoryEnabled,
+                        onCheckedChange = { v -> onUpdateSettings { it.copy(flashRevealMemoryEnabled = v) } }
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    CompactSwitchRow(
+                        title = "按住转珠重算微移触发（问号‧转）",
+                        subtitle = "按住微推 1 格触发显形不松手，实时重算续滑",
+                        checked = settings.holdReplanNudge,
+                        onCheckedChange = { v -> onUpdateSettings { it.copy(holdReplanNudge = v) } }
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    CompactSwitchRow(
                         title = "独立红色急停按钮",
                         subtitle = "算路或划屏时一键中止",
                         checked = settings.showEmergencyStop,
@@ -309,11 +323,37 @@ fun DashboardScreen(
                         onValueChange = { v -> onUpdateSettings { it.copy(beamWidth = (v / 20f).roundToInt() * 20) } }
                     )
                     CompactSliderRow(
-                        label = "每格滑动耗时",
+                        label = "每格滑动耗时（2秒/3秒极速可调至24ms）",
                         valueText = "${settings.stepDurationMs} ms",
                         value = settings.stepDurationMs.toFloat(),
-                        valueRange = 35f..120f,
+                        valueRange = 20f..120f,
                         onValueChange = { v -> onUpdateSettings { it.copy(stepDurationMs = v.roundToLong()) } }
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val presets = listOf("2秒极速" to 24L, "3秒快转" to 38L, "标准" to 68L, "稳健" to 95L)
+                        for ((label, ms) in presets) {
+                            val selected = kotlin.math.abs(settings.stepDurationMs - ms) <= 4L
+                            FilterChip(
+                                selected = selected,
+                                onClick = { onUpdateSettings { it.copy(stepDurationMs = ms) } },
+                                label = { Text(label, fontSize = 10.5.sp) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(28.dp)
+                            )
+                        }
+                    }
+                    CompactSliderRow(
+                        label = "按住重算显形延时（问号‧转/风化‧转）",
+                        valueText = "${settings.holdReplanDelayMs} ms",
+                        value = settings.holdReplanDelayMs.toFloat(),
+                        valueRange = 200f..800f,
+                        onValueChange = { v -> onUpdateSettings { it.copy(holdReplanDelayMs = (v / 20f).roundToLong() * 20L) } }
                     )
                     CompactSliderRow(
                         label = "执行前倒数",

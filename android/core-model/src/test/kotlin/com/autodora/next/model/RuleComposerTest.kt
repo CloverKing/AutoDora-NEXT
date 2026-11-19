@@ -60,4 +60,20 @@ class RuleComposerTest {
         assertTrue(composed.puzzle1.enabled)
         assertFalse(composed.puzzle2.enabled)
     }
+
+    @Test
+    fun `compose supports Phase 2_5 13-year ToS wave shield chips`() {
+        val chips = listOf(
+            WaveShieldChip("second_wave_combo", "次批消除", ShieldCategory.COMBO, paramInt = 2),
+            WaveShieldChip("equal_pair_light_dark", "首消光暗同等", ShieldCategory.COMBO),
+            WaveShieldChip("trail_corrosion", "轨迹腐蚀12格", ShieldCategory.HAZARD_AND_PATH, paramInt = 12),
+            WaveShieldChip("race_orb_shield", "种族符石盾", ShieldCategory.COUNT_AND_ELEMENT)
+        )
+        val composed = RuleComposer.compose(TeamBasePreset("default", "Default"), chips)
+        assertEquals(2, composed.minSecondWaveCombo)
+        assertTrue(composed.requireEqualPairCombos)
+        assertTrue(composed.trailCorrosionEnabled)
+        assertEquals(12, composed.requiredUniqueCellsVisited)
+        assertTrue(composed.requireAnyRaceOrb)
+    }
 }

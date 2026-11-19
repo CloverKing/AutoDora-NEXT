@@ -13,6 +13,7 @@ constexpr uint8_t kMaxMatchGroups = 32;
 struct MatchGroup {
     uint8_t wave = 1;            // 1 = 首消 (First Wave), 2+ = 叠珠/天降
     Element element = Element::Empty;
+    uint8_t groupElementsMask = 0; // 跨属兼珠消除时包含的全部属性位掩码
     uint64_t cellMask = 0;       // 参与消除的格子掩码
     uint8_t orbCount = 0;
     uint8_t enchantedCount = 0;
@@ -35,6 +36,7 @@ struct SimulationResult {
     uint8_t groupCount = 0;
 
     uint8_t firstWaveCombo = 0;
+    uint8_t secondWaveCombo = 0;
     uint8_t totalCombo = 0;
     uint8_t cascadeWaves = 0;
 
@@ -43,10 +45,12 @@ struct SimulationResult {
     uint16_t matchableCellsAtStart = 0;
 
     uint8_t firstWaveElementsMask = 0;
+    uint8_t secondWaveElementsMask = 0;
     uint8_t totalElementsMask = 0;
     uint8_t firstWaveEnchantedElementsMask = 0;
     uint8_t totalEnchantedElementsMask = 0;
     uint8_t firstWaveRaceElementsMask = 0;
+    uint8_t totalRaceOrbsFirstWave = 0;
 
     std::array<uint8_t, kNumElements> firstWaveElementCombos{};
     std::array<uint8_t, kNumElements> totalElementCombos{};
@@ -62,6 +66,13 @@ struct SimulationResult {
     uint8_t bloodDrainRemainingFirstWave = 0;
     uint8_t bombRemainingFirstWave = 0;
     uint8_t frozenRemaining = 0;
+    uint8_t foamRemaining = 0;
+    uint16_t foamAdjacentHits = 0;
+    uint8_t lockedHurtRemainingFirstWave = 0;
+    uint8_t lockedAtkDownRemaining = 0;
+    uint8_t lightPrisonRemaining = 0;
+    uint8_t luminousCleared = 0;
+    uint8_t weakenedEliminated = 0;
     uint8_t priorityOrbsRemaining = 0;
     uint8_t reserveOrbsBroken = 0;
     uint16_t petrifiedAdjacentHits = 0;
