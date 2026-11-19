@@ -1,7 +1,6 @@
 package com.autodora.next.overlay
 
 import android.annotation.SuppressLint
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -30,8 +29,7 @@ import androidx.core.app.NotificationCompat
 import com.autodora.next.capture.AutoGridDetector
 import com.autodora.next.capture.BoardCalibration
 import com.autodora.next.capture.ScreenCaptureSession
-import com.autodora.next.data.AppSettings
-import com.autodora.next.data.SettingsRepository
+import com.autodora.next.data.*
 import com.autodora.next.jni.NativeCancelToken
 import com.autodora.next.jni.NativeSolver
 import com.autodora.next.model.*
@@ -42,6 +40,7 @@ import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.ui.OverlayPalette
 import com.autodora.next.ui.OverlayThemeResolver
 import com.autodora.next.vision.BoardRecognizer
+import com.autodora.next.vision.EnemySkillOcrEngine
 import com.autodora.next.vision.FlashRevealMemoryTracker
 import com.autodora.next.vision.RecognitionResult
 import dagger.hilt.android.AndroidEntryPoint
@@ -67,15 +66,20 @@ private enum class OverlayPhase { IDLE, CALCULATING, MOVING }
 class OverlayControllerService : Service() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var teamPresetRepository: TeamPresetRepository
     @Inject lateinit var boardRecognizer: BoardRecognizer
+    @Inject lateinit var enemySkillOcrEngine: EnemySkillOcrEngine
     @Inject lateinit var touchExecutor: TouchExecutor
 
     private lateinit var windowManager: WindowManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private var screenW = 1200
-    private var screenH = 2670
+    private var screenW = 1080
+    private var screenH = 2400
     private var settings = AppSettings()
+    private var presetRecords: List<TeamPresetRecord> = emptyList()
+    private var activeWaveChips: List<WaveShieldChip> = emptyList()
+    private var lastOcrSummary: String? = null
     private lateinit var palette: OverlayPalette
 
     // Overlay views
@@ -85,9 +89,11 @@ class OverlayControllerService : Service() {
     private lateinit var controlParams: WindowManager.LayoutParams
     private lateinit var statusOrbView: TextView
     private lateinit var toolbarContainer: LinearLayout
-    private lateinit var modeChipRow: LinearLayout
+
+    // Main bar controls
     private lateinit var solveBtn: TextView
     private lateinit var prevBtn: TextView
+    private lateinit var pagerText: TextView
     private lateinit var nextBtn: TextView
     private lateinit var executeBtn: TextView
     private lateinit var stopChipBtn: TextView
@@ -95,29 +101,49 @@ class OverlayControllerService : Service() {
     private lateinit var calibToggleBtn: TextView
     private lateinit var moreToggleBtn: TextView
     private lateinit var closeBtn: TextView
+
+    // Collapsible quick-controls card (2 tidy rows under '⋯')
+    private lateinit var quickPanel: LinearLayout
+    private lateinit var holdReplanToggleBtn: TextView
     private lateinit var memoryChipBtn: TextView
-    private lateinit var holdReplanBtn: TextView
     private lateinit var invertChipBtn: TextView
     private lateinit var speedChipBtn: TextView
-    private lateinit var calibrationBar: LinearLayout
-    private val calibNudgeBtns = ArrayList<TextView>()
-    private lateinit var calibAutoBtn: TextView
-    private lateinit var calibResetBtn: TextView
+    private lateinit var tuningDrawerToggleBtn: TextView
+    private lateinit var boardEditorToggleBtn: TextView
+    private lateinit var ocrScanBtn: TextView
+
+    // Active wave shields strip
+    private lateinit var activeShieldScroll: HorizontalScrollView
+    private lateinit var activeShieldRow: LinearLayout
+
+    // Solution summary strip
     private lateinit var summaryStrip: LinearLayout
     private lateinit var summaryTitle: TextView
     private lateinit var groupsScroll: HorizontalScrollView
     private lateinit var groupsRow: LinearLayout
-    private lateinit var pagerText: TextView
 
-    // Turn state
+    // Calibration bar
+    private lateinit var calibrationBar: LinearLayout
+    private val calibNudgeBtns = ArrayList<TextView>()
+    private lateinit var calibAutoBtn: TextView
+    private lateinit var calibResetBtn: TextView
+
+    // Phase 3 in-game drawers
+    private lateinit var tuningDrawer: OverlayTuningDrawerController
+    private lateinit var boardEditor: OverlayBoardEditorController
+
+    // Interactive state
     private var currentPhase = OverlayPhase.IDLE
     private var toolbarExpanded = true
     private var modeRowExpanded = false
+    private var tuningDrawerOpen = false
+    private var boardEditorMode = false
     private var summaryPillsExpanded = true
     private var showPath = true
     private var calibrationMode = false
     private var currentGeometry: BoardGeometry? = null
     private var lastRecognition: RecognitionResult? = null
+    private var editedBoard: BoardState? = null
     private var lastSolveOutput: SolveOutput? = null
     private var usedMemorizedSnapshot = false
     private var selectedSolutionIdx = 0
@@ -149,6 +175,25 @@ class OverlayControllerService : Service() {
                     currentGeometry = latest.calibration.toBase6x5Geometry(screenW, screenH)
                     refreshPathCanvas()
                 }
+            }
+        }
+        serviceScope.launch {
+            teamPresetRepository.observePresets().collectLatest { list ->
+                presetRecords = list
+                syncDrawerData()
+            }
+        }
+        serviceScope.launch {
+            ActiveStrategyStore.activeChips.collectLatest { chips ->
+                activeWaveChips = chips
+                refreshActiveShieldStrip()
+                syncDrawerData()
+            }
+        }
+        serviceScope.launch {
+            ActiveStrategyStore.lastOcrSummary.collectLatest { summary ->
+                lastOcrSummary = summary
+                syncDrawerData()
             }
         }
     }
@@ -194,8 +239,8 @@ class OverlayControllerService : Service() {
     private fun startForegroundCompat() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setContentTitle("AutoDora-NEXT 悬浮窗运行中")
-            .setContentText("点击悬浮球即可识图解盘或自动转珠")
+            .setContentTitle("AutoDora-NEXT 悬浮助手运行中")
+            .setContentText("点击悬浮胶囊即可识盘解盾或自动转珠")
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -207,9 +252,38 @@ class OverlayControllerService : Service() {
         }
     }
 
+    private fun activeTeamPreset(): TeamBasePreset {
+        return presetRecords.firstOrNull { it.preset.id == settings.activePresetId }?.preset
+            ?: presetRecords.firstOrNull()?.preset
+            ?: TeamPresetRepository.defaultBuiltInPresets().first()
+    }
+
+    private fun composeEffectiveRuleConfig(
+        board: BoardState,
+        fixedStartCell: Int = -1,
+        fastMode: Boolean = false
+    ): RuleConfig {
+        val preset = activeTeamPreset()
+        val global = settings.toRuleConfig()
+        val mergedBase = preset.baseConfig.copy(
+            allowDiagonalMove = settings.allowDiagonalMove,
+            maxSteps = maxOf(global.maxSteps, preset.baseConfig.maxSteps).coerceIn(8, 300),
+            beamWidth = if (fastMode) minOf(settings.beamWidth, 140) else maxOf(settings.beamWidth, preset.baseConfig.beamWidth),
+            maxTimeMs = if (fastMode) 170 else maxOf(global.maxTimeMs, preset.baseConfig.maxTimeMs),
+            topK = if (fastMode) 2 else 5,
+            fixedStartCell = fixedStartCell
+        )
+        val canonicalChips = activeWaveChips.map { WaveShieldCatalog.canonicalizeForComposer(it) }
+        return RuleComposer.compose(
+            base = preset.copy(baseConfig = mergedBase),
+            activeChips = canonicalChips,
+            board = board
+        )
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private fun setupOverlayViews() {
-        // 1. Full-screen PathOverlayView (click-through normally; touch-draggable in Calibration Mode!)
+        // 1. Full-screen PathOverlayView (click-through normally; touchable in Calibration or Board Editor Mode!)
         pathOverlayView = PathOverlayView(this)
         pathOverlayView.onCalibrationBoundsChanged = { l, t, r, b, finished ->
             val bw = (r - l).coerceAtLeast(120f)
@@ -232,6 +306,13 @@ class OverlayControllerService : Service() {
                 }
             }
         }
+        pathOverlayView.onBoardEditorCellTouched = { row, col ->
+            val current = editedBoard
+            if (current != null) {
+                editedBoard = boardEditor.applyActiveBrush(current, row, col)
+                refreshPathCanvas()
+            }
+        }
         pathParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -243,8 +324,7 @@ class OverlayControllerService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            // Android 12+ requires <= 0.80 alpha for FLAG_NOT_TOUCHABLE overlays so game touches always pass cleanly
-            alpha = 0.80f
+            alpha = 0.80f // Android 12+ clean touch passthrough
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
@@ -254,14 +334,12 @@ class OverlayControllerService : Service() {
         }
         windowManager.addView(pathOverlayView, pathParams)
 
-        // 2. Refined compact floating toolbar with integrated Emergency Stop + collapsible quick-modes + slim HUD summary
+        // 2. System-Themed Floating Control Stack
         controlRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
 
-        // CRITICAL: Must explicitly use WRAP_CONTENT width! Default in vertical LinearLayout is MATCH_PARENT,
-        // which causes Android measureVertical() to crush topRow to the narrower modeChipRow width and clip right buttons!
         val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -313,16 +391,17 @@ class OverlayControllerService : Service() {
         nextBtn = makeChipBtn("▶", minW = 18, padH = 3) { switchSolution(+1) }
         toolbarContainer.addView(nextBtn)
 
-        executeBtn = makeChipBtn("行", minW = 24, padH = 5) { executeSelectedSolution() }
+        // Unified Execution Button: runs Hold-and-Replan when '按住转' toggle is ON, otherwise executes solved path!
+        executeBtn = makeChipBtn("行", minW = 24, padH = 5) { handleUnifiedExecute() }
         toolbarContainer.addView(executeBtn)
 
-        // Integrated Emergency Stop right inside main toolbar!
         stopChipBtn = makeChipBtn("停", minW = 24, padH = 5) {
             triggerEmergencyStop()
-            toast("已急停中止！")
+            toast("已急停中止")
         }
         toolbarContainer.addView(stopChipBtn)
 
+        // '线' controls ONLY trajectory lines (NOT the board grid!)
         pathToggleBtn = makeChipBtn("●线", minW = 28, padH = 4) {
             showPath = !showPath
             refreshMainToggleChips()
@@ -330,12 +409,13 @@ class OverlayControllerService : Service() {
         }
         toolbarContainer.addView(pathToggleBtn)
 
+        // '校' controls ONLY the board alignment grid & crosshairs
         calibToggleBtn = makeChipBtn("○校", minW = 28, padH = 4) { toggleCalibrationMode() }
         toolbarContainer.addView(calibToggleBtn)
 
         moreToggleBtn = makeChipBtn("⋯", minW = 20, padH = 3) {
             modeRowExpanded = !modeRowExpanded
-            modeChipRow.visibility = if (modeRowExpanded && toolbarExpanded) View.VISIBLE else View.GONE
+            quickPanel.visibility = if (modeRowExpanded && toolbarExpanded) View.VISIBLE else View.GONE
             refreshMainToggleChips()
             clampControlWindowToScreen()
         }
@@ -347,13 +427,12 @@ class OverlayControllerService : Service() {
         topRow.addView(toolbarContainer)
         controlRoot.addView(topRow)
 
-        // Collapsible Slim Quick-Mode Row (hidden by default; expand via '⋯' button)
-        modeChipRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        // Collapsible Quick Controls Card (2 clean rows under '⋯')
+        quickPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             elevation = dp(2).toFloat()
             visibility = View.GONE
-            setPadding(dp(4), dp(3), dp(4), dp(3))
+            setPadding(dp(5), dp(4), dp(5), dp(4))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -362,15 +441,31 @@ class OverlayControllerService : Service() {
                 marginStart = dp(34)
             }
         }
+
+        // Row A: Mode Toggles + 1:1 Thermal Speed Preset
+        val rowA = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        holdReplanToggleBtn = makeChipBtn("○按住转", padH = 5) {
+            serviceScope.launch {
+                val next = !settings.holdReplanEnabled
+                settingsRepository.update { it.copy(holdReplanEnabled = next) }
+                toast(if (next) "已开启「按住转」：点「行」将按住重算续滑" else "已关闭「按住转」：恢复常规解盘执行")
+            }
+        }
+        rowA.addView(holdReplanToggleBtn)
+
         memoryChipBtn = makeChipBtn("○记忆", padH = 5) {
             serviceScope.launch {
                 settingsRepository.update { it.copy(flashRevealMemoryEnabled = !it.flashRevealMemoryEnabled) }
             }
         }
-        modeChipRow.addView(memoryChipBtn)
-
-        holdReplanBtn = makeChipBtn("按住转", padH = 5) { startHoldAndReplanExecution() }
-        modeChipRow.addView(holdReplanBtn)
+        rowA.addView(memoryChipBtn)
 
         invertChipBtn = makeChipBtn("○颠倒", padH = 5) {
             serviceScope.launch {
@@ -380,10 +475,9 @@ class OverlayControllerService : Service() {
                 }
             }
         }
-        modeChipRow.addView(invertChipBtn)
+        rowA.addView(invertChipBtn)
 
-        // 1-to-1 synced with DashboardScreen SwipeSpeedPreset!
-        speedChipBtn = makeChipBtn("标准", padH = 5, marginEndDp = 0) {
+        speedChipBtn = makeChipBtn(SwipeSpeedPreset.STANDARD.compactLabel, padH = 6, marginEndDp = 0) {
             serviceScope.launch {
                 settingsRepository.update { s ->
                     val nextPreset = SwipeSpeedPreset.fromStepDurationMs(s.stepDurationMs).next()
@@ -391,10 +485,49 @@ class OverlayControllerService : Service() {
                 }
             }
         }
-        modeChipRow.addView(speedChipBtn)
-        controlRoot.addView(modeChipRow)
+        rowA.addView(speedChipBtn)
+        quickPanel.addView(rowA)
 
-        // Ultra-Compact System-Themed Solution HUD Strip (tap to fold/unfold orb pills row!)
+        // Row B: Phase 3 Power Tools (4-Tab Tuning Drawer + Interactive Board Editor + Offline OCR)
+        val rowB = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(3) }
+        }
+        tuningDrawerToggleBtn = makeChipBtn("○解盾调参", padH = 6) { toggleTuningDrawer() }
+        rowB.addView(tuningDrawerToggleBtn)
+
+        boardEditorToggleBtn = makeChipBtn("○盘面编绘", padH = 6) { toggleBoardEditorMode() }
+        rowB.addView(boardEditorToggleBtn)
+
+        ocrScanBtn = makeChipBtn("OCR 识敌技", padH = 6, marginEndDp = 0) { runOfflineEnemySkillOcr() }
+        rowB.addView(ocrScanBtn)
+        quickPanel.addView(rowB)
+        controlRoot.addView(quickPanel)
+
+        // Active Wave Shield Pills Strip (auto-visible when >=1 shield is active)
+        activeShieldScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(2)
+                marginStart = dp(34)
+            }
+        }
+        activeShieldRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        activeShieldScroll.addView(activeShieldRow)
+        controlRoot.addView(activeShieldScroll)
+
+        // Ultra-Compact Solution Summary Strip (tap to fold/unfold orb pills!)
         summaryStrip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             elevation = dp(2).toFloat()
@@ -404,7 +537,7 @@ class OverlayControllerService : Service() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(3)
+                topMargin = dp(2)
                 marginStart = dp(34)
             }
             setOnClickListener {
@@ -426,9 +559,7 @@ class OverlayControllerService : Service() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(2)
-            }
+            ).apply { topMargin = dp(2) }
         }
         groupsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -437,7 +568,7 @@ class OverlayControllerService : Service() {
         summaryStrip.addView(groupsScroll)
         controlRoot.addView(summaryStrip)
 
-        // Slim In-place Calibration Bar
+        // Slim Calibration Bar (visible only when '校' is ON)
         calibrationBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             elevation = dp(2).toFloat()
@@ -470,6 +601,56 @@ class OverlayControllerService : Service() {
         calibResetBtn = makeChipBtn("重置", padH = 5, marginEndDp = 0) { resetCalibration() }
         calibrationBar.addView(calibResetBtn)
         controlRoot.addView(calibrationBar)
+
+        // Phase 3 Interactive Board Editor Brush Bar
+        boardEditor = OverlayBoardEditorController(
+            context = this,
+            onSolveEditedBoard = { solveEditedBoardNow() },
+            onClearAllMarkers = {
+                val cur = editedBoard ?: return@OverlayBoardEditorController
+                editedBoard = cur.copy(
+                    cells = cur.cells.map { it.copy(variant = Variant.NORMAL, hazards = HazardBits.NONE) },
+                    tileFlags = List(cur.cols * cur.rows) { TileFlagBits.NONE }
+                )
+                refreshPathCanvas()
+            },
+            onCloseEditor = { setBoardEditorMode(false) }
+        )
+        controlRoot.addView(boardEditor.rootView)
+
+        // Phase 3 In-Game 4-Tab Tuning Drawer
+        tuningDrawer = OverlayTuningDrawerController(
+            context = this,
+            onRunOcrScan = { runOfflineEnemySkillOcr() },
+            onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
+            onUpsertWaveChip = { chip -> ActiveStrategyStore.upsertChip(chip) },
+            onClearWaveChips = {
+                ActiveStrategyStore.clearAll()
+                toast("已清空本波全部敌技盾")
+            },
+            onSelectPreset = { id ->
+                serviceScope.launch {
+                    settingsRepository.update { it.copy(activePresetId = id) }
+                    val name = presetRecords.firstOrNull { it.preset.id == id }?.preset?.name ?: "已切换"
+                    toast("当前队伍预设：$name")
+                }
+            },
+            onUpdateActivePresetConfig = { transform ->
+                serviceScope.launch {
+                    val cur = activeTeamPreset()
+                    val rec = presetRecords.firstOrNull { it.preset.id == cur.id }
+                    teamPresetRepository.savePreset(
+                        cur.copy(baseConfig = transform(cur.baseConfig)),
+                        isBuiltIn = rec?.isBuiltIn ?: false
+                    )
+                }
+            },
+            onUpdateSettings = { transform ->
+                serviceScope.launch { settingsRepository.update(transform) }
+            },
+            onClose = { setTuningDrawerOpen(false) }
+        )
+        controlRoot.addView(tuningDrawer.rootView)
 
         controlParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -516,13 +697,17 @@ class OverlayControllerService : Service() {
                     if (!moved) {
                         toolbarExpanded = !toolbarExpanded
                         toolbarContainer.visibility = if (toolbarExpanded) View.VISIBLE else View.GONE
-                        modeChipRow.visibility = if (toolbarExpanded && modeRowExpanded) View.VISIBLE else View.GONE
+                        quickPanel.visibility = if (toolbarExpanded && modeRowExpanded) View.VISIBLE else View.GONE
+                        tuningDrawer.setVisible(toolbarExpanded && tuningDrawerOpen)
+                        boardEditor.rootView.visibility = if (toolbarExpanded && boardEditorMode) View.VISIBLE else View.GONE
                         if (!toolbarExpanded) {
                             calibrationBar.visibility = View.GONE
                             summaryStrip.visibility = View.GONE
+                            activeShieldScroll.visibility = View.GONE
                         } else {
                             if (calibrationMode) calibrationBar.visibility = View.VISIBLE
                             if (lastSolveOutput != null) summaryStrip.visibility = View.VISIBLE
+                            refreshActiveShieldStrip()
                         }
                         clampControlWindowToScreen()
                     }
@@ -534,24 +719,33 @@ class OverlayControllerService : Service() {
         windowManager.addView(controlRoot, controlParams)
     }
 
+    // ==================== Unified Execution ('行') ====================
+    private fun handleUnifiedExecute() {
+        if (settings.holdReplanEnabled) {
+            startHoldAndReplanExecution()
+        } else {
+            executeSelectedSolution()
+        }
+    }
+
+    // ==================== Capture & Solve ('算') ====================
     private fun startCaptureAndSolve() {
         if (currentPhase != OverlayPhase.IDLE) {
-            toast("当前任务执行中，可点击红色急停中止")
+            toast("任务进行中，可点「停」立即中止")
             return
         }
         val capturer = ScreenCaptureSession.capturer.value
         if (capturer == null || !capturer.isReady.value) {
-            toast("请先在主界面授权「免 Root 录屏采集」")
+            toast("请先在主界面授权「屏幕采集」")
             return
         }
 
-        if (calibrationMode) {
-            setCalibrationMode(false)
-        }
+        if (calibrationMode) setCalibrationMode(false)
+        if (boardEditorMode) setBoardEditorMode(false)
+        if (tuningDrawerOpen) setTuningDrawerOpen(false)
 
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.CALCULATING)
-            // Hide path lines cleanly before taking screenshot so our own lines never pollute CV recognition!
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
             delay(45)
 
@@ -559,37 +753,30 @@ class OverlayControllerService : Service() {
             if (frames.isEmpty()) {
                 setPhase(OverlayPhase.IDLE)
                 refreshPathCanvas()
-                toast("截屏失败，请确认录屏授权仍有效")
+                toast("截屏失败，请确认屏幕采集授权仍有效")
                 return@launch
             }
 
             try {
-                // Stage 1/2 Dynamic Grid Size Auto-Detection (HP-bar barrier prevents false Weijian!)
                 val geom = withContext(Dispatchers.Default) {
                     AutoGridDetector.detect(frames.first(), settings.calibration)
                 }
-
-                // Multi-frame CV / Hybrid Recognition
                 val liveRec = boardRecognizer.recognize(frames, geom)
 
-                // Flash-Reveal Memory Resolution (先露后藏全版问号珠自动还原!)
                 var resolvedFromMemory = false
                 val boardToSolve = if (settings.flashRevealMemoryEnabled) {
                     when (val res = flashMemoryTracker.resolveForSolve(liveRec)) {
                         is FlashRevealMemoryTracker.MemoryResolution.UseMemorizedSnapshot -> {
                             resolvedFromMemory = true
-                            toast("已从先露后藏记忆快照还原 ${res.liveHiddenCount} 颗问号珠！")
+                            toast("已从先露后藏记忆还原 ${res.liveHiddenCount} 颗问号珠")
                             res.rememberedBoard
                         }
-                        is FlashRevealMemoryTracker.MemoryResolution.UseLiveBoard -> {
-                            liveRec.board
-                        }
+                        is FlashRevealMemoryTracker.MemoryResolution.UseLiveBoard -> liveRec.board
                     }
                 } else {
                     liveRec.board
                 }
 
-                // Non-Battle Screen Guard: never draw an empty grid or solve bogus 0C paths on victory/lobby/menu screens!
                 val totalCells = (boardToSolve.cols * boardToSolve.rows).coerceAtLeast(1)
                 val unknownCells = boardToSolve.cells.count {
                     it.element == Element.UNKNOWN || it.element == Element.EMPTY
@@ -609,17 +796,11 @@ class OverlayControllerService : Service() {
 
                 currentGeometry = geom
                 lastRecognition = liveRec
+                editedBoard = boardToSolve
                 usedMemorizedSnapshot = resolvedFromMemory
                 updateQuickModeChips()
 
-                // Compose RuleConfig (auto-enables Puzzle shield if golden puzzle borders were detected!)
-                val ruleConfig = RuleComposer.compose(
-                    base = TeamBasePreset("active", "Active", baseConfig = settings.toRuleConfig()),
-                    activeChips = emptyList(),
-                    board = boardToSolve
-                )
-
-                // C++20 JNI Solve with cooperative cancellation token
+                val ruleConfig = composeEffectiveRuleConfig(boardToSolve)
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
                 val solveOut = try {
@@ -633,7 +814,7 @@ class OverlayControllerService : Service() {
                 if (bestSol == null || (bestSol.totalCombo == 0 && bestSol.stepCount == 0)) {
                     hidePathOverlay()
                     setPhase(OverlayPhase.IDLE)
-                    toast("当前盘面无可消除路线，请确认处于战斗盘面或检查校准框")
+                    toast("当前盘面无可消除路线，请确认战斗状态或检查校准框")
                     return@launch
                 }
 
@@ -643,53 +824,133 @@ class OverlayControllerService : Service() {
                 refreshMainToggleChips()
                 updateSummaryStrip()
                 refreshPathCanvas()
-
                 setPhase(OverlayPhase.IDLE)
 
-                // If Test Mode (draw-only confirmation) is OFF, auto-execute immediately!
                 if (!settings.testModeOnlyDraw) {
-                    executeSelectedSolution()
+                    handleUnifiedExecute()
                 }
             } catch (e: CancellationException) {
                 setPhase(OverlayPhase.IDLE)
             } catch (e: Exception) {
                 Log.e(TAG, "Capture/Solve failed", e)
                 setPhase(OverlayPhase.IDLE)
-                toast("识图或算路异常: ${e.message}")
+                toast("识盘算路异常：${e.message}")
             } finally {
                 frames.forEach { if (!it.isRecycled) it.recycle() }
             }
         }
     }
 
-    /**
-     * No-Root Hold-and-Replan Mode (问号‧转 / 风化‧转 / 烟雾):
-     * Presses and holds a safe orb continuously via AccessibilityService willContinue=true heartbeat,
-     * waits [settings.holdReplanDelayMs] for the board to transform/reveal, captures + fast-solves with
-     * fixedStartCell (~70ms), and seamlessly continues swiping without lifting the finger!
-     */
-    private fun startHoldAndReplanExecution() {
+    // ==================== Solve Manually Painted Board ('算此盘') ====================
+    private fun solveEditedBoardNow() {
+        val board = editedBoard ?: run {
+            toast("当前无盘面数据，请先点「算」或进入战斗")
+            return
+        }
+        val geom = currentGeometry ?: settings.calibration.toBase6x5Geometry(screenW, screenH)
+        setBoardEditorMode(false)
+        activeJob = serviceScope.launch {
+            setPhase(OverlayPhase.CALCULATING)
+            try {
+                val ruleConfig = composeEffectiveRuleConfig(board)
+                val token = NativeSolver.createCancelToken()
+                activeCancelToken = token
+                val solveOut = try {
+                    NativeSolver.solve(board, ruleConfig, token)
+                } finally {
+                    activeCancelToken = null
+                    token.close()
+                }
+                if (solveOut.solutions.isEmpty()) {
+                    hidePathOverlay()
+                    toast("编绘盘面未找到可行解，请检查冲突规则或标记")
+                } else {
+                    currentGeometry = geom
+                    lastSolveOutput = solveOut
+                    selectedSolutionIdx = 0
+                    showPath = true
+                    refreshMainToggleChips()
+                    updateSummaryStrip()
+                    refreshPathCanvas()
+                }
+            } finally {
+                setPhase(OverlayPhase.IDLE)
+            }
+        }
+    }
+
+    // ==================== Offline Chinese OCR Enemy Skill Scan ('OCR 识敌技') ====================
+    private fun runOfflineEnemySkillOcr() {
         if (currentPhase != OverlayPhase.IDLE) {
-            toast("当前任务执行中，可点击红色急停中止")
+            toast("任务进行中，请稍候")
             return
         }
         val capturer = ScreenCaptureSession.capturer.value
         if (capturer == null || !capturer.isReady.value) {
-            toast("请先在主界面授权「免 Root 录屏采集」")
+            toast("请先在主界面授权「屏幕采集」")
+            return
+        }
+        activeJob = serviceScope.launch {
+            setPhase(OverlayPhase.CALCULATING)
+            val wasDrawerOpen = tuningDrawerOpen
+            if (wasDrawerOpen) tuningDrawer.setVisible(false)
+            delay(50)
+
+            val bmp = capturer.captureSingleFrame()
+            if (bmp == null) {
+                if (wasDrawerOpen) tuningDrawer.setVisible(true)
+                setPhase(OverlayPhase.IDLE)
+                toast("截屏失败，请重试")
+                return@launch
+            }
+            try {
+                val parsed = withContext(Dispatchers.Default) {
+                    enemySkillOcrEngine.recognizeEnemySkills(bmp)
+                }
+                val greyNote = if (parsed.skippedGreyLines > 0) "（已自动过滤 ${parsed.skippedGreyLines} 条灰字已无视敌技）" else ""
+                if (parsed.chips.isEmpty()) {
+                    ActiveStrategyStore.applyOcrChips(emptyList(), "未匹配到已知敌技词条$greyNote")
+                    toast("未识别到已知敌技盾，请先长按敌人打开技能弹窗$greyNote")
+                } else {
+                    val names = parsed.chips.joinToString(" · ") { it.label }
+                    ActiveStrategyStore.applyOcrChips(parsed.chips, "OCR 已启用：${names}$greyNote")
+                    toast("识别并启用 ${parsed.chips.size} 项敌技盾：$names")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "OCR failed", e)
+                toast("离线 OCR 识别异常：${e.message}")
+            } finally {
+                if (!bmp.isRecycled) bmp.recycle()
+                if (wasDrawerOpen) tuningDrawer.setVisible(true)
+                setPhase(OverlayPhase.IDLE)
+            }
+        }
+    }
+
+    // ==================== No-Root Hold-and-Replan Execution ====================
+    private fun startHoldAndReplanExecution() {
+        if (currentPhase != OverlayPhase.IDLE) {
+            toast("任务进行中，可点「停」立即中止")
+            return
+        }
+        val capturer = ScreenCaptureSession.capturer.value
+        if (capturer == null || !capturer.isReady.value) {
+            toast("请先在主界面授权「屏幕采集」")
             return
         }
         if (!touchExecutor.isAvailable.value) {
-            toast("按住重算需要开启 AutoDora-NEXT 无障碍服务")
+            toast("请先开启 AutoDora-NEXT 无障碍服务")
             return
         }
         if (calibrationMode) setCalibrationMode(false)
+        if (boardEditorMode) setBoardEditorMode(false)
+        if (tuningDrawerOpen) setTuningDrawerOpen(false)
 
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.MOVING)
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
             delay(35)
 
-            // Estimate current board geometry cleanly before grabbing
             val preBmp = capturer.captureSingleFrame()
             val geom = if (preBmp != null) {
                 try {
@@ -726,25 +987,15 @@ class OverlayControllerService : Service() {
                     revealDelayMs = settings.holdReplanDelayMs,
                     config = settings.toSwipeConfig()
                 ) { heldCell ->
-                    // Captured mid-hold while virtual finger stays pressed!
                     val revealedBmp = capturer.captureSingleFrame() ?: return@executeHoldAndReplan null
                     try {
                         val rec = boardRecognizer.recognize(listOf(revealedBmp), geom)
                         lastRecognition = rec
+                        editedBoard = rec.board
                         usedMemorizedSnapshot = false
 
                         val heldIdx = heldCell.row * geom.cols + heldCell.col
-                        val fastRules = settings.toRuleConfig().copy(
-                            fixedStartCell = heldIdx,
-                            beamWidth = minOf(settings.beamWidth, 140),
-                            maxTimeMs = 170,
-                            topK = 2
-                        )
-                        val composed = RuleComposer.compose(
-                            base = TeamBasePreset("hold_replan", "HoldReplan", baseConfig = fastRules),
-                            activeChips = emptyList(),
-                            board = rec.board
-                        )
+                        val composed = composeEffectiveRuleConfig(rec.board, fixedStartCell = heldIdx, fastMode = true)
                         val token = NativeSolver.createCancelToken()
                         activeCancelToken = token
                         val solveOut = try {
@@ -775,9 +1026,9 @@ class OverlayControllerService : Service() {
                     }
                     is TouchExecutionResult.Cancelled -> {
                         hidePathOverlay()
-                        toast("按住重算已急停中止")
+                        toast("按住重算已中止")
                     }
-                    is TouchExecutionResult.Failed -> toast("按住重算失败: ${result.reason}")
+                    is TouchExecutionResult.Failed -> toast("按住重算失败：${result.reason}")
                 }
             } finally {
                 setControlBarTouchable(true)
@@ -788,23 +1039,22 @@ class OverlayControllerService : Service() {
         }
     }
 
+    // ==================== Standard Path Execution ====================
     private fun executeSelectedSolution() {
         if (currentPhase != OverlayPhase.IDLE) return
         val geom = currentGeometry ?: return
         val sol = currentSolution() ?: run {
-            toast("请先点击「识图算路」")
+            toast("请先点击「算」生成路线")
             return
         }
-
         if (!touchExecutor.isAvailable.value) {
-            toast("无障碍服务未启用！请前往系统设置开启 AutoDora-NEXT 无障碍服务")
+            toast("请先开启 AutoDora-NEXT 无障碍服务")
             return
         }
 
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.MOVING)
 
-            // Optional countdown before auto-swipe (inherited from old AutoDora)
             if (settings.countdownSeconds > 0) {
                 for (sec in settings.countdownSeconds downTo 1) {
                     refreshPathCanvas(countdown = "$sec")
@@ -813,8 +1063,6 @@ class OverlayControllerService : Service() {
                 refreshPathCanvas(countdown = null)
             }
 
-            // Only make control bar non-touchable if the user dragged it down over the board;
-            // when docked cleanly at top of screen, keep it touchable so integrated '停' works mid-swipe!
             setControlBarTouchable(!overlapsBoard(geom))
             try {
                 delay(35)
@@ -829,11 +1077,9 @@ class OverlayControllerService : Service() {
                     }
                     is TouchExecutionResult.Cancelled -> {
                         hidePathOverlay()
-                        toast("转珠已急停中止")
+                        toast("自动转珠已中止")
                     }
-                    is TouchExecutionResult.Failed -> {
-                        toast("转珠失败: ${result.reason}")
-                    }
+                    is TouchExecutionResult.Failed -> toast("自动转珠失败：${result.reason}")
                 }
             } finally {
                 setControlBarTouchable(true)
@@ -866,15 +1112,68 @@ class OverlayControllerService : Service() {
         refreshPathCanvas()
     }
 
+    // ==================== Modes: Calibration ('校') / Board Editor ('盘面编绘') / Tuning Drawer ('解盾调参') ====================
     private fun toggleCalibrationMode() {
         setCalibrationMode(!calibrationMode)
     }
 
     private fun setCalibrationMode(enabled: Boolean) {
+        if (enabled && boardEditorMode) setBoardEditorMode(false)
+        if (enabled && tuningDrawerOpen) setTuningDrawerOpen(false)
         calibrationMode = enabled
         calibrationBar.visibility = if (calibrationMode) View.VISIBLE else View.GONE
-        // Allow direct finger-drag of calibration corners/edges while in Calibration Mode!
-        val nextFlags = if (calibrationMode) {
+        updatePathOverlayTouchability()
+        if (calibrationMode) {
+            currentGeometry = settings.calibration.toBase6x5Geometry(screenW, screenH)
+        }
+        refreshMainToggleChips()
+        refreshPathCanvas()
+        clampControlWindowToScreen()
+    }
+
+    private fun toggleBoardEditorMode() {
+        setBoardEditorMode(!boardEditorMode)
+    }
+
+    private fun setBoardEditorMode(enabled: Boolean) {
+        if (enabled && calibrationMode) setCalibrationMode(false)
+        if (enabled && tuningDrawerOpen) setTuningDrawerOpen(false)
+        boardEditorMode = enabled
+        boardEditor.rootView.visibility = if (boardEditorMode && toolbarExpanded) View.VISIBLE else View.GONE
+        if (boardEditorMode) {
+            val geom = currentGeometry ?: settings.calibration.toBase6x5Geometry(screenW, screenH)
+            currentGeometry = geom
+            if (editedBoard == null || editedBoard!!.cols != geom.cols || editedBoard!!.rows != geom.rows) {
+                editedBoard = lastRecognition?.board ?: BoardState(
+                    cols = geom.cols,
+                    rows = geom.rows,
+                    cells = List(geom.cols * geom.rows) { i -> CellState(Element.MATCHABLE[i % 6]) }
+                )
+            }
+        }
+        updatePathOverlayTouchability()
+        updateQuickModeChips()
+        refreshPathCanvas()
+        clampControlWindowToScreen()
+    }
+
+    private fun toggleTuningDrawer() {
+        setTuningDrawerOpen(!tuningDrawerOpen)
+    }
+
+    private fun setTuningDrawerOpen(open: Boolean) {
+        if (open && calibrationMode) setCalibrationMode(false)
+        if (open && boardEditorMode) setBoardEditorMode(false)
+        tuningDrawerOpen = open
+        tuningDrawer.setVisible(tuningDrawerOpen && toolbarExpanded)
+        updateQuickModeChips()
+        syncDrawerData()
+        clampControlWindowToScreen()
+    }
+
+    private fun updatePathOverlayTouchability() {
+        val wantTouchable = calibrationMode || boardEditorMode
+        val nextFlags = if (wantTouchable) {
             pathParams.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         } else {
             pathParams.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -886,13 +1185,6 @@ class OverlayControllerService : Service() {
             } catch (_: Exception) {
             }
         }
-        if (calibrationMode) {
-            currentGeometry = settings.calibration.toBase6x5Geometry(screenW, screenH)
-            showPath = true
-        }
-        refreshMainToggleChips()
-        refreshPathCanvas()
-        clampControlWindowToScreen()
     }
 
     private fun nudgeCalib(
@@ -919,11 +1211,10 @@ class OverlayControllerService : Service() {
     private fun runAutoCalibration() {
         val capturer = ScreenCaptureSession.capturer.value
         if (capturer == null || !capturer.isReady.value) {
-            toast("自动探测需要已授权录屏采集")
+            toast("自动校准需要先授权屏幕采集")
             return
         }
         serviceScope.launch {
-            // Hide overlay frame momentarily so cyan border doesn't affect HP bar / edge detection
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
             delay(40)
             val bmp = capturer.captureSingleFrame() ?: run {
@@ -949,10 +1240,10 @@ class OverlayControllerService : Service() {
                         )
                     }
                     refreshPathCanvas()
-                    toast("真实血条锚定成功：${detected.cols}×${detected.rows} 棋盘！")
+                    toast("血条锚定成功：${detected.cols}×${detected.rows} 棋盘")
                 } else {
                     refreshPathCanvas()
-                    toast("未检测到神魔战斗盘面，请进关卡后重试或直接拖拽四角校准")
+                    toast("未识别到战斗盘面，请进入战斗后重试或直接拖拽四角校准")
                 }
             } finally {
                 if (!bmp.isRecycled) bmp.recycle()
@@ -963,15 +1254,11 @@ class OverlayControllerService : Service() {
     private fun resetCalibration() {
         serviceScope.launch {
             settingsRepository.update { it.copy(calibration = BoardCalibration()) }
-            toast("已重置为自动 9:16 适配 6×5 比例")
+            toast("已恢复自动 9:16 比例校准")
         }
     }
 
-    /**
-     * Lightweight background Flash-Reveal Memory Watcher (先露后藏问号珠实时监视):
-     * Samples every 420ms while idle; caches clear boards and automatically locks & displays
-     * translucent real-orb overlay the instant a stage flips to mass '?' orbs!
-     */
+    // ==================== Background Flash-Reveal Watcher ====================
     private fun syncFlashRevealWatcher() {
         if (!settings.flashRevealMemoryEnabled) {
             flashWatchJob?.cancel()
@@ -989,10 +1276,9 @@ class OverlayControllerService : Service() {
         flashWatchJob = serviceScope.launch {
             while (isActive) {
                 delay(420L)
-                if (currentPhase != OverlayPhase.IDLE || calibrationMode) continue
+                if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode) continue
                 val capturer = ScreenCaptureSession.capturer.value ?: continue
                 if (!capturer.isReady.value) continue
-                // Skip polling while our own path overlay is covering the board unless waiting for flip
                 if (lastSolveOutput != null && showPath) continue
 
                 val bmp = capturer.captureSingleFrame() ?: continue
@@ -1005,7 +1291,7 @@ class OverlayControllerService : Service() {
                     if (lockedNow) {
                         currentGeometry = geom
                         refreshPathCanvas()
-                        toast("已捕捉先露后藏盘面！点「算路」可直接解全版问号珠")
+                        toast("已捕捉先露后藏盘面，点「算」即可解全版问号珠")
                     }
                     updateQuickModeChips()
                 } catch (_: Exception) {
@@ -1016,65 +1302,62 @@ class OverlayControllerService : Service() {
         }
     }
 
-    /**
-     * Re-applies Android System Material 3 palette (Light / Dark / Follow System + Android 12+ Material You)
-     * across every floating container, button, toggle chip, and text element live without restart.
-     */
+    // ==================== System Material 3 Theme & Unified Toggle Styling ====================
     private fun applyOverlayTheme() {
         if (!::toolbarContainer.isInitialized) return
         palette = OverlayThemeResolver.resolve(this, settings.themeMode)
         val p = palette
 
-        // Material 3 containers
         toolbarContainer.background = roundedBg(p.containerBg, dp(16).toFloat(), p.containerStroke)
-        modeChipRow.background = roundedBg(p.containerBg, dp(11).toFloat(), p.containerStroke)
+        quickPanel.background = roundedBg(p.containerBg, dp(12).toFloat(), p.containerStroke)
         summaryStrip.background = roundedBg(p.containerBg, dp(10).toFloat(), p.containerStroke)
         calibrationBar.background = roundedBg(p.containerBg, dp(11).toFloat(), p.tertiary)
 
-        // Typography
         pagerText.setTextColor(p.onSurface)
         summaryTitle.setTextColor(p.onSurface)
 
-        // Main bar action buttons (distinct Material 3 emphasis hierarchy)
         styleChip(solveBtn, p.primary, p.onPrimary, null)
         styleChip(prevBtn, p.chipOffBg, p.onSurface, p.chipOffStroke)
         styleChip(nextBtn, p.chipOffBg, p.onSurface, p.chipOffStroke)
-        styleChip(executeBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
         styleChip(closeBtn, p.chipOffBg, p.onSurfaceVariant, p.chipOffStroke)
+        styleChip(ocrScanBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
 
-        // Quick-mode action button
-        styleChip(holdReplanBtn, p.secondaryContainer, p.onSecondaryContainer, null)
-
-        // Calibration bar buttons
         for (btn in calibNudgeBtns) {
             styleChip(btn, p.secondaryContainer, p.onSecondaryContainer, null)
         }
         styleChip(calibAutoBtn, p.primary, p.onPrimary, null)
         styleChip(calibResetBtn, p.errorContainer, p.onErrorContainer, null)
 
-        // Sync phase orb + stop button + all ON/OFF toggle chips
+        boardEditor.applyTheme(p)
         setPhase(currentPhase)
         refreshMainToggleChips()
         updateQuickModeChips()
+        refreshActiveShieldStrip()
+        syncDrawerData()
     }
 
-    /**
-     * Clearly distinguishes ON vs OFF for every toggle button in the main toolbar using BOTH
-     * Material 3 solid-vs-tonal contrast AND explicit '●' / '○' state indicators.
-     */
     private fun refreshMainToggleChips() {
         if (!::pathToggleBtn.isInitialized || !::palette.isInitialized) return
         val p = palette
 
-        // Path overlay toggle (线)
+        // '行' reflects unified execution mode (Hold-and-Replan highlight vs Standard execute)
+        if (settings.holdReplanEnabled) {
+            executeBtn.text = "行"
+            styleChip(executeBtn, p.tertiaryContainer, p.onTertiaryContainer, p.tertiary)
+        } else {
+            executeBtn.text = "行"
+            styleChip(executeBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
+        }
+
+        // '线' controls swipe trajectory path ONLY
         pathToggleBtn.text = if (showPath) "●线" else "○线"
         styleToggleChip(pathToggleBtn, isOn = showPath, onBg = p.primary, onText = p.onPrimary)
 
-        // Calibration mode toggle (校)
+        // '校' controls board alignment grid ONLY
         calibToggleBtn.text = if (calibrationMode) "●校" else "○校"
         styleToggleChip(calibToggleBtn, isOn = calibrationMode, onBg = p.tertiary, onText = p.onTertiary)
 
-        // Quick-mode drawer expand toggle (⋯ / ▾)
+        // '⋯' / '▾' quick panel drawer toggle
         moreToggleBtn.text = if (modeRowExpanded) "▾" else "⋯"
         if (modeRowExpanded) {
             styleChip(moreToggleBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
@@ -1087,7 +1370,11 @@ class OverlayControllerService : Service() {
         if (!::memoryChipBtn.isInitialized || !::palette.isInitialized) return
         val p = palette
 
-        // Flash-Reveal Memory toggle (记忆) — unmistakable ON vs OFF + live status!
+        // 1. Hold-and-Replan Toggle (按住转 -> unified via '行')
+        holdReplanToggleBtn.text = if (settings.holdReplanEnabled) "●按住转" else "○按住转"
+        styleToggleChip(holdReplanToggleBtn, isOn = settings.holdReplanEnabled, onBg = p.tertiary, onText = p.onTertiary)
+
+        // 2. Flash-Reveal Memory Toggle (先露后藏记忆)
         val memLocked = flashMemoryTracker.currentLockedSnapshot() != null
         val memFresh = flashMemoryTracker.hasFreshClearMemory()
         when {
@@ -1109,20 +1396,77 @@ class OverlayControllerService : Service() {
             }
         }
 
-        // Inverted Drag Controls toggle (颠倒)
+        // 3. Inverted Drag Controls Toggle (颠倒操控)
         val invOn = settings.invertDragX || settings.invertDragY
         invertChipBtn.text = if (invOn) "●颠倒" else "○颠倒"
         styleToggleChip(invertChipBtn, isOn = invOn, onBg = p.tertiary, onText = p.onTertiary)
 
-        // Swipe speed selector — 1:1 synchronized with DashboardScreen SwipeSpeedPreset!
+        // 4. Unified 1:1 Thermal Speed Preset (Red -> Orange -> Primary Blue -> Emerald, uniform 1dp border!)
         val preset = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
-        speedChipBtn.text = preset.label
-        when (preset) {
-            SwipeSpeedPreset.TURBO_2S -> styleChip(speedChipBtn, p.errorContainer, p.onErrorContainer, p.error)
-            SwipeSpeedPreset.FAST_3S -> styleChip(speedChipBtn, p.tertiaryContainer, p.onTertiaryContainer, p.tertiary)
-            SwipeSpeedPreset.STANDARD -> styleChip(speedChipBtn, p.primaryContainer, p.onPrimaryContainer, null)
-            SwipeSpeedPreset.STEADY -> styleChip(speedChipBtn, p.secondaryContainer, p.onSecondaryContainer, null)
+        val spdStyle = p.speedStyle(preset)
+        speedChipBtn.text = preset.compactLabel
+        styleChip(speedChipBtn, spdStyle.bg, spdStyle.fg, spdStyle.stroke)
+
+        // 5. Phase 3 Drawer & Board Editor Toggles
+        tuningDrawerToggleBtn.text = if (tuningDrawerOpen) "●解盾调参" else "○解盾调参"
+        styleToggleChip(tuningDrawerToggleBtn, isOn = tuningDrawerOpen, onBg = p.primary, onText = p.onPrimary)
+
+        boardEditorToggleBtn.text = if (boardEditorMode) "●盘面编绘" else "○盘面编绘"
+        styleToggleChip(boardEditorToggleBtn, isOn = boardEditorMode, onBg = p.tertiary, onText = p.onTertiary)
+
+        refreshMainToggleChips()
+    }
+
+    private fun refreshActiveShieldStrip() {
+        if (!::activeShieldRow.isInitialized || !::palette.isInitialized) return
+        activeShieldRow.removeAllViews()
+        if (activeWaveChips.isEmpty() || !toolbarExpanded) {
+            activeShieldScroll.visibility = View.GONE
+            return
         }
+        val p = palette
+        for (chip in activeWaveChips) {
+            val pill = TextView(this).apply {
+                text = "${chip.label} ×"
+                textSize = 9f
+                typeface = Typeface.DEFAULT_BOLD
+                setSingleLine(true)
+                setTextColor(p.onPrimaryContainer)
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                background = roundedBg(p.primaryContainer, dp(6).toFloat(), p.primary)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(3) }
+                setOnClickListener { ActiveStrategyStore.removeChip(chip.id) }
+            }
+            activeShieldRow.addView(pill)
+        }
+        val clearAll = TextView(this).apply {
+            text = "清空"
+            textSize = 9f
+            typeface = Typeface.DEFAULT_BOLD
+            setSingleLine(true)
+            setTextColor(p.onErrorContainer)
+            setPadding(dp(5), dp(2), dp(5), dp(2))
+            background = roundedBg(p.errorContainer, dp(6).toFloat(), null)
+            setOnClickListener { ActiveStrategyStore.clearAll() }
+        }
+        activeShieldRow.addView(clearAll)
+        activeShieldScroll.visibility = View.VISIBLE
+        clampControlWindowToScreen()
+    }
+
+    private fun syncDrawerData() {
+        if (!::tuningDrawer.isInitialized || !::palette.isInitialized) return
+        tuningDrawer.updateData(
+            palette = palette,
+            settings = settings,
+            presets = presetRecords,
+            activePreset = activeTeamPreset(),
+            activeChips = activeWaveChips,
+            ocrSummary = lastOcrSummary
+        )
     }
 
     private fun currentSolution(): SolutionPath? {
@@ -1141,11 +1485,11 @@ class OverlayControllerService : Service() {
         }
 
         pagerText.text = "${selectedSolutionIdx + 1}/${out.solutions.size}"
-        val sizeBadge = if (geom.isWeijianExpanded) "${geom.cols}×${geom.rows}违建" else "${geom.cols}×${geom.rows}"
+        val sizeBadge = if (geom.isWeijianExpanded) "${geom.cols}×${geom.rows} 违建" else "${geom.cols}×${geom.rows}"
         val shieldBadge = if (sol.allHardConstraintsMet) "✓" else "!"
         val memTag = if (usedMemorizedSnapshot) " · 记忆" else ""
         val lowWarn = if (usedMemorizedSnapshot) 0 else (lastRecognition?.lowConfidenceIndices?.size ?: 0)
-        val lowStr = if (lowWarn > 0) " · 疑$lowWarn" else ""
+        val lowStr = if (lowWarn > 0) " · 低置信 $lowWarn" else ""
 
         summaryTitle.text = "$sizeBadge · ${sol.totalCombo}C(首${sol.firstWaveCombo}) · ${sol.stepCount}步 · ${out.elapsedMs.toInt()}ms $shieldBadge$memTag$lowStr"
 
@@ -1177,16 +1521,22 @@ class OverlayControllerService : Service() {
 
     private fun refreshPathCanvas(countdown: String? = null) {
         val memBoard = flashMemoryTracker.currentLockedSnapshot()
+        val displayBoard = when {
+            boardEditorMode -> editedBoard ?: lastRecognition?.board
+            usedMemorizedSnapshot && memBoard != null -> memBoard
+            else -> lastRecognition?.board
+        }
         pathOverlayView.updateState(
             geometry = currentGeometry,
-            board = if (usedMemorizedSnapshot && memBoard != null) memBoard else lastRecognition?.board,
-            lowConfidence = if (usedMemorizedSnapshot) emptyList() else (lastRecognition?.lowConfidenceIndices ?: emptyList()),
+            board = displayBoard,
+            lowConfidence = if (usedMemorizedSnapshot || boardEditorMode) emptyList() else (lastRecognition?.lowConfidenceIndices ?: emptyList()),
             solution = currentSolution(),
             showPath = showPath,
             showOrbBadges = settings.showOrbBadgesOnPath,
             calibrationMode = calibrationMode,
             countdownText = countdown,
-            memorizedOverlayBoard = memBoard
+            memorizedOverlayBoard = memBoard,
+            boardEditorMode = boardEditorMode
         )
     }
 
@@ -1236,11 +1586,8 @@ class OverlayControllerService : Service() {
         onStroke: Int? = null
     ) {
         val p = palette
-        if (isOn) {
-            styleChip(view, onBg, onText, onStroke)
-        } else {
-            styleChip(view, p.chipOffBg, p.chipOffText, p.chipOffStroke)
-        }
+        if (isOn) styleChip(view, onBg, onText, onStroke)
+        else styleChip(view, p.chipOffBg, p.chipOffText, p.chipOffStroke)
     }
 
     private fun clampControlWindowToScreen() {
@@ -1340,7 +1687,7 @@ class OverlayControllerService : Service() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "AutoDora-NEXT 悬浮窗控制服务",
+            "AutoDora-NEXT 悬浮助手服务",
             NotificationManager.IMPORTANCE_LOW
         ).apply { setShowBadge(false) }
         nm.createNotificationChannel(channel)

@@ -21,8 +21,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.autodora.next.capture.MediaProjectionForegroundService
 import com.autodora.next.capture.ScreenCaptureSession
-import com.autodora.next.data.AppSettings
-import com.autodora.next.data.SettingsRepository
+import com.autodora.next.data.*
 import com.autodora.next.jni.NativeSolver
 import com.autodora.next.model.*
 import com.autodora.next.overlay.OverlayControllerService
@@ -31,6 +30,7 @@ import com.autodora.next.touch.AccessibilityServiceBridge
 import com.autodora.next.ui.AutoDoraTheme
 import com.autodora.next.ui.DashboardScreen
 import com.autodora.next.ui.PermissionHealthState
+import com.autodora.next.vision.EnemySkillOcrEngine
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -40,6 +40,8 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var teamPresetRepository: TeamPresetRepository
+    @Inject lateinit var enemySkillOcrEngine: EnemySkillOcrEngine
 
     private val overlayGrantedState = MutableStateFlow(false)
     private val notificationsGrantedState = MutableStateFlow(true)
@@ -52,9 +54,9 @@ class MainActivity : ComponentActivity() {
         val data = result.data
         if (result.resultCode == Activity.RESULT_OK && data != null) {
             MediaProjectionForegroundService.start(this, result.resultCode, data)
-            Toast.makeText(this, "免 Root 屏幕采集服务已启动！", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "屏幕采集服务已就绪", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "未授予录屏权限", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "未授予屏幕采集权限", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -78,6 +80,9 @@ class MainActivity : ComponentActivity() {
                 val capturer by ScreenCaptureSession.capturer.collectAsState()
                 val mediaReady by (capturer?.isReady ?: remember { MutableStateFlow(false) }).collectAsState()
                 val overlayRunning by OverlayServiceState.isRunning.collectAsState()
+                val presets by teamPresetRepository.observePresets().collectAsState(initial = emptyList())
+                val activeWaveChips by ActiveStrategyStore.activeChips.collectAsState()
+                val ocrSummary by ActiveStrategyStore.lastOcrSummary.collectAsState()
                 val benchReport by benchmarkReportState.collectAsState()
                 val isBench by isBenchmarkingState.collectAsState()
 
@@ -90,6 +95,9 @@ class MainActivity : ComponentActivity() {
                         overlayRunning = overlayRunning
                     ),
                     settings = settings,
+                    presets = presets,
+                    activeWaveChips = activeWaveChips,
+                    lastOcrSummary = ocrSummary,
                     benchmarkReport = benchReport,
                     isBenchmarking = isBench,
                     onRequestOverlay = { requestOverlayPermission() },
@@ -101,6 +109,44 @@ class MainActivity : ComponentActivity() {
                     onRunNativeBenchmark = { runOnDeviceBenchmark() },
                     onUpdateSettings = { transform ->
                         lifecycleScope.launch { settingsRepository.update(transform) }
+                    },
+                    onSelectPreset = { id ->
+                        lifecycleScope.launch {
+                            settingsRepository.update { it.copy(activePresetId = id) }
+                        }
+                    },
+                    onSavePreset = { preset, isBuiltIn ->
+                        lifecycleScope.launch {
+                            teamPresetRepository.savePreset(preset, isBuiltIn = isBuiltIn)
+                        }
+                    },
+                    onDuplicatePreset = { source ->
+                        lifecycleScope.launch {
+                            val newId = teamPresetRepository.duplicatePreset(source)
+                            settingsRepository.update { it.copy(activePresetId = newId) }
+                            Toast.makeText(this@MainActivity, "已复制并启用新预设", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onDeletePreset = { id ->
+                        lifecycleScope.launch {
+                            teamPresetRepository.deleteCustomPreset(id)
+                            if (settings.activePresetId == id) {
+                                settingsRepository.update { it.copy(activePresetId = TeamPresetRepository.ID_GENERAL) }
+                            }
+                        }
+                    },
+                    onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
+                    onClearWaveChips = { ActiveStrategyStore.clearAll() },
+                    onParseSkillText = { text ->
+                        val parsed = enemySkillOcrEngine.parseText(text)
+                        if (parsed.chips.isEmpty()) {
+                            Toast.makeText(this@MainActivity, "未匹配到已知敌技词条", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val labels = parsed.chips.joinToString(" · ") { it.label }
+                            ActiveStrategyStore.applyOcrChips(parsed.chips, "文本解析已启用：$labels")
+                            Toast.makeText(this@MainActivity, "已导入 ${parsed.chips.size} 项敌技盾", Toast.LENGTH_SHORT).show()
+                        }
+                        parsed.chips
                     }
                 )
             }
@@ -169,7 +215,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         OverlayControllerService.start(this)
-        Toast.makeText(this, "悬浮窗已启动！请切换到《神魔之塔》使用", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "悬浮助手已启动，请切换到《神魔之塔》", Toast.LENGTH_SHORT).show()
     }
 
     private fun runOnDeviceBenchmark() {

@@ -26,6 +26,7 @@ class PathOverlayView(context: Context) : View(context) {
     enum class DragHandle { NONE, MOVE, LEFT, RIGHT, TOP, BOTTOM, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
     var onCalibrationBoundsChanged: ((leftPx: Float, topPx: Float, rightPx: Float, bottomPx: Float, finished: Boolean) -> Unit)? = null
+    var onBoardEditorCellTouched: ((row: Int, col: Int) -> Unit)? = null
 
     private var geometry: BoardGeometry? = null
     private var boardState: BoardState? = null
@@ -33,9 +34,11 @@ class PathOverlayView(context: Context) : View(context) {
     private var lowConfidenceIndices: Set<Int> = emptySet()
     private var solution: SolutionPath? = null
     private var showPath: Boolean = true
-    private var showOrbBadges: Boolean = true
+    private var showOrbBadges: Boolean = false
     private var calibrationMode: Boolean = false
+    private var boardEditorMode: Boolean = false
     private var countdownText: String? = null
+    private var lastPaintedIdx: Int = -1
 
     // Touch-drag calibration state
     private var activeHandle: DragHandle = DragHandle.NONE
@@ -103,7 +106,8 @@ class PathOverlayView(context: Context) : View(context) {
         showOrbBadges: Boolean,
         calibrationMode: Boolean,
         countdownText: String? = null,
-        memorizedOverlayBoard: BoardState? = null
+        memorizedOverlayBoard: BoardState? = null,
+        boardEditorMode: Boolean = false
     ) {
         this.geometry = geometry
         this.boardState = board
@@ -113,16 +117,42 @@ class PathOverlayView(context: Context) : View(context) {
         this.showPath = showPath
         this.showOrbBadges = showOrbBadges
         this.calibrationMode = calibrationMode
+        this.boardEditorMode = boardEditorMode
         this.countdownText = countdownText
         invalidate()
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!calibrationMode) return false
         val g = geometry ?: return false
         val x = event.rawX
         val y = event.rawY
+
+        // Interactive Board Editor continuous drag-painting mode (改珠 / 标盾画笔)
+        if (boardEditorMode) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                    if (x in g.leftPx..g.rightPx && y in g.topPx..g.bottomPx) {
+                        val col = ((x - g.leftPx) / g.cellWidth).toInt().coerceIn(0, g.cols - 1)
+                        val row = ((y - g.topPx) / g.cellHeight).toInt().coerceIn(0, g.rows - 1)
+                        val idx = row * g.cols + col
+                        if (event.actionMasked == MotionEvent.ACTION_DOWN || idx != lastPaintedIdx) {
+                            lastPaintedIdx = idx
+                            onBoardEditorCellTouched?.invoke(row, col)
+                        }
+                        return true
+                    }
+                    return false
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    lastPaintedIdx = -1
+                    return true
+                }
+            }
+            return false
+        }
+
+        if (!calibrationMode) return false
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -240,26 +270,30 @@ class PathOverlayView(context: Context) : View(context) {
             canvas.translate(-screenLoc[0].toFloat(), -screenLoc[1].toFloat())
         }
 
-        // 1. Calibration or subtle active grid frame
-        if (calibrationMode || (showPath && (boardState != null || memorizedOverlayBoard != null || solution != null))) {
+        // 1. Calibration Grid ('校') or Board Editor Grid ('改盘') — NEVER drawn by '线'!
+        if (calibrationMode || boardEditorMode) {
             drawGrid(canvas, g)
         }
 
         // 1.5 Flash-Reveal Memorized Snapshot translucent overlay (透视全版问号珠!)
         val mem = memorizedOverlayBoard
-        if (!calibrationMode && mem != null && mem.cols == g.cols && mem.rows == g.rows) {
+        if (!calibrationMode && !boardEditorMode && mem != null && mem.cols == g.cols && mem.rows == g.rows) {
             drawMemorizedOverlay(canvas, g, mem)
         }
 
-        // 2. Recognized orb badges & detected puzzle / low-confidence outlines
+        // 2. Board annotations: full editable orb & hazard badges in Board Editor; only puzzle/low-conf outlines during path preview
         val b = boardState
-        if (showPath && b != null && b.cols == g.cols && b.rows == g.rows) {
-            drawBoardAnnotations(canvas, g, b)
+        if (b != null && b.cols == g.cols && b.rows == g.rows) {
+            if (boardEditorMode) {
+                drawBoardEditorOverlay(canvas, g, b)
+            } else if (showPath && !calibrationMode) {
+                drawBoardAnnotations(canvas, g, b)
+            }
         }
 
-        // 3. Trajectory overlay
+        // 3. Trajectory overlay ('线' controls swipe path ONLY!)
         val sol = solution
-        if (showPath && !calibrationMode && sol != null && sol.waypoints.isNotEmpty()) {
+        if (showPath && !calibrationMode && !boardEditorMode && sol != null && sol.waypoints.isNotEmpty()) {
             drawSolutionTrajectory(canvas, g, sol)
         }
 
@@ -395,6 +429,98 @@ class PathOverlayView(context: Context) : View(context) {
                 }
             }
         }
+    }
+
+    /**
+     * Full interactive 1:1 Board Editor overlay: displays orb element pills, enchanted/race markers,
+     * and every painted shield/hazard/terrain marker directly over the live game board.
+     */
+    private fun drawBoardEditorOverlay(canvas: Canvas, g: BoardGeometry, b: BoardState) {
+        val orbR = (minOf(g.cellWidth, g.cellHeight) * 0.28f).coerceIn(16f, 48f)
+        for (r in 0 until b.rows) {
+            for (c in 0 until b.cols) {
+                val idx = r * b.cols + c
+                val cell = b.cells[idx]
+                val flags = b.tileFlags[idx]
+                val left = g.leftPx + c * g.cellWidth
+                val top = g.topPx + r * g.cellHeight
+                val right = left + g.cellWidth
+                val bottom = top + g.cellHeight
+                val cx = g.cellCenterX(c)
+                val cy = g.cellCenterY(r)
+
+                // Terrain & Shield border highlights
+                if ((flags and TileFlagBits.PUZZLE_1) != 0) {
+                    canvas.drawRect(left + 5f, top + 5f, right - 5f, bottom - 5f, puzzlePaint)
+                }
+                if ((flags and TileFlagBits.START_ALLOWED) != 0) {
+                    gridBorderPaint.color = Color.argb(240, 0, 230, 118)
+                    gridBorderPaint.strokeWidth = 6f
+                    canvas.drawRect(left + 6f, top + 6f, right - 6f, bottom - 6f, gridBorderPaint)
+                }
+                if ((flags and TileFlagBits.END_REQUIRED) != 0) {
+                    gridBorderPaint.color = Color.argb(240, 255, 82, 82)
+                    gridBorderPaint.strokeWidth = 6f
+                    canvas.drawRect(left + 6f, top + 6f, right - 6f, bottom - 6f, gridBorderPaint)
+                }
+
+                // Translucent element badge at center
+                val colr = elementColor(cell.element)
+                fillPaint.color = Color.argb(165, Color.red(colr), Color.green(colr), Color.blue(colr))
+                canvas.drawCircle(cx, cy, orbR, fillPaint)
+                gridBorderPaint.color = Color.argb(230, 255, 255, 255)
+                gridBorderPaint.strokeWidth = 3f
+                canvas.drawCircle(cx, cy, orbR, gridBorderPaint)
+
+                val suffix = when (cell.variant) {
+                    Variant.ENCHANTED -> "+"
+                    Variant.RACE -> "族"
+                    Variant.WEAKENED -> "-"
+                    else -> ""
+                }
+                textPaint.color = Color.WHITE
+                textPaint.textSize = orbR * 0.88f
+                canvas.drawText("${elementShortZh(cell.element)}$suffix", cx, cy + orbR * 0.30f, textPaint)
+
+                // Compact bottom hazard/terrain tag
+                val tag = buildCellTag(cell.hazards, flags)
+                if (tag.isNotEmpty()) {
+                    fillPaint.color = Color.argb(215, 20, 20, 26)
+                    val tagW = g.cellWidth * 0.84f
+                    val tagH = orbR * 0.78f
+                    canvas.drawRoundRect(
+                        cx - tagW * 0.5f,
+                        bottom - tagH - 6f,
+                        cx + tagW * 0.5f,
+                        bottom - 6f,
+                        8f,
+                        8f,
+                        fillPaint
+                    )
+                    textPaint.color = Color.rgb(255, 230, 128)
+                    textPaint.textSize = tagH * 0.72f
+                    canvas.drawText(tag, cx, bottom - tagH * 0.22f - 6f, textPaint)
+                }
+            }
+        }
+    }
+
+    private fun buildCellTag(hazards: Int, flags: Int): String {
+        val parts = ArrayList<String>(3)
+        if ((flags and TileFlagBits.PUZZLE_1) != 0) parts.add("拼")
+        if ((flags and TileFlagBits.START_ALLOWED) != 0) parts.add("起")
+        if ((flags and TileFlagBits.END_REQUIRED) != 0) parts.add("终")
+        if ((flags and TileFlagBits.BURNING_TILE) != 0) parts.add("燃")
+        if ((flags and TileFlagBits.SHATTERED) != 0) parts.add("碎")
+        if ((flags and TileFlagBits.STORM) != 0) parts.add("暴")
+        if ((hazards and HazardBits.WEATHERED) != 0) parts.add("风")
+        if ((hazards and HazardBits.ELECTRIFIED) != 0) parts.add("电")
+        if ((hazards and HazardBits.ICE_SEALED) != 0) parts.add("冰")
+        if ((hazards and HazardBits.PETRIFIED) != 0) parts.add("石")
+        if ((hazards and HazardBits.PURGATORY_FIRE) != 0) parts.add("狱")
+        if ((hazards and HazardBits.FOAM) != 0) parts.add("泡")
+        if ((hazards and HazardBits.LOCKED) != 0) parts.add("锁")
+        return parts.take(3).joinToString("")
     }
 
     private fun drawSolutionTrajectory(canvas: Canvas, g: BoardGeometry, sol: SolutionPath) {

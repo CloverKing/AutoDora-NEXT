@@ -35,12 +35,14 @@ data class AppSettings(
     val stepDurationMs: Long = 68L,
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
-    val showOrbBadgesOnPath: Boolean = true,
+    val showOrbBadgesOnPath: Boolean = false,
     val flashRevealMemoryEnabled: Boolean = false, // Opt-in via '⋯ -> 记忆' for 先露后藏 stages (saves battery & avoids stale snaps)
+    val holdReplanEnabled: Boolean = false,        // Toggle mode: when ON, '行' executes Hold-and-Replan (按住重算)
     val holdReplanDelayMs: Long = 360L,
     val holdReplanNudge: Boolean = true,
     val invertDragX: Boolean = false,
-    val invertDragY: Boolean = false
+    val invertDragY: Boolean = false,
+    val activePresetId: String = "builtin_general"
 ) {
     fun toRuleConfig(): RuleConfig {
         val scaledTimeMs = (550 + (maxSteps - 40).coerceAtLeast(0) * 8).coerceIn(550, 2200)
@@ -85,10 +87,12 @@ class SettingsRepository(private val context: Context) {
         val SHOW_ORB_BADGES = booleanPreferencesKey("ux_show_orb_badges")
 
         val FLASH_REVEAL_MEMORY = booleanPreferencesKey("vision_flash_reveal_memory")
+        val HOLD_REPLAN_ENABLED = booleanPreferencesKey("touch_hold_replan_enabled")
         val HOLD_REPLAN_DELAY_MS = longPreferencesKey("touch_hold_replan_delay_ms")
         val HOLD_REPLAN_NUDGE = booleanPreferencesKey("touch_hold_replan_nudge")
         val INVERT_DRAG_X = booleanPreferencesKey("touch_invert_drag_x")
         val INVERT_DRAG_Y = booleanPreferencesKey("touch_invert_drag_y")
+        val ACTIVE_PRESET_ID = stringPreferencesKey("strategy_active_preset_id")
     }
 
     private fun readFromPrefs(p: Preferences): AppSettings = AppSettings(
@@ -110,12 +114,14 @@ class SettingsRepository(private val context: Context) {
         stepDurationMs = p[Keys.STEP_DURATION_MS] ?: 68L,
         humanMode = p[Keys.HUMAN_MODE] ?: false,
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
-        showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
+        showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: false,
         flashRevealMemoryEnabled = p[Keys.FLASH_REVEAL_MEMORY] ?: false,
+        holdReplanEnabled = p[Keys.HOLD_REPLAN_ENABLED] ?: false,
         holdReplanDelayMs = p[Keys.HOLD_REPLAN_DELAY_MS] ?: 360L,
         holdReplanNudge = p[Keys.HOLD_REPLAN_NUDGE] ?: true,
         invertDragX = p[Keys.INVERT_DRAG_X] ?: false,
-        invertDragY = p[Keys.INVERT_DRAG_Y] ?: false
+        invertDragY = p[Keys.INVERT_DRAG_Y] ?: false,
+        activePresetId = p[Keys.ACTIVE_PRESET_ID] ?: "builtin_general"
     )
 
     val settingsFlow: Flow<AppSettings> = context.autoDoraDataStore.data.map { p -> readFromPrefs(p) }
@@ -146,10 +152,12 @@ class SettingsRepository(private val context: Context) {
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)
             p[Keys.SHOW_ORB_BADGES] = next.showOrbBadgesOnPath
             p[Keys.FLASH_REVEAL_MEMORY] = next.flashRevealMemoryEnabled
+            p[Keys.HOLD_REPLAN_ENABLED] = next.holdReplanEnabled
             p[Keys.HOLD_REPLAN_DELAY_MS] = next.holdReplanDelayMs.coerceIn(150L, 900L)
             p[Keys.HOLD_REPLAN_NUDGE] = next.holdReplanNudge
             p[Keys.INVERT_DRAG_X] = next.invertDragX
             p[Keys.INVERT_DRAG_Y] = next.invertDragY
+            p[Keys.ACTIVE_PRESET_ID] = next.activePresetId
         }
     }
 }

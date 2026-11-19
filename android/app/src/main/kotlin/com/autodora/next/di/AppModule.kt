@@ -2,9 +2,11 @@ package com.autodora.next.di
 
 import android.content.Context
 import com.autodora.next.data.SettingsRepository
+import com.autodora.next.data.TeamPresetRepository
 import com.autodora.next.touch.AccessibilityTouchExecutor
 import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.vision.BoardRecognizer
+import com.autodora.next.vision.EnemySkillOcrEngine
 import com.autodora.next.vision.HybridBoardRecognizer
 import dagger.Module
 import dagger.Provides
@@ -25,8 +27,20 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideTeamPresetRepository(@ApplicationContext context: Context): TeamPresetRepository {
+        return TeamPresetRepository.create(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideBoardRecognizer(@ApplicationContext context: Context): BoardRecognizer {
         return HybridBoardRecognizer(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideEnemySkillOcrEngine(@ApplicationContext context: Context): EnemySkillOcrEngine {
+        return EnemySkillOcrEngine(context)
     }
 
     @Provides

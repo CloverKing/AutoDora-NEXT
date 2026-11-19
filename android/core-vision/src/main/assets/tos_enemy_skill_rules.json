@@ -1,0 +1,260 @@
+{
+  "version": "2026.03",
+  "rules": [
+    {
+      "id": "zero_combo",
+      "chipId": "zero_combo",
+      "label": "0 Combo 空转",
+      "category": "COMBO",
+      "pattern": "(?:0\\s*(?:combo|c|连击)|不可消除任何符石|空转)"
+    },
+    {
+      "id": "exact_first_combo",
+      "chipId": "exact_first_combo",
+      "label": "首消 {n} Combo",
+      "category": "COMBO",
+      "pattern": "首[批消].{0,4}?(?:刚好|指定|必须|恰好|为)?\\s*(\\d{1,2})\\s*(?:combo|c|连击)(?!\\s*(?:或以上|以上|\\+))",
+      "intGroup": 1
+    },
+    {
+      "id": "exact_combo",
+      "chipId": "exact_combo",
+      "label": "指定 {n} Combo",
+      "category": "COMBO",
+      "pattern": "(?:刚好|指定|恰好|固定)\\s*(\\d{1,2})\\s*(?:combo|c|连击)",
+      "intGroup": 1
+    },
+    {
+      "id": "min_combo",
+      "chipId": "min_combo",
+      "label": "≥ {n} Combo",
+      "category": "COMBO",
+      "pattern": "(\\d{1,2})\\s*(?:\\+|或以上|以上)\\s*(?:combo|c|连击)|(?:combo|c|连击).{0,3}?(\\d{1,2})\\s*(?:\\+|或以上|以上)",
+      "intGroup": 1
+    },
+    {
+      "id": "odd_combo",
+      "chipId": "odd_combo",
+      "label": "奇数 Combo",
+      "category": "COMBO",
+      "pattern": "(?:奇数|单数)\\s*(?:combo|c|连击)?"
+    },
+    {
+      "id": "even_combo",
+      "chipId": "even_combo",
+      "label": "偶数 Combo",
+      "category": "COMBO",
+      "pattern": "(?:偶数|双数)\\s*(?:combo|c|连击)?"
+    },
+    {
+      "id": "first_wave_only",
+      "chipId": "first_wave_only",
+      "label": "只计首批",
+      "category": "COMBO",
+      "pattern": "(?:只计算首批|首批消除.{0,4}才|不计算天降|无视天降)"
+    },
+    {
+      "id": "same_combo_elements",
+      "chipId": "same_combo_elements",
+      "label": "同属同 C",
+      "category": "COMBO",
+      "pattern": "(?:同属同\\s*c|消除.{0,6}相同\\s*(?:combo|连击)数|各属性.{0,4}相同连击)"
+    },
+    {
+      "id": "equal_pair_light_dark",
+      "chipId": "equal_pair_light_dark",
+      "label": "光暗同等 C",
+      "category": "COMBO",
+      "pattern": "(?:光暗同等|光与暗.{0,6}相同|光暗.{0,4}(?:连击|combo)相等)"
+    },
+    {
+      "id": "second_wave_combo",
+      "chipId": "second_wave_combo",
+      "label": "次批叠珠 ≥ {n}C",
+      "category": "COMBO",
+      "pattern": "(?:次批|第二批|天降)消除.{0,6}?(?:(\\d{1,2})\\s*(?:combo|c|连击))?",
+      "intGroup": 1,
+      "defaultInt": 1
+    },
+    {
+      "id": "same_elem_combos",
+      "chipId": "same_elem_combos",
+      "label": "同属 {n} 组连击",
+      "category": "COMBO",
+      "pattern": "(?:同属|单一属性).{0,4}?(\\d{1,2})\\s*(?:组|连击|combo)",
+      "intGroup": 1,
+      "defaultInt": 3
+    },
+    {
+      "id": "five_elements_enchanted",
+      "chipId": "five_elements_enchanted",
+      "label": "五属强化盾",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:五属强化|5属强化|水火木光暗.{0,4}强化)"
+    },
+    {
+      "id": "five_elements",
+      "chipId": "five_elements",
+      "label": "五属盾",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:五属盾|5属盾|同时消除.{0,4}(?:五|5)种属性|水火木光暗(?:盾|同时))"
+    },
+    {
+      "id": "three_elements",
+      "chipId": "three_elements",
+      "label": "水火木三属",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:三属盾|3属盾|水火木(?:盾|同时))"
+    },
+    {
+      "id": "first_wave_full_clear",
+      "chipId": "first_wave_full_clear",
+      "label": "首消全版",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:首消全版|首批.{0,4}消除所有符石|全版消除)"
+    },
+    {
+      "id": "digital_orb_count",
+      "chipId": "digital_orb_count",
+      "label": "数字盾 {n} 颗",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:数字盾|首[批消].{0,4}?(?:刚好|恰好|指定)?)\\s*(\\d{1,2})\\s*(?:粒|颗|个)符石",
+      "intGroup": 1,
+      "defaultInt": 18
+    },
+    {
+      "id": "race_orb_shield",
+      "chipId": "race_orb_shield",
+      "label": "种族符石首消",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:种族符石|人族符石|神族符石|魔族符石|兽类符石|龙类符石|妖精符石|机械族符石)"
+    },
+    {
+      "id": "anti_first_wave_elem",
+      "chipId": "anti_first_wave",
+      "label": "反首消{elem}",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:首消禁|首批禁消|反首消|不可首消)\\s*([水火木光暗心]{1,3})",
+      "elementGroup": 1
+    },
+    {
+      "id": "forbid_all_elem",
+      "chipId": "forbid_all",
+      "label": "全禁消{elem}",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:全禁消|禁消|不可消除)\\s*([水火木光暗心]{1,3})符?石?",
+      "elementGroup": 1
+    },
+    {
+      "id": "clear_all_elem",
+      "chipId": "clear_all_element",
+      "label": "首消全{elem}",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "首[批消]全([水火木光暗心]{1,2})",
+      "elementGroup": 1
+    },
+    {
+      "id": "enchanted_puzzle",
+      "chipId": "enchanted_puzzle",
+      "label": "强化拼图盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "强化拼图"
+    },
+    {
+      "id": "strict_puzzle",
+      "chipId": "strict_puzzle",
+      "label": "严格拼图盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "(?:拼图盾\\s*[-·]?\\s*限|严格拼图|拼图.{0,6}不可黏连)"
+    },
+    {
+      "id": "loose_puzzle",
+      "chipId": "loose_puzzle",
+      "label": "拼图盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "拼图盾?"
+    },
+    {
+      "id": "cross_shield_3",
+      "chipId": "cross_shield",
+      "label": "三十字盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "(?:三|3)\\s*十字",
+      "defaultInt": 3
+    },
+    {
+      "id": "cross_shield_2",
+      "chipId": "cross_shield",
+      "label": "双十字盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "(?:双|二|2)\\s*十字",
+      "defaultInt": 2
+    },
+    {
+      "id": "cross_shield_1",
+      "chipId": "cross_shield",
+      "label": "单十字盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "十字盾|十字形消除|十字消除",
+      "defaultInt": 1
+    },
+    {
+      "id": "l_shape",
+      "chipId": "l_shape",
+      "label": "L 形盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "(?:l\\s*形|l\\s*字)(?:盾|消除)"
+    },
+    {
+      "id": "t_shape",
+      "chipId": "t_shape",
+      "label": "T 形盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "(?:t\\s*形|t\\s*字)(?:盾|消除)"
+    },
+    {
+      "id": "square_2x2",
+      "chipId": "square_2x2",
+      "label": "田字 2×2 盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "(?:田字|2\\s*[x×]\\s*2)(?:盾|消除)"
+    },
+    {
+      "id": "zero_trail_burning",
+      "chipId": "zero_trail_burning",
+      "label": "轨迹燃烧 0 伤",
+      "category": "HAZARD_AND_PATH",
+      "pattern": "轨迹燃烧"
+    },
+    {
+      "id": "trail_corrosion",
+      "chipId": "trail_corrosion",
+      "label": "轨迹腐蚀自避",
+      "category": "HAZARD_AND_PATH",
+      "pattern": "(?:轨迹腐蚀|轨迹踏满)",
+      "defaultInt": 15
+    },
+    {
+      "id": "char_orb_terrain",
+      "chipId": "char_orb_terrain",
+      "label": "角色珠通行/停放",
+      "category": "HAZARD_AND_PATH",
+      "pattern": "角色符石.{0,6}(?:通行|停放|经过|地形)"
+    },
+    {
+      "id": "step_limit",
+      "chipId": "step_limit",
+      "label": "限 {n} 步内",
+      "category": "HAZARD_AND_PATH",
+      "pattern": "(?:限定|限制|最多)\\s*(\\d{1,2})\\s*步",
+      "intGroup": 1
+    },
+    {
+      "id": "step_hurt_minimize",
+      "chipId": "step_hurt_minimize",
+      "label": "一步一伤省步",
+      "category": "HAZARD_AND_PATH",
+      "pattern": "(?:一步一伤|每移动1步|每步扣)"
+    }
+  ]
+}

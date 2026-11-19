@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.autodora.next.data.ThemeMode
+import com.autodora.next.touch.SwipeSpeedPreset
 
 @Composable
 fun AutoDoraTheme(
@@ -55,9 +56,16 @@ fun AutoDoraTheme(
     )
 }
 
+data class ChipColorStyle(
+    val bg: Int,
+    val fg: Int,
+    val stroke: Int
+)
+
 /**
  * System Material 3 color palette for View-based floating overlays (mirrors AutoDoraTheme 1:1).
- * Uses Android 12+ Material You dynamic system colors when available, with clean M3 Light/Dark fallbacks.
+ * Uses Android 12+ Material You dynamic system colors when available, with clean M3 Light/Dark fallbacks,
+ * plus harmonious thermal speed progression (Fast -> Slow: Crimson -> Amber -> Primary Blue -> Emerald).
  */
 data class OverlayPalette(
     val isDark: Boolean,
@@ -85,7 +93,62 @@ data class OverlayPalette(
     val chipOffStroke: Int,
     val outline: Int,
     val orbStroke: Int
-)
+) {
+    /**
+     * Semantic Fast -> Slow thermal color progression with consistent 1dp outline across Light & Dark modes:
+     *  - 极速 2s: Crimson Red
+     *  - 快转 3s: Amber Orange
+     *  - 标准 5s: System Primary Blue/Accent
+     *  - 稳健 7s: Calm Emerald Green
+     */
+    fun speedStyle(preset: SwipeSpeedPreset): ChipColorStyle = if (isDark) {
+        when (preset) {
+            SwipeSpeedPreset.TURBO_2S -> ChipColorStyle(
+                bg = AndroidColor.rgb(122, 24, 28),
+                fg = AndroidColor.rgb(255, 214, 214),
+                stroke = AndroidColor.rgb(242, 139, 130)
+            )
+            SwipeSpeedPreset.FAST_3S -> ChipColorStyle(
+                bg = AndroidColor.rgb(112, 62, 14),
+                fg = AndroidColor.rgb(255, 224, 178),
+                stroke = AndroidColor.rgb(255, 183, 77)
+            )
+            SwipeSpeedPreset.STANDARD -> ChipColorStyle(
+                bg = primaryContainer,
+                fg = onPrimaryContainer,
+                stroke = primary
+            )
+            SwipeSpeedPreset.STEADY -> ChipColorStyle(
+                bg = AndroidColor.rgb(22, 82, 46),
+                fg = AndroidColor.rgb(200, 247, 212),
+                stroke = AndroidColor.rgb(129, 199, 132)
+            )
+        }
+    } else {
+        when (preset) {
+            SwipeSpeedPreset.TURBO_2S -> ChipColorStyle(
+                bg = AndroidColor.rgb(255, 232, 230),
+                fg = AndroidColor.rgb(165, 20, 26),
+                stroke = AndroidColor.rgb(211, 47, 47)
+            )
+            SwipeSpeedPreset.FAST_3S -> ChipColorStyle(
+                bg = AndroidColor.rgb(255, 240, 219),
+                fg = AndroidColor.rgb(166, 75, 0),
+                stroke = AndroidColor.rgb(230, 126, 34)
+            )
+            SwipeSpeedPreset.STANDARD -> ChipColorStyle(
+                bg = primaryContainer,
+                fg = onPrimaryContainer,
+                stroke = primary
+            )
+            SwipeSpeedPreset.STEADY -> ChipColorStyle(
+                bg = AndroidColor.rgb(226, 246, 232),
+                fg = AndroidColor.rgb(27, 94, 32),
+                stroke = AndroidColor.rgb(56, 142, 60)
+            )
+        }
+    }
+}
 
 object OverlayThemeResolver {
 
