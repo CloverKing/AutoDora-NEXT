@@ -1,0 +1,137 @@
+package com.autodora.next.model
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class Element(val code: Int, val symbol: Char) {
+    WATER(0, 'W'),
+    FIRE(1, 'F'),
+    WOOD(2, 'G'),
+    LIGHT(3, 'L'),
+    DARK(4, 'D'),
+    HEART(5, 'H'),
+    HIDDEN(6, '?'),
+    UNKNOWN(7, 'U'),
+    EMPTY(8, '.');
+
+    val isMatchable: Boolean get() = code in 0..5
+    val bitMask: Int get() = if (isMatchable) (1 shl code) else 0
+
+    companion object {
+        val MATCHABLE = listOf(WATER, FIRE, WOOD, LIGHT, DARK, HEART)
+        fun fromCode(code: Int): Element = entries.firstOrNull { it.code == code } ?: UNKNOWN
+    }
+}
+
+@Serializable
+enum class Variant(val code: Int) {
+    NORMAL(0),
+    ENCHANTED(1),
+    RACE(2),
+    WEAKENED(3);
+
+    companion object {
+        fun fromCode(code: Int): Variant = entries.firstOrNull { it.code == code } ?: NORMAL
+    }
+}
+
+object HazardBits {
+    const val NONE = 0
+    const val WEATHERED = 1 shl 0
+    const val ELECTRIFIED = 1 shl 1
+    const val BURNING_ORB = 1 shl 2
+    const val STICKY_ORB = 1 shl 3
+    const val FROZEN = 1 shl 4
+    const val ICE_SEALED = 1 shl 5
+    const val LOCKED = 1 shl 6
+    const val PETRIFIED = 1 shl 7
+    const val BLOOD_DRAIN = 1 shl 8
+    const val BOMB = 1 shl 9
+    const val BLACK_WHITE = 1 shl 10
+    const val QUESTION = 1 shl 11
+    const val PRIORITY = 1 shl 12
+    const val RESERVE = 1 shl 13
+}
+
+object TileFlagBits {
+    const val NONE = 0
+    const val PUZZLE_1 = 1 shl 0
+    const val PUZZLE_2 = 1 shl 1
+    const val START_ALLOWED = 1 shl 2
+    const val END_REQUIRED = 1 shl 3
+    const val CHECKPOINT = 1 shl 4
+    const val STORM = 1 shl 5
+    const val SHATTERED = 1 shl 6
+    const val BURNING_TILE = 1 shl 7
+    const val STICKY_TILE = 1 shl 8
+    const val BLACK_HOLE = 1 shl 9
+    const val NO_PASS = 1 shl 10
+    const val VOID_TILE = 1 shl 11
+}
+
+@Serializable
+enum class Direction(val code: Int, val dr: Int, val dc: Int) {
+    UP(0, -1, 0),
+    DOWN(1, 1, 0),
+    LEFT(2, 0, -1),
+    RIGHT(3, 0, 1),
+    UP_LEFT(4, -1, -1),
+    UP_RIGHT(5, -1, 1),
+    DOWN_LEFT(6, 1, -1),
+    DOWN_RIGHT(7, 1, 1);
+
+    val isDiagonal: Boolean get() = code >= 4
+
+    companion object {
+        fun fromCode(code: Int): Direction = entries.first { it.code == code }
+    }
+}
+
+@Serializable
+data class CellCoord(val row: Int, val col: Int)
+
+@Serializable
+data class CellState(
+    val element: Element = Element.UNKNOWN,
+    val variant: Variant = Variant.NORMAL,
+    val hazards: Int = HazardBits.NONE,
+    val confidence: Float = 1.0f
+)
+
+@Serializable
+data class BoardGeometry(
+    val leftPx: Float,
+    val topPx: Float,
+    val rightPx: Float,
+    val bottomPx: Float,
+    val cols: Int = 6,
+    val rows: Int = 5,
+    val isWeijianExpanded: Boolean = false
+) {
+    val cellWidth: Float get() = (rightPx - leftPx) / cols
+    val cellHeight: Float get() = (bottomPx - topPx) / rows
+
+    fun cellCenterX(col: Int): Float = leftPx + (col + 0.5f) * cellWidth
+    fun cellCenterY(row: Int): Float = topPx + (row + 0.5f) * cellHeight
+
+    // Team character portrait pull origin right above row 0
+    fun characterAvatarCenterY(): Float = topPx - 0.65f * cellHeight
+}
+
+@Serializable
+data class BoardState(
+    val cols: Int = 6,
+    val rows: Int = 5,
+    val cells: List<CellState>,
+    val tileFlags: List<Int> = List(cols * rows) { TileFlagBits.NONE },
+    val orderedCheckpoints: List<Int> = emptyList()
+) {
+    init {
+        require(cols in 3..8 && rows in 3..8) { "Board dimensions must be within 3..8, got ${cols}x${rows}" }
+        require(cells.size == cols * rows) { "Expected ${cols * rows} cells, got ${cells.size}" }
+        require(tileFlags.size == cols * rows) { "Expected ${cols * rows} tileFlags, got ${tileFlags.size}" }
+    }
+
+    fun index(row: Int, col: Int): Int = row * cols + col
+    fun cellAt(row: Int, col: Int): CellState = cells[index(row, col)]
+}

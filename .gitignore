@@ -1,0 +1,35 @@
+# Build outputs
+build/
+cmake-build-*/
+.cxx/
+*.exe
+*.obj
+*.o
+*.a
+*.so
+*.dll
+
+# Android / Gradle
+android/.gradle/
+android/local.properties
+android/**/build/
+android/.idea/
+*.iml
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Python / ML
+ml/.venv/
+ml/__pycache__/
+**/__pycache__/
+*.pyc
+ml/datasets/
+ml/runs/
+ml/checkpoints/
+
+# OS / Editors
+.DS_Store
+Thumbs.db
+.vscode/

@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "description": "Hot-updatable Tower of Saviors (神魔之塔) enemy skill OCR normalization & strategy mapping rules",
+  "charReplacements": {
+    "連": "连",
+    "擊": "击",
+    "顆": "粒",
+    "颗": "粒",
+    "闇": "暗",
+    "圖": "图",
+    "強化": "强化",
+    "軌": "轨",
+    "跡": "迹",
+    "燃": "燃",
+    "燒": "烧",
+    "數": "数",
+    "個": "个",
+    "屬": "属",
+    "動": "动",
+    "時": "时",
+    "僅": "仅",
+    "無": "无",
+    "視": "视"
+  },
+  "rules": [
+    {
+      "id": "five_elements_enchanted",
+      "pattern": "(强化五属|五属强化|同时消除.*水.*火.*木.*光.*暗.*强化)",
+      "chipId": "five_elements_enchanted",
+      "label": "五属强化盾",
+      "category": "COUNT_AND_ELEMENT"
+    },
+    {
+      "id": "five_elements",
+      "pattern": "(五属盾|同时消除.*水.*火.*木.*光.*暗)",
+      "chipId": "five_elements",
+      "label": "五属盾",
+      "category": "COUNT_AND_ELEMENT"
+    },
+    {
+      "id": "three_elements",
+      "pattern": "(三属盾|同时消除.*水.*火.*木)",
+      "chipId": "three_elements",
+      "label": "三属盾",
+      "category": "COUNT_AND_ELEMENT"
+    },
+    {
+      "id": "digital_orb_count",
+      "pattern": "(?:首消|首批消除)[^0-9]{0,6}(\\d{1,2})\\s*粒",
+      "chipId": "digital_orb_count",
+      "labelTemplate": "数字盾({n}粒)",
+      "paramGroup": 1,
+      "category": "COUNT_AND_ELEMENT"
+    },
+    {
+      "id": "first_wave_full_clear",
+      "pattern": "(首消全版|首批消除所有符石|首批消除全部符石)",
+      "chipId": "first_wave_full_clear",
+      "label": "首消全版",
+      "category": "COUNT_AND_ELEMENT"
+    },
+    {
+      "id": "exact_combo",
+      "pattern": "(?:连击相等|恰好|指定)[^0-9]{0,5}(\\d{1,2})\\s*(?:Combo|combo|C|连击)",
+      "chipId": "exact_combo",
+      "labelTemplate": "恰好{n}C",
+      "paramGroup": 1,
+      "category": "COMBO"
+    },
+    {
+      "id": "min_combo",
+      "pattern": "(\\d{1,2})\\s*(?:\\+|以上|连击追击|Combo以上|Combo盾)",
+      "chipId": "min_combo",
+      "labelTemplate": "{n}+C盾",
+      "paramGroup": 1,
+      "category": "COMBO"
+    },
+    {
+      "id": "odd_combo",
+      "pattern": "(奇数\\s*(?:Combo|C|连击)|单数\\s*(?:Combo|C|连击))",
+      "chipId": "odd_combo",
+      "label": "奇数C盾",
+      "category": "COMBO"
+    },
+    {
+      "id": "even_combo",
+      "pattern": "(偶数\\s*(?:Combo|C|连击)|双数\\s*(?:Combo|C|连击))",
+      "chipId": "even_combo",
+      "label": "偶数C盾",
+      "category": "COMBO"
+    },
+    {
+      "id": "cross_shield",
+      "pattern": "(?:消除|首消)?\\s*([1-3一二双两三])?\\s*(?:个)?十字",
+      "chipId": "cross_shield",
+      "labelTemplate": "十字盾({n})",
+      "paramGroup": 1,
+      "category": "SHAPE_AND_PUZZLE"
+    },
+    {
+      "id": "enchanted_puzzle",
+      "pattern": "(强化拼图|拼图.*强化)",
+      "chipId": "enchanted_puzzle",
+      "label": "强化拼图盾",
+      "category": "SHAPE_AND_PUZZLE"
+    },
+    {
+      "id": "strict_puzzle",
+      "pattern": "(拼图盾|指定形状拼图)",
+      "chipId": "strict_puzzle",
+      "label": "严格拼图盾",
+      "category": "SHAPE_AND_PUZZLE"
+    },
+    {
+      "id": "anti_first_wave_element",
+      "pattern": "(?:禁首消|反首消|首批消除.*反击)([水火木光暗心]{1,5})",
+      "chipId": "anti_first_wave",
+      "labelTemplate": "反首消({el}→叠珠)",
+      "elementGroup": 1,
+      "category": "COUNT_AND_ELEMENT"
+    },
+    {
+      "id": "clear_all_element",
+      "pattern": "(?:首消全|首批消除所有)([水火木光暗心]{1,5})",
+      "chipId": "clear_all_element",
+      "labelTemplate": "首消全{el}",
+      "elementGroup": 1,
+      "category": "COUNT_AND_ELEMENT"
+    },
+    {
+      "id": "step_limit",
+      "pattern": "(?:步数限制|限制移动|限)\\s*(\\d{1,2})\\s*步",
+      "chipId": "step_limit",
+      "labelTemplate": "限{n}步",
+      "paramGroup": 1,
+      "category": "HAZARD_AND_PATH"
+    },
+    {
+      "id": "trail_burning",
+      "pattern": "(轨迹燃烧|轨迹腐蚀|步步痛|移动轨迹)",
+      "chipId": "zero_trail_burning",
+      "label": "零踩轨迹燃烧",
+      "category": "HAZARD_AND_PATH"
+    },
+    {
+      "id": "step_hurt",
+      "pattern": "(一步一伤|每移动一步.*扣除)",
+      "chipId": "step_hurt_minimize",
+      "label": "一步一伤(极短步数)",
+      "category": "HAZARD_AND_PATH"
+    }
+  ]
+}
