@@ -530,29 +530,48 @@ class OverlayControllerService : Service() {
                 val geom = withContext(Dispatchers.Default) {
                     AutoGridDetector.detect(frames.first(), settings.calibration)
                 }
-                currentGeometry = geom
 
                 // Multi-frame CV / Hybrid Recognition
                 val liveRec = boardRecognizer.recognize(frames, geom)
-                lastRecognition = liveRec
 
                 // Flash-Reveal Memory Resolution (先露后藏全版问号珠自动还原!)
+                var resolvedFromMemory = false
                 val boardToSolve = if (settings.flashRevealMemoryEnabled) {
                     when (val res = flashMemoryTracker.resolveForSolve(liveRec)) {
                         is FlashRevealMemoryTracker.MemoryResolution.UseMemorizedSnapshot -> {
-                            usedMemorizedSnapshot = true
+                            resolvedFromMemory = true
                             toast("已从先露后藏记忆快照还原 ${res.liveHiddenCount} 颗问号珠！")
                             res.rememberedBoard
                         }
                         is FlashRevealMemoryTracker.MemoryResolution.UseLiveBoard -> {
-                            usedMemorizedSnapshot = false
                             liveRec.board
                         }
                     }
                 } else {
-                    usedMemorizedSnapshot = false
                     liveRec.board
                 }
+
+                // Non-Battle Screen Guard: never draw an empty grid or solve bogus 0C paths on victory/lobby/menu screens!
+                val totalCells = (boardToSolve.cols * boardToSolve.rows).coerceAtLeast(1)
+                val unknownCells = boardToSolve.cells.count {
+                    it.element == Element.UNKNOWN || it.element == Element.EMPTY
+                }
+                val isGenuineQuestionBoard = resolvedFromMemory || liveRec.questionOrbsDetected >= 6
+                val notInBattleBoard = !isGenuineQuestionBoard && (
+                    unknownCells >= (totalCells * 0.40f).toInt() ||
+                        liveRec.lowConfidenceIndices.size >= (totalCells * 0.65f).toInt() ||
+                        liveRec.averageConfidence < 0.38f
+                    )
+                if (notInBattleBoard) {
+                    hidePathOverlay()
+                    setPhase(OverlayPhase.IDLE)
+                    toast("未检测到战斗符石盘面，请进入战斗后再点「算」")
+                    return@launch
+                }
+
+                currentGeometry = geom
+                lastRecognition = liveRec
+                usedMemorizedSnapshot = resolvedFromMemory
                 updateQuickModeChips()
 
                 // Compose RuleConfig (auto-enables Puzzle shield if golden puzzle borders were detected!)
@@ -572,18 +591,20 @@ class OverlayControllerService : Service() {
                     token.close()
                 }
 
+                val bestSol = solveOut.solutions.firstOrNull()
+                if (bestSol == null || (bestSol.totalCombo == 0 && bestSol.stepCount == 0)) {
+                    hidePathOverlay()
+                    setPhase(OverlayPhase.IDLE)
+                    toast("当前盘面无可消除路线，请确认处于战斗盘面或检查校准框")
+                    return@launch
+                }
+
                 lastSolveOutput = solveOut
                 selectedSolutionIdx = 0
                 showPath = true
                 pathToggleBtn.alpha = 1.0f
                 updateSummaryStrip()
                 refreshPathCanvas()
-
-                if (solveOut.solutions.isEmpty()) {
-                    setPhase(OverlayPhase.IDLE)
-                    toast("未找到可行路线，请检查校准框是否对齐盘面")
-                    return@launch
-                }
 
                 setPhase(OverlayPhase.IDLE)
 
@@ -709,9 +730,14 @@ class OverlayControllerService : Service() {
                 when (result) {
                     is TouchExecutionResult.Success -> {
                         flashMemoryTracker.clearLock()
+                        usedMemorizedSnapshot = false
+                        hidePathOverlay()
                         Log.i(TAG, "Hold-and-Replan completed in ${result.elapsedMs}ms (${result.segmentsDispatched} segs)")
                     }
-                    is TouchExecutionResult.Cancelled -> toast("按住重算已急停中止")
+                    is TouchExecutionResult.Cancelled -> {
+                        hidePathOverlay()
+                        toast("按住重算已急停中止")
+                    }
                     is TouchExecutionResult.Failed -> toast("按住重算失败: ${result.reason}")
                 }
             } finally {
@@ -758,10 +784,12 @@ class OverlayControllerService : Service() {
                     is TouchExecutionResult.Success -> {
                         flashMemoryTracker.clearLock()
                         usedMemorizedSnapshot = false
+                        hidePathOverlay()
                         updateQuickModeChips()
                         Log.i(TAG, "Auto-swipe completed in ${result.elapsedMs}ms (${result.segmentsDispatched} segs)")
                     }
                     is TouchExecutionResult.Cancelled -> {
+                        hidePathOverlay()
                         toast("转珠已急停中止")
                     }
                     is TouchExecutionResult.Failed -> {
@@ -782,6 +810,14 @@ class OverlayControllerService : Service() {
         activeJob = null
         setControlBarTouchable(true)
         setPhase(OverlayPhase.IDLE)
+        hidePathOverlay()
+    }
+
+    private fun hidePathOverlay() {
+        showPath = false
+        if (::pathToggleBtn.isInitialized) {
+            pathToggleBtn.alpha = 0.45f
+        }
         refreshPathCanvas(countdown = null)
     }
 
@@ -1026,6 +1062,9 @@ class OverlayControllerService : Service() {
         }
         groupsScroll.visibility = if (summaryPillsExpanded && sol.groups.isNotEmpty()) View.VISIBLE else View.GONE
         summaryStrip.visibility = if (toolbarExpanded) View.VISIBLE else View.GONE
+        summaryTitle.requestLayout()
+        summaryStrip.requestLayout()
+        clampControlWindowToScreen()
     }
 
     private fun refreshPathCanvas(countdown: String? = null) {
