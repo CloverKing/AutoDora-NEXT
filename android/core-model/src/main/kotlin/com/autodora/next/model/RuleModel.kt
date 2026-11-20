@@ -123,7 +123,8 @@ data class CrossShieldRule(
     val requiredCount: Int = 0,
     val strict5Orbs: Boolean = true,
     val requiredElement: Int = -1,
-    val requireDistinctColors: Boolean = false
+    val requireDistinctColors: Boolean = false,
+    val requiredElementsMask: Int = 0
 )
 
 @Serializable

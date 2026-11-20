@@ -1029,13 +1029,20 @@ EvalResult evaluateCandidate(
             crossColorsMask |= eb;
             crossFound++;
         }
-        if (crossFound >= rules.crossShield.requiredCount) {
+        const uint8_t missingCrossColors = static_cast<uint8_t>(rules.crossShield.requiredElementsMask & ~crossColorsMask);
+        const uint8_t matchedReqCrossColors = static_cast<uint8_t>(rules.crossShield.requiredElementsMask & crossColorsMask);
+        if (crossFound >= rules.crossShield.requiredCount && missingCrossColors == 0) {
             markSat(ShieldStatusBits::CrossShield);
             shaping += 2200.0 * static_cast<double>(crossFound);
         } else {
             unmetFocusShield = true;
-            markFail(ShieldStatusBits::CrossShield, static_cast<double>(rules.crossShield.requiredCount - crossFound) * 1.5);
+            const int missCount = std::max(
+                static_cast<int>(rules.crossShield.requiredCount) - static_cast<int>(crossFound),
+                static_cast<int>(std::popcount(missingCrossColors))
+            );
+            markFail(ShieldStatusBits::CrossShield, static_cast<double>(std::max(1, missCount)) * 1.5);
             shaping += 1200.0 * static_cast<double>(crossFound);
+            shaping += 900.0 * static_cast<double>(std::popcount(matchedReqCrossColors));
             shaping += computeCrossShaping(boardAfterMoves, sim, rules.crossShield, path.endIdx);
         }
     }

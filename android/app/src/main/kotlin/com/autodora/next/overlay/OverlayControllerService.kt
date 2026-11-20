@@ -1159,7 +1159,7 @@ class OverlayControllerService : Service() {
         if (finalChips.isEmpty()) {
             if (parsed.hasNoSkillBanner) {
                 ActiveStrategyStore.applyOcrChips(emptyList(), "自动识技：当前波敌人没有技能$greyNote")
-                if (!autoTriggered) toast("OCR：当前敌人「没有技能」，无需挂载解盾$greyNote")
+                if (!autoTriggered) toast("识敌技：当前敌人「没有技能」，无需挂载解盾$greyNote")
             } else {
                 ActiveStrategyStore.applyOcrChips(emptyList(), "未匹配到已知敌技词条$greyNote")
                 if (!autoTriggered) toast("未识别到已知敌技盾$greyNote")

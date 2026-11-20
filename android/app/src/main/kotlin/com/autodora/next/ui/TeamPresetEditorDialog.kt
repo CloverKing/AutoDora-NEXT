@@ -6,6 +6,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,12 +26,12 @@ import com.autodora.next.R
 import com.autodora.next.model.*
 
 /**
- * Full Strategy / Goal Profile Editor (作战策略编辑器), faithfully inheriting and upgrading
- * Legacy AutoDora's complete strategy/goal configuration matrix + 2026 ToS team mechanics:
- *  - Wide responsive Dialog (95% screen width) so no chips ever wrap onto multiple lines.
- *  - Explicit aligned column headers for the Per-Element 4-Tuple Matrix (Shape / Priority / Timing / Min-Match).
- *  - 2×3 grid for Columns 1..6 Amelioration and tidy 2-row selector for Character Orb slots 1..6.
- *  - 100% localized via parent's live localized Context (immune to Compose DialogWrapper locale reset!).
+ * Full Strategy / Goal Profile Editor (作战策略编辑器):
+ *  - Wide responsive Dialog (95% width) with zero multi-line chip wrapping.
+ *  - Aligned Per-Element 4-Tuple Matrix with clear column headers.
+ *  - 2×3 Grid for Columns 1..6 Amelioration + balanced 2-row Character Orb selector.
+ *  - Circle (?) contextual help button on top-right of every option group.
+ *  - 100% pure single-language localized via parent's live localized Context.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -39,7 +41,6 @@ fun TeamPresetEditorDialog(
     onDismiss: () -> Unit,
     onConfirm: (TeamBasePreset) -> Unit
 ) {
-    // Capture the live localized Context BEFORE Dialog spins up its own DialogWrapper window!
     val ctx = LocalContext.current
     fun t(resId: Int): String = ctx.getString(resId)
     fun t(resId: Int, vararg args: Any): String = ctx.getString(resId, *args)
@@ -56,6 +57,7 @@ fun TeamPresetEditorDialog(
     }
     var cfg by remember(initial.id) { mutableStateOf(initial.baseConfig) }
     var stepsText by remember(initial.id) { mutableStateOf(initial.baseConfig.maxSteps.toString()) }
+    var activeHelp by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val complexityTiers = listOf(
         t(R.string.tier_tiny) to 40,
@@ -90,7 +92,7 @@ fun TeamPresetEditorDialog(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth(0.95f)
-                    .heightIn(max = 670.dp),
+                    .heightIn(max = 680.dp),
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 tonalElevation = 6.dp
@@ -116,7 +118,13 @@ fun TeamPresetEditorDialog(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // ===== 1. Basic Info & Search Budget =====
+                        // ===== 1. Basic Info, Steps & Complexity =====
+                        EditorSectionTitleRow(
+                            title = t(R.string.section_basic_info),
+                            onHelp = {
+                                activeHelp = t(R.string.help_basic_steps_title) to t(R.string.help_basic_steps_body)
+                            }
+                        )
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it },
@@ -148,7 +156,11 @@ fun TeamPresetEditorDialog(
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        EditorSectionTitle(t(R.string.section_complexity, cfg.beamWidth))
+                        Text(
+                            text = t(R.string.section_complexity, cfg.beamWidth),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -164,9 +176,14 @@ fun TeamPresetEditorDialog(
                             }
                         }
 
-                        // ===== 2. Global Matching Goal & Policies =====
+                        // ===== 2. Global Matching Goal & Multi-Orb Policies =====
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        EditorSectionTitle(t(R.string.section_goal_mode))
+                        EditorSectionTitleRow(
+                            title = t(R.string.section_goal_mode),
+                            onHelp = {
+                                activeHelp = t(R.string.help_goal_policy_title) to t(R.string.help_goal_policy_body)
+                            }
+                        )
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -180,7 +197,11 @@ fun TeamPresetEditorDialog(
                             }
                         }
 
-                        EditorSectionTitle(t(R.string.section_match_policy))
+                        Text(
+                            text = t(R.string.section_match_policy),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -233,11 +254,15 @@ fun TeamPresetEditorDialog(
                             )
                         }
 
-                        // ===== 3. Per-Element 4-Tuple Strategy Matrix (With Clear Column Headers!) =====
+                        // ===== 3. Per-Element 4-Tuple Strategy Matrix =====
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        EditorSectionTitle(t(R.string.section_elem_matrix))
+                        EditorSectionTitleRow(
+                            title = t(R.string.section_elem_matrix),
+                            onHelp = {
+                                activeHelp = t(R.string.help_elem_matrix_title) to t(R.string.help_elem_matrix_body)
+                            }
+                        )
 
-                        // Explicit Aligned Column Header Row
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -258,7 +283,6 @@ fun TeamPresetEditorDialog(
                             }
                         }
 
-                        // 6 Attribute Rows (Water, Fire, Wood, Light, Dark, Heart)
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             for (e in 0 until 6) {
                                 val er = cfg.elementRules.getOrElse(e) { ElementRule() }
@@ -269,7 +293,6 @@ fun TeamPresetEditorDialog(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    // Vibrant Color-Coded Element Badge
                                     Surface(
                                         shape = RoundedCornerShape(9.dp),
                                         color = Color(LocaleHelper.elementBadgeArgb(e)),
@@ -288,7 +311,6 @@ fun TeamPresetEditorDialog(
                                         }
                                     }
 
-                                    // Col 1: Target Shape
                                     CompactChoicePill(
                                         label = LocaleHelper.targetShapeLabel(ctx, er.targetShape),
                                         selected = er.targetShape != TargetShape.ANY,
@@ -302,7 +324,6 @@ fun TeamPresetEditorDialog(
                                         modifier = Modifier.weight(1.05f)
                                     )
 
-                                    // Col 2: Priority
                                     CompactChoicePill(
                                         label = LocaleHelper.elementPriorityLabel(ctx, er.priority),
                                         selected = er.priority != ElementPriority.NORMAL,
@@ -329,7 +350,6 @@ fun TeamPresetEditorDialog(
                                         modifier = Modifier.weight(1f)
                                     )
 
-                                    // Col 3: Timing
                                     val timingActiveBg = when (er.timing) {
                                         MatchTiming.FORBID_ALL -> MaterialTheme.colorScheme.errorContainer
                                         MatchTiming.MUST_FIRST_WAVE -> MaterialTheme.colorScheme.tertiaryContainer
@@ -361,7 +381,6 @@ fun TeamPresetEditorDialog(
                                         modifier = Modifier.weight(1f)
                                     )
 
-                                    // Col 4: Min Match Count
                                     CompactChoicePill(
                                         label = t(R.string.min_match_fmt, er.minMatchCount),
                                         selected = er.minMatchCount != 3,
@@ -381,7 +400,7 @@ fun TeamPresetEditorDialog(
                             }
                         }
 
-                        // Element Link Preset
+                        // Leader Attribute Link Preset
                         Text(
                             text = t(R.string.section_link_preset),
                             style = MaterialTheme.typography.labelMedium,
@@ -432,9 +451,14 @@ fun TeamPresetEditorDialog(
                             )
                         }
 
-                        // ===== 4. Columns 1..6 Amelioration (Clean 2×3 Grid — Zero Wrapping!) =====
+                        // ===== 4. Columns 1..6 Amelioration (2×3 Grid) =====
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        EditorSectionTitle(t(R.string.section_columns))
+                        EditorSectionTitleRow(
+                            title = t(R.string.section_columns),
+                            onHelp = {
+                                activeHelp = t(R.string.help_columns_title) to t(R.string.help_columns_body)
+                            }
+                        )
                         for (rowIdx in 0..1) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -468,9 +492,14 @@ fun TeamPresetEditorDialog(
                             }
                         }
 
-                        // ===== 5. Start Point, Character Orb Pull (Balanced 2 Rows!) & Strategy Switches =====
+                        // ===== 5. Start Position & Character Orb Pull =====
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        EditorSectionTitle(t(R.string.section_start_char))
+                        EditorSectionTitleRow(
+                            title = t(R.string.section_start_char),
+                            onHelp = {
+                                activeHelp = t(R.string.help_start_char_title) to t(R.string.help_start_char_body)
+                            }
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -489,7 +518,6 @@ fun TeamPresetEditorDialog(
                             }
                         }
 
-                        // Character Orb Row 1: Off, Slot 1, Slot 2, Slot 3
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -509,7 +537,6 @@ fun TeamPresetEditorDialog(
                                 )
                             }
                         }
-                        // Character Orb Row 2: Slot 4, Slot 5, Slot 6
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -525,7 +552,14 @@ fun TeamPresetEditorDialog(
                             Spacer(Modifier.weight(1f))
                         }
 
+                        // ===== 6. Advanced Strategy Switches =====
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        EditorSectionTitleRow(
+                            title = t(R.string.section_strategy_switches),
+                            onHelp = {
+                                activeHelp = t(R.string.help_strategy_switches_title) to t(R.string.help_strategy_switches_body)
+                            }
+                        )
                         PresetSwitchRow(t(R.string.switch_split_three), cfg.forceSplitThree) {
                             cfg = cfg.copy(forceSplitThree = it)
                         }
@@ -581,18 +615,97 @@ fun TeamPresetEditorDialog(
                     }
                 }
             }
+
+            activeHelp?.let { (hTitle, hBody) ->
+                LocalizedHelpDialog(
+                    title = hTitle,
+                    body = hBody,
+                    dismissLabel = t(R.string.btn_got_it),
+                    onDismiss = { activeHelp = null }
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun EditorSectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary
-    )
+internal fun LocalizedHelpDialog(
+    title: String,
+    body: String,
+    dismissLabel: String,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(10.dp))
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = body,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    FilledTonalButton(onClick = onDismiss) {
+                        Text(dismissLabel)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun HelpCircleButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(28.dp)
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+@Composable
+private fun EditorSectionTitleRow(title: String, onHelp: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f)
+        )
+        HelpCircleButton(onClick = onHelp)
+    }
 }
 
 @Composable

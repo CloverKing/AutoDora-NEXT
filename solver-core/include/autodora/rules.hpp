@@ -102,6 +102,7 @@ struct CrossShieldRule {
     bool strict5Orbs = true;           // 严格 5 颗十字 (不黏连多余同色)
     int8_t requiredElement = -1;       // -1 = 任意色
     bool requireDistinctColors = false;
+    uint8_t requiredElementsMask = 0;  // 非 0 时要求所选各属性均各自消出十字 (如水+火双十字)
 };
 
 struct ShapeShieldRule {

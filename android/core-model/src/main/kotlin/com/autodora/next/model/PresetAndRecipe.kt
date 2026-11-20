@@ -206,10 +206,12 @@ object RuleComposer {
                 "cross_shield" -> {
                     val count = (chip.paramInt and 0x0F).coerceIn(1, 3)
                     val distinctColors = (chip.paramInt and 0x20) != 0
+                    val elemMask = chip.paramElementMask and 0x3F
                     cfg = cfg.copy(
                         crossShield = cfg.crossShield.copy(
                             requiredCount = maxOf(cfg.crossShield.requiredCount, count),
-                            requireDistinctColors = cfg.crossShield.requireDistinctColors || distinctColors
+                            requireDistinctColors = cfg.crossShield.requireDistinctColors || distinctColors || Integer.bitCount(elemMask) >= 2,
+                            requiredElementsMask = cfg.crossShield.requiredElementsMask or elemMask
                         )
                     )
                     highDifficultyShield = true

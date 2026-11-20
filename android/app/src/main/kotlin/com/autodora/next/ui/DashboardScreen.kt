@@ -2,8 +2,12 @@ package com.autodora.next.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -13,6 +17,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -72,6 +78,7 @@ fun DashboardScreen(
     val ctx = LocalContext.current
     var activeTab by remember { mutableStateOf(HomeTab.OVERVIEW) }
     var editingPreset by remember { mutableStateOf<Pair<TeamBasePreset, Boolean>?>(null) }
+    var helpPopup by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val activePresetRecord = presets.firstOrNull { it.preset.id == settings.activePresetId }
         ?: presets.firstOrNull()
@@ -202,7 +209,8 @@ fun DashboardScreen(
                     },
                     onEdit = { rec -> editingPreset = rec.preset to rec.isBuiltIn },
                     onDuplicate = onDuplicatePreset,
-                    onDelete = onDeletePreset
+                    onDelete = onDeletePreset,
+                    onShowHelp = { title, body -> helpPopup = title to body }
                 )
 
                 HomeTab.SHIELDS -> ShieldsTab(
@@ -212,7 +220,8 @@ fun DashboardScreen(
                     onUpdateSettings = onUpdateSettings,
                     onToggleWaveChip = onToggleWaveChip,
                     onClearWaveChips = onClearWaveChips,
-                    onParseSkillText = onParseSkillText
+                    onParseSkillText = onParseSkillText,
+                    onShowHelp = { title, body -> helpPopup = title to body }
                 )
 
                 HomeTab.SETTINGS -> SettingsTab(
@@ -235,6 +244,15 @@ fun DashboardScreen(
                 onSavePreset(updated, isBuiltIn)
                 editingPreset = null
             }
+        )
+    }
+
+    helpPopup?.let { (hTitle, hBody) ->
+        LocalizedHelpDialog(
+            title = hTitle,
+            body = hBody,
+            dismissLabel = ctx.getString(R.string.btn_got_it),
+            onDismiss = { helpPopup = null }
         )
     }
 }
@@ -265,7 +283,6 @@ private fun OverviewTab(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Hero Launch & Live Strategy Card
         ElevatedCard(
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.elevatedCardColors(
@@ -360,7 +377,6 @@ private fun OverviewTab(
             }
         }
 
-        // Core Permissions Checklist
         SectionHeader(stringResource(R.string.section_permissions))
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
@@ -407,7 +423,6 @@ private fun OverviewTab(
             }
         }
 
-        // Quick Usage Guide
         OutlinedCard(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.outlinedCardColors(
@@ -442,7 +457,6 @@ private fun OverviewTab(
             }
         }
 
-        // Collapsible HyperOS / Restricted Settings Guide
         OutlinedCard(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.outlinedCardColors(
@@ -500,7 +514,7 @@ private fun OverviewTab(
     }
 }
 
-// ==================== Tab 1: Room Strategy / Goal Profiles ====================
+// ==================== Tab 1: Strategy Profiles ====================
 @Composable
 private fun StrategiesTab(
     presets: List<TeamPresetRecord>,
@@ -509,7 +523,8 @@ private fun StrategiesTab(
     onCreateNew: () -> Unit,
     onEdit: (TeamPresetRecord) -> Unit,
     onDuplicate: (TeamBasePreset) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onShowHelp: (String, String) -> Unit
 ) {
     val ctx = LocalContext.current
     Column(
@@ -524,12 +539,23 @@ private fun StrategiesTab(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                Text(
-                    text = stringResource(R.string.strategies_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.strategies_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    HelpCircleButton(
+                        onClick = {
+                            onShowHelp(
+                                ctx.getString(R.string.help_strategy_library_title),
+                                ctx.getString(R.string.help_strategy_library_body)
+                            )
+                        }
+                    )
+                }
                 Text(
                     text = stringResource(R.string.strategies_subtitle),
                     style = MaterialTheme.typography.bodySmall,
@@ -662,7 +688,7 @@ private fun StrategiesTab(
     }
 }
 
-// ==================== Tab 2: Abstract Parameterized Shield Controls & Auto Enemy Skill Engine ====================
+// ==================== Tab 2: Shields & Auto Enemy Skill Detection ====================
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ShieldsTab(
@@ -672,16 +698,16 @@ private fun ShieldsTab(
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onToggleWaveChip: (WaveShieldChip) -> Unit,
     onClearWaveChips: () -> Unit,
-    onParseSkillText: (String) -> List<WaveShieldChip>
+    onParseSkillText: (String) -> List<WaveShieldChip>,
+    onShowHelp: (String, String) -> Unit
 ) {
     val ctx = LocalContext.current
     var testSkillText by remember { mutableStateOf("") }
-    var showRuleTester by remember { mutableStateOf(false) }
 
     val byId = remember(activeWaveChips) { activeWaveChips.associateBy { it.id } }
     val activeIds = remember(activeWaveChips) { activeWaveChips.map { it.id }.toSet() }
 
-    // 1. Independent Per-Type Combo Shield State (never collides across shield types!)
+    // 1. Independent Per-Type Combo Shield State
     var minTotalComboVal by remember { mutableStateOf(byId["min_combo"]?.paramInt ?: 6) }
     var minFirstComboVal by remember { mutableStateOf(byId["min_first_combo"]?.paramInt ?: 5) }
     var exactTotalComboVal by remember { mutableStateOf(byId["exact_combo"]?.paramInt ?: 6) }
@@ -691,11 +717,14 @@ private fun ShieldsTab(
     }
     var secondWaveVal by remember { mutableStateOf(byId["second_wave_combo"]?.paramInt ?: 1) }
     var sameElemGroupsVal by remember { mutableStateOf(byId["same_elem_combos"]?.paramInt ?: 3) }
+    var sameElemTarget by remember {
+        val m = byId["same_elem_combos"]?.paramElementMask ?: 0
+        mutableStateOf((0..5).firstOrNull { (m and (1 shl it)) != 0 } ?: -1)
+    }
     val initialPairPacked = byId["equal_pair_light_dark"]?.paramElementMask ?: ((4 shl 4) or 3)
     var pairElemA by remember { mutableStateOf((initialPairPacked and 0x0F).coerceIn(0, 5)) }
     var pairElemB by remember { mutableStateOf(((initialPairPacked ushr 4) and 0x0F).coerceIn(0, 5)) }
 
-    // Sync local steppers if OCR imported a combo shield externally
     LaunchedEffect(byId["min_combo"]?.paramInt) {
         byId["min_combo"]?.paramInt?.let { if (it in 1..15) minTotalComboVal = it }
     }
@@ -722,6 +751,67 @@ private fun ShieldsTab(
     }
     var stepLimitVal by remember { mutableStateOf(byId["step_limit"]?.paramInt ?: 15) }
 
+    // Shared helpers for cross-validated element shield masks
+    val legacyReqIds = remember {
+        buildSet {
+            add("require_elements")
+            add("three_elements")
+            add("five_elements")
+            add("five_elements_enchanted")
+            for (e in 0..5) {
+                add("require_elem_$e")
+                add("require_ench_$e")
+            }
+        }
+    }
+
+    fun readMaskForLimit(baseId: String): Int {
+        var m = byId[baseId]?.paramElementMask ?: 0
+        for (e in 0..5) {
+            if ("${baseId}_$e" in activeIds) m = m or (1 shl e)
+        }
+        return m
+    }
+
+    fun writeMaskForLimit(baseId: String, prefix: String, newMask: Int) {
+        val legacySet = buildSet {
+            add(baseId)
+            for (i in 0..5) add("${baseId}_$i")
+        }
+        if (newMask == 0) {
+            ActiveStrategyStore.replaceGroup(legacySet, null)
+        } else {
+            val names = (0..5).filter { (newMask and (1 shl it)) != 0 }
+                .joinToString("") { LocaleHelper.elementLabel(ctx, it) }
+            ActiveStrategyStore.replaceGroup(
+                legacySet,
+                WaveShieldChip(
+                    id = baseId,
+                    label = "$prefix:$names",
+                    category = ShieldCategory.COUNT_AND_ELEMENT,
+                    paramElementMask = newMask
+                )
+            )
+        }
+    }
+
+    fun writeRequiredElements(newMask: Int, requireEnch: Boolean) {
+        if (newMask == 0) {
+            ActiveStrategyStore.replaceGroup(legacyReqIds, null)
+            return
+        }
+        val names = (0..5).filter { (newMask and (1 shl it)) != 0 }
+            .joinToString("") { LocaleHelper.elementLabel(ctx, it) }
+        val chip = WaveShieldChip(
+            id = "require_elements",
+            label = if (requireEnch) "$names+" else names,
+            category = ShieldCategory.COUNT_AND_ELEMENT,
+            paramInt = if (requireEnch) 1 else 0,
+            paramElementMask = newMask
+        )
+        ActiveStrategyStore.replaceGroup(legacyReqIds, chip)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -729,8 +819,16 @@ private fun ShieldsTab(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ==================== 0. Auto Enemy Skill Intelligence Hub ====================
-        SectionHeader(stringResource(R.string.section_auto_skill))
+        // ==================== 0. Auto Enemy Skill Detection ====================
+        SectionHeaderWithHelp(
+            text = stringResource(R.string.section_auto_skill),
+            onHelp = {
+                onShowHelp(
+                    ctx.getString(R.string.help_auto_skill_title),
+                    ctx.getString(R.string.help_auto_skill_body)
+                )
+            }
+        )
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -757,15 +855,24 @@ private fun ShieldsTab(
                         }
                     }
                 }
-                Text(
-                    text = LocaleHelper.scanModeDesc(ctx, settings.enemySkillScanMode),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        }
+
+        // ==================== 0b. Active Wave Shields (Standalone Card!) ====================
+        SectionHeaderWithHelp(
+            text = stringResource(R.string.section_active_shields),
+            onHelp = {
+                onShowHelp(
+                    ctx.getString(R.string.help_active_shields_title),
+                    ctx.getString(R.string.help_active_shields_body)
                 )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                // Active composed wave shields summary
+            }
+        )
+        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -773,26 +880,21 @@ private fun ShieldsTab(
                 ) {
                     Text(
                         text = stringResource(R.string.active_shields_fmt, activeWaveChips.size),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = { showRuleTester = !showRuleTester }) {
+                    if (activeWaveChips.isNotEmpty()) {
+                        TextButton(
+                            onClick = onClearWaveChips,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
                             Text(
-                                stringResource(
-                                    if (showRuleTester) R.string.btn_rule_tester_close else R.string.btn_rule_tester_open
-                                ),
+                                stringResource(R.string.btn_clear),
+                                color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.labelMedium
                             )
-                        }
-                        if (activeWaveChips.isNotEmpty()) {
-                            TextButton(onClick = onClearWaveChips) {
-                                Text(
-                                    stringResource(R.string.btn_clear),
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
                         }
                     }
                 }
@@ -826,42 +928,19 @@ private fun ShieldsTab(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-
-                AnimatedVisibility(visible = showRuleTester) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = testSkillText,
-                            onValueChange = { testSkillText = it },
-                            label = { Text(stringResource(R.string.rule_tester_hint)) },
-                            minLines = 2,
-                            maxLines = 4,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { testSkillText = "【固定 4 連擊盾】\n首批消除 4 連擊 (Combo)\n五屬強化盾\n拼圖盾-限" },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(stringResource(R.string.btn_sample), style = MaterialTheme.typography.labelMedium)
-                            }
-                            Spacer(Modifier.weight(1f))
-                            Button(
-                                onClick = { if (testSkillText.isNotBlank()) onParseSkillText(testSkillText) },
-                                enabled = testSkillText.isNotBlank()
-                            ) {
-                                Text(stringResource(R.string.btn_parse_import))
-                            }
-                        }
-                    }
-                }
             }
         }
 
-        // ==================== 1. Combo Shield (Independent Per-Type Parameters!) ====================
-        SectionHeader(stringResource(R.string.section_combo_shield))
+        // ==================== 1. Combo Shield (Game-Accurate Rules & Validation!) ====================
+        SectionHeaderWithHelp(
+            text = stringResource(R.string.section_combo_shield),
+            onHelp = {
+                onShowHelp(
+                    ctx.getString(R.string.help_combo_shield_title),
+                    ctx.getString(R.string.help_combo_shield_body)
+                )
+            }
+        )
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -879,43 +958,52 @@ private fun ShieldsTab(
                 }
 
                 fun applyComboType(mode: String) {
+                    // Always remove obsolete redundant "first_wave_only" chip on shield change
+                    ActiveStrategyStore.removeChip("first_wave_only")
                     val chip = when (mode) {
                         "min_combo" -> WaveShieldChip(
                             "min_combo",
-                            "${ctx.getString(R.string.combo_param_min_total)} ≥${minTotalComboVal}C",
+                            "${ctx.getString(R.string.combo_type_min_total)} ≥$minTotalComboVal",
                             ShieldCategory.COMBO,
                             paramInt = minTotalComboVal
                         )
                         "min_first_combo" -> WaveShieldChip(
                             "min_first_combo",
-                            "${ctx.getString(R.string.combo_param_min_first)} ≥${minFirstComboVal}C",
+                            "${ctx.getString(R.string.combo_type_min_first)} ≥$minFirstComboVal",
                             ShieldCategory.COMBO,
                             paramInt = minFirstComboVal
                         )
                         "exact_combo" -> WaveShieldChip(
                             "exact_combo",
-                            "${ctx.getString(R.string.combo_param_exact_total)} ${exactTotalComboVal}C",
+                            "${ctx.getString(R.string.combo_type_exact_total)} $exactTotalComboVal",
                             ShieldCategory.COMBO,
                             paramInt = exactTotalComboVal
                         )
                         "exact_first_combo" -> WaveShieldChip(
                             "exact_first_combo",
-                            "${ctx.getString(R.string.combo_param_exact_first)} ${exactFirstComboVal}C",
+                            "${ctx.getString(R.string.combo_type_exact_first)} $exactFirstComboVal",
                             ShieldCategory.COMBO,
                             paramInt = exactFirstComboVal
                         )
-                        "zero_combo" -> WaveShieldChip(
-                            "zero_combo",
-                            ctx.getString(R.string.combo_type_zero),
-                            ShieldCategory.COMBO
-                        )
+                        "zero_combo" -> {
+                            // Zero Combo cannot coexist with structural combo extras, full clear, or digital orb count!
+                            listOf(
+                                "same_combo_elements", "second_wave_combo", "same_elem_combos",
+                                "equal_pair_light_dark", "first_wave_full_clear", "digital_orb_count"
+                            ).forEach { ActiveStrategyStore.removeChip(it) }
+                            WaveShieldChip(
+                                "zero_combo",
+                                ctx.getString(R.string.combo_type_zero),
+                                ShieldCategory.COMBO
+                            )
+                        }
                         "odd_combo" -> {
                             val scope = ctx.getString(
                                 if (parityFirstOnly) R.string.combo_parity_scope_first else R.string.combo_parity_scope_total
                             )
                             WaveShieldChip(
                                 "odd_combo",
-                                "${ctx.getString(R.string.combo_type_odd)} ($scope)",
+                                "${ctx.getString(R.string.combo_type_odd)}（$scope）",
                                 ShieldCategory.COMBO,
                                 paramInt = if (parityFirstOnly) 0 else 1
                             )
@@ -926,7 +1014,7 @@ private fun ShieldsTab(
                             )
                             WaveShieldChip(
                                 "even_combo",
-                                "${ctx.getString(R.string.combo_type_even)} ($scope)",
+                                "${ctx.getString(R.string.combo_type_even)}（$scope）",
                                 ShieldCategory.COMBO,
                                 paramInt = if (parityFirstOnly) 0 else 1
                             )
@@ -936,7 +1024,6 @@ private fun ShieldsTab(
                     ActiveStrategyStore.replaceGroup(WaveShieldCatalog.COMBO_EXCLUSIVE_IDS, chip)
                 }
 
-                // Clean Type Selector (never mutates other types' numbers!)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -959,7 +1046,7 @@ private fun ShieldsTab(
                     }
                 }
 
-                // Dedicated Parameter Panel for ONLY the Selected Combo Shield Type
+                // Dedicated Parameter Panel for Selected Combo Type
                 if (curComboMode != "none" && curComboMode != "zero_combo") {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -973,7 +1060,7 @@ private fun ShieldsTab(
                             when (curComboMode) {
                                 "min_combo" -> NumericStepperRow(
                                     label = stringResource(R.string.combo_param_min_total),
-                                    valueText = "≥ $minTotalComboVal Combo",
+                                    valueText = stringResource(R.string.combo_value_min_fmt, minTotalComboVal),
                                     onMinus = {
                                         minTotalComboVal = (minTotalComboVal - 1).coerceIn(1, 15)
                                         applyComboType("min_combo")
@@ -985,7 +1072,7 @@ private fun ShieldsTab(
                                 )
                                 "min_first_combo" -> NumericStepperRow(
                                     label = stringResource(R.string.combo_param_min_first),
-                                    valueText = "≥ $minFirstComboVal Combo",
+                                    valueText = stringResource(R.string.combo_value_min_fmt, minFirstComboVal),
                                     onMinus = {
                                         minFirstComboVal = (minFirstComboVal - 1).coerceIn(1, 12)
                                         applyComboType("min_first_combo")
@@ -997,7 +1084,7 @@ private fun ShieldsTab(
                                 )
                                 "exact_combo" -> NumericStepperRow(
                                     label = stringResource(R.string.combo_param_exact_total),
-                                    valueText = "$exactTotalComboVal Combo",
+                                    valueText = stringResource(R.string.combo_value_exact_fmt, exactTotalComboVal),
                                     onMinus = {
                                         exactTotalComboVal = (exactTotalComboVal - 1).coerceIn(1, 15)
                                         applyComboType("exact_combo")
@@ -1009,7 +1096,7 @@ private fun ShieldsTab(
                                 )
                                 "exact_first_combo" -> NumericStepperRow(
                                     label = stringResource(R.string.combo_param_exact_first),
-                                    valueText = "$exactFirstComboVal Combo",
+                                    valueText = stringResource(R.string.combo_value_exact_fmt, exactFirstComboVal),
                                     onMinus = {
                                         exactFirstComboVal = (exactFirstComboVal - 1).coerceIn(1, 12)
                                         applyComboType("exact_first_combo")
@@ -1047,167 +1134,206 @@ private fun ShieldsTab(
                     }
                 }
 
-                // Composable Additional Combo Rules
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text(
-                    text = stringResource(R.string.combo_extra_header),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                fun upsertSecondWave(n: Int) {
-                    ActiveStrategyStore.upsertChip(
-                        WaveShieldChip(
-                            "second_wave_combo",
-                            ctx.getString(R.string.combo_extra_second_wave, n),
-                            ShieldCategory.COMBO,
-                            paramInt = n
+                // Game-Accurate Structural Combo Modifiers (hidden when Zero Combo is selected!)
+                AnimatedVisibility(visible = curComboMode != "zero_combo") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Text(
+                            text = stringResource(R.string.combo_extra_header),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    )
-                }
 
-                fun upsertSameElem(n: Int) {
-                    ActiveStrategyStore.upsertChip(
-                        WaveShieldChip(
-                            "same_elem_combos",
-                            ctx.getString(R.string.combo_extra_same_elem, n),
-                            ShieldCategory.COMBO,
-                            paramInt = n
-                        )
-                    )
-                }
-
-                fun upsertEqualPair(a: Int, b: Int) {
-                    val packed = (a and 0x0F) or ((b and 0x0F) shl 4)
-                    val la = LocaleHelper.elementLabel(ctx, a)
-                    val lb = LocaleHelper.elementLabel(ctx, b)
-                    ActiveStrategyStore.upsertChip(
-                        WaveShieldChip(
-                            "equal_pair_light_dark",
-                            ctx.getString(R.string.combo_extra_equal_pair, la, lb),
-                            ShieldCategory.COMBO,
-                            paramElementMask = packed
-                        )
-                    )
-                }
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val fwoLabel = stringResource(R.string.combo_extra_first_only)
-                    CompactChoicePill(
-                        label = fwoLabel,
-                        selected = "first_wave_only" in activeIds,
-                        onClick = {
-                            onToggleWaveChip(WaveShieldChip("first_wave_only", fwoLabel, ShieldCategory.COMBO))
-                        }
-                    )
-                    val sameCLabel = stringResource(R.string.combo_extra_same_c)
-                    CompactChoicePill(
-                        label = sameCLabel,
-                        selected = "same_combo_elements" in activeIds,
-                        onClick = {
-                            onToggleWaveChip(WaveShieldChip("same_combo_elements", sameCLabel, ShieldCategory.COMBO))
-                        }
-                    )
-                    CompactChoicePill(
-                        label = stringResource(R.string.combo_extra_second_wave, secondWaveVal),
-                        selected = "second_wave_combo" in activeIds,
-                        onClick = {
-                            if ("second_wave_combo" in activeIds) ActiveStrategyStore.removeChip("second_wave_combo")
-                            else upsertSecondWave(secondWaveVal)
-                        }
-                    )
-                    CompactChoicePill(
-                        label = stringResource(R.string.combo_extra_same_elem, sameElemGroupsVal),
-                        selected = "same_elem_combos" in activeIds,
-                        onClick = {
-                            if ("same_elem_combos" in activeIds) ActiveStrategyStore.removeChip("same_elem_combos")
-                            else upsertSameElem(sameElemGroupsVal)
-                        }
-                    )
-                    val pairLabel = stringResource(
-                        R.string.combo_extra_equal_pair,
-                        LocaleHelper.elementLabel(ctx, pairElemA),
-                        LocaleHelper.elementLabel(ctx, pairElemB)
-                    )
-                    CompactChoicePill(
-                        label = pairLabel,
-                        selected = "equal_pair_light_dark" in activeIds,
-                        onClick = {
-                            if ("equal_pair_light_dark" in activeIds) ActiveStrategyStore.removeChip("equal_pair_light_dark")
-                            else upsertEqualPair(pairElemA, pairElemB)
-                        }
-                    )
-                }
-
-                if ("second_wave_combo" in activeIds) {
-                    NumericStepperRow(
-                        label = stringResource(R.string.combo_second_wave_step),
-                        valueText = "≥ $secondWaveVal Combo",
-                        onMinus = {
-                            secondWaveVal = (secondWaveVal - 1).coerceIn(1, 6)
-                            upsertSecondWave(secondWaveVal)
-                        },
-                        onPlus = {
-                            secondWaveVal = (secondWaveVal + 1).coerceIn(1, 6)
-                            upsertSecondWave(secondWaveVal)
-                        }
-                    )
-                }
-                if ("same_elem_combos" in activeIds) {
-                    NumericStepperRow(
-                        label = stringResource(R.string.combo_same_elem_step),
-                        valueText = "$sameElemGroupsVal Combo",
-                        onMinus = {
-                            sameElemGroupsVal = (sameElemGroupsVal - 1).coerceIn(2, 6)
-                            upsertSameElem(sameElemGroupsVal)
-                        },
-                        onPlus = {
-                            sameElemGroupsVal = (sameElemGroupsVal + 1).coerceIn(2, 6)
-                            upsertSameElem(sameElemGroupsVal)
-                        }
-                    )
-                }
-                if ("equal_pair_light_dark" in activeIds) {
-                    Text(
-                        text = stringResource(R.string.combo_equal_pair_pick),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        for (e in 0 until 6) {
-                            val selected = e == pairElemA || e == pairElemB
-                            ElementColorTogglePill(
-                                elemIndex = e,
-                                selected = selected,
-                                onClick = {
-                                    if (e != pairElemA && e != pairElemB) {
-                                        pairElemA = pairElemB
-                                        pairElemB = e
-                                        upsertEqualPair(pairElemA, pairElemB)
-                                    }
-                                },
-                                modifier = Modifier.weight(1f)
+                        fun upsertSecondWave(n: Int) {
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip(
+                                    "second_wave_combo",
+                                    ctx.getString(R.string.combo_extra_second_wave, n),
+                                    ShieldCategory.COMBO,
+                                    paramInt = n
+                                )
                             )
+                        }
+
+                        fun upsertSameElem(n: Int, targetAttr: Int) {
+                            val mask = if (targetAttr in 0..5) (1 shl targetAttr) else 0
+                            val attrTag = if (targetAttr in 0..5) LocaleHelper.elementLabel(ctx, targetAttr) else ""
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip(
+                                    "same_elem_combos",
+                                    if (attrTag.isNotEmpty()) "$attrTag ${ctx.getString(R.string.combo_extra_same_elem, n)}"
+                                    else ctx.getString(R.string.combo_extra_same_elem, n),
+                                    ShieldCategory.COMBO,
+                                    paramInt = n,
+                                    paramElementMask = mask
+                                )
+                            )
+                        }
+
+                        fun upsertEqualPair(a: Int, b: Int) {
+                            val packed = (a and 0x0F) or ((b and 0x0F) shl 4)
+                            val la = LocaleHelper.elementLabel(ctx, a)
+                            val lb = LocaleHelper.elementLabel(ctx, b)
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip(
+                                    "equal_pair_light_dark",
+                                    ctx.getString(R.string.combo_extra_equal_pair, la, lb),
+                                    ShieldCategory.COMBO,
+                                    paramElementMask = packed
+                                )
+                            )
+                        }
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val sameCLabel = stringResource(R.string.combo_extra_same_c)
+                            CompactChoicePill(
+                                label = sameCLabel,
+                                selected = "same_combo_elements" in activeIds,
+                                onClick = {
+                                    onToggleWaveChip(WaveShieldChip("same_combo_elements", sameCLabel, ShieldCategory.COMBO))
+                                }
+                            )
+                            CompactChoicePill(
+                                label = stringResource(R.string.combo_extra_second_wave, secondWaveVal),
+                                selected = "second_wave_combo" in activeIds,
+                                onClick = {
+                                    if ("second_wave_combo" in activeIds) ActiveStrategyStore.removeChip("second_wave_combo")
+                                    else upsertSecondWave(secondWaveVal)
+                                }
+                            )
+                            CompactChoicePill(
+                                label = stringResource(R.string.combo_extra_same_elem, sameElemGroupsVal),
+                                selected = "same_elem_combos" in activeIds,
+                                onClick = {
+                                    if ("same_elem_combos" in activeIds) ActiveStrategyStore.removeChip("same_elem_combos")
+                                    else upsertSameElem(sameElemGroupsVal, sameElemTarget)
+                                }
+                            )
+                            val pairLabel = stringResource(
+                                R.string.combo_extra_equal_pair,
+                                LocaleHelper.elementLabel(ctx, pairElemA),
+                                LocaleHelper.elementLabel(ctx, pairElemB)
+                            )
+                            CompactChoicePill(
+                                label = pairLabel,
+                                selected = "equal_pair_light_dark" in activeIds,
+                                onClick = {
+                                    if ("equal_pair_light_dark" in activeIds) ActiveStrategyStore.removeChip("equal_pair_light_dark")
+                                    else upsertEqualPair(pairElemA, pairElemB)
+                                }
+                            )
+                        }
+
+                        if ("second_wave_combo" in activeIds) {
+                            NumericStepperRow(
+                                label = stringResource(R.string.combo_second_wave_step),
+                                valueText = stringResource(R.string.combo_value_min_fmt, secondWaveVal),
+                                onMinus = {
+                                    secondWaveVal = (secondWaveVal - 1).coerceIn(1, 6)
+                                    upsertSecondWave(secondWaveVal)
+                                },
+                                onPlus = {
+                                    secondWaveVal = (secondWaveVal + 1).coerceIn(1, 6)
+                                    upsertSecondWave(secondWaveVal)
+                                }
+                            )
+                        }
+                        if ("same_elem_combos" in activeIds) {
+                            NumericStepperRow(
+                                label = stringResource(R.string.combo_same_elem_step),
+                                valueText = stringResource(R.string.combo_value_exact_fmt, sameElemGroupsVal),
+                                onMinus = {
+                                    sameElemGroupsVal = (sameElemGroupsVal - 1).coerceIn(2, 6)
+                                    upsertSameElem(sameElemGroupsVal, sameElemTarget)
+                                },
+                                onPlus = {
+                                    sameElemGroupsVal = (sameElemGroupsVal + 1).coerceIn(2, 6)
+                                    upsertSameElem(sameElemGroupsVal, sameElemTarget)
+                                }
+                            )
+                            Text(
+                                text = stringResource(R.string.combo_same_elem_attr),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                CompactChoicePill(
+                                    label = stringResource(R.string.puzzle_elem_any),
+                                    selected = sameElemTarget < 0,
+                                    onClick = {
+                                        sameElemTarget = -1
+                                        upsertSameElem(sameElemGroupsVal, -1)
+                                    },
+                                    modifier = Modifier.weight(1.65f).height(34.dp)
+                                )
+                                for (e in 0 until 6) {
+                                    ElementColorTogglePill(
+                                        elemIndex = e,
+                                        selected = sameElemTarget == e,
+                                        onClick = {
+                                            sameElemTarget = e
+                                            upsertSameElem(sameElemGroupsVal, e)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                        if ("equal_pair_light_dark" in activeIds) {
+                            Text(
+                                text = stringResource(R.string.combo_equal_pair_pick),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                for (e in 0 until 6) {
+                                    val selected = e == pairElemA || e == pairElemB
+                                    ElementColorTogglePill(
+                                        elemIndex = e,
+                                        selected = selected,
+                                        onClick = {
+                                            if (e != pairElemA && e != pairElemB) {
+                                                pairElemA = pairElemB
+                                                pairElemB = e
+                                                upsertEqualPair(pairElemA, pairElemB)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        // ==================== 2. Element & Count Shield (100% Parameterized — Zero Hardcoded Colors!) ====================
-        SectionHeader(stringResource(R.string.section_elem_count_shield))
+        // ==================== 2. Element & Count Shield (Full Cross-Validation!) ====================
+        SectionHeaderWithHelp(
+            text = stringResource(R.string.section_elem_count_shield),
+            onHelp = {
+                onShowHelp(
+                    ctx.getString(R.string.help_elem_count_title),
+                    ctx.getString(R.string.help_elem_count_body)
+                )
+            }
+        )
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // 2a. Min Distinct Attributes (不限 / ≥2属 / ≥3属 / ≥4属 / ≥5属 / ≥6属)
+                // 2a. Min Distinct Attributes (changing clears Specific Required Attributes!)
                 Text(
                     text = stringResource(R.string.elem_min_distinct_label),
                     style = MaterialTheme.typography.labelMedium,
@@ -1228,6 +1354,10 @@ private fun ShieldsTab(
                             label = lbl,
                             selected = curMinDistinct == cnt,
                             onClick = {
+                                if (curMinDistinct != cnt) {
+                                    // Clear specific required colors whenever attribute count changes!
+                                    ActiveStrategyStore.replaceGroup(legacyReqIds, null)
+                                }
                                 if (cnt == 0) {
                                     ActiveStrategyStore.removeChip("min_distinct_elements")
                                 } else {
@@ -1248,13 +1378,12 @@ private fun ShieldsTab(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // 2b. Required Attributes (Multi-Select ANY Subset of 6 Colors + Independent Enchanted Switch!)
+                // 2b. Required Attributes + Independent Enchanted Switch (mutually exclusive with Forbid All!)
                 Text(
                     text = stringResource(R.string.elem_req_label),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                // Consolidate mask from require_elements + any OCR-imported legacy chips (five_elements / require_elem_e)
                 val reqMaskFromChip = byId["require_elements"]?.paramElementMask ?: 0
                 val reqEnchFromChip = (byId["require_elements"]?.paramInt ?: 0) == 1 ||
                     "five_elements_enchanted" in activeIds ||
@@ -1269,34 +1398,9 @@ private fun ShieldsTab(
                     m
                 }
 
-                fun saveRequiredElements(newMask: Int, requireEnch: Boolean) {
-                    // Clean up legacy OCR aliases so UI remains the single source of truth
-                    val legacyIds = buildSet {
-                        add("require_elements")
-                        add("three_elements")
-                        add("five_elements")
-                        add("five_elements_enchanted")
-                        for (e in 0..5) {
-                            add("require_elem_$e")
-                            add("require_ench_$e")
-                        }
-                    }
-                    if (newMask == 0) {
-                        ActiveStrategyStore.replaceGroup(legacyIds, null)
-                        return
-                    }
-                    val names = (0..5).filter { (newMask and (1 shl it)) != 0 }
-                        .joinToString("") { LocaleHelper.elementLabel(ctx, it) }
-                    val enchSuffix = if (requireEnch) "+" else ""
-                    val chip = WaveShieldChip(
-                        id = "require_elements",
-                        label = "$names$enchSuffix",
-                        category = ShieldCategory.COUNT_AND_ELEMENT,
-                        paramInt = if (requireEnch) 1 else 0,
-                        paramElementMask = newMask
-                    )
-                    ActiveStrategyStore.replaceGroup(legacyIds, chip)
-                }
+                val antiMask = readMaskForLimit("anti_first_wave")
+                val forbidMask = readMaskForLimit("forbid_all")
+                val clearMask = readMaskForLimit("clear_all_element")
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1310,7 +1414,27 @@ private fun ShieldsTab(
                             suffix = if (isOn && reqEnchFromChip) "+" else "",
                             onClick = {
                                 val nextMask = effectiveReqMask xor (1 shl e)
-                                saveRequiredElements(nextMask, reqEnchFromChip)
+                                val adding = (nextMask and (1 shl e)) != 0
+                                if (adding) {
+                                    // Clear Forbid-All on this color to prevent impossible conflict!
+                                    val newForbid = forbidMask and (1 shl e).inv()
+                                    if (newForbid != forbidMask) {
+                                        writeMaskForLimit("forbid_all", ctx.getString(R.string.elem_limit_forbid), newForbid)
+                                    }
+                                    // Keep Min Distinct consistent if selected colors exceed it!
+                                    val bitCnt = Integer.bitCount(nextMask)
+                                    if (curMinDistinct in 2..5 && bitCnt > curMinDistinct) {
+                                        ActiveStrategyStore.upsertChip(
+                                            WaveShieldChip(
+                                                id = "min_distinct_elements",
+                                                label = ctx.getString(R.string.elem_min_distinct_fmt, bitCnt),
+                                                category = ShieldCategory.COUNT_AND_ELEMENT,
+                                                paramInt = bitCnt
+                                            )
+                                        )
+                                    }
+                                }
+                                writeRequiredElements(nextMask, reqEnchFromChip && nextMask != 0)
                             },
                             modifier = Modifier.weight(1f)
                         )
@@ -1330,29 +1454,18 @@ private fun ShieldsTab(
                     Switch(
                         checked = reqEnchFromChip && effectiveReqMask != 0,
                         enabled = effectiveReqMask != 0,
-                        onCheckedChange = { ench -> saveRequiredElements(effectiveReqMask, ench) }
+                        onCheckedChange = { ench -> writeRequiredElements(effectiveReqMask, ench) }
                     )
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // 2c. Attribute Restrictions (Anti-1st / Forbid All / Clear All 1st — Any Colors!)
+                // 2c. Attribute Restrictions (Strictly Mutually Exclusive Per Color!)
                 Text(
                     text = stringResource(R.string.elem_forbid_label),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                fun maskForLimit(baseId: String): Int {
-                    var m = byId[baseId]?.paramElementMask ?: 0
-                    for (e in 0..5) {
-                        if ("${baseId}_$e" in activeIds) m = m or (1 shl e)
-                    }
-                    return m
-                }
-
-                val antiMask = maskForLimit("anti_first_wave")
-                val forbidMask = maskForLimit("forbid_all")
-                val clearMask = maskForLimit("clear_all_element")
 
                 val antiCnt = Integer.bitCount(antiMask)
                 val forbidCnt = Integer.bitCount(forbidMask)
@@ -1376,16 +1489,6 @@ private fun ShieldsTab(
                     }
                 }
 
-                val activeLimitBaseId = when (elemLimitMode) {
-                    0 -> "anti_first_wave"
-                    1 -> "forbid_all"
-                    else -> "clear_all_element"
-                }
-                val activeLimitPrefix = when (elemLimitMode) {
-                    0 -> stringResource(R.string.elem_limit_anti)
-                    1 -> stringResource(R.string.elem_limit_forbid)
-                    else -> stringResource(R.string.elem_limit_clear_all)
-                }
                 val curLimitMask = when (elemLimitMode) {
                     0 -> antiMask
                     1 -> forbidMask
@@ -1397,30 +1500,44 @@ private fun ShieldsTab(
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     for (e in 0 until 6) {
-                        val isOn = (curLimitMask and (1 shl e)) != 0
+                        val bit = 1 shl e
+                        val isOn = (curLimitMask and bit) != 0
                         ElementColorTogglePill(
                             elemIndex = e,
                             selected = isOn,
                             onClick = {
-                                val nextMask = curLimitMask xor (1 shl e)
-                                val legacySet = buildSet {
-                                    add(activeLimitBaseId)
-                                    for (i in 0..5) add("${activeLimitBaseId}_$i")
-                                }
-                                if (nextMask == 0) {
-                                    ActiveStrategyStore.replaceGroup(legacySet, null)
-                                } else {
-                                    val names = (0..5).filter { (nextMask and (1 shl it)) != 0 }
-                                        .joinToString("") { LocaleHelper.elementLabel(ctx, it) }
-                                    ActiveStrategyStore.replaceGroup(
-                                        legacySet,
-                                        WaveShieldChip(
-                                            id = activeLimitBaseId,
-                                            label = "$activeLimitPrefix:$names",
-                                            category = ShieldCategory.COUNT_AND_ELEMENT,
-                                            paramElementMask = nextMask
-                                        )
-                                    )
+                                val nextMask = curLimitMask xor bit
+                                val turningOn = (nextMask and bit) != 0
+                                val antiLbl = ctx.getString(R.string.elem_limit_anti)
+                                val forbidLbl = ctx.getString(R.string.elem_limit_forbid)
+                                val clearLbl = ctx.getString(R.string.elem_limit_clear_all)
+                                when (elemLimitMode) {
+                                    0 -> {
+                                        writeMaskForLimit("anti_first_wave", antiLbl, nextMask)
+                                        if (turningOn) {
+                                            if ((forbidMask and bit) != 0) writeMaskForLimit("forbid_all", forbidLbl, forbidMask and bit.inv())
+                                            if ((clearMask and bit) != 0) writeMaskForLimit("clear_all_element", clearLbl, clearMask and bit.inv())
+                                        }
+                                    }
+                                    1 -> {
+                                        writeMaskForLimit("forbid_all", forbidLbl, nextMask)
+                                        if (turningOn) {
+                                            if ((antiMask and bit) != 0) writeMaskForLimit("anti_first_wave", antiLbl, antiMask and bit.inv())
+                                            if ((clearMask and bit) != 0) writeMaskForLimit("clear_all_element", clearLbl, clearMask and bit.inv())
+                                            // Forbid-All conflicts with Required Attribute on the same color!
+                                            if ((effectiveReqMask and bit) != 0) {
+                                                val prunedReq = effectiveReqMask and bit.inv()
+                                                writeRequiredElements(prunedReq, reqEnchFromChip && prunedReq != 0)
+                                            }
+                                        }
+                                    }
+                                    else -> {
+                                        writeMaskForLimit("clear_all_element", clearLbl, nextMask)
+                                        if (turningOn) {
+                                            if ((antiMask and bit) != 0) writeMaskForLimit("anti_first_wave", antiLbl, antiMask and bit.inv())
+                                            if ((forbidMask and bit) != 0) writeMaskForLimit("forbid_all", forbidLbl, forbidMask and bit.inv())
+                                        }
+                                    }
                                 }
                             },
                             modifier = Modifier.weight(1f)
@@ -1430,7 +1547,7 @@ private fun ShieldsTab(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // 2d. Orb Count & Race Shields
+                // 2d. Orb Count & Race Shields (Digital Orb Count <-> Full Clear mutually exclusive!)
                 Text(
                     text = stringResource(R.string.elem_count_label),
                     style = MaterialTheme.typography.labelMedium,
@@ -1445,9 +1562,15 @@ private fun ShieldsTab(
                         label = digLabel,
                         selected = "digital_orb_count" in activeIds,
                         onClick = {
-                            onToggleWaveChip(
-                                WaveShieldChip("digital_orb_count", digLabel, ShieldCategory.COUNT_AND_ELEMENT, paramInt = digitalOrbs)
-                            )
+                            if ("digital_orb_count" in activeIds) {
+                                ActiveStrategyStore.removeChip("digital_orb_count")
+                            } else {
+                                ActiveStrategyStore.removeChip("first_wave_full_clear")
+                                ActiveStrategyStore.removeChip("zero_combo")
+                                ActiveStrategyStore.upsertChip(
+                                    WaveShieldChip("digital_orb_count", digLabel, ShieldCategory.COUNT_AND_ELEMENT, paramInt = digitalOrbs)
+                                )
+                            }
                         }
                     )
                     val fullClearLabel = stringResource(R.string.shield_full_clear)
@@ -1455,7 +1578,15 @@ private fun ShieldsTab(
                         label = fullClearLabel,
                         selected = "first_wave_full_clear" in activeIds,
                         onClick = {
-                            onToggleWaveChip(WaveShieldChip("first_wave_full_clear", fullClearLabel, ShieldCategory.COUNT_AND_ELEMENT))
+                            if ("first_wave_full_clear" in activeIds) {
+                                ActiveStrategyStore.removeChip("first_wave_full_clear")
+                            } else {
+                                ActiveStrategyStore.removeChip("digital_orb_count")
+                                ActiveStrategyStore.removeChip("zero_combo")
+                                ActiveStrategyStore.upsertChip(
+                                    WaveShieldChip("first_wave_full_clear", fullClearLabel, ShieldCategory.COUNT_AND_ELEMENT)
+                                )
+                            }
                         }
                     )
                     val raceLabel = stringResource(R.string.shield_race_orb)
@@ -1498,14 +1629,21 @@ private fun ShieldsTab(
             }
         }
 
-        // ==================== 3. Puzzle & Shape Shield (Mode + Enchanted + Element + Shape!) ====================
-        SectionHeader(stringResource(R.string.section_puzzle_shape_shield))
+        // ==================== 3. Puzzle & Shape Shield (Concise Labels + Multi-Cross Color Picker!) ====================
+        SectionHeaderWithHelp(
+            text = stringResource(R.string.section_puzzle_shape_shield),
+            onHelp = {
+                onShowHelp(
+                    ctx.getString(R.string.help_puzzle_shape_title),
+                    ctx.getString(R.string.help_puzzle_shape_body)
+                )
+            }
+        )
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Decode current Puzzle Shield state from unified "puzzle_shield" OR legacy OCR chips
                 val pChip = byId["puzzle_shield"]
                 val puzzleMode = when {
                     pChip != null -> if ((pChip.paramInt and 1) != 0) 2 else 1
@@ -1533,7 +1671,7 @@ private fun ShieldsTab(
                     val shapeBits = (shapeId and 0x0F) shl 8
                     val packed = strictBit or enchBit or elemBits or shapeBits
 
-                    val modeName = ctx.getString(if (mode == 2) R.string.ov_puzzle_strict else R.string.ov_puzzle_normal)
+                    val modeName = ctx.getString(if (mode == 2) R.string.puzzle_mode_strict else R.string.puzzle_mode_normal)
                     val parts = buildList {
                         add(modeName)
                         if (ench) add(ctx.getString(R.string.ov_puzzle_ench))
@@ -1551,34 +1689,36 @@ private fun ShieldsTab(
                     )
                 }
 
-                // Step 1: Puzzle Mode (Off / Normal / Strict)
+                // Crisp 1-row Puzzle Mode selector (Zero bloated parenthetical text!)
                 Text(
                     text = stringResource(R.string.puzzle_mode_label),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     CompactChoicePill(
                         label = stringResource(R.string.puzzle_mode_off),
                         selected = puzzleMode == 0,
-                        onClick = { savePuzzle(0, false, -1, 0) }
+                        onClick = { savePuzzle(0, false, -1, 0) },
+                        modifier = Modifier.weight(1f)
                     )
                     CompactChoicePill(
                         label = stringResource(R.string.puzzle_mode_normal),
                         selected = puzzleMode == 1,
-                        onClick = { savePuzzle(1, puzzleEnch, puzzleElem, puzzleShapeId) }
+                        onClick = { savePuzzle(1, puzzleEnch, puzzleElem, puzzleShapeId) },
+                        modifier = Modifier.weight(1f)
                     )
                     CompactChoicePill(
                         label = stringResource(R.string.puzzle_mode_strict),
                         selected = puzzleMode == 2,
-                        onClick = { savePuzzle(2, puzzleEnch, puzzleElem, puzzleShapeId) }
+                        onClick = { savePuzzle(2, puzzleEnch, puzzleElem, puzzleShapeId) },
+                        modifier = Modifier.weight(1f)
                     )
                 }
 
-                // Steps 2, 3, 4 revealed cleanly when Puzzle Mode is enabled
                 AnimatedVisibility(visible = puzzleMode > 0) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -1589,7 +1729,6 @@ private fun ShieldsTab(
                             modifier = Modifier.padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            // Step 2: Independent Enchanted Toggle
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1606,7 +1745,6 @@ private fun ShieldsTab(
                                 )
                             }
 
-                            // Step 3: Optional Puzzle Attribute
                             Text(
                                 text = stringResource(R.string.puzzle_elem_label),
                                 style = MaterialTheme.typography.labelSmall,
@@ -1633,7 +1771,6 @@ private fun ShieldsTab(
                                 }
                             }
 
-                            // Step 4: Puzzle Shape Source (Auto Golden Frame OR Preset Shape Template!)
                             Text(
                                 text = stringResource(R.string.puzzle_shape_label),
                                 style = MaterialTheme.typography.labelSmall,
@@ -1655,7 +1792,7 @@ private fun ShieldsTab(
                     }
                 }
 
-                // Standalone Shape Shields (Non-Puzzle)
+                // Standalone Shape Shields + Multi-Cross Color Picker!
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Text(
                     text = stringResource(R.string.shape_shield_label),
@@ -1663,31 +1800,39 @@ private fun ShieldsTab(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                val crossRaw = byId["cross_shield"]?.paramInt
-                    ?: byId["cross_shield_2"]?.paramInt
-                    ?: byId["cross_shield_3"]?.paramInt
-                    ?: 0
+                val crossChip = byId["cross_shield"] ?: byId["cross_shield_2"] ?: byId["cross_shield_3"]
+                val crossRaw = crossChip?.paramInt ?: 0
                 val curCrossCount = crossRaw and 0x0F
                 val curCrossDistinct = (crossRaw and 0x20) != 0
+                val curCrossColorsMask = (crossChip?.paramElementMask ?: 0) and 0x3F
 
-                fun saveCross(count: Int, distinct: Boolean) {
+                fun saveCross(count: Int, distinct: Boolean, colorsMask: Int) {
                     if (count <= 0) {
                         ActiveStrategyStore.replaceGroup(WaveShieldCatalog.CROSS_EXCLUSIVE_IDS, null)
                         return
                     }
-                    val packed = (count and 0x0F) or (if (distinct && count >= 2) 0x20 else 0)
+                    val safeDistinct = (distinct && count >= 2) || Integer.bitCount(colorsMask) >= 2
+                    val packed = (count and 0x0F) or (if (safeDistinct) 0x20 else 0)
                     val baseLbl = when (count) {
                         1 -> ctx.getString(R.string.cross_1)
                         2 -> ctx.getString(R.string.cross_2)
                         else -> ctx.getString(R.string.cross_3)
                     }
+                    val colorNames = (0..5).filter { (colorsMask and (1 shl it)) != 0 }
+                        .joinToString("") { LocaleHelper.elementLabel(ctx, it) }
+                    val label = when {
+                        colorNames.isNotEmpty() -> "$baseLbl·$colorNames"
+                        safeDistinct -> "$baseLbl(≠)"
+                        else -> baseLbl
+                    }
                     ActiveStrategyStore.replaceGroup(
                         WaveShieldCatalog.CROSS_EXCLUSIVE_IDS,
                         WaveShieldChip(
                             id = "cross_shield",
-                            label = if (distinct && count >= 2) "$baseLbl(≠)" else baseLbl,
+                            label = label,
                             category = ShieldCategory.SHAPE_AND_PUZZLE,
-                            paramInt = packed
+                            paramInt = packed,
+                            paramElementMask = colorsMask
                         )
                     )
                 }
@@ -1705,26 +1850,80 @@ private fun ShieldsTab(
                         CompactChoicePill(
                             label = lbl,
                             selected = curCrossCount == cnt,
-                            onClick = { saveCross(cnt, curCrossDistinct) },
+                            onClick = {
+                                // Cross-validation: clear excess cross colors when reducing cross count!
+                                val nextColors = if (cnt != curCrossCount && Integer.bitCount(curCrossColorsMask) > cnt) 0 else curCrossColorsMask
+                                saveCross(cnt, curCrossDistinct && cnt >= 2, nextColors)
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
-                if (curCrossCount >= 2) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+
+                AnimatedVisibility(visible = curCrossCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = stringResource(R.string.cross_distinct_switch),
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(
-                            checked = curCrossDistinct,
-                            onCheckedChange = { saveCross(curCrossCount, it) }
-                        )
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (curCrossCount >= 2) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.cross_distinct_switch),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Switch(
+                                        checked = curCrossDistinct,
+                                        onCheckedChange = {
+                                            // If turning OFF distinct colors while >=2 colors selected, clear colors for consistency
+                                            val nextColors = if (!it && Integer.bitCount(curCrossColorsMask) >= 2) 0 else curCrossColorsMask
+                                            saveCross(curCrossCount, it, nextColors)
+                                        }
+                                    )
+                                }
+                            }
+                            Text(
+                                text = stringResource(R.string.cross_colors_label, curCrossCount),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                for (e in 0 until 6) {
+                                    val bit = 1 shl e
+                                    val isOn = (curCrossColorsMask and bit) != 0
+                                    ElementColorTogglePill(
+                                        elemIndex = e,
+                                        selected = isOn,
+                                        onClick = {
+                                            val nextColors = if (isOn) {
+                                                curCrossColorsMask and bit.inv()
+                                            } else if (Integer.bitCount(curCrossColorsMask) < curCrossCount) {
+                                                curCrossColorsMask or bit
+                                            } else {
+                                                // At max capacity: drop the lowest existing bit so selection never exceeds curCrossCount!
+                                                val lowestBit = curCrossColorsMask and -curCrossColorsMask
+                                                (curCrossColorsMask and lowestBit.inv()) or bit
+                                            }
+                                            val nextDistinct = curCrossDistinct || Integer.bitCount(nextColors) >= 2
+                                            saveCross(curCrossCount, nextDistinct, nextColors)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1748,8 +1947,16 @@ private fun ShieldsTab(
             }
         }
 
-        // ==================== 4. Path, Hazard & Step Controller ====================
-        SectionHeader(stringResource(R.string.section_path_hazard_shield))
+        // ==================== 4. Path, Hazard & Step Shield ====================
+        SectionHeaderWithHelp(
+            text = stringResource(R.string.section_path_hazard_shield),
+            onHelp = {
+                onShowHelp(
+                    ctx.getString(R.string.help_path_hazard_title),
+                    ctx.getString(R.string.help_path_hazard_body)
+                )
+            }
+        )
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -1758,7 +1965,7 @@ private fun ShieldsTab(
                 val burnOn = "zero_trail_burning" in activeIds
                 fun upsertBurn(hurts: Int, len: Int) {
                     val packed = (hurts shl 8) or (len and 0xFF)
-                    val lenLabel = if (len == 0) "Max" else "6"
+                    val lenLabel = if (len == 0) ctx.getString(R.string.ov_burn_len_max) else ctx.getString(R.string.ov_burn_len_6)
                     ActiveStrategyStore.upsertChip(
                         WaveShieldChip(
                             id = "zero_trail_burning",
@@ -1873,6 +2080,52 @@ private fun ShieldsTab(
                 }
             }
         }
+
+        // ==================== 5. Standalone Skill Text Rule Tester (Placed at VERY BOTTOM!) ====================
+        SectionHeaderWithHelp(
+            text = stringResource(R.string.section_rule_tester),
+            onHelp = {
+                onShowHelp(
+                    ctx.getString(R.string.help_rule_tester_title),
+                    ctx.getString(R.string.help_rule_tester_body)
+                )
+            }
+        )
+        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = testSkillText,
+                    onValueChange = { testSkillText = it },
+                    label = { Text(stringResource(R.string.rule_tester_hint)) },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { testSkillText = "【固定 4 連擊盾】\n首批消除 4 連擊\n五屬強化盾\n拼圖盾-限" },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(stringResource(R.string.btn_sample), style = MaterialTheme.typography.labelMedium)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Button(
+                        onClick = { if (testSkillText.isNotBlank()) onParseSkillText(testSkillText) },
+                        enabled = testSkillText.isNotBlank()
+                    ) {
+                        Text(stringResource(R.string.btn_parse_import))
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
     }
 }
 
@@ -1953,7 +2206,7 @@ private fun NumericStepperRow(
     }
 }
 
-// ==================== Tab 3: Settings, Theme, Language, Speed & Benchmark ====================
+// ==================== Tab 3: Settings, Theme, Language, Slim Sliders & Countdown Dropdown ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsTab(
@@ -1974,6 +2227,9 @@ private fun SettingsTab(
     }
     val parsedSteps = maxStepsInput.toIntOrNull()
     val maxStepsError = maxStepsInput.isNotEmpty() && (parsedSteps == null || parsedSteps !in 8..300)
+    var countdownMenuExpanded by remember { mutableStateOf(false) }
+
+    val msUnit = stringResource(R.string.unit_ms)
 
     Column(
         modifier = Modifier
@@ -1982,7 +2238,7 @@ private fun SettingsTab(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. Appearance, Theme Mode & Display Language (zh-CN / zh-TW / en Live Switch!)
+        // 1. Appearance, Theme Mode & Display Language
         SectionHeader(stringResource(R.string.section_appearance))
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
@@ -2046,7 +2302,7 @@ private fun SettingsTab(
             }
         }
 
-        // 2. Unified Thermal Speed Presets (1:1 synced with Floating Bar!)
+        // 2. Swipe Speed Presets + Slim Native Slider
         SectionHeader(stringResource(R.string.section_speed))
         val activeSpeed = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
@@ -2065,7 +2321,7 @@ private fun SettingsTab(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "${LocaleHelper.speedLabel(context, activeSpeed)} · ${settings.stepDurationMs} ms",
+                        text = "${LocaleHelper.speedLabel(context, activeSpeed)} · ${settings.stepDurationMs} $msUnit",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -2100,7 +2356,7 @@ private fun SettingsTab(
                                     maxLines = 1
                                 )
                                 Text(
-                                    text = "${preset.stepDurationMs}ms",
+                                    text = "${preset.stepDurationMs} $msUnit",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (selected) Color(style.fg) else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -2108,7 +2364,7 @@ private fun SettingsTab(
                         }
                     }
                 }
-                Slider(
+                SlimNativeSlider(
                     value = settings.stepDurationMs.toFloat().coerceIn(20f, 120f),
                     onValueChange = { v -> onUpdateSettings { it.copy(stepDurationMs = v.roundToLong()) } },
                     valueRange = 20f..120f
@@ -2116,7 +2372,7 @@ private fun SettingsTab(
             }
         }
 
-        // 3. Solver Budget & Step Input (8..300)
+        // 3. Solver Budget, Slim Native Sliders & Countdown Dropdown
         SectionHeader(stringResource(R.string.section_engine_steps))
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
@@ -2172,19 +2428,57 @@ private fun SettingsTab(
                 )
                 SliderSettingRow(
                     label = stringResource(R.string.slider_hold_delay),
-                    valueText = "${settings.holdReplanDelayMs} ms",
+                    valueText = "${settings.holdReplanDelayMs} $msUnit",
                     value = settings.holdReplanDelayMs.toFloat(),
                     valueRange = 200f..800f,
                     onValueChange = { v -> onUpdateSettings { it.copy(holdReplanDelayMs = (v / 20f).roundToLong() * 20L) } }
                 )
-                SliderSettingRow(
-                    label = stringResource(R.string.slider_countdown),
-                    valueText = stringResource(R.string.unit_seconds, settings.countdownSeconds),
-                    value = settings.countdownSeconds.toFloat(),
-                    valueRange = 0f..3f,
-                    steps = 2,
-                    onValueChange = { v -> onUpdateSettings { it.copy(countdownSeconds = v.roundToInt()) } }
-                )
+
+                // Pre-Swipe Countdown Native Exposed Dropdown
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val countdownOptions = listOf(0, 1, 2, 3, 5)
+                val currentCountdownText = if (settings.countdownSeconds == 0) {
+                    stringResource(R.string.countdown_none)
+                } else {
+                    stringResource(R.string.unit_seconds, settings.countdownSeconds)
+                }
+                ExposedDropdownMenuBox(
+                    expanded = countdownMenuExpanded,
+                    onExpandedChange = { countdownMenuExpanded = !countdownMenuExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = currentCountdownText,
+                        onValueChange = {},
+                        readOnly = true,
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.slider_countdown)) },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = countdownMenuExpanded)
+                        },
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = countdownMenuExpanded,
+                        onDismissRequest = { countdownMenuExpanded = false }
+                    ) {
+                        countdownOptions.forEach { sec ->
+                            val itemText = if (sec == 0) {
+                                stringResource(R.string.countdown_none)
+                            } else {
+                                stringResource(R.string.unit_seconds, sec)
+                            }
+                            DropdownMenuItem(
+                                text = { Text(itemText) },
+                                onClick = {
+                                    onUpdateSettings { it.copy(countdownSeconds = sec) }
+                                    countdownMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -2269,7 +2563,7 @@ private fun SettingsTab(
             }
         }
 
-        // 5. On-Device C++20 NDK Benchmark
+        // 5. Local Engine Benchmark
         SectionHeader(stringResource(R.string.section_benchmark))
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
@@ -2334,6 +2628,26 @@ private fun SectionHeader(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 4.dp, top = 2.dp)
     )
+}
+
+@Composable
+private fun SectionHeaderWithHelp(text: String, onHelp: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f)
+        )
+        HelpCircleButton(onClick = onHelp)
+    }
 }
 
 @Composable
@@ -2421,16 +2735,76 @@ private fun SwitchSettingRow(
     }
 }
 
+/**
+ * Clean native-Android style slim SeekBar (4dp track + 18dp circular thumb) instead of
+ * Material 3 1.3's oversized 16dp thick bar and vertical line thumb.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SlimNativeSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val thumbBorder = MaterialTheme.colorScheme.surface
+
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = valueRange,
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(28.dp),
+        thumb = {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .shadow(2.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(activeColor)
+                    .border(2.dp, thumbBorder, CircleShape)
+            )
+        },
+        track = { sliderState ->
+            val fraction = ((sliderState.value - sliderState.valueRange.start) /
+                (sliderState.valueRange.endInclusive - sliderState.valueRange.start).coerceAtLeast(1e-4f))
+                .coerceIn(0f, 1f)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(inactiveColor)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(activeColor)
+                )
+            }
+        }
+    )
+}
+
 @Composable
 private fun SliderSettingRow(
     label: String,
     valueText: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
-    steps: Int = 0,
     onValueChange: (Float) -> Unit
 ) {
-    Column(modifier = Modifier.padding(top = 2.dp)) {
+    Column(
+        modifier = Modifier.padding(top = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -2444,11 +2818,10 @@ private fun SliderSettingRow(
                 color = MaterialTheme.colorScheme.primary
             )
         }
-        Slider(
+        SlimNativeSlider(
             value = value,
             onValueChange = onValueChange,
-            valueRange = valueRange,
-            steps = steps
+            valueRange = valueRange
         )
     }
 }

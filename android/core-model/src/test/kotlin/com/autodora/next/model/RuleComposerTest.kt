@@ -87,7 +87,13 @@ class RuleComposerTest {
             WaveShieldChip("min_distinct_elements", "≥ 4 属", ShieldCategory.COUNT_AND_ELEMENT, paramInt = 4),
             WaveShieldChip("require_elements", "水暗心+", ShieldCategory.COUNT_AND_ELEMENT, paramInt = 1, paramElementMask = customElemMask),
             WaveShieldChip("puzzle_shield", "普通拼图·含强化·火", ShieldCategory.SHAPE_AND_PUZZLE, paramInt = puzzlePacked),
-            WaveShieldChip("cross_shield", "双十字(≠)", ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 2 or 0x20),
+            WaveShieldChip(
+                "cross_shield",
+                "双十字·水火",
+                ShieldCategory.SHAPE_AND_PUZZLE,
+                paramInt = 2 or 0x20,
+                paramElementMask = Element.WATER.bitMask or Element.FIRE.bitMask
+            ),
             WaveShieldChip("equal_pair_light_dark", "水=火", ShieldCategory.COMBO, paramElementMask = (Element.FIRE.code shl 4) or Element.WATER.code)
         )
 
@@ -105,9 +111,10 @@ class RuleComposerTest {
         assertTrue(composed.puzzle1.requireEnchanted)
         assertEquals(Element.FIRE.code, composed.puzzle1.requiredElement)
 
-        // Multi-cross distinct colors
+        // Multi-cross distinct colors + specific color mask
         assertEquals(2, composed.crossShield.requiredCount)
         assertTrue(composed.crossShield.requireDistinctColors)
+        assertEquals(Element.WATER.bitMask or Element.FIRE.bitMask, composed.crossShield.requiredElementsMask)
 
         // Arbitrary equal-combo element pair
         assertTrue(composed.requireEqualPairCombos)

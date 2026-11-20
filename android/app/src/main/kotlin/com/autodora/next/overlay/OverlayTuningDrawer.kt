@@ -270,12 +270,17 @@ class OverlayTuningDrawerController(
             else -> "none"
         }
         fun applyCombo(mode: String) {
+            ActiveStrategyStore.removeChip("first_wave_only")
             val chip = when (mode) {
-                "min_combo" -> WaveShieldChip("min_combo", "${s(R.string.combo_param_min_total)} ≥${minTotalComboVal}C", ShieldCategory.COMBO, paramInt = minTotalComboVal)
-                "min_first_combo" -> WaveShieldChip("min_first_combo", "${s(R.string.combo_param_min_first)} ≥${minFirstComboVal}C", ShieldCategory.COMBO, paramInt = minFirstComboVal)
-                "exact_combo" -> WaveShieldChip("exact_combo", "${s(R.string.combo_param_exact_total)} ${exactTotalComboVal}C", ShieldCategory.COMBO, paramInt = exactTotalComboVal)
-                "exact_first_combo" -> WaveShieldChip("exact_first_combo", "${s(R.string.combo_param_exact_first)} ${exactFirstComboVal}C", ShieldCategory.COMBO, paramInt = exactFirstComboVal)
-                "zero_combo" -> WaveShieldChip("zero_combo", s(R.string.combo_type_zero), ShieldCategory.COMBO)
+                "min_combo" -> WaveShieldChip("min_combo", "${s(R.string.combo_type_min_total)} ≥$minTotalComboVal", ShieldCategory.COMBO, paramInt = minTotalComboVal)
+                "min_first_combo" -> WaveShieldChip("min_first_combo", "${s(R.string.combo_type_min_first)} ≥$minFirstComboVal", ShieldCategory.COMBO, paramInt = minFirstComboVal)
+                "exact_combo" -> WaveShieldChip("exact_combo", "${s(R.string.combo_type_exact_total)} $exactTotalComboVal", ShieldCategory.COMBO, paramInt = exactTotalComboVal)
+                "exact_first_combo" -> WaveShieldChip("exact_first_combo", "${s(R.string.combo_type_exact_first)} $exactFirstComboVal", ShieldCategory.COMBO, paramInt = exactFirstComboVal)
+                "zero_combo" -> {
+                    listOf("same_combo_elements", "second_wave_combo", "same_elem_combos", "equal_pair_light_dark", "first_wave_full_clear", "digital_orb_count")
+                        .forEach { ActiveStrategyStore.removeChip(it) }
+                    WaveShieldChip("zero_combo", s(R.string.combo_type_zero), ShieldCategory.COMBO)
+                }
                 "odd_combo" -> WaveShieldChip("odd_combo", s(R.string.combo_type_odd), ShieldCategory.COMBO, paramInt = 0)
                 "even_combo" -> WaveShieldChip("even_combo", s(R.string.combo_type_even), ShieldCategory.COMBO, paramInt = 0)
                 else -> null
@@ -313,43 +318,53 @@ class OverlayTuningDrawerController(
         }
         contentHost.addView(cRow2)
 
-        // Dedicated stepper for ONLY the selected numeric Combo type + Composable extras
-        val cRow3 = hRow(bottomMarginDp = 5)
-        if (curComboMode in setOf("min_combo", "min_first_combo", "exact_combo", "exact_first_combo")) {
-            val activeVal = when (curComboMode) {
-                "min_combo" -> minTotalComboVal
-                "min_first_combo" -> minFirstComboVal
-                "exact_combo" -> exactTotalComboVal
-                else -> exactFirstComboVal
-            }
-            fun bump(delta: Int) {
-                when (curComboMode) {
-                    "min_combo" -> minTotalComboVal = (minTotalComboVal + delta).coerceIn(1, 15)
-                    "min_first_combo" -> minFirstComboVal = (minFirstComboVal + delta).coerceIn(1, 12)
-                    "exact_combo" -> exactTotalComboVal = (exactTotalComboVal + delta).coerceIn(1, 15)
-                    "exact_first_combo" -> exactFirstComboVal = (exactFirstComboVal + delta).coerceIn(1, 12)
+        // Dedicated stepper for ONLY the selected numeric Combo type + Structural modifier (hidden on Zero Combo)
+        if (curComboMode != "zero_combo") {
+            val cRow3 = hRow(bottomMarginDp = 5)
+            if (curComboMode in setOf("min_combo", "min_first_combo", "exact_combo", "exact_first_combo")) {
+                val activeVal = when (curComboMode) {
+                    "min_combo" -> minTotalComboVal
+                    "min_first_combo" -> minFirstComboVal
+                    "exact_combo" -> exactTotalComboVal
+                    else -> exactFirstComboVal
                 }
-                applyCombo(curComboMode)
+                fun bump(delta: Int) {
+                    when (curComboMode) {
+                        "min_combo" -> minTotalComboVal = (minTotalComboVal + delta).coerceIn(1, 15)
+                        "min_first_combo" -> minFirstComboVal = (minFirstComboVal + delta).coerceIn(1, 12)
+                        "exact_combo" -> exactTotalComboVal = (exactTotalComboVal + delta).coerceIn(1, 15)
+                        "exact_first_combo" -> exactFirstComboVal = (exactFirstComboVal + delta).coerceIn(1, 12)
+                    }
+                    applyCombo(curComboMode)
+                }
+                cRow3.addView(makeChip("−", padH = 7) { bump(-1) }.also { styleChip(it, p.chipOffBg, p.onSurface, p.chipOffStroke) })
+                cRow3.addView(makeChip(s(R.string.combo_value_exact_fmt, activeVal), padH = 7) {}.also { styleChip(it, p.secondaryContainer, p.onSecondaryContainer, null) })
+                cRow3.addView(makeChip("+", padH = 7, marginEndDp = 6) { bump(+1) }.also { styleChip(it, p.chipOffBg, p.onSurface, p.chipOffStroke) })
             }
-            cRow3.addView(makeChip("−", padH = 7) { bump(-1) }.also { styleChip(it, p.chipOffBg, p.onSurface, p.chipOffStroke) })
-            cRow3.addView(makeChip("${activeVal}C", padH = 7) {}.also { styleChip(it, p.secondaryContainer, p.onSecondaryContainer, null) })
-            cRow3.addView(makeChip("+", padH = 7, marginEndDp = 6) { bump(+1) }.also { styleChip(it, p.chipOffBg, p.onSurface, p.chipOffStroke) })
+            cRow3.addView(makeToggle(s(R.string.combo_extra_same_c), "same_combo_elements" in activeIds, p, marginEndDp = 0) {
+                onToggleWaveChip(WaveShieldChip("same_combo_elements", s(R.string.combo_extra_same_c), ShieldCategory.COMBO))
+            })
+            contentHost.addView(cRow3)
         }
-        cRow3.addView(makeToggle(s(R.string.combo_extra_first_only), "first_wave_only" in activeIds, p) {
-            onToggleWaveChip(WaveShieldChip("first_wave_only", s(R.string.combo_extra_first_only), ShieldCategory.COMBO))
-        })
-        cRow3.addView(makeToggle(s(R.string.combo_extra_same_c), "same_combo_elements" in activeIds, p, marginEndDp = 0) {
-            onToggleWaveChip(WaveShieldChip("same_combo_elements", s(R.string.combo_extra_same_c), ShieldCategory.COMBO))
-        })
-        contentHost.addView(cRow3)
 
-        // 3. Element & Count Shield (Min Distinct + Arbitrary Required Colors + Enchanted Toggle + Restrictions)
+        // 3. Element & Count Shield (Cross-validated Min Distinct + Arbitrary Required Colors + Enchanted Toggle)
         addSectionLabel(s(R.string.section_elem_count_shield), p)
         val curMinDistinct = byId["min_distinct_elements"]?.paramInt ?: 0
+        val legacyReqIds = buildSet {
+            add("require_elements")
+            add("three_elements")
+            add("five_elements")
+            add("five_elements_enchanted")
+            for (e in 0..5) {
+                add("require_elem_$e")
+                add("require_ench_$e")
+            }
+        }
         val minDistRow = hRow(bottomMarginDp = 4)
         for (cnt in listOf(0, 2, 3, 4, 5, 6)) {
             val lbl = if (cnt == 0) s(R.string.elem_min_distinct_any) else "≥${cnt}"
             val btn = makeChip(if (curMinDistinct == cnt) "●$lbl" else lbl, padH = 5, marginEndDp = if (cnt == 6) 0 else 3) {
+                if (curMinDistinct != cnt) ActiveStrategyStore.replaceGroup(legacyReqIds, null)
                 if (cnt == 0) ActiveStrategyStore.removeChip("min_distinct_elements")
                 else onUpsertWaveChip(
                     WaveShieldChip("min_distinct_elements", s(R.string.elem_min_distinct_fmt, cnt), ShieldCategory.COUNT_AND_ELEMENT, paramInt = cnt)
@@ -576,7 +591,7 @@ class OverlayTuningDrawerController(
         val burnRow = hRow(bottomMarginDp = 2)
         fun upsertBurn() {
             val packed = (maxBurnHurtsVal shl 8) or (burnTrailLenVal and 0xFF)
-            val lenLbl = if (burnTrailLenVal == 0) "Max" else "6"
+            val lenLbl = if (burnTrailLenVal == 0) s(R.string.ov_burn_len_max) else s(R.string.ov_burn_len_6)
             onUpsertWaveChip(WaveShieldChip("zero_trail_burning", "${s(R.string.ov_burn_path)}($maxBurnHurtsVal/$lenLbl)", ShieldCategory.HAZARD_AND_PATH, paramInt = packed))
         }
         burnRow.addView(makeToggle(s(R.string.ov_burn_path), burnOn, p) {
