@@ -633,7 +633,7 @@ class OverlayControllerService : Service() {
         )
         controlRoot.addView(boardEditor.rootView)
 
-        // Full-Feature 4-Tab Floating Drawer (快捷 | 策略 | 解盾 | 设置)
+        // Full-Feature 3-Tab Unified Floating Drawer (快捷 | 策略 | 设置)
         tuningDrawer = OverlayTuningDrawerController(
             context = this,
             onRunAutoSkillScan = { runSmartEnemySkillScan(autoTriggered = false) },
@@ -649,6 +649,25 @@ class OverlayControllerService : Service() {
                     settingsRepository.update { it.copy(activePresetId = id) }
                     val rec = presetRecords.firstOrNull { it.preset.id == id }
                     if (rec != null) toast(LocaleHelper.displayPresetName(lctx, rec.preset, rec.isBuiltIn))
+                }
+            },
+            onSaveActivePreset = {
+                serviceScope.launch {
+                    val cur = activeTeamPreset()
+                    val rec = presetRecords.firstOrNull { it.preset.id == cur.id }
+                    teamPresetRepository.savePreset(cur, isBuiltIn = rec?.isBuiltIn ?: false)
+                    toast(lctx.getString(R.string.toast_preset_saved))
+                }
+            },
+            onDuplicateActivePreset = {
+                serviceScope.launch {
+                    val cur = activeTeamPreset()
+                    val rec = presetRecords.firstOrNull { it.preset.id == cur.id }
+                    val displayName = LocaleHelper.displayPresetName(lctx, cur, rec?.isBuiltIn ?: false)
+                    val displayDesc = LocaleHelper.displayPresetDesc(lctx, cur, rec?.isBuiltIn ?: false)
+                    val newId = teamPresetRepository.duplicatePreset(cur.copy(name = displayName, description = displayDesc))
+                    settingsRepository.update { it.copy(activePresetId = newId) }
+                    toast(lctx.getString(R.string.toast_preset_saved_as))
                 }
             },
             onUpdateActivePresetConfig = { transform ->
@@ -907,7 +926,7 @@ class OverlayControllerService : Service() {
         }
     }
 
-    // ==================== Smart Automatic Enemy Skill Recognition (Official 12x12 Icons + Auto Gear ▶ Expand + Scroll + Text) ====================
+    // ==================== Smart Automatic Enemy Skill Recognition (187 Official Icons + Auto Long-Press Each Enemy) ====================
     private fun runSmartEnemySkillScan(autoTriggered: Boolean) {
         if (currentPhase != OverlayPhase.IDLE) return
         val capturer = ScreenCaptureSession.capturer.value
@@ -924,7 +943,7 @@ class OverlayControllerService : Service() {
             val prevDrawer = tuningDrawerOpen
             if (prevDrawer) setTuningDrawerOpen(false)
 
-            // Keep the compact floating top bar visible unless the user dragged it down over the enemy/modal zone!
+            // Keep the compact floating top bar visible unless dragged down over the enemy/modal zone!
             val barOverlapsScanZone = controlParams.y > (screenH * 0.13f).toInt()
             if (barOverlapsScanZone) {
                 controlRoot.visibility = View.INVISIBLE
@@ -935,19 +954,18 @@ class OverlayControllerService : Service() {
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
             delay(50)
 
-            var openedGearByAuto = false
+            var popupOpenedByAuto = false
             try {
                 val initBmp = capturer.captureSingleFrame() ?: return@launch
                 val initFrame = BitmapVisionFrame(initBmp)
-                val (alreadyInStageInfo, alreadyInEnemyPopup) = withContext(Dispatchers.Default) {
-                    StageInfoUiAnalyzer.isStageInfoModalOpen(initFrame) to
-                        StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(initFrame)
+                val alreadyInEnemyPopup = withContext(Dispatchers.Default) {
+                    StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(initFrame)
                 }
 
-                // Stage 1: Battle screen zero-tap official 12×12 icon + board CV scan (when not in Stage Info)
+                // Stage 1: Zero-tap official 187-icon 12x12 badge + board CV scan (in HYBRID & BATTLE_ICONS modes)
                 val battleIconChips = ArrayList<WaveShieldChip>()
                 val iconNotes = ArrayList<String>()
-                if (!alreadyInStageInfo) {
+                if (scanMode != EnemySkillScanMode.AUTO_GEAR_OCR) {
                     val iconScan = withContext(Dispatchers.Default) {
                         val g = AutoGridDetector.detect(initBmp, settings.calibration)
                         val rec = if (alreadyInEnemyPopup) null else boardRecognizer.recognize(listOf(initBmp), g)
@@ -959,31 +977,86 @@ class OverlayControllerService : Service() {
                         lastScannedEnemyHash = iconScan.enemyZoneHash
                         hasScannedWaveOnce = true
                     }
+                } else if (!alreadyInEnemyPopup) {
+                    lastScannedEnemyHash = withContext(Dispatchers.Default) {
+                        EnemyStatusIconMatcher.computeBattleEnemyZoneHash(initFrame)
+                    }
+                    hasScannedWaveOnce = true
                 }
 
-                // If user already opened an enemy long-press card, read its text directly (expanding any ▶ arrows)
-                if (alreadyInEnemyPopup && !alreadyInStageInfo) {
-                    var workingPopupBmp = initBmp
-                    if (canTouch) {
-                        var expandClicks = 0
-                        while (isActive && expandClicks < 5) {
-                            val collapsed = withContext(Dispatchers.Default) {
-                                StageInfoUiAnalyzer.findCollapsedSkillArrows(BitmapVisionFrame(workingPopupBmp))
+                // Helper to expand ▶ arrows, read active skill lines, and scroll inside an open enemy detail card
+                suspend fun readOpenEnemyPopup(startBmp: android.graphics.Bitmap): Pair<List<String>, Int> {
+                    var workingBmp = startBmp
+                    val linesOut = LinkedHashSet<String>()
+                    var skippedTotal = 0
+                    try {
+                        var scrollSteps = 0
+                        while (isActive && scrollSteps <= 2) {
+                            var expandClicks = 0
+                            while (isActive && canTouch && expandClicks < 5) {
+                                val collapsed = withContext(Dispatchers.Default) {
+                                    StageInfoUiAnalyzer.findCollapsedSkillArrows(BitmapVisionFrame(workingBmp))
+                                }
+                                if (collapsed.isEmpty()) break
+                                val arrow = collapsed.first()
+                                touchExecutor.performTap(arrow.x, arrow.y, holdMs = 34L)
+                                delay(220)
+                                val nextBmp = capturer.captureSingleFrame() ?: break
+                                if (!workingBmp.isRecycled) workingBmp.recycle()
+                                workingBmp = nextBmp
+                                expandClicks++
                             }
-                            if (collapsed.isEmpty()) break
-                            val arrow = collapsed.first()
-                            touchExecutor.performTap(arrow.x, arrow.y, holdMs = 34L)
-                            delay(220)
-                            val nextBmp = capturer.captureSingleFrame() ?: break
-                            if (!workingPopupBmp.isRecycled) workingPopupBmp.recycle()
-                            workingPopupBmp = nextBmp
-                            expandClicks++
+
+                            val (lines, skipped) = withContext(Dispatchers.Default) {
+                                enemySkillOcrEngine.recognizeActiveLines(workingBmp)
+                            }
+                            linesOut.addAll(lines)
+                            skippedTotal += skipped
+
+                            val hasNoSkill = lines.any { it.contains("沒有技能") || it.contains("没有技能") }
+                            if (hasNoSkill || !canTouch || scrollSteps >= 2) break
+
+                            val beforeHash = withContext(Dispatchers.Default) {
+                                StageInfoUiAnalyzer.computeRegionHash(
+                                    BitmapVisionFrame(workingBmp),
+                                    yTopRatio = 0.42f,
+                                    yBotRatio = 0.84f
+                                )
+                            }
+                            touchExecutor.performSwipe(
+                                x1 = screenW * 0.50f,
+                                y1 = screenH * 0.76f,
+                                x2 = screenW * 0.50f,
+                                y2 = screenH * 0.48f,
+                                durationMs = 240L
+                            )
+                            delay(240)
+                            val nextScrollBmp = capturer.captureSingleFrame() ?: break
+                            if (!workingBmp.isRecycled) workingBmp.recycle()
+                            workingBmp = nextScrollBmp
+                            val stillOpen = withContext(Dispatchers.Default) {
+                                StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(BitmapVisionFrame(workingBmp))
+                            }
+                            if (!stillOpen) break
+                            val afterHash = withContext(Dispatchers.Default) {
+                                StageInfoUiAnalyzer.computeRegionHash(
+                                    BitmapVisionFrame(workingBmp),
+                                    yTopRatio = 0.42f,
+                                    yBotRatio = 0.84f
+                                )
+                            }
+                            if (StageInfoUiAnalyzer.hammingDistance(beforeHash, afterHash) <= 3) break
+                            scrollSteps++
                         }
+                    } finally {
+                        if (!workingBmp.isRecycled) workingBmp.recycle()
                     }
-                    val (lines, skipped) = withContext(Dispatchers.Default) {
-                        enemySkillOcrEngine.recognizeActiveLines(workingPopupBmp)
-                    }
-                    if (!workingPopupBmp.isRecycled) workingPopupBmp.recycle()
+                    return linesOut.toList() to skippedTotal
+                }
+
+                // If user already opened an enemy long-press card manually, read it directly without closing it!
+                if (alreadyInEnemyPopup) {
+                    val (lines, skipped) = readOpenEnemyPopup(initBmp)
                     val parsed = withContext(Dispatchers.Default) {
                         enemySkillOcrEngine.parseText(lines.joinToString("\n"), skippedGreyLines = skipped)
                     }
@@ -991,8 +1064,8 @@ class OverlayControllerService : Service() {
                     return@launch
                 }
 
-                // If user chose Battle-Icons-Only mode and Stage Info is NOT open, finish with zero taps!
-                if (scanMode == EnemySkillScanMode.BATTLE_ICONS && !alreadyInStageInfo) {
+                // If user selected Battle-Icons-Only mode, finish immediately with zero taps!
+                if (scanMode == EnemySkillScanMode.BATTLE_ICONS) {
                     if (!initBmp.isRecycled) initBmp.recycle()
                     val summary = if (battleIconChips.isNotEmpty()) {
                         val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
@@ -1007,128 +1080,100 @@ class OverlayControllerService : Service() {
                     return@launch
                 }
 
-                // Stage 2: Full-Auto 「齿轮 ⚙ → 關卡資訊 → 展开全部 ▶ 小三角 → 超屏自动下划 → 多敌切换 → 识别 → 取消关闭」
-                var workingBmp: android.graphics.Bitmap = initBmp
-                if (!alreadyInStageInfo) {
-                    if (!canTouch) {
-                        // Without AccessibilityService we cannot auto-click Gear: still apply official icon detections + notify clearly
-                        val directParsed = withContext(Dispatchers.Default) {
-                            enemySkillOcrEngine.recognizeEnemySkills(workingBmp)
-                        }
-                        if (!workingBmp.isRecycled) workingBmp.recycle()
-                        applyParsedEnemySkills(directParsed, battleIconChips, autoTriggered = true)
-                        if (!autoTriggered) {
-                            if (battleIconChips.isNotEmpty()) {
-                                val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
-                                toast(lctx.getString(R.string.ov_toast_icon_found_fmt, labels))
-                            } else {
-                                toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
-                            }
-                        }
-                        return@launch
-                    }
+                // Stage 2: Authoritative Auto Long-Press Each Live Enemy (replaces old Gear -> Stage Info!)
+                val enemyTargets = withContext(Dispatchers.Default) {
+                    StageInfoUiAnalyzer.findBattleEnemyTapPoints(initFrame)
+                }
+                if (!initBmp.isRecycled) initBmp.recycle()
 
-                    if (!workingBmp.isRecycled) workingBmp.recycle()
-                    val gearPt = StageInfoUiAnalyzer.findGearTapPoint(screenW, screenH)
-                    val tappedGear = touchExecutor.performTap(gearPt.x, gearPt.y, holdMs = 36L)
-                    if (!tappedGear) {
-                        if (!autoTriggered) toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
-                        return@launch
+                if (!canTouch) {
+                    if (battleIconChips.isNotEmpty()) {
+                        val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
+                        val msg = lctx.getString(R.string.ov_toast_icon_found_fmt, labels)
+                        ActiveStrategyStore.applyOcrChips(battleIconChips, msg)
+                        toast(msg)
+                    } else if (!autoTriggered) {
+                        toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
                     }
-                    delay(460)
-                    val afterGearBmp = capturer.captureSingleFrame() ?: return@launch
-                    val modalOpen = withContext(Dispatchers.Default) {
-                        StageInfoUiAnalyzer.isStageInfoModalOpen(BitmapVisionFrame(afterGearBmp))
-                    }
-                    if (!modalOpen) {
-                        if (!afterGearBmp.isRecycled) afterGearBmp.recycle()
-                        if (battleIconChips.isNotEmpty()) {
-                            val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
-                            val msg = lctx.getString(R.string.ov_toast_icon_found_fmt, labels)
-                            ActiveStrategyStore.applyOcrChips(battleIconChips, msg)
-                            toast(msg)
-                        } else if (!autoTriggered) {
-                            toast(lctx.getString(R.string.ov_toast_icon_none))
-                        }
-                        return@launch
-                    }
-                    openedGearByAuto = true
-                    workingBmp = afterGearBmp
+                    return@launch
                 }
 
-                // We are now inside 「關卡資訊」! Scan every enemy portrait in the expanded CURRENT wave.
+                if (enemyTargets.isEmpty()) {
+                    if (battleIconChips.isNotEmpty()) {
+                        val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
+                        val msg = lctx.getString(R.string.ov_toast_icon_found_fmt, labels)
+                        ActiveStrategyStore.applyOcrChips(battleIconChips, msg)
+                        toast(msg)
+                    } else if (!autoTriggered) {
+                        toast(lctx.getString(R.string.ov_toast_long_press_none))
+                    }
+                    return@launch
+                }
+
+                if (!autoTriggered) {
+                    toast(lctx.getString(R.string.ov_toast_long_press_enemies, enemyTargets.size))
+                }
+
                 val collectedLines = LinkedHashSet<String>()
                 var totalSkippedGrey = 0
+                val dismissPt = StageInfoUiAnalyzer.findEnemyPopupDismissPoint(screenW, screenH)
 
-                val portraits = withContext(Dispatchers.Default) {
-                    StageInfoUiAnalyzer.findEnemyPortraitsInStageInfo(BitmapVisionFrame(workingBmp))
-                }.take(4)
-
-                // Always scan currently selected enemy first (index 0), then tap remaining portraits if any!
-                val portraitPasses = if (portraits.size >= 2 && canTouch) portraits.size else 1
-                for (pIdx in 0 until portraitPasses) {
+                for (target in enemyTargets) {
                     if (!isActive) break
-                    if (pIdx > 0) {
-                        val pt = portraits[pIdx]
-                        touchExecutor.performTap(pt.x, pt.y, holdMs = 36L)
-                        delay(260)
-                        val nextPortraitBmp = capturer.captureSingleFrame() ?: break
-                        if (!workingBmp.isRecycled) workingBmp.recycle()
-                        workingBmp = nextPortraitBmp
+                    // Attempt 1: Standard 580ms long-press (persists modal card on lift in modern ToS!)
+                    val pressed = touchExecutor.performTap(target.x, target.y, holdMs = 580L)
+                    if (!pressed) continue
+                    delay(260)
+
+                    val afterLongPressBmp = capturer.captureSingleFrame() ?: continue
+                    val modalStayedOpen = withContext(Dispatchers.Default) {
+                        StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(BitmapVisionFrame(afterLongPressBmp))
                     }
 
-                    // Expand all collapsed ▶ skill arrows + auto-scroll down until skill list stops moving!
-                    var scrollSteps = 0
-                    while (isActive && scrollSteps <= 3) {
-                        var expandClicks = 0
-                        while (isActive && canTouch && expandClicks < 6) {
-                            val collapsed = withContext(Dispatchers.Default) {
-                                StageInfoUiAnalyzer.findCollapsedSkillArrows(BitmapVisionFrame(workingBmp))
-                            }
-                            if (collapsed.isEmpty()) break
-                            val arrow = collapsed.first()
-                            touchExecutor.performTap(arrow.x, arrow.y, holdMs = 34L)
-                            delay(230)
-                            val nextArrowBmp = capturer.captureSingleFrame() ?: break
-                            if (!workingBmp.isRecycled) workingBmp.recycle()
-                            workingBmp = nextArrowBmp
-                            expandClicks++
-                        }
-
-                        val (lines, skipped) = withContext(Dispatchers.Default) {
-                            enemySkillOcrEngine.recognizeActiveLines(workingBmp)
-                        }
+                    if (modalStayedOpen) {
+                        popupOpenedByAuto = true
+                        val (lines, skipped) = readOpenEnemyPopup(afterLongPressBmp)
                         collectedLines.addAll(lines)
                         totalSkippedGrey += skipped
 
-                        val hasNoSkill = lines.any { it.contains("沒有技能") || it.contains("没有技能") }
-                        if (hasNoSkill || !canTouch || scrollSteps >= 3) break
-
-                        val beforeHash = withContext(Dispatchers.Default) {
-                            StageInfoUiAnalyzer.computeRegionHash(BitmapVisionFrame(workingBmp))
+                        // Dismiss enemy card cleanly before moving to the next enemy
+                        touchExecutor.performTap(dismissPt.x, dismissPt.y, holdMs = 34L)
+                        delay(240)
+                        val verifyBmp = capturer.captureSingleFrame()
+                        if (verifyBmp != null) {
+                            val stillOpen = withContext(Dispatchers.Default) {
+                                StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(BitmapVisionFrame(verifyBmp))
+                            }
+                            if (!verifyBmp.isRecycled) verifyBmp.recycle()
+                            if (stillOpen) {
+                                touchExecutor.performTap(screenW * 0.50f, screenH * 0.94f, holdMs = 34L)
+                                delay(220)
+                            }
                         }
-                        touchExecutor.performSwipe(
-                            x1 = screenW * 0.50f,
-                            y1 = screenH * 0.72f,
-                            x2 = screenW * 0.50f,
-                            y2 = screenH * 0.42f,
-                            durationMs = 260L
-                        )
-                        delay(260)
-                        val nextScrollBmp = capturer.captureSingleFrame() ?: break
-                        if (!workingBmp.isRecycled) workingBmp.recycle()
-                        workingBmp = nextScrollBmp
-                        val afterHash = withContext(Dispatchers.Default) {
-                            StageInfoUiAnalyzer.computeRegionHash(BitmapVisionFrame(workingBmp))
+                        popupOpenedByAuto = false
+                    } else {
+                        if (!afterLongPressBmp.isRecycled) afterLongPressBmp.recycle()
+                        // Attempt 2: Fallback mid-hold capture (for versions where enemy popup only displays while finger is held!)
+                        val holdJob = async { touchExecutor.performTap(target.x, target.y, holdMs = 1400L) }
+                        delay(680)
+                        val midHoldBmp = capturer.captureSingleFrame()
+                        if (midHoldBmp != null) {
+                            val midOpen = withContext(Dispatchers.Default) {
+                                StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(BitmapVisionFrame(midHoldBmp))
+                            }
+                            if (midOpen) {
+                                val (lines, skipped) = withContext(Dispatchers.Default) {
+                                    enemySkillOcrEngine.recognizeActiveLines(midHoldBmp)
+                                }
+                                collectedLines.addAll(lines)
+                                totalSkippedGrey += skipped
+                            }
+                            if (!midHoldBmp.isRecycled) midHoldBmp.recycle()
                         }
-                        if (StageInfoUiAnalyzer.hammingDistance(beforeHash, afterHash) <= 3) {
-                            break
-                        }
-                        scrollSteps++
+                        holdJob.await()
+                        delay(180)
                     }
                 }
-
-                if (!workingBmp.isRecycled) workingBmp.recycle()
 
                 val parsed = withContext(Dispatchers.Default) {
                     enemySkillOcrEngine.parseText(
@@ -1142,11 +1187,11 @@ class OverlayControllerService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Smart enemy skill scan failed", e)
             } finally {
-                if (openedGearByAuto && touchExecutor.isAvailable.value) {
-                    val cancelPt = StageInfoUiAnalyzer.findCancelTapPoint(screenW, screenH)
+                if (popupOpenedByAuto && touchExecutor.isAvailable.value) {
+                    val dismissPt = StageInfoUiAnalyzer.findEnemyPopupDismissPoint(screenW, screenH)
                     runCatching {
-                        touchExecutor.performTap(cancelPt.x, cancelPt.y, holdMs = 36L)
-                        delay(240)
+                        touchExecutor.performTap(dismissPt.x, dismissPt.y, holdMs = 34L)
+                        delay(200)
                     }
                 }
                 controlRoot.visibility = View.VISIBLE
@@ -1164,8 +1209,19 @@ class OverlayControllerService : Service() {
         autoTriggered: Boolean
     ) {
         val merged = LinkedHashMap<String, WaveShieldChip>()
+        val maskMergeIds = setOf("require_elements", "elem_burst_shield", "anti_first_wave", "forbid_all", "clear_all_element", "cross_shield")
         for (c in extraIconChips) merged[c.id] = c
-        for (c in parsed.chips) merged[c.id] = c
+        for (c in parsed.chips) {
+            val prev = merged[c.id]
+            if (prev != null && c.id in maskMergeIds && c.paramElementMask != 0) {
+                merged[c.id] = c.copy(
+                    paramElementMask = prev.paramElementMask or c.paramElementMask,
+                    paramInt = maxOf(prev.paramInt, c.paramInt)
+                )
+            } else {
+                merged[c.id] = c
+            }
+        }
         val finalChips = merged.values.toList()
 
         if (finalChips.isEmpty()) {

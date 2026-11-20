@@ -36,8 +36,8 @@ enum class AppLanguage(val tag: String, val nativeLabel: String) {
 }
 
 enum class EnemySkillScanMode(val label: String, val shortLabel: String) {
-    HYBRID("图标快识 + 自动齿轮展开", "双模自动"),
-    AUTO_GEAR_OCR("自动齿轮展开 OCR", "自动齿轮"),
+    HYBRID("图标快识 + 自动长按敌人", "双模自动"),
+    AUTO_GEAR_OCR("自动长按敌人识技", "自动长按"),
     BATTLE_ICONS("仅战斗图标快识", "仅图标");
 
     companion object {

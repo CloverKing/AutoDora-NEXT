@@ -156,6 +156,11 @@ object LocaleHelper {
                 }
                 formatted.ifEmpty { chip.label }
             }
+            "elem_burst_shield" -> {
+                val targetOrbs = chip.paramInt.coerceIn(3, 20)
+                val targetElems = elemNames.ifEmpty { elementLabel(ctx, 1) }
+                ctx.getString(R.string.elem_burst_fmt, targetElems, targetOrbs)
+            }
             "five_elements" -> (0..4).joinToString("") { elementLabel(ctx, it) }
             "five_elements_enchanted" -> (0..4).joinToString("") { elementLabel(ctx, it) } + "·" + ctx.getString(R.string.ov_puzzle_ench)
             "three_elements" -> (0..2).joinToString("") { elementLabel(ctx, it) }
@@ -199,8 +204,8 @@ object LocaleHelper {
                     else -> base
                 }
             }
-            "l_shape" -> ctx.getString(R.string.shield_l_shape)
-            "t_shape" -> ctx.getString(R.string.shield_t_shape)
+            "l_shape" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.shield_l_shape)}·$elemNames" else ctx.getString(R.string.shield_l_shape)
+            "t_shape" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.shield_t_shape)}·$elemNames" else ctx.getString(R.string.shield_t_shape)
             "square_2x2" -> ctx.getString(R.string.shield_sq_2x2)
             "all_columns_ameliorate" -> ctx.getString(R.string.shield_all_cols)
             "zero_trail_burning" -> {

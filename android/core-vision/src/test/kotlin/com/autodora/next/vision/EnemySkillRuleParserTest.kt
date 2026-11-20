@@ -108,10 +108,18 @@ class EnemySkillRuleParserTest {
         val byId = parsed.chips.associateBy { it.id }
 
         assertFalse("10 Combo must NEVER falsely match zero_combo", byId.containsKey("zero_combo"))
-        assertEquals("Should parse >= 10 Combo", 10, byId["min_combo"]?.paramInt)
+        assertEquals("Should parse >= 10 First-Wave Combo accurately", 10, byId["min_first_combo"]?.paramInt)
+        assertFalse("min_first_combo should suppress duplicate min_combo", byId.containsKey("min_combo"))
         assertFalse("8+ / 10+ Combo should not duplicate exact_first_combo", byId.containsKey("exact_first_combo"))
         assertTrue("Should parse anti_first_wave for 首批禁消火", byId.containsKey("anti_first_wave"))
         assertFalse("首批禁消火 must NOT falsely also trigger forbid_all", byId.containsKey("forbid_all"))
+
+        // Also verify cumulative/burst element orb shield text (e.g., 累積消除 5 粒火符石)
+        val burstParsed = parser.parse("累積消除 5 粒火符石才能對敵人造成傷害")
+        val burstChip = burstParsed.chips.firstOrNull { it.id == "elem_burst_shield" }
+        assertNotNull("Must parse elem_burst_shield from 累積消除 5 粒火符石", burstChip)
+        assertEquals(5, burstChip!!.paramInt)
+        assertEquals(1 shl 1, burstChip.paramElementMask)
     }
 
     @Test

@@ -32,11 +32,17 @@ class OfficialEnemyIconMatcherTest {
 
     @Test
     fun `matches official ToS 12x12 alpha-masked descriptors accurately under brightness shift`() {
-        assertTrue("Expected >= 40 official icon templates", OfficialEnemyIconTemplates.templates.size >= 40)
+        assertTrue("Expected >= 180 official icon templates", OfficialEnemyIconTemplates.templates.size >= 180)
 
         val keyIconIds = listOf(
             "ICON051", "ICON067", "ICON104", "ICON094", "ICON190",
-            "ICON107", "ICON423", "ICON868", "ICON615", "ICON016"
+            "ICON107", "ICON423", "ICON868", "ICON615",
+            // All 6 attribute starburst cumulative/burst orb shields (Water/Fire/Wood/Light/Dark/Heart)
+            "ICON1255", "ICON1256", "ICON1257", "ICON1258", "ICON1259", "ICON1502",
+            // All 6 attribute single-element enchanted shields
+            "ICON217", "ICON218", "ICON219", "ICON220", "ICON221", "ICON227",
+            // Cross / L / T shape families
+            "ICON986", "ICON1301", "ICON1307"
         )
         for (iconId in keyIconIds) {
             val tmpl = OfficialEnemyIconTemplates.templates.first { it.iconId == iconId }
@@ -57,6 +63,7 @@ class OfficialEnemyIconMatcherTest {
             assertNotNull("Expected match for official $iconId", match)
             assertEquals("Expected exact chipId for $iconId", tmpl.chipId, match!!.template.chipId)
             assertEquals("Expected exact paramInt for $iconId", tmpl.paramInt, match.template.paramInt)
+            assertEquals("Expected exact paramElementMask for $iconId", tmpl.paramElementMask, match.template.paramElementMask)
             assertTrue("Expected high score >= 0.90 for $iconId, got ${match.score}", match.score >= 0.90f)
         }
     }
@@ -71,6 +78,40 @@ class OfficialEnemyIconMatcherTest {
                 "Must detect Fixed 4 Combo (ICON067) zero-tap! Found: ${scan.detectedBadgesSummary}",
                 fixed4
             )
+        }
+    }
+
+    @Test
+    fun `detects real battle Fire Starburst Shield (ICON1256) zero-tap on sunlit corridor screenshot`() {
+        loadRealFrame("real_tos_samples/user_fire5_battle.jpg")?.let { frame ->
+            val scan = EnemyStatusIconMatcher.scanBattleScreen(frame)
+            assertTrue("Battle enemy with Fire Starburst icon must set hasEnemyStatusIcons", scan.hasEnemyStatusIcons)
+            val fireBurst = scan.detectedChips.firstOrNull {
+                it.id == "elem_burst_shield" && (it.paramElementMask and (1 shl 1)) != 0
+            }
+            assertNotNull(
+                "Must detect Fire Burst/Cumulative Shield (ICON1256) zero-tap! Found: ${scan.detectedBadgesSummary}",
+                fireBurst
+            )
+        }
+    }
+
+    @Test
+    fun `locates all live battle enemies accurately for automatic long-press skill inspection`() {
+        loadRealFrame("real_tos_samples/user_fire5_battle.jpg")?.let { frame ->
+            val enemies = StageInfoUiAnalyzer.findBattleEnemyTapPoints(frame)
+            assertEquals("1-enemy corridor must find 1 enemy target, got $enemies", 1, enemies.size)
+            assertEquals(0.50f, enemies[0].x / frame.width, 0.06f)
+        }
+        loadRealFrame("real_tos_samples/user_4c_battle.jpg")?.let { frame ->
+            val enemies = StageInfoUiAnalyzer.findBattleEnemyTapPoints(frame)
+            assertEquals("2-enemy wave must find 2 enemy targets, got $enemies", 2, enemies.size)
+            assertTrue("Enemies must be ordered left-to-right", enemies[0].x < enemies[1].x)
+        }
+        loadRealFrame("real_tos_samples/user_enemy_popup.jpg")?.let { frame ->
+            val enemies = StageInfoUiAnalyzer.findBattleEnemyTapPoints(frame)
+            assertEquals("3-enemy wave must find 3 enemy targets, got $enemies", 3, enemies.size)
+            assertTrue("3 enemies must be ordered left-to-right", enemies[0].x < enemies[1].x && enemies[1].x < enemies[2].x)
         }
     }
 

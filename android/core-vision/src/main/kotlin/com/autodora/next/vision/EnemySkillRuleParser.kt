@@ -80,6 +80,10 @@ class EnemySkillRuleParser(ruleSet: EnemySkillRuleSet) {
             if (entry.chipId == "exact_combo" && resultChips.containsKey("exact_first_combo")) {
                 continue
             }
+            // Skip min_combo if min_first_combo already matched
+            if (entry.chipId == "min_combo" && resultChips.containsKey("min_first_combo")) {
+                continue
+            }
 
             var paramInt = entry.defaultInt
             if (entry.intGroup > 0) {
@@ -169,7 +173,11 @@ class EnemySkillRuleParser(ruleSet: EnemySkillRuleSet) {
                 '過' to '过', '對' to '对', '應' to '应', '於' to '于', '會' to '会',
                 '資' to '资', '訊' to '讯', '離' to '离', '戰' to '战', '鬥' to '斗',
                 '隊' to '队', '敵' to '敌', '護' to '护', '圍' to '围', '繞' to '绕',
-                '０' to '0', '１' to '1', '２' to '2', '３' to '3', '４' to '4',
+                '積' to '积', '達' to '达', '觸' to '触', '發' to '发', '時' to '时',
+                '當' to '当', '後' to '后', '該' to '该', '內' to '内', '並' to '并',
+                '將' to '将', '橫' to '横', '問' to '问', '號' to '号', '隱' to '隐',
+                '條' to '条', '補' to '补', '進' to '进', '實' to '实', '選' to '选',
+                '擇' to '择', '０' to '0', '１' to '1', '２' to '2', '３' to '3', '４' to '4',
                 '５' to '5', '６' to '6', '７' to '7', '８' to '8', '９' to '9',
                 '＋' to '+', '－' to '-', '×' to 'x'
             )

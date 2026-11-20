@@ -189,6 +189,33 @@ object RuleComposer {
                     requiredTotalElementsMask = cfg.requiredTotalElementsMask or chip.paramElementMask,
                     requiredEnchantedElementsMask = cfg.requiredEnchantedElementsMask or chip.paramElementMask
                 )
+                "elem_burst_shield" -> {
+                    // Cumulative / First-Wave N-Orb Attribute Shield (e.g. 火5 / 水15 / 心5 累积符石盾):
+                    // Require eliminating the attribute, prioritize HIGH, maximize its orb count, and when
+                    // the live board currently has >= paramInt orbs of that color, enforce minFirstWaveOrbs!
+                    val mask = chip.paramElementMask and 0x3F
+                    if (mask != 0) {
+                        cfg = cfg.copy(
+                            requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or mask,
+                            requiredTotalElementsMask = cfg.requiredTotalElementsMask or mask
+                        )
+                        val targetCount = chip.paramInt.coerceIn(3, 15)
+                        for (e in 0 until 6) {
+                            if ((mask and (1 shl e)) != 0) {
+                                val availOnBoard = board?.cells?.count { it.element.code == e } ?: 0
+                                val hardMin = if (board == null || availOnBoard >= targetCount) targetCount.coerceAtMost(9) else 0
+                                elemRules[e] = elemRules[e].copy(
+                                    priority = ElementPriority.HIGH,
+                                    minFirstWaveOrbs = maxOf(elemRules[e].minFirstWaveOrbs, hardMin)
+                                )
+                                if (cfg.maximizeElementOrbIndex < 0) {
+                                    cfg = cfg.copy(maximizeElementOrbIndex = e)
+                                }
+                            }
+                        }
+                        highDifficultyShield = true
+                    }
+                }
                 "first_wave_full_clear" -> {
                     cfg = cfg.copy(requireFirstWaveFullClear = true)
                     highDifficultyShield = true
@@ -263,8 +290,22 @@ object RuleComposer {
                     )
                     highDifficultyShield = true
                 }
-                "l_shape" -> cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireLCount = maxOf(cfg.shapeShield.requireLCount, 1)))
-                "t_shape" -> cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireTCount = maxOf(cfg.shapeShield.requireTCount, 1)))
+                "l_shape" -> {
+                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireLCount = maxOf(cfg.shapeShield.requireLCount, 1)))
+                    val em = chip.paramElementMask and 0x3F
+                    if (em != 0) {
+                        cfg = cfg.copy(requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or em)
+                        for (e in 0 until 6) if ((em and (1 shl e)) != 0) elemRules[e] = elemRules[e].copy(priority = ElementPriority.HIGH)
+                    }
+                }
+                "t_shape" -> {
+                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireTCount = maxOf(cfg.shapeShield.requireTCount, 1)))
+                    val em = chip.paramElementMask and 0x3F
+                    if (em != 0) {
+                        cfg = cfg.copy(requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or em)
+                        for (e in 0 until 6) if ((em and (1 shl e)) != 0) elemRules[e] = elemRules[e].copy(priority = ElementPriority.HIGH)
+                    }
+                }
                 "square_2x2" -> cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireSquare2x2Count = maxOf(cfg.shapeShield.requireSquare2x2Count, 1)))
                 "all_columns_ameliorate" -> {
                     for (c in 0 until 6) {

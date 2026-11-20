@@ -135,6 +135,16 @@ class MainActivity : ComponentActivity() {
                                 teamPresetRepository.savePreset(preset, isBuiltIn = isBuiltIn)
                             }
                         },
+                        onSaveAsNewPreset = { name, desc, cfg ->
+                            lifecycleScope.launch {
+                                val newId = "custom_${java.util.UUID.randomUUID().toString().take(8)}"
+                                teamPresetRepository.savePreset(
+                                    TeamBasePreset(id = newId, name = name, description = desc, baseConfig = cfg),
+                                    isBuiltIn = false
+                                )
+                                settingsRepository.update { it.copy(activePresetId = newId) }
+                            }
+                        },
                         onDuplicatePreset = { source ->
                             lifecycleScope.launch {
                                 val newId = teamPresetRepository.duplicatePreset(source)

@@ -9,6 +9,14 @@
       "pattern": "(?:(?<![\\d,.])0[ \\t]*(?:combo|c(?![a-zA-Z])|连击)|不可消除任何符石|空转)"
     },
     {
+      "id": "min_first_combo",
+      "chipId": "min_first_combo",
+      "label": "首消连击 ≥ {n}C",
+      "category": "COMBO",
+      "pattern": "首[批消][^\\n]{0,6}?(?<!\\d)([1-9]\\d?)[ \\t]*(?:combo|c(?![a-zA-Z])|连击)[ \\t]*(?:[(（]combo[)）])?[ \\t]*(?:\\+|或以上|以上)",
+      "intGroup": 1
+    },
+    {
       "id": "exact_first_combo",
       "chipId": "exact_first_combo",
       "label": "首消 {n} Combo",
@@ -112,6 +120,16 @@
       "label": "首消全版",
       "category": "COUNT_AND_ELEMENT",
       "pattern": "(?:首消全版|首批.{0,4}消除所有符石|全版消除)"
+    },
+    {
+      "id": "elem_burst_shield",
+      "chipId": "elem_burst_shield",
+      "label": "多消{elem}盾 ≥{n}粒",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:累积消除|累计消除|首批消除|消除)[ \\t]*(?<!\\d)([1-9]\\d?)[ \\t]*(?:粒|颗|个)(?:或以上|以上)?[ \\t]*([水火木光暗心])(?:属性)?符石",
+      "intGroup": 1,
+      "elementGroup": 2,
+      "defaultInt": 5
     },
     {
       "id": "digital_orb_count",

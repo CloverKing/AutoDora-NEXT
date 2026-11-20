@@ -76,7 +76,7 @@ class AutoDoraAccessibilityService : AccessibilityService() {
             moveTo(sx, sy)
             lineTo(sx + 0.5f, sy + 0.5f)
         }
-        val stroke = GestureDescription.StrokeDescription(p, 0L, holdMs.coerceIn(16L, 200L))
+        val stroke = GestureDescription.StrokeDescription(p, 0L, holdMs.coerceIn(16L, 2000L))
         return dispatchSingleStroke(stroke, false, ScreenPoint(sx, sy))
     }
 

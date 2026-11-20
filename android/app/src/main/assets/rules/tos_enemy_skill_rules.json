@@ -45,6 +45,16 @@
       "category": "COUNT_AND_ELEMENT"
     },
     {
+      "id": "elem_burst_shield",
+      "chipId": "elem_burst_shield",
+      "label": "多消{elem}盾 ≥{n}粒",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:累积消除|累计消除|首批消除|消除)[ \\t]*(?<!\\d)([1-9]\\d?)[ \\t]*(?:粒|颗|个)(?:或以上|以上)?[ \\t]*([水火木光暗心])(?:属性)?符石",
+      "intGroup": 1,
+      "elementGroup": 2,
+      "defaultInt": 5
+    },
+    {
       "id": "digital_orb_count",
       "pattern": "(?:首消|首批消除)[^0-9]{0,6}(\\d{1,2})\\s*粒",
       "chipId": "digital_orb_count",

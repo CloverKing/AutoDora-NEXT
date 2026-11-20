@@ -15,7 +15,7 @@ data class BattleIconScanResult(
 )
 
 data class IconMatchCandidate(
-    val template: OfficialEnemyIconTemplates.IconTemplate,
+    val template: OfficialIconTemplate,
     val score: Float,
     val marginOverRunnerUp: Float
 )
@@ -23,9 +23,9 @@ data class IconMatchCandidate(
 /**
  * Zero-tap Stage-1 Battle Enemy Status Icon Matcher & Wave-Change Detector.
  *
- * Uses alpha-masked 12x12 perceptual RGB descriptors calibrated directly from 44 official
- * Tower of Saviors battle status icon assets (`GameplayIcons/ICON###`), with 2-stage
- * coarse-to-fine alignment, fused with live board CV signals (Storm, Puzzle frame, Question orbs).
+ * Uses alpha-masked 12x12 perceptual RGB descriptors calibrated directly from 187 official
+ * Tower of Saviors battle status icon assets (`GameplayIcons/ICON###`, covering all 6 elements),
+ * with 2-stage coarse-to-fine alignment, fused with live board CV signals (Storm, Puzzle, Question orbs).
  */
 object EnemyStatusIconMatcher {
 
@@ -56,8 +56,19 @@ object EnemyStatusIconMatcher {
         // 1. Official-asset calibrated 12x12 alpha-masked status badge matching across the enemy strip
         val matchedIcons = matchOfficialStatusBadges(frame)
         for (hit in matchedIcons) {
-            val chip = hit.template.toChip().copy(autoDetected = true)
-            chipsById.putIfAbsent(chip.id, chip)
+            for (chip in hit.template.toChips()) {
+                val existing = chipsById[chip.id]
+                if (existing != null && chip.paramElementMask != 0 &&
+                    chip.id in setOf("require_elements", "elem_burst_shield", "anti_first_wave", "forbid_all", "clear_all_element", "cross_shield")
+                ) {
+                    chipsById[chip.id] = existing.copy(
+                        paramElementMask = existing.paramElementMask or chip.paramElementMask,
+                        paramInt = max(existing.paramInt, chip.paramInt)
+                    )
+                } else {
+                    chipsById.putIfAbsent(chip.id, chip)
+                }
+            }
             notes.add("${hit.template.defaultLabel} (${hit.template.iconId})")
         }
         // Fallback generic badge presence detector (handles unmapped / event-exclusive icons like Tornado)
@@ -91,8 +102,74 @@ object EnemyStatusIconMatcher {
         )
     }
 
+    private class PrecomputedTemplate(
+        val tmpl: OfficialIconTemplate,
+        val fgIndices: IntArray,
+        val tR: FloatArray,
+        val tG: FloatArray,
+        val tB: FloatArray,
+        val dtR: FloatArray,
+        val dtG: FloatArray,
+        val dtB: FloatArray,
+        val tNorm: Float,
+        val meanR: Float,
+        val meanG: Float,
+        val meanB: Float
+    )
+
+    private val precomputedTemplates: List<PrecomputedTemplate> by lazy {
+        OfficialEnemyIconTemplates.templates.mapNotNull { tmpl ->
+            val arr = tmpl.argb12x12
+            val idxs = ArrayList<Int>(arr.size)
+            for (i in arr.indices) {
+                if ((arr[i] ushr 24) != 0) idxs.add(i)
+            }
+            if (idxs.size < 24) return@mapNotNull null
+            val n = idxs.size
+            val fgIndices = IntArray(n) { idxs[it] }
+            val tR = FloatArray(n)
+            val tG = FloatArray(n)
+            val tB = FloatArray(n)
+            var sumR = 0f
+            var sumG = 0f
+            var sumB = 0f
+            for (k in 0 until n) {
+                val tv = arr[fgIndices[k]]
+                val r = ((tv ushr 16) and 0xFF).toFloat()
+                val g = ((tv ushr 8) and 0xFF).toFloat()
+                val b = (tv and 0xFF).toFloat()
+                tR[k] = r; tG[k] = g; tB[k] = b
+                sumR += r; sumG += g; sumB += b
+            }
+            val tMean = (sumR + sumG + sumB) / (n * 3f)
+            val dtR = FloatArray(n)
+            val dtG = FloatArray(n)
+            val dtB = FloatArray(n)
+            var tNormSq = 0f
+            for (k in 0 until n) {
+                val dr = tR[k] - tMean
+                val dg = tG[k] - tMean
+                val db = tB[k] - tMean
+                dtR[k] = dr; dtG[k] = dg; dtB[k] = db
+                tNormSq += dr * dr + dg * dg + db * db
+            }
+            val tNorm = sqrt(tNormSq)
+            if (tNorm < 1f) return@mapNotNull null
+            PrecomputedTemplate(
+                tmpl = tmpl,
+                fgIndices = fgIndices,
+                tR = tR, tG = tG, tB = tB,
+                dtR = dtR, dtG = dtG, dtB = dtB,
+                tNorm = tNorm,
+                meanR = sumR / n,
+                meanG = sumG / n,
+                meanB = sumB / n
+            )
+        }
+    }
+
     /**
-     * Matches a 12x12 packed-RGB patch (`0xRRGGBB`, 144 ints) against all 44 official ToS icon
+     * Matches a 12x12 packed-RGB patch (`0xRRGGBB`, 144 ints) against all 187 official ToS icon
      * descriptors using alpha-masked zero-mean RGB NCC (0.75) + L1 similarity (0.25).
      * Transparent battle-background corners are excluded by each template's foreground mask bit!
      */
@@ -104,82 +181,78 @@ object EnemyStatusIconMatcher {
         val nPix = OfficialEnemyIconTemplates.PIXEL_COUNT
         if (patchRgb12x12.size != nPix) return null
 
-        // Quick energy check to skip flat sky/backdrop patches
-        var sumAll = 0f
+        // Unpack patch RGB once + quick energy check to skip flat sky/backdrop patches
+        val pR = FloatArray(nPix)
+        val pG = FloatArray(nPix)
+        val pB = FloatArray(nPix)
+        var sumRAll = 0f
+        var sumGAll = 0f
+        var sumBAll = 0f
         for (i in 0 until nPix) {
             val rgb = patchRgb12x12[i]
-            sumAll += ((rgb ushr 16) and 0xFF) + ((rgb ushr 8) and 0xFF) + (rgb and 0xFF)
+            val r = ((rgb ushr 16) and 0xFF).toFloat()
+            val g = ((rgb ushr 8) and 0xFF).toFloat()
+            val b = (rgb and 0xFF).toFloat()
+            pR[i] = r; pG[i] = g; pB[i] = b
+            sumRAll += r; sumGAll += g; sumBAll += b
         }
-        val meanAll = sumAll / (nPix * 3f)
+        val meanAll = (sumRAll + sumGAll + sumBAll) / (nPix * 3f)
         var varAll = 0f
         for (i in 0 until nPix) {
-            val rgb = patchRgb12x12[i]
-            val dr = ((rgb ushr 16) and 0xFF) - meanAll
-            val dg = ((rgb ushr 8) and 0xFF) - meanAll
-            val db = (rgb and 0xFF) - meanAll
+            val dr = pR[i] - meanAll
+            val dg = pG[i] - meanAll
+            val db = pB[i] - meanAll
             varAll += dr * dr + dg * dg + db * db
         }
         if (sqrt(varAll) < 300f) return null
 
-        var bestTmpl: OfficialEnemyIconTemplates.IconTemplate? = null
+        val patchMeanR = sumRAll / nPix
+        val patchMeanG = sumGAll / nPix
+        val patchMeanB = sumBAll / nPix
+
+        var bestTmpl: OfficialIconTemplate? = null
         var bestScore = -1f
         var secondScore = -1f
 
-        for (tmpl in OfficialEnemyIconTemplates.templates) {
-            val tArr = tmpl.argb12x12
-            var fgCount = 0
-            var pSum = 0f
-            var tSum = 0f
-            for (i in 0 until nPix) {
-                val tv = tArr[i]
-                if ((tv ushr 24) == 0) continue
-                fgCount++
-                val pv = patchRgb12x12[i]
-                pSum += ((pv ushr 16) and 0xFF) + ((pv ushr 8) and 0xFF) + (pv and 0xFF)
-                tSum += ((tv ushr 16) and 0xFF) + ((tv ushr 8) and 0xFF) + (tv and 0xFF)
+        for (pt in precomputedTemplates) {
+            // Fast mean-chromaticity reject: skips templates with wildly incompatible overall hue
+            if (abs(patchMeanR - pt.meanR) + abs(patchMeanG - pt.meanG) + abs(patchMeanB - pt.meanB) > 250f) {
+                continue
             }
-            if (fgCount < 24) continue
-            val denom = fgCount * 3f
+            val fgIdx = pt.fgIndices
+            val n = fgIdx.size
+            var pSum = 0f
+            for (k in 0 until n) {
+                val i = fgIdx[k]
+                pSum += pR[i] + pG[i] + pB[i]
+            }
+            val denom = n * 3f
             val pMean = pSum / denom
-            val tMean = tSum / denom
 
             var dot = 0f
             var pNormSq = 0f
-            var tNormSq = 0f
             var l1Diff = 0f
-            for (i in 0 until nPix) {
-                val tv = tArr[i]
-                if ((tv ushr 24) == 0) continue
-                val pv = patchRgb12x12[i]
-
-                val pr = ((pv ushr 16) and 0xFF).toFloat()
-                val pg = ((pv ushr 8) and 0xFF).toFloat()
-                val pb = (pv and 0xFF).toFloat()
-                val tr = ((tv ushr 16) and 0xFF).toFloat()
-                val tg = ((tv ushr 8) and 0xFF).toFloat()
-                val tb = (tv and 0xFF).toFloat()
-
+            val dtR = pt.dtR; val dtG = pt.dtG; val dtB = pt.dtB
+            val tR = pt.tR; val tG = pt.tG; val tB = pt.tB
+            for (k in 0 until n) {
+                val i = fgIdx[k]
+                val pr = pR[i]; val pg = pG[i]; val pb = pB[i]
                 val dpr = pr - pMean
                 val dpg = pg - pMean
                 val dpb = pb - pMean
-                val dtr = tr - tMean
-                val dtg = tg - tMean
-                val dtb = tb - tMean
-
-                dot += dpr * dtr + dpg * dtg + dpb * dtb
+                dot += dpr * dtR[k] + dpg * dtG[k] + dpb * dtB[k]
                 pNormSq += dpr * dpr + dpg * dpg + dpb * dpb
-                tNormSq += dtr * dtr + dtg * dtg + dtb * dtb
-                l1Diff += abs(pr - tr) + abs(pg - tg) + abs(pb - tb)
+                l1Diff += abs(pr - tR[k]) + abs(pg - tG[k]) + abs(pb - tB[k])
             }
             val pNorm = sqrt(pNormSq)
-            val tNorm = sqrt(tNormSq)
-            if (pNorm < 180f || tNorm < 1f) continue
+            if (pNorm < 180f) continue
 
-            val ncc = (dot / (pNorm * tNorm)).coerceIn(-1f, 1f)
+            val ncc = (dot / (pNorm * pt.tNorm)).coerceIn(-1f, 1f)
             val l1Sim = (1f - (l1Diff / (denom * 255f))).coerceIn(0f, 1f)
             val score = 0.75f * ncc + 0.25f * l1Sim
 
             // Treat different (chipId, paramInt, paramElementMask) as distinct competing shields (e.g., 3C vs 4C vs 6C!)
+            val tmpl = pt.tmpl
             val isSameShield = bestTmpl != null &&
                 bestTmpl.chipId == tmpl.chipId &&
                 bestTmpl.paramInt == tmpl.paramInt &&
@@ -198,7 +271,10 @@ object EnemyStatusIconMatcher {
 
         val winner = bestTmpl ?: return null
         val margin = if (secondScore < 0f) 1f else (bestScore - secondScore)
-        return if (bestScore >= minScore && margin >= minMargin) {
+        val accepted = (bestScore >= 0.92f && margin >= 0.012f) ||
+            (bestScore >= minScore && margin >= minMargin) ||
+            (bestScore >= (minScore - 0.045f) && margin >= 0.085f)
+        return if (accepted) {
             IconMatchCandidate(winner, bestScore, margin)
         } else {
             null
@@ -288,12 +364,12 @@ object EnemyStatusIconMatcher {
 
         val bestByKey = LinkedHashMap<String, IconMatchCandidate>()
         val refineSizes = intArrayOf(
-            max(16, (w * 0.047f).toInt()),
+            max(16, (w * 0.046f).toInt()),
             max(18, (w * 0.050f).toInt()),
-            max(20, (w * 0.053f).toInt())
+            max(20, (w * 0.054f).toInt())
         )
         val fineStep = max(1, baseSize / 16)
-        val fineRadius = max(2, baseSize / 7)
+        val fineRadius = max(2, baseSize / 6)
 
         for ((cx, cy) in candidateCenters) {
             var localBest: IconMatchCandidate? = null
@@ -340,13 +416,13 @@ object EnemyStatusIconMatcher {
                 val b = argb and 0xFF
                 val maxC = max(r, max(g, b))
                 val minC = min(r, min(g, b))
-                if (maxC < 68) darkPixels++
-                if (maxC >= 165 || (maxC >= 120 && (maxC - minC) >= 55)) brightOrVivid++
+                if (maxC < 84) darkPixels++
+                if (maxC >= 150 || (maxC >= 105 && (maxC - minC) >= 45)) brightOrVivid++
                 x += step
             }
             y += step
         }
-        return darkPixels >= 4 && brightOrVivid >= 5
+        return darkPixels >= 3 && brightOrVivid >= 4
     }
 
     /**

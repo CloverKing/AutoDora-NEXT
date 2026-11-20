@@ -38,6 +38,155 @@ object StageInfoUiAnalyzer {
         UiTapTarget(x = screenW * 0.73f, y = screenH * 0.924f)
 
     /**
+     * Locates all live battle enemies (1..5) left-to-right for automatic long-press enemy skill inspection.
+     *
+     * Calibrated across 1-enemy sunlit corridors, 2-enemy, and 3-enemy ToS battle screenshots:
+     *  - Every live enemy's horizontal HP bar sits on the aspect-normalized baseline `topOff + playH * 0.357`
+     *    (`±0.022 * playH`) with crisp vertical color contrast against both pixels above and below the bar.
+     *  - Returns each enemy's clickable body center `(hpCenterX, hpBarY - 0.075 * playH)`.
+     *  - Falls back to red "CD N" clusters (`y ∈ [topOff + 0.12*playH .. topOff + 0.25*playH]`) if HP bars are occluded.
+     */
+    fun findBattleEnemyTapPoints(frame: VisionFrame): List<UiTapTarget> {
+        val w = frame.width
+        val h = frame.height
+        if (w < 120 || h < 200) return emptyList()
+
+        val playH = w * 16f / 9f
+        val topOff = ((h - playH) * 0.5f).coerceAtLeast(0f)
+        val yMin = (topOff + playH * 0.335f).toInt().coerceIn(0, h - 1)
+        val yMax = (topOff + playH * 0.382f).toInt().coerceIn(yMin, h - 1)
+        val xMin = (w * 0.06f).toInt().coerceIn(0, w - 1)
+        val xMax = (w * 0.94f).toInt().coerceIn(xMin, w - 1)
+        val dOff = max(4, (playH * 0.0055f).toInt())
+        val gapMax = max(5, (w * 0.018f).toInt())
+        val minBarW = (w * 0.045f).toInt()
+        val maxBarW = (w * 0.55f).toInt()
+        val xStep = max(1, w / 460)
+
+        var bestRowY = -1
+        var bestBars = emptyList<Pair<Int, Int>>()
+        var bestScore = 0
+
+        for (y in yMin..yMax) {
+            val yUp = (y - dOff).coerceAtLeast(0)
+            val yDn = (y + dOff).coerceAtMost(h - 1)
+            val runs = ArrayList<IntArray>(6)
+            var x = xMin
+            while (x <= xMax) {
+                val argb = frame.getArgb(x, y)
+                val r = (argb ushr 16) and 0xFF
+                val g = (argb ushr 8) and 0xFF
+                val b = argb and 0xFF
+                val mx = max(r, max(g, b))
+                val mn = min(r, min(g, b))
+                if (mx >= 100 && (mx - mn) >= 45) {
+                    val up = frame.getArgb(x, yUp)
+                    val dn = frame.getArgb(x, yDn)
+                    val diffUp = abs(r - ((up ushr 16) and 0xFF)) +
+                        abs(g - ((up ushr 8) and 0xFF)) +
+                        abs(b - (up and 0xFF))
+                    val diffDn = abs(r - ((dn ushr 16) and 0xFF)) +
+                        abs(g - ((dn ushr 8) and 0xFF)) +
+                        abs(b - (dn and 0xFF))
+                    if (diffUp >= 100 && diffDn >= 100) {
+                        if (runs.isEmpty() || x - runs.last()[1] > gapMax) {
+                            runs.add(intArrayOf(x, x))
+                        } else {
+                            runs.last()[1] = x
+                        }
+                    }
+                }
+                x += xStep
+            }
+            val valid = runs.filter { (it[1] - it[0]) in minBarW..maxBarW }.map { it[0] to it[1] }
+            val score = valid.sumOf { it.second - it.first }
+            if (score > bestScore) {
+                bestScore = score
+                bestRowY = y
+                bestBars = valid
+            }
+        }
+
+        if (bestBars.isNotEmpty() && bestRowY >= 0) {
+            val tapY = (bestRowY - playH * 0.075f).coerceIn(h * 0.22f, h * 0.37f)
+            return bestBars.take(5).map { (a, b) ->
+                UiTapTarget(x = (a + b) * 0.5f, y = tapY)
+            }
+        }
+
+        // Fallback: detect red "CD N" labels in the battle upper zone and press directly below each label
+        val cdYMin = (topOff + playH * 0.11f).toInt().coerceIn(0, h - 1)
+        val cdYMax = (topOff + playH * 0.26f).toInt().coerceIn(cdYMin, h - 1)
+        val step = max(2, w / 230)
+        val colCounts = IntArray((xMax - xMin) / step + 1)
+        var y = cdYMin
+        while (y <= cdYMax) {
+            var ci = 0
+            var x = xMin
+            while (x <= xMax && ci < colCounts.size) {
+                val argb = frame.getArgb(x, y)
+                val r = (argb ushr 16) and 0xFF
+                val g = (argb ushr 8) and 0xFF
+                val b = argb and 0xFF
+                if (r >= 165 && (r - g) >= 95 && (r - b) >= 95) {
+                    colCounts[ci]++
+                }
+                x += step
+                ci++
+            }
+            y += step
+        }
+        val cdTargets = ArrayList<UiTapTarget>()
+        val mergeCols = max(3, (w * 0.08f).toInt() / step)
+        var ci = 0
+        while (ci < colCounts.size) {
+            if (colCounts[ci] < 2) {
+                ci++
+                continue
+            }
+            val start = ci
+            var sumWeight = 0
+            var weightedX = 0f
+            while (ci < colCounts.size) {
+                if (colCounts[ci] >= 1) {
+                    sumWeight += colCounts[ci]
+                    weightedX += (xMin + ci * step) * colCounts[ci]
+                    ci++
+                } else {
+                    var look = ci
+                    while (look < colCounts.size && look - ci < mergeCols && colCounts[look] == 0) look++
+                    if (look < colCounts.size && look - ci < mergeCols) {
+                        ci = look
+                    } else {
+                        break
+                    }
+                }
+            }
+            if (sumWeight >= 6 && ci - start >= 2) {
+                val cx = (weightedX / sumWeight).coerceIn(w * 0.14f, w * 0.86f)
+                val cy = (topOff + playH * 0.285f).coerceIn(h * 0.24f, h * 0.36f)
+                if (cdTargets.none { abs(it.x - cx) < w * 0.14f }) {
+                    cdTargets.add(UiTapTarget(cx, cy))
+                }
+            }
+        }
+        return cdTargets.take(5)
+    }
+
+    /**
+     * Computes a safe neutral tap point outside the enemy long-press skill popup card
+     * (and away from both the floating top HUD bar and the puzzle board) to dismiss the popup cleanly.
+     */
+    fun findEnemyPopupDismissPoint(screenW: Int, screenH: Int): UiTapTarget {
+        val playH = screenW * 16f / 9f
+        val topOff = ((screenH - playH) * 0.5f).coerceAtLeast(0f)
+        return UiTapTarget(
+            x = screenW * 0.05f,
+            y = (topOff + playH * 0.22f).coerceIn(screenH * 0.18f, screenH * 0.35f)
+        )
+    }
+
+    /**
      * Verifies whether the ToS 「關卡資訊」 modal is currently open by checking the distinctive
      * pair of dark-teal-blue bottom action buttons (離開戰鬥 / 取消) at y ∈ [0.902..0.945].
      */
