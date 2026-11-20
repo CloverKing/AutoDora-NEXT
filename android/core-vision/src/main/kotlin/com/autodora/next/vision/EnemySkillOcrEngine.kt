@@ -64,6 +64,15 @@ class EnemySkillOcrEngine(private val context: Context) {
      * ToS 2025.41 / 2026.2 greyed-out bypassed skills, and returns structured WaveShieldChips.
      */
     suspend fun recognizeEnemySkills(screenBitmap: Bitmap): ParsedEnemySkillResult {
+        val (activeLines, skippedGrey) = recognizeActiveLines(screenBitmap)
+        return getParser().parse(activeLines.joinToString("\n"), skippedGreyLines = skippedGrey)
+    }
+
+    /**
+     * Extracts non-greyed-out active Chinese OCR lines from the 「關卡資訊」 / long-press popup ROI (8%..87% height).
+     * Allows multi-enemy & multi-scroll automated Gear scans to aggregate all pages before rule parsing.
+     */
+    suspend fun recognizeActiveLines(screenBitmap: Bitmap): Pair<List<String>, Int> {
         val cropTop = (screenBitmap.height * 0.08f).toInt().coerceIn(0, screenBitmap.height - 64)
         val cropBottom = (screenBitmap.height * 0.87f).toInt().coerceIn(cropTop + 64, screenBitmap.height)
         val roi = Bitmap.createBitmap(screenBitmap, 0, cropTop, screenBitmap.width, cropBottom - cropTop)
@@ -84,18 +93,17 @@ class EnemySkillOcrEngine(private val context: Context) {
                     activeLines.add(text)
                 }
             }
-
-            val joined = activeLines.joinToString("\n")
-            return getParser().parse(joined, skippedGreyLines = skippedGrey)
+            return activeLines to skippedGrey
         } finally {
             if (!roi.isRecycled) roi.recycle()
         }
     }
 
     /**
-     * Parse plain text directly (e.g. from Dashboard OCR Rule Tester without capturing screen).
+     * Parse plain text directly (e.g. from Dashboard OCR Rule Tester or multi-page aggregated Gear OCR).
      */
-    fun parseText(rawText: String): ParsedEnemySkillResult = getParser().parse(rawText)
+    fun parseText(rawText: String, skippedGreyLines: Int = 0): ParsedEnemySkillResult =
+        getParser().parse(rawText, skippedGreyLines = skippedGreyLines)
 
     private suspend fun runMlKitOcr(bitmap: Bitmap): Text = suspendCancellableCoroutine { cont ->
         val image = InputImage.fromBitmap(bitmap, 0)

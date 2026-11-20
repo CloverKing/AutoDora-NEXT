@@ -76,12 +76,13 @@ class PathInterpolatorTest {
         )
 
         val segs = PathInterpolator.buildSegments(sol, geom, SwipeConfig())
-        assertTrue(segs.isNotEmpty())
-        val p0 = segs.first().points.first()
-        val p2 = segs.first().points[2]
+        assertTrue(segs.size >= 4)
+        // Seg 0 = start hold above portrait bar, Seg 1 = strict vertical pull into row 0
+        val p0 = segs[0].points.first()
+        val pPullEnd = segs[1].points.last()
         assertTrue("Origin Y must be above board top (portrait bar)", p0.y < geom.topPx)
-        assertEquals("Character pull must be strictly vertical", p0.x, p2.x, 0.01f)
-        assertEquals(geom.cellCenterY(0), p2.y, 0.01f)
+        assertEquals("Character pull must be strictly vertical", p0.x, pPullEnd.x, 0.01f)
+        assertEquals(geom.cellCenterY(0), pPullEnd.y, 0.01f)
     }
 
     @Test
@@ -111,16 +112,54 @@ class PathInterpolatorTest {
             geom,
             SwipeConfig(invertX = true, invertY = true, stepDurationMs = SwipeConfig.TURBO_2S_STEP_MS)
         )
-        assertTrue(segs.isNotEmpty())
-        val pts = segs.first().points
+        assertEquals("Should emit startHold + orthoMove + endHold", 3, segs.size)
+        val pts = segs[1].points
         val x0 = geom.cellCenterX(2)
         val y0 = geom.cellCenterY(2)
-        // After start hold (pts[0], pts[1]), logical RIGHT (+200) must map to physical LEFT (-200)!
-        assertEquals(x0 - geom.cellWidth, pts[2].x, 0.5f)
-        assertEquals(y0, pts[2].y, 0.5f)
+        // Seg 0 is dedicated startHold; Seg 1 is orthogonal moves: logical RIGHT (+200) maps to physical LEFT (-200)!
+        assertEquals(x0 - geom.cellWidth, pts[1].x, 0.5f)
+        assertEquals(y0, pts[1].y, 0.5f)
         // Logical DOWN (+200) must map to physical UP (-200)!
-        assertEquals(x0 - geom.cellWidth, pts[3].x, 0.5f)
-        assertEquals(y0 - geom.cellHeight, pts[3].y, 0.5f)
+        assertEquals(x0 - geom.cellWidth, pts[2].x, 0.5f)
+        assertEquals(y0 - geom.cellHeight, pts[2].y, 0.5f)
+    }
+
+    @Test
+    fun `isolates startHold, diagonal crossings, and endHold so GestureDescription never crushes timing`() {
+        val geom = BoardGeometry(leftPx = 0f, topPx = 1400f, rightPx = 1200f, bottomPx = 2400f, cols = 6, rows = 5)
+        val sol = SolutionPath(
+            start = CellCoord(1, 1),
+            usedCharacterOrb = false,
+            characterOrbCol = 0,
+            moves = listOf(Direction.RIGHT, Direction.DOWN_RIGHT, Direction.DOWN),
+            waypoints = listOf(CellCoord(1, 1), CellCoord(1, 2), CellCoord(2, 3), CellCoord(3, 3)),
+            stepCount = 3,
+            firstWaveCombo = 5,
+            totalCombo = 5,
+            firstWaveOrbs = 15,
+            totalOrbs = 15,
+            allHardConstraintsMet = true,
+            satisfiedFlags = 0,
+            failedFlags = 0,
+            score = 800.0,
+            tag = "DiagIso",
+            groups = emptyList()
+        )
+        val cfg = SwipeConfig(stepDurationMs = 60L, diagonalSpeedFactor = 0.85f, startHoldMs = 55L, endHoldMs = 45L)
+        val segs = PathInterpolator.buildSegments(sol, geom, cfg)
+
+        // Expected 5 segments: startHold(55ms) -> RIGHT(60ms) -> DOWN_RIGHT(51ms) -> DOWN(60ms) -> endHold(45ms)
+        assertEquals(5, segs.size)
+        assertEquals(55L, segs[0].durationMs)
+        assertEquals(60L, segs[1].durationMs)
+        assertEquals(51L, segs[2].durationMs)
+        assertEquals(60L, segs[3].durationMs)
+        assertEquals(45L, segs[4].durationMs)
+        for (i in 0 until segs.lastIndex) {
+            assertTrue(segs[i].willContinue)
+            assertEquals(segs[i].points.last(), segs[i + 1].points.first())
+        }
+        assertFalse(segs.last().willContinue)
     }
 
     @Test

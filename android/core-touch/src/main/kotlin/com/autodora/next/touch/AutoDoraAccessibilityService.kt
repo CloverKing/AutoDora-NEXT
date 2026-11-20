@@ -69,6 +69,30 @@ class AutoDoraAccessibilityService : AccessibilityService() {
         cancelRequested.set(true)
     }
 
+    suspend fun dispatchTap(x: Float, y: Float, holdMs: Long = 36L): Boolean {
+        val sx = x.coerceAtLeast(1f)
+        val sy = y.coerceAtLeast(1f)
+        val p = Path().apply {
+            moveTo(sx, sy)
+            lineTo(sx + 0.5f, sy + 0.5f)
+        }
+        val stroke = GestureDescription.StrokeDescription(p, 0L, holdMs.coerceIn(16L, 200L))
+        return dispatchSingleStroke(stroke, false, ScreenPoint(sx, sy))
+    }
+
+    suspend fun dispatchSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 260L): Boolean {
+        val sx1 = x1.coerceAtLeast(1f)
+        val sy1 = y1.coerceAtLeast(1f)
+        val sx2 = x2.coerceAtLeast(1f)
+        val sy2 = y2.coerceAtLeast(1f)
+        val p = Path().apply {
+            moveTo(sx1, sy1)
+            lineTo(sx2, sy2)
+        }
+        val stroke = GestureDescription.StrokeDescription(p, 0L, durationMs.coerceIn(60L, 1200L))
+        return dispatchSingleStroke(stroke, false, ScreenPoint(sx2, sy2))
+    }
+
     suspend fun dispatchChainedSegments(segments: List<StrokeSegment>): TouchExecutionResult {
         if (segments.isEmpty()) return TouchExecutionResult.Failed("Empty stroke segments")
         cancelRequested.set(false)

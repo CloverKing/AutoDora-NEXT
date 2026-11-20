@@ -64,14 +64,18 @@ object PathInterpolator {
     ): List<StrokeSegment> {
         if (solution.waypoints.isEmpty()) return emptyList()
 
-        val rawPoints = ArrayList<Pair<ScreenPoint, Long>>()
+        // Android's GestureDescription.StrokeDescription interpolates a Path at CONSTANT PIXEL VELOCITY
+        // along total arc length (PathMeasure). Mixing a 0.5px grab/settle hold OR a 1.414L diagonal step
+        // into the same Path as 1.0L orthogonal steps crushes holds to ~0.1ms and slows diagonals by 1.414x,
+        // causing missed first/last swaps and diagonal corner slips (which mismatch actual vs solved combos!).
+        // Solution: emit dedicated exact-duration segments for startHold, diagonal crossings, orthogonal runs, and endHold!
+        val draftSegments = ArrayList<Pair<List<ScreenPoint>, Long>>()
 
         val firstCell = solution.waypoints.first()
         val firstCellPt = ScreenPoint(
             geometry.cellCenterX(firstCell.col),
             geometry.cellCenterY(firstCell.row)
         )
-
         val anchorPt = continuationOrigin ?: firstCellPt
 
         // Map logical target pixel to physical finger pixel (supports Inverted Drag Controls 颠倒操控!)
@@ -82,96 +86,90 @@ object PathInterpolator {
             return ScreenPoint(fx, fy)
         }
 
-        // 1. Origin setup (continuation from live held finger, Character Orb vertical pull, or fresh orb grab)
-        val originPt = when {
-            continuationOrigin != null -> {
-                rawPoints.add(continuationOrigin to 0L)
-                continuationOrigin
-            }
+        // 1. Origin setup (continuation from held finger, Character Orb vertical pull, or exact start-grab hold)
+        var prevPt: ScreenPoint = when {
+            continuationOrigin != null -> continuationOrigin
             solution.usedCharacterOrb -> {
                 val avatarPt = ScreenPoint(
                     geometry.cellCenterX(solution.characterOrbCol),
                     geometry.characterAvatarCenterY().coerceAtLeast(12f)
                 )
-                rawPoints.add(avatarPt to 0L)
-                rawPoints.add(ScreenPoint(avatarPt.x, avatarPt.y + 1.0f) to config.startHoldMs.coerceAtLeast(16L))
+                val grabEnd = ScreenPoint(avatarPt.x, avatarPt.y + 0.5f)
+                draftSegments.add(listOf(avatarPt, grabEnd) to config.startHoldMs.coerceAtLeast(24L))
                 val pullTarget = ScreenPoint(geometry.cellCenterX(solution.characterOrbCol), geometry.cellCenterY(0))
-                rawPoints.add(pullTarget to (config.stepDurationMs * 1.2f).roundToLong().coerceAtLeast(30L))
+                val pullMs = (config.stepDurationMs * 1.2f).roundToLong().coerceAtLeast(36L)
+                draftSegments.add(listOf(grabEnd, pullTarget) to pullMs)
                 pullTarget
             }
             else -> {
-                rawPoints.add(firstCellPt to 0L)
-                val grabMs = config.startHoldMs.coerceAtLeast(16L)
-                rawPoints.add(ScreenPoint(firstCellPt.x + 0.5f, firstCellPt.y + 0.5f) to grabMs)
-                firstCellPt
+                val grabEnd = ScreenPoint(firstCellPt.x + 0.5f, firstCellPt.y + 0.5f)
+                draftSegments.add(listOf(firstCellPt, grabEnd) to config.startHoldMs.coerceAtLeast(24L))
+                grabEnd
             }
         }
 
-        // 2. Append every grid step with diagonal speed optimization, optional inverted mirror & micro-jitter
-        var prevPt = originPt
-        val maxJitter = if (config.humanMode) (geometry.cellWidth * 0.035f).coerceAtMost(5f) else 0f
+        // 2. Group consecutive orthogonal steps (equal 1.0L arc length => exact timing!),
+        //    and isolate every 45° diagonal crossing into its own crisp calibrated-speed segment!
+        val maxOrthoSteps = config.maxStepsPerSegment.coerceIn(6, 20)
+        val maxJitter = if (config.humanMode) (geometry.cellWidth * 0.03f).coerceAtMost(4f) else 0f
+
+        var orthoPts = ArrayList<ScreenPoint>()
+        var orthoDurMs = 0L
+
+        fun flushOrtho() {
+            if (orthoPts.size >= 2) {
+                draftSegments.add(orthoPts to orthoDurMs.coerceAtLeast(16L))
+            }
+            orthoPts = ArrayList()
+            orthoDurMs = 0L
+        }
 
         for (i in solution.moves.indices) {
             val move = solution.moves[i]
             val targetCell = solution.waypoints[i + 1]
             val isLastMove = (i == solution.moves.lastIndex)
 
-            val jx = if (!isLastMove && maxJitter > 0f) (rng.nextFloat() * 2f - 1f) * maxJitter else 0f
-            val jy = if (!isLastMove && maxJitter > 0f) (rng.nextFloat() * 2f - 1f) * maxJitter else 0f
+            val jx = if (!isLastMove && !move.isDiagonal && maxJitter > 0f) (rng.nextFloat() * 2f - 1f) * maxJitter else 0f
+            val jy = if (!isLastMove && !move.isDiagonal && maxJitter > 0f) (rng.nextFloat() * 2f - 1f) * maxJitter else 0f
             val logicalPt = ScreenPoint(
                 geometry.cellCenterX(targetCell.col) + jx,
                 geometry.cellCenterY(targetCell.row) + jy
             )
             val targetPt = mapInverted(logicalPt)
 
-            val speedVar = if (config.humanMode) (0.90f + rng.nextFloat() * 0.20f) else 1.0f
-            val stepMs = if (move.isDiagonal) {
-                (config.stepDurationMs * config.diagonalSpeedFactor * speedVar).roundToLong().coerceAtLeast(16L)
-            } else {
-                (config.stepDurationMs * speedVar).roundToLong().coerceAtLeast(16L)
-            }
+            val speedVar = if (config.humanMode) (0.92f + rng.nextFloat() * 0.16f) else 1.0f
 
             if (move.isDiagonal) {
-                // Keep exact midpoint on 45° line so ToS crosses 4-cell corner cleanly without orthogonal bounce
+                flushOrtho()
+                // Dedicated fast 45° diagonal segment so ToS crosses 4-cell corner cleanly without orthogonal bounce!
+                val diagMs = (config.stepDurationMs * config.diagonalSpeedFactor * speedVar).roundToLong().coerceAtLeast(18L)
                 val midPt = ScreenPoint((prevPt.x + targetPt.x) * 0.5f, (prevPt.y + targetPt.y) * 0.5f)
-                rawPoints.add(midPt to (stepMs / 2).coerceAtLeast(8L))
-                rawPoints.add(targetPt to (stepMs - stepMs / 2).coerceAtLeast(8L))
+                draftSegments.add(listOf(prevPt, midPt, targetPt) to diagMs)
             } else {
-                rawPoints.add(targetPt to stepMs)
+                val stepMs = (config.stepDurationMs * speedVar).roundToLong().coerceAtLeast(16L)
+                if (orthoPts.isEmpty()) {
+                    orthoPts.add(prevPt)
+                }
+                orthoPts.add(targetPt)
+                orthoDurMs += stepMs
+                if (orthoPts.size - 1 >= maxOrthoSteps) {
+                    flushOrtho()
+                }
             }
             prevPt = targetPt
         }
+        flushOrtho()
 
-        // 3. Final settle hold at destination cell before finger lift
-        rawPoints.add(
-            ScreenPoint(prevPt.x + 0.5f, prevPt.y) to config.endHoldMs.coerceAtLeast(16L)
-        )
+        // 3. Dedicated final settle hold at destination orb before finger lift
+        val settleEnd = ScreenPoint(prevPt.x + 0.5f, prevPt.y)
+        draftSegments.add(listOf(prevPt, settleEnd) to config.endHoldMs.coerceAtLeast(24L))
 
-        // 4. Chunk into seamless chained StrokeSegments (each segment starts exactly where previous ended!)
-        val maxPtsPerSeg = (config.maxStepsPerSegment.coerceIn(6, 24)) + 2
-        val segments = ArrayList<StrokeSegment>()
-        var cursor = 0
-
-        while (cursor < rawPoints.size - 1) {
-            val endIdx = minOf(cursor + maxPtsPerSeg - 1, rawPoints.lastIndex)
-            val segPts = ArrayList<ScreenPoint>(endIdx - cursor + 1)
-            var segDur = 0L
-            segPts.add(rawPoints[cursor].first)
-            for (k in (cursor + 1)..endIdx) {
-                segPts.add(rawPoints[k].first)
-                segDur += rawPoints[k].second
-            }
-            val isFinal = (endIdx == rawPoints.lastIndex)
-            segments.add(
-                StrokeSegment(
-                    points = segPts,
-                    durationMs = segDur.coerceAtLeast(12L),
-                    willContinue = !isFinal
-                )
+        return draftSegments.mapIndexed { idx, (pts, dur) ->
+            StrokeSegment(
+                points = pts,
+                durationMs = dur.coerceAtLeast(16L),
+                willContinue = idx < draftSegments.lastIndex
             )
-            cursor = endIdx
         }
-
-        return segments
     }
 }

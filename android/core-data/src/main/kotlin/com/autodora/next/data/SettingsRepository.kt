@@ -23,6 +23,17 @@ enum class ThemeMode(val label: String) {
     }
 }
 
+enum class EnemySkillScanMode(val label: String, val shortLabel: String) {
+    HYBRID("图标快识 + 自动齿轮展开", "双模自动"),
+    AUTO_GEAR_OCR("自动齿轮展开 OCR", "自动齿轮"),
+    BATTLE_ICONS("仅战斗图标快识", "仅图标");
+
+    companion object {
+        fun fromOrdinalSafe(ord: Int?): EnemySkillScanMode =
+            entries.getOrNull(ord ?: 0) ?: HYBRID
+    }
+}
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val calibration: BoardCalibration = BoardCalibration(),
@@ -35,13 +46,14 @@ data class AppSettings(
     val stepDurationMs: Long = 68L,
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
-    val showOrbBadgesOnPath: Boolean = false,
-    val flashRevealMemoryEnabled: Boolean = false, // Opt-in via '⋯ -> 记忆' for 先露后藏 stages (saves battery & avoids stale snaps)
-    val holdReplanEnabled: Boolean = false,        // Toggle mode: when ON, '行' executes Hold-and-Replan (按住重算)
-    val holdReplanDelayMs: Long = 360L,
+    val showOrbBadgesOnPath: Boolean = true,    // Show compact recognized orb badges so users verify board accuracy at a glance
+    val holdReplanEnabled: Boolean = false,     // Toggle mode: when ON, '行' executes Hold-and-Replan (按住重算)
+    val holdReplanDelayMs: Long = 320L,
     val holdReplanNudge: Boolean = true,
     val invertDragX: Boolean = false,
     val invertDragY: Boolean = false,
+    val autoEnemySkillEnabled: Boolean = false, // Master toggle: when ON, enemy skill recognition runs automatically per wave!
+    val enemySkillScanMode: EnemySkillScanMode = EnemySkillScanMode.HYBRID,
     val activePresetId: String = "builtin_general"
 ) {
     fun toRuleConfig(): RuleConfig {
@@ -86,12 +98,13 @@ class SettingsRepository(private val context: Context) {
         val MULTI_FRAME_COUNT = intPreferencesKey("vision_multi_frames")
         val SHOW_ORB_BADGES = booleanPreferencesKey("ux_show_orb_badges")
 
-        val FLASH_REVEAL_MEMORY = booleanPreferencesKey("vision_flash_reveal_memory")
         val HOLD_REPLAN_ENABLED = booleanPreferencesKey("touch_hold_replan_enabled")
         val HOLD_REPLAN_DELAY_MS = longPreferencesKey("touch_hold_replan_delay_ms")
         val HOLD_REPLAN_NUDGE = booleanPreferencesKey("touch_hold_replan_nudge")
         val INVERT_DRAG_X = booleanPreferencesKey("touch_invert_drag_x")
         val INVERT_DRAG_Y = booleanPreferencesKey("touch_invert_drag_y")
+        val AUTO_ENEMY_SKILL = booleanPreferencesKey("vision_auto_enemy_skill")
+        val ENEMY_SKILL_SCAN_MODE = intPreferencesKey("vision_enemy_skill_scan_mode")
         val ACTIVE_PRESET_ID = stringPreferencesKey("strategy_active_preset_id")
     }
 
@@ -114,13 +127,14 @@ class SettingsRepository(private val context: Context) {
         stepDurationMs = p[Keys.STEP_DURATION_MS] ?: 68L,
         humanMode = p[Keys.HUMAN_MODE] ?: false,
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
-        showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: false,
-        flashRevealMemoryEnabled = p[Keys.FLASH_REVEAL_MEMORY] ?: false,
+        showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
         holdReplanEnabled = p[Keys.HOLD_REPLAN_ENABLED] ?: false,
-        holdReplanDelayMs = p[Keys.HOLD_REPLAN_DELAY_MS] ?: 360L,
+        holdReplanDelayMs = p[Keys.HOLD_REPLAN_DELAY_MS] ?: 320L,
         holdReplanNudge = p[Keys.HOLD_REPLAN_NUDGE] ?: true,
         invertDragX = p[Keys.INVERT_DRAG_X] ?: false,
         invertDragY = p[Keys.INVERT_DRAG_Y] ?: false,
+        autoEnemySkillEnabled = p[Keys.AUTO_ENEMY_SKILL] ?: false,
+        enemySkillScanMode = EnemySkillScanMode.fromOrdinalSafe(p[Keys.ENEMY_SKILL_SCAN_MODE]),
         activePresetId = p[Keys.ACTIVE_PRESET_ID] ?: "builtin_general"
     )
 
@@ -151,12 +165,13 @@ class SettingsRepository(private val context: Context) {
             p[Keys.HUMAN_MODE] = next.humanMode
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)
             p[Keys.SHOW_ORB_BADGES] = next.showOrbBadgesOnPath
-            p[Keys.FLASH_REVEAL_MEMORY] = next.flashRevealMemoryEnabled
             p[Keys.HOLD_REPLAN_ENABLED] = next.holdReplanEnabled
             p[Keys.HOLD_REPLAN_DELAY_MS] = next.holdReplanDelayMs.coerceIn(150L, 900L)
             p[Keys.HOLD_REPLAN_NUDGE] = next.holdReplanNudge
             p[Keys.INVERT_DRAG_X] = next.invertDragX
             p[Keys.INVERT_DRAG_Y] = next.invertDragY
+            p[Keys.AUTO_ENEMY_SKILL] = next.autoEnemySkillEnabled
+            p[Keys.ENEMY_SKILL_SCAN_MODE] = next.enemySkillScanMode.ordinal
             p[Keys.ACTIVE_PRESET_ID] = next.activePresetId
         }
     }

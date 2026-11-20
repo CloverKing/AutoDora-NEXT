@@ -332,12 +332,15 @@ class CvBoardRecognizer : BoardRecognizer {
             ) to borderGlow
         }
 
-        // Dedicated Question ('?') Orb Detector:
-        // Real ToS Water orbs are vivid bright sky-cyan (outerAvgV >= 0.78..1.00, outerAvgS >= 0.50).
-        // ToS blue/slate Question ('?') orbs have a noticeably dimmer slate-indigo body (outerAvgV < 0.68)
-        // and muted saturation (outerAvgS < 0.46) with pale-cyan/grey '?' mark pixels raising lowSatRatio.
-        val isSlateQuestionOrb = (bestIdx == Element.WATER.code) &&
-            ((outerAvgV < 0.66f && outerAvgS < 0.46f) || (outerAvgV < 0.70f && lowSatRatio > 0.36f))
+        // Dedicated Question ('?') / Hidden Orb Detector:
+        // Real ToS matchable orbs are vivid (either high saturation outerAvgS >= 0.45, OR bright white-rimmed
+        // Shield/Enchanted orbs with outerAvgV >= 0.78).
+        // Modern ToS '?' Question Orbs (slate-blue, steel-grey, dark-indigo, muted-bronze) have BOTH muted
+        // saturation AND dimmer outer ring with pale '?' stroke pixels raising lowSatRatio.
+        val isSlateQuestionOrb = (bestIdx == Element.WATER.code &&
+            ((outerAvgV < 0.66f && outerAvgS < 0.46f) || (outerAvgV < 0.70f && lowSatRatio > 0.36f))) ||
+            (outerAvgV < 0.64f && outerAvgS < 0.36f && lowSatRatio >= 0.42f) ||
+            (outerAvgV < 0.70f && outerAvgS < 0.30f && lowSatRatio >= 0.52f)
         if (isSlateQuestionOrb) {
             return CellState(
                 element = Element.HIDDEN,

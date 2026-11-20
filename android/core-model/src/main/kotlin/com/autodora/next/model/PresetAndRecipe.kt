@@ -52,6 +52,50 @@ object RuleComposer {
         val elemRules = cfg.elementRules.toMutableList()
         val colRules = cfg.columnRules.toMutableList()
 
+        // Apply Strategy Goal Mode (inherited & upgraded from legacy AutoDora 'mode' selector)
+        when (cfg.goalMode) {
+            StrategyGoalMode.HIGH_COMBO -> Unit
+            StrategyGoalMode.THREE_COLORS -> {
+                cfg = cfg.copy(minDistinctElements = maxOf(cfg.minDistinctElements, 3))
+            }
+            StrategyGoalMode.FOUR_COLORS -> {
+                cfg = cfg.copy(minDistinctElements = maxOf(cfg.minDistinctElements, 4))
+            }
+            StrategyGoalMode.FIVE_COLORS -> {
+                cfg = cfg.copy(
+                    requiredTotalElementsMask = cfg.requiredTotalElementsMask or FIVE_ELEMENTS_MASK,
+                    minDistinctElements = maxOf(cfg.minDistinctElements, 5)
+                )
+            }
+            StrategyGoalMode.FIVE_ORBS_SINGLE -> {
+                val targetIdx = elemRules.indexOfFirst { it.priority == ElementPriority.HIGH }.takeIf { it >= 0 } ?: 0
+                if (elemRules[targetIdx].targetShape == TargetShape.ANY) {
+                    elemRules[targetIdx] = elemRules[targetIdx].copy(targetShape = TargetShape.COUNT_5)
+                }
+            }
+            StrategyGoalMode.FIVE_ORBS_MULTI -> {
+                for (e in 0 until 5) {
+                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
+                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_5)
+                    }
+                }
+            }
+            StrategyGoalMode.SIX_ORBS -> {
+                for (e in 0 until 5) {
+                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
+                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_6)
+                    }
+                }
+            }
+            StrategyGoalMode.EIGHT_ORBS -> {
+                for (e in 0 until 5) {
+                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
+                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_8)
+                    }
+                }
+            }
+        }
+
         var highDifficultyShield = false
 
         for (chip in activeChips) {
@@ -71,6 +115,15 @@ object RuleComposer {
                     requiredEnchantedElementsMask = cfg.requiredEnchantedElementsMask or FIVE_ELEMENTS_MASK
                 )
                 "three_elements" -> cfg = cfg.copy(requiredTotalElementsMask = cfg.requiredTotalElementsMask or THREE_ELEMENTS_MASK)
+                "require_elements" -> cfg = cfg.copy(
+                    requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or chip.paramElementMask,
+                    requiredTotalElementsMask = cfg.requiredTotalElementsMask or chip.paramElementMask
+                )
+                "require_enchanted_elements" -> cfg = cfg.copy(
+                    requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or chip.paramElementMask,
+                    requiredTotalElementsMask = cfg.requiredTotalElementsMask or chip.paramElementMask,
+                    requiredEnchantedElementsMask = cfg.requiredEnchantedElementsMask or chip.paramElementMask
+                )
                 "first_wave_full_clear" -> {
                     cfg = cfg.copy(requireFirstWaveFullClear = true)
                     highDifficultyShield = true
@@ -127,7 +180,12 @@ object RuleComposer {
                     }
                 }
 
-                "zero_trail_burning" -> cfg = cfg.copy(trailBurningEnabled = true, trailLength = chip.paramInt, maxTrailHurts = 0)
+                "zero_trail_burning" -> {
+                    // Pack: low 8 bits = trailLength (0=Max, 6=6格), high bits = maxTrailHurts (0..10)
+                    val tLen = chip.paramInt and 0xFF
+                    val maxHurts = (chip.paramInt ushr 8) and 0xFF
+                    cfg = cfg.copy(trailBurningEnabled = true, trailLength = tLen, maxTrailHurts = maxHurts)
+                }
                 "trail_corrosion" -> cfg = cfg.copy(
                     trailCorrosionEnabled = true,
                     requiredUniqueCellsVisited = maxOf(cfg.requiredUniqueCellsVisited, chip.paramInt)

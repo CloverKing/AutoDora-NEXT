@@ -83,5 +83,15 @@ interface TouchExecutor {
         onBoardRevealed: suspend (heldCell: CellCoord) -> SolutionPath?
     ): TouchExecutionResult
 
+    /**
+     * Single screen tap (used by automatic Gear -> Stage Info -> Expand skill triangles -> Close pipeline).
+     */
+    suspend fun performTap(x: Float, y: Float, holdMs: Long = 36L): Boolean
+
+    /**
+     * Straight screen swipe (used to scroll long enemy skill cards inside Stage Info).
+     */
+    suspend fun performSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 260L): Boolean
+
     fun emergencyStop()
 }

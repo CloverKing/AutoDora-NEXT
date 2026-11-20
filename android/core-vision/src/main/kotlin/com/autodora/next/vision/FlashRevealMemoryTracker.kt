@@ -17,9 +17,18 @@ import kotlin.math.max
  *     provides the remembered real board for translucent overlay rendering and C++20 solving!
  */
 class FlashRevealMemoryTracker(
-    private val maxMemoryAgeMs: Long = 30_000L,
-    private val minClearConfidence: Float = 0.64f
+    private val maxMemoryAgeMs: Long = 90_000L,
+    private val minClearConfidence: Float = 0.68f
 ) {
+    private data class ClearSnapshot(
+        val board: BoardState,
+        val timestampMs: Long,
+        val avgConfidence: Float
+    )
+
+    // Rolling ring of recent vivid clear boards so a sudden flip or fading transition frame NEVER overwrites clear memory!
+    private val clearHistory = ArrayDeque<ClearSnapshot>(10)
+
     @Volatile
     private var lastClearBoard: BoardState? = null
 
@@ -36,11 +45,19 @@ class FlashRevealMemoryTracker(
             val liveHiddenCount: Int,
             val snapshotAgeMs: Long
         ) : MemoryResolution()
+
+        /**
+         * Live board is mass '?' / Hidden and NO prior clear board was seen (e.g. entered wave already full '?'
+         * in 「问号‧转」 stages) -> triggers legacy-AutoDora-style Hold-and-Nudge-Reveal automatically!
+         */
+        data class NeedHoldAndNudgeReveal(
+            val liveHiddenCount: Int
+        ) : MemoryResolution()
     }
 
     /**
-     * Feed a background watcher frame (typically 4-5 Hz during pre-turn watch mode).
-     * Returns true if a mass flip to '?' occurred and locked a memorized snapshot!
+     * Always-on background watcher feed (~6 Hz when idle).
+     * Returns true the instant a mass flip to '?' locks a memorized pre-'?' snapshot!
      */
     @Synchronized
     fun onWatchFrame(result: RecognitionResult, nowMs: Long = System.currentTimeMillis()): Boolean {
@@ -48,23 +65,24 @@ class FlashRevealMemoryTracker(
         val hiddenCount = countHiddenOrQuestion(result.board)
         val hiddenFlipThreshold = max(6, total / 3)
 
-        if (hiddenCount <= 2 && result.averageConfidence >= minClearConfidence) {
-            // Clear genuine board observed -> refresh ring memory and release any stale lock
+        if (isCleanVividBattleBoard(result, minClearConfidence)) {
+            val snap = ClearSnapshot(result.board, nowMs, result.averageConfidence)
+            if (clearHistory.size >= 8) clearHistory.removeFirst()
+            clearHistory.addLast(snap)
             lastClearBoard = result.board
             lastClearTimestampMs = nowMs
+            // Only unlock a locked snapshot if the board has genuinely returned to a clear non-'?' state
             lockedSnapshot = null
             return false
         }
 
         if (hiddenCount >= hiddenFlipThreshold) {
-            val cached = lastClearBoard
-            if (cached != null &&
-                cached.cols == result.board.cols &&
-                cached.rows == result.board.rows &&
-                (nowMs - lastClearTimestampMs) <= maxMemoryAgeMs
-            ) {
+            val cached = pickBestRecentClearSnapshot(result.board.cols, result.board.rows, nowMs)
+            if (cached != null) {
                 if (lockedSnapshot == null) {
-                    lockedSnapshot = cached
+                    lockedSnapshot = cached.board
+                    lastClearBoard = cached.board
+                    lastClearTimestampMs = cached.timestampMs
                     return true
                 }
             }
@@ -73,9 +91,10 @@ class FlashRevealMemoryTracker(
     }
 
     /**
-     * Resolve which board to solve when user taps "算路":
-     * If live frame is mass '?'/Hidden and a fresh memorized snapshot exists, returns [MemoryResolution.UseMemorizedSnapshot]
-     * (preserving any freshly detected tileFlags like Puzzle borders from the live board).
+     * Resolve which board to solve when user taps "算":
+     *  1) If live frame is mass '?'/Hidden and a fresh memorized snapshot exists -> UseMemorizedSnapshot
+     *  2) If live frame is mass '?'/Hidden (>= half board) and NO snapshot exists -> NeedHoldAndNudgeReveal
+     *  3) Otherwise -> UseLiveBoard (and refresh rolling clear memory if vivid)
      */
     @Synchronized
     fun resolveForSolve(liveResult: RecognitionResult, nowMs: Long = System.currentTimeMillis()): MemoryResolution {
@@ -84,27 +103,50 @@ class FlashRevealMemoryTracker(
         val hiddenFlipThreshold = max(6, total / 3)
 
         if (hiddenCount >= hiddenFlipThreshold) {
-            val snap = lockedSnapshot ?: lastClearBoard
+            val snapBoard = lockedSnapshot ?: pickBestRecentClearSnapshot(
+                liveResult.board.cols, liveResult.board.rows, nowMs
+            )?.board
             val age = nowMs - lastClearTimestampMs
-            if (snap != null &&
-                snap.cols == liveResult.board.cols &&
-                snap.rows == liveResult.board.rows &&
+            if (snapBoard != null &&
+                snapBoard.cols == liveResult.board.cols &&
+                snapBoard.rows == liveResult.board.rows &&
                 age <= maxMemoryAgeMs
             ) {
-                lockedSnapshot = snap
-                // Merge live tileFlags (e.g., golden puzzle borders visible over '?' orbs) onto remembered cells
+                lockedSnapshot = snapBoard
+                // Merge live tileFlags (e.g., golden puzzle borders / storm visible over '?' orbs) onto remembered cells
                 val mergedFlags = List(total) { i ->
-                    snap.tileFlags[i] or liveResult.board.tileFlags[i]
+                    snapBoard.tileFlags[i] or liveResult.board.tileFlags[i]
                 }
-                val mergedBoard = snap.copy(tileFlags = mergedFlags)
+                val mergedBoard = snapBoard.copy(tileFlags = mergedFlags)
                 return MemoryResolution.UseMemorizedSnapshot(mergedBoard, hiddenCount, age)
             }
-        } else if (hiddenCount <= 2 && liveResult.averageConfidence >= minClearConfidence) {
+            if (hiddenCount >= max(10, total / 2)) {
+                return MemoryResolution.NeedHoldAndNudgeReveal(hiddenCount)
+            }
+        } else if (isCleanVividBattleBoard(liveResult, minClearConfidence)) {
+            val snap = ClearSnapshot(liveResult.board, nowMs, liveResult.averageConfidence)
+            if (clearHistory.size >= 8) clearHistory.removeFirst()
+            clearHistory.addLast(snap)
             lastClearBoard = liveResult.board
             lastClearTimestampMs = nowMs
             lockedSnapshot = null
         }
         return MemoryResolution.UseLiveBoard(liveResult)
+    }
+
+    private fun pickBestRecentClearSnapshot(cols: Int, rows: Int, nowMs: Long): ClearSnapshot? {
+        // Walk newest -> oldest; prefer the freshest vivid frame within maxMemoryAgeMs
+        for (i in clearHistory.indices.reversed()) {
+            val s = clearHistory[i]
+            if (s.board.cols == cols && s.board.rows == rows && (nowMs - s.timestampMs) <= maxMemoryAgeMs) {
+                return s
+            }
+        }
+        val fallback = lastClearBoard
+        if (fallback != null && fallback.cols == cols && fallback.rows == rows && (nowMs - lastClearTimestampMs) <= maxMemoryAgeMs) {
+            return ClearSnapshot(fallback, lastClearTimestampMs, minClearConfidence)
+        }
+        return null
     }
 
     @Synchronized
@@ -121,6 +163,7 @@ class FlashRevealMemoryTracker(
 
     @Synchronized
     fun resetAll() {
+        clearHistory.clear()
         lastClearBoard = null
         lastClearTimestampMs = 0L
         lockedSnapshot = null
@@ -134,6 +177,28 @@ class FlashRevealMemoryTracker(
         fun countHiddenOrQuestion(board: BoardState): Int = board.cells.count {
             it.element == Element.HIDDEN ||
                 (it.hazards and HazardBits.QUESTION) != 0
+        }
+
+        /**
+         * Strict quality gate ensuring ONLY genuine clear battle boards enter rolling memory —
+         * fading animations, menu screens, or partially-flipped '?' boards NEVER pollute memory!
+         */
+        fun isCleanVividBattleBoard(result: RecognitionResult, minConf: Float): Boolean {
+            val board = result.board
+            val total = board.cols * board.rows
+            if (total < 9) return false
+            val hiddenCount = countHiddenOrQuestion(board)
+            if (hiddenCount > 1) return false
+            val unknownCount = board.cells.indices.count { i ->
+                val el = board.cells[i].element
+                val isStorm = (board.tileFlags[i] and com.autodora.next.model.TileFlagBits.STORM) != 0
+                !isStorm && (el == Element.UNKNOWN || el == Element.EMPTY)
+            }
+            if (unknownCount > 2) return false
+            if (result.averageConfidence < minConf) return false
+            // Require >= 2 distinct matchable colors OR very high confidence single-color solid board (>= 0.85)
+            val distinctColors = board.cells.mapNotNull { if (it.element.isMatchable) it.element else null }.toSet().size
+            return distinctColors >= 2 || result.averageConfidence >= 0.85f
         }
     }
 }

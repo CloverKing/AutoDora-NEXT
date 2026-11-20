@@ -56,21 +56,27 @@ object WaveShieldCatalog {
     )
 
     /**
-     * Normalize custom alias chip IDs (e.g. "cross_shield_2", "anti_first_wave_heart") into
+     * Normalize custom alias chip IDs (e.g. "cross_shield_2", "anti_first_wave_heart", "elem_shield_0") into
      * canonical RuleComposer chip IDs when building the final RuleConfig.
      */
     fun canonicalizeForComposer(chip: WaveShieldChip): WaveShieldChip = when {
         chip.id.startsWith("cross_shield_") -> chip.copy(id = "cross_shield")
+        chip.id.startsWith("require_elem_") -> chip.copy(id = "require_elements")
+        chip.id.startsWith("require_ench_") -> chip.copy(id = "require_enchanted_elements")
         chip.id.startsWith("anti_first_wave_") -> chip.copy(id = "anti_first_wave")
         chip.id.startsWith("forbid_all_") -> chip.copy(id = "forbid_all")
         chip.id.startsWith("clear_all_element_") -> chip.copy(id = "clear_all_element")
         else -> chip
     }
+
+    val COMBO_EXCLUSIVE_IDS = setOf("min_combo", "exact_combo", "exact_first_combo", "zero_combo", "odd_combo", "even_combo")
+    val PUZZLE_EXCLUSIVE_IDS = setOf("loose_puzzle", "strict_puzzle", "enchanted_puzzle")
+    val CROSS_EXCLUSIVE_IDS = setOf("cross_shield", "cross_shield_2", "cross_shield_3")
 }
 
 /**
  * Process-wide live reactive strategy state shared seamlessly between DashboardScreen and OverlayControllerService.
- * Holds active per-wave WaveShieldChips (from manual taps OR offline Chinese OCR).
+ * Holds active per-wave WaveShieldChips (from parameterized Shield Controls OR automatic Enemy Skill Recognition).
  */
 object ActiveStrategyStore {
     private val _activeChips = MutableStateFlow<List<WaveShieldChip>>(emptyList())
@@ -97,6 +103,26 @@ object ActiveStrategyStore {
             current[existingIdx] = chip
         } else {
             current.add(chip)
+        }
+        _activeChips.value = current
+    }
+
+    /**
+     * Atomically replaces any chips whose IDs belong to [exclusiveIds] with [replacement] (or removes all if null).
+     * Powers clean parameterized Shield Controllers (Combo mode, Puzzle mode, Per-Element matrix, etc.).
+     */
+    fun replaceGroup(exclusiveIds: Set<String>, replacement: WaveShieldChip?) {
+        val current = _activeChips.value.filterNot { it.id in exclusiveIds }.toMutableList()
+        if (replacement != null) {
+            current.add(replacement)
+        }
+        _activeChips.value = current
+    }
+
+    fun replaceByPrefix(prefixes: List<String>, replacement: WaveShieldChip?) {
+        val current = _activeChips.value.filterNot { chip -> prefixes.any { chip.id.startsWith(it) } }.toMutableList()
+        if (replacement != null) {
+            current.add(replacement)
         }
         _activeChips.value = current
     }

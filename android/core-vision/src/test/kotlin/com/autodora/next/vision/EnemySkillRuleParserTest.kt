@@ -113,4 +113,25 @@ class EnemySkillRuleParserTest {
         assertTrue("Should parse anti_first_wave for 首批禁消火", byId.containsKey("anti_first_wave"))
         assertFalse("首批禁消火 must NOT falsely also trigger forbid_all", byId.containsKey("forbid_all"))
     }
+
+    @Test
+    fun `parses expanded Stage Info skill card from real emulator screenshot accurately`() {
+        val parser = loadBundledParser()
+        val realExpanded = """
+            黑幽狼人
+            CD 2
+            34,000   4,032   39
+            【固定 4 連擊盾】
+            首批消除 4 連擊 (Combo)
+            才能對敵人造成傷害，
+            否則敵人承受傷害變為 1。
+        """.trimIndent()
+
+        val parsed = parser.parse(realExpanded)
+        val byId = parsed.chips.associateBy { it.id }
+
+        assertEquals(4, byId["exact_first_combo"]?.paramInt)
+        assertFalse("exact_first_combo must suppress redundant exact_combo", byId.containsKey("exact_combo"))
+        assertFalse("Must never falsely trigger zero_combo", byId.containsKey("zero_combo"))
+    }
 }

@@ -43,6 +43,16 @@ class AccessibilityTouchExecutor : TouchExecutor {
         )
     }
 
+    override suspend fun performTap(x: Float, y: Float, holdMs: Long): Boolean {
+        val service = AccessibilityServiceBridge.current() ?: return false
+        return service.dispatchTap(x, y, holdMs)
+    }
+
+    override suspend fun performSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long): Boolean {
+        val service = AccessibilityServiceBridge.current() ?: return false
+        return service.dispatchSwipe(x1, y1, x2, y2, durationMs)
+    }
+
     override fun emergencyStop() {
         AccessibilityServiceBridge.current()?.requestEmergencyStop()
     }
@@ -74,6 +84,9 @@ class ShizukuTouchExecutor : TouchExecutor {
     ): TouchExecutionResult {
         return TouchExecutionResult.Failed("Shizuku 触控引擎将在 Phase 4 接入，请先使用无障碍引擎")
     }
+
+    override suspend fun performTap(x: Float, y: Float, holdMs: Long): Boolean = false
+    override suspend fun performSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long): Boolean = false
 
     override fun emergencyStop() = Unit
 }

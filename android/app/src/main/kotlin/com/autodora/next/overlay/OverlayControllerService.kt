@@ -39,10 +39,13 @@ import com.autodora.next.touch.TouchExecutionResult
 import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.ui.OverlayPalette
 import com.autodora.next.ui.OverlayThemeResolver
+import com.autodora.next.vision.BitmapVisionFrame
 import com.autodora.next.vision.BoardRecognizer
 import com.autodora.next.vision.EnemySkillOcrEngine
+import com.autodora.next.vision.EnemyStatusIconMatcher
 import com.autodora.next.vision.FlashRevealMemoryTracker
 import com.autodora.next.vision.RecognitionResult
+import com.autodora.next.vision.StageInfoUiAnalyzer
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -105,7 +108,7 @@ class OverlayControllerService : Service() {
     // Collapsible quick-controls card (2 tidy rows under '⋯')
     private lateinit var quickPanel: LinearLayout
     private lateinit var holdReplanToggleBtn: TextView
-    private lateinit var memoryChipBtn: TextView
+    private lateinit var autoSkillToggleBtn: TextView
     private lateinit var invertChipBtn: TextView
     private lateinit var speedChipBtn: TextView
     private lateinit var tuningDrawerToggleBtn: TextView
@@ -148,9 +151,16 @@ class OverlayControllerService : Service() {
     private var usedMemorizedSnapshot = false
     private var selectedSolutionIdx = 0
     private var activeJob: Job? = null
-    private var flashWatchJob: Job? = null
+    private var backgroundWatchJob: Job? = null
     private var activeCancelToken: NativeCancelToken? = null
     private val flashMemoryTracker = FlashRevealMemoryTracker()
+
+    // Automatic per-wave enemy skill recognition state (active whenever settings.autoEnemySkillEnabled == true)
+    private var lastScannedEnemyHash: Long = 0L
+    private var hasScannedWaveOnce: Boolean = false
+    private var pendingEnemyHash: Long = 0L
+    private var pendingWaveStableCount: Int = 0
+    private var lastAutoSkillScanMs: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -167,10 +177,16 @@ class OverlayControllerService : Service() {
 
         serviceScope.launch {
             settingsRepository.settingsFlow.collectLatest { latest ->
+                val wasAutoSkill = settings.autoEnemySkillEnabled
                 settings = latest
                 stopChipBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
                 applyOverlayTheme()
-                syncFlashRevealWatcher()
+                ensureAlwaysOnBackgroundWatcher()
+                if (!wasAutoSkill && latest.autoEnemySkillEnabled) {
+                    // Reset wave signature so turning Auto-Skill ON scans the current wave immediately!
+                    hasScannedWaveOnce = false
+                    pendingWaveStableCount = 0
+                }
                 if (calibrationMode) {
                     currentGeometry = latest.calibration.toBase6x5Geometry(screenW, screenH)
                     refreshPathCanvas()
@@ -214,7 +230,7 @@ class OverlayControllerService : Service() {
     }
 
     override fun onDestroy() {
-        flashWatchJob?.cancel()
+        backgroundWatchJob?.cancel()
         triggerEmergencyStop()
         serviceScope.cancel()
         removeOverlayViews()
@@ -460,12 +476,17 @@ class OverlayControllerService : Service() {
         }
         rowA.addView(holdReplanToggleBtn)
 
-        memoryChipBtn = makeChipBtn("○记忆", padH = 5) {
+        autoSkillToggleBtn = makeChipBtn("○自动识技", padH = 5) {
             serviceScope.launch {
-                settingsRepository.update { it.copy(flashRevealMemoryEnabled = !it.flashRevealMemoryEnabled) }
+                val next = !settings.autoEnemySkillEnabled
+                settingsRepository.update { it.copy(autoEnemySkillEnabled = next) }
+                toast(
+                    if (next) "已开启自动识敌技（${settings.enemySkillScanMode.shortLabel}）"
+                    else "已关闭自动识敌技"
+                )
             }
         }
-        rowA.addView(memoryChipBtn)
+        rowA.addView(autoSkillToggleBtn)
 
         invertChipBtn = makeChipBtn("○颠倒", padH = 5) {
             serviceScope.launch {
@@ -503,7 +524,7 @@ class OverlayControllerService : Service() {
         boardEditorToggleBtn = makeChipBtn("○盘面编绘", padH = 6) { toggleBoardEditorMode() }
         rowB.addView(boardEditorToggleBtn)
 
-        ocrScanBtn = makeChipBtn("OCR 识敌技", padH = 6, marginEndDp = 0) { runOfflineEnemySkillOcr() }
+        ocrScanBtn = makeChipBtn("识敌技", padH = 6, marginEndDp = 0) { runSmartEnemySkillScan(autoTriggered = false) }
         rowB.addView(ocrScanBtn)
         quickPanel.addView(rowB)
         controlRoot.addView(quickPanel)
@@ -621,7 +642,7 @@ class OverlayControllerService : Service() {
         // Phase 3 In-Game 4-Tab Tuning Drawer
         tuningDrawer = OverlayTuningDrawerController(
             context = this,
-            onRunOcrScan = { runOfflineEnemySkillOcr() },
+            onRunAutoSkillScan = { runSmartEnemySkillScan(autoTriggered = false) },
             onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
             onUpsertWaveChip = { chip -> ActiveStrategyStore.upsertChip(chip) },
             onClearWaveChips = {
@@ -632,7 +653,7 @@ class OverlayControllerService : Service() {
                 serviceScope.launch {
                     settingsRepository.update { it.copy(activePresetId = id) }
                     val name = presetRecords.firstOrNull { it.preset.id == id }?.preset?.name ?: "已切换"
-                    toast("当前队伍预设：$name")
+                    toast("当前作战策略：$name")
                 }
             },
             onUpdateActivePresetConfig = { transform ->
@@ -763,18 +784,23 @@ class OverlayControllerService : Service() {
                 }
                 val liveRec = boardRecognizer.recognize(frames, geom)
 
+                // Always-On Full-Screen Question Orb Memory + Legacy AutoDora 'FullscreenQuestion' Auto-Fallback!
                 var resolvedFromMemory = false
-                val boardToSolve = if (settings.flashRevealMemoryEnabled) {
-                    when (val res = flashMemoryTracker.resolveForSolve(liveRec)) {
-                        is FlashRevealMemoryTracker.MemoryResolution.UseMemorizedSnapshot -> {
-                            resolvedFromMemory = true
-                            toast("已从先露后藏记忆还原 ${res.liveHiddenCount} 颗问号珠")
-                            res.rememberedBoard
-                        }
-                        is FlashRevealMemoryTracker.MemoryResolution.UseLiveBoard -> liveRec.board
+                val boardToSolve = when (val res = flashMemoryTracker.resolveForSolve(liveRec)) {
+                    is FlashRevealMemoryTracker.MemoryResolution.UseMemorizedSnapshot -> {
+                        resolvedFromMemory = true
+                        toast("已从常驻记忆还原 ${res.liveHiddenCount} 颗问号珠")
+                        res.rememberedBoard
                     }
-                } else {
-                    liveRec.board
+                    is FlashRevealMemoryTracker.MemoryResolution.NeedHoldAndNudgeReveal -> {
+                        // Direct full-screen '?' board (e.g. 问号‧转) with no prior clear flash:
+                        // Automatically execute Legacy AutoDora's proven Hold-and-Nudge-Reveal!
+                        setPhase(OverlayPhase.IDLE)
+                        toast("检测到全屏问号珠 (${res.liveHiddenCount}颗)，自动执行按住微移显形重算…")
+                        startHoldAndReplanExecution(forceNudge = true)
+                        return@launch
+                    }
+                    is FlashRevealMemoryTracker.MemoryResolution.UseLiveBoard -> liveRec.board
                 }
 
                 val totalCells = (boardToSolve.cols * boardToSolve.rows).coerceAtLeast(1)
@@ -881,62 +907,250 @@ class OverlayControllerService : Service() {
         }
     }
 
-    // ==================== Offline Chinese OCR Enemy Skill Scan ('OCR 识敌技') ====================
-    private fun runOfflineEnemySkillOcr() {
+    // ==================== Smart Automatic Enemy Skill Recognition (Battle Icons + Auto Gear ▶ Expand + Scroll + OCR) ====================
+    private fun runSmartEnemySkillScan(autoTriggered: Boolean) {
         if (currentPhase != OverlayPhase.IDLE) {
-            toast("任务进行中，请稍候")
+            if (!autoTriggered) toast("任务进行中，请稍候")
             return
         }
         val capturer = ScreenCaptureSession.capturer.value
         if (capturer == null || !capturer.isReady.value) {
-            toast("请先在主界面授权「屏幕采集」")
+            if (!autoTriggered) toast("请先在主界面授权「屏幕采集」")
             return
         }
+        val scanMode = settings.enemySkillScanMode
+        val canTouch = touchExecutor.isAvailable.value
+
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.CALCULATING)
-            // Temporarily hide our entire floating HUD so ML Kit OCR never accidentally reads our own shield pills!
+            lastAutoSkillScanMs = System.currentTimeMillis()
+            val prevDrawer = tuningDrawerOpen
+            if (prevDrawer) setTuningDrawerOpen(false)
+
+            // Hide our entire floating HUD so OCR & StageInfo UI detection NEVER read our own pills
             controlRoot.visibility = View.INVISIBLE
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
             delay(55)
 
-            val bmp = capturer.captureSingleFrame()
-            controlRoot.visibility = View.VISIBLE
-            refreshPathCanvas()
-            if (bmp == null) {
-                setPhase(OverlayPhase.IDLE)
-                toast("截屏失败，请重试")
-                return@launch
-            }
+            var openedGearByAuto = false
             try {
-                val parsed = withContext(Dispatchers.Default) {
-                    enemySkillOcrEngine.recognizeEnemySkills(bmp)
+                val initBmp = capturer.captureSingleFrame()
+                if (initBmp == null) {
+                    if (!autoTriggered) toast("截屏失败，请重试")
+                    return@launch
                 }
-                val greyNote = if (parsed.skippedGreyLines > 0) "（已自动过滤 ${parsed.skippedGreyLines} 条灰字已无视敌技）" else ""
-                if (parsed.chips.isEmpty()) {
-                    if (parsed.hasNoSkillBanner) {
-                        ActiveStrategyStore.applyOcrChips(emptyList(), "当前敌人没有技能$greyNote")
-                        toast("OCR：当前敌人「没有技能」，无需挂载解盾$greyNote")
-                    } else {
-                        ActiveStrategyStore.applyOcrChips(emptyList(), "未匹配到已知敌技词条$greyNote")
-                        toast("未识别到已知敌技盾，请打开「齿轮 → 關卡資訊」或长按敌人技能弹窗后再扫$greyNote")
+
+                val initFrame = BitmapVisionFrame(initBmp)
+                val alreadyInStageInfo = withContext(Dispatchers.Default) {
+                    StageInfoUiAnalyzer.isStageInfoModalOpen(initFrame)
+                }
+
+                // Stage 1: Battle screen zero-tap icon + board CV scan (when not already inside Stage Info)
+                val battleIconChips = ArrayList<WaveShieldChip>()
+                val iconNotes = ArrayList<String>()
+                if (!alreadyInStageInfo) {
+                    val iconScan = withContext(Dispatchers.Default) {
+                        val g = AutoGridDetector.detect(initBmp, settings.calibration)
+                        val rec = boardRecognizer.recognize(listOf(initBmp), g)
+                        EnemyStatusIconMatcher.scanBattleScreen(initFrame, rec)
                     }
-                } else {
-                    val names = parsed.chips.joinToString(" · ") { it.label }
-                    ActiveStrategyStore.applyOcrChips(parsed.chips, "OCR 已启用：${names}$greyNote")
-                    toast("识别并启用 ${parsed.chips.size} 项敌技盾：$names")
+                    battleIconChips.addAll(iconScan.detectedChips)
+                    iconNotes.addAll(iconScan.detectedBadgesSummary)
+                    lastScannedEnemyHash = iconScan.enemyZoneHash
+                    hasScannedWaveOnce = true
                 }
+
+                // If user chose Battle-Icons-Only mode and Stage Info is NOT open, finish with zero taps!
+                if (scanMode == EnemySkillScanMode.BATTLE_ICONS && !alreadyInStageInfo) {
+                    if (!initBmp.isRecycled) initBmp.recycle()
+                    val summary = if (battleIconChips.isNotEmpty()) {
+                        "图标快识：${battleIconChips.joinToString(" · ") { it.label }}"
+                    } else if (iconNotes.isNotEmpty()) {
+                        "图标快识：${iconNotes.joinToString(" · ")}"
+                    } else {
+                        "图标快识：未检测到特殊状态盾"
+                    }
+                    ActiveStrategyStore.applyOcrChips(battleIconChips, summary)
+                    if (!autoTriggered || battleIconChips.isNotEmpty()) toast(summary)
+                    return@launch
+                }
+
+                // Stage 2: Full-Auto 「齿轮 ⚙ → 關卡資訊 → 展开全部 ▶ 小三角 → 超屏自动下划 → 多敌切换 → ML Kit OCR → 取消关闭」
+                var workingBmp: android.graphics.Bitmap = initBmp
+                if (!alreadyInStageInfo) {
+                    if (!canTouch) {
+                        // Without AccessibilityService we cannot auto-click Gear: fallback to direct OCR on current screen
+                        val directParsed = withContext(Dispatchers.Default) {
+                            enemySkillOcrEngine.recognizeEnemySkills(workingBmp)
+                        }
+                        if (!workingBmp.isRecycled) workingBmp.recycle()
+                        applyParsedEnemySkills(directParsed, battleIconChips, autoTriggered)
+                        return@launch
+                    }
+
+                    if (!workingBmp.isRecycled) workingBmp.recycle()
+                    val gearPt = StageInfoUiAnalyzer.findGearTapPoint(screenW, screenH)
+                    val tappedGear = touchExecutor.performTap(gearPt.x, gearPt.y, holdMs = 36L)
+                    if (!tappedGear) {
+                        if (!autoTriggered) toast("自动点击右上角齿轮失败，请确认无障碍服务")
+                        return@launch
+                    }
+                    delay(460)
+                    val afterGearBmp = capturer.captureSingleFrame() ?: return@launch
+                    val modalOpen = withContext(Dispatchers.Default) {
+                        StageInfoUiAnalyzer.isStageInfoModalOpen(BitmapVisionFrame(afterGearBmp))
+                    }
+                    if (!modalOpen) {
+                        if (!afterGearBmp.isRecycled) afterGearBmp.recycle()
+                        // Could be a manual long-press popup or non-battle screen; fallback gracefully
+                        if (battleIconChips.isNotEmpty()) {
+                            ActiveStrategyStore.applyOcrChips(
+                                battleIconChips,
+                                "图标快识：${battleIconChips.joinToString(" · ") { it.label }}"
+                            )
+                        } else if (!autoTriggered) {
+                            toast("未打开「關卡資訊」，请确认处于战斗界面")
+                        }
+                        return@launch
+                    }
+                    openedGearByAuto = true
+                    workingBmp = afterGearBmp
+                }
+
+                // We are now inside 「關卡資訊」! Scan every enemy portrait in the expanded CURRENT wave.
+                val collectedLines = LinkedHashSet<String>()
+                var totalSkippedGrey = 0
+
+                val portraits = withContext(Dispatchers.Default) {
+                    StageInfoUiAnalyzer.findEnemyPortraitsInStageInfo(BitmapVisionFrame(workingBmp))
+                }.take(4)
+
+                // Always scan currently selected enemy first (index 0), then tap remaining portraits if any!
+                val portraitPasses = if (portraits.size >= 2 && canTouch) portraits.size else 1
+                for (pIdx in 0 until portraitPasses) {
+                    if (!isActive) break
+                    if (pIdx > 0) {
+                        val pt = portraits[pIdx]
+                        touchExecutor.performTap(pt.x, pt.y, holdMs = 36L)
+                        delay(260)
+                        val nextPortraitBmp = capturer.captureSingleFrame() ?: break
+                        if (!workingBmp.isRecycled) workingBmp.recycle()
+                        workingBmp = nextPortraitBmp
+                    }
+
+                    // Expand all collapsed ▶ skill arrows + auto-scroll down until skill list stops moving!
+                    var scrollSteps = 0
+                    while (isActive && scrollSteps <= 3) {
+                        // Expand every visible collapsed white right-triangle ▶ (re-scan after each tap since list shifts!)
+                        var expandClicks = 0
+                        while (isActive && canTouch && expandClicks < 6) {
+                            val collapsed = withContext(Dispatchers.Default) {
+                                StageInfoUiAnalyzer.findCollapsedSkillArrows(BitmapVisionFrame(workingBmp))
+                            }
+                            if (collapsed.isEmpty()) break
+                            val arrow = collapsed.first()
+                            touchExecutor.performTap(arrow.x, arrow.y, holdMs = 34L)
+                            delay(230)
+                            val nextArrowBmp = capturer.captureSingleFrame() ?: break
+                            if (!workingBmp.isRecycled) workingBmp.recycle()
+                            workingBmp = nextArrowBmp
+                            expandClicks++
+                        }
+
+                        // Run offline ML Kit Chinese OCR (+ 2026 greyed-out bypassed-skill filter) on expanded view
+                        val (lines, skipped) = withContext(Dispatchers.Default) {
+                            enemySkillOcrEngine.recognizeActiveLines(workingBmp)
+                        }
+                        collectedLines.addAll(lines)
+                        totalSkippedGrey += skipped
+
+                        // If enemy explicitly has "沒有技能", no need to scroll this portrait!
+                        val hasNoSkill = lines.any { it.contains("沒有技能") || it.contains("没有技能") }
+                        if (hasNoSkill || !canTouch || scrollSteps >= 3) break
+
+                        // Check if skill panel scrolls further down by comparing before/after region dHash
+                        val beforeHash = withContext(Dispatchers.Default) {
+                            StageInfoUiAnalyzer.computeRegionHash(BitmapVisionFrame(workingBmp))
+                        }
+                        touchExecutor.performSwipe(
+                            x1 = screenW * 0.50f,
+                            y1 = screenH * 0.72f,
+                            x2 = screenW * 0.50f,
+                            y2 = screenH * 0.42f,
+                            durationMs = 260L
+                        )
+                        delay(260)
+                        val nextScrollBmp = capturer.captureSingleFrame() ?: break
+                        if (!workingBmp.isRecycled) workingBmp.recycle()
+                        workingBmp = nextScrollBmp
+                        val afterHash = withContext(Dispatchers.Default) {
+                            StageInfoUiAnalyzer.computeRegionHash(BitmapVisionFrame(workingBmp))
+                        }
+                        if (StageInfoUiAnalyzer.hammingDistance(beforeHash, afterHash) <= 3) {
+                            break // Reached bottom of skill box!
+                        }
+                        scrollSteps++
+                    }
+                }
+
+                if (!workingBmp.isRecycled) workingBmp.recycle()
+
+                val parsed = withContext(Dispatchers.Default) {
+                    enemySkillOcrEngine.parseText(
+                        collectedLines.joinToString("\n"),
+                        skippedGreyLines = totalSkippedGrey
+                    )
+                }
+                applyParsedEnemySkills(parsed, battleIconChips, autoTriggered)
+            } catch (e: CancellationException) {
+                // Emergency stop cancelled scan
             } catch (e: Exception) {
-                Log.e(TAG, "OCR failed", e)
-                toast("离线 OCR 识别异常：${e.message}")
+                Log.e(TAG, "Smart enemy skill scan failed", e)
+                if (!autoTriggered) toast("自动识敌技异常：${e.message}")
             } finally {
-                if (!bmp.isRecycled) bmp.recycle()
+                // Always tap 「取消」 to close 「關卡資訊」 cleanly if we opened Gear automatically!
+                if (openedGearByAuto && touchExecutor.isAvailable.value) {
+                    val cancelPt = StageInfoUiAnalyzer.findCancelTapPoint(screenW, screenH)
+                    runCatching {
+                        touchExecutor.performTap(cancelPt.x, cancelPt.y, holdMs = 36L)
+                        delay(240)
+                    }
+                }
+                controlRoot.visibility = View.VISIBLE
+                refreshPathCanvas()
                 setPhase(OverlayPhase.IDLE)
             }
         }
     }
 
-    // ==================== No-Root Hold-and-Replan Execution ====================
-    private fun startHoldAndReplanExecution() {
+    private fun applyParsedEnemySkills(
+        parsed: com.autodora.next.vision.ParsedEnemySkillResult,
+        extraIconChips: List<WaveShieldChip>,
+        autoTriggered: Boolean
+    ) {
+        val merged = LinkedHashMap<String, WaveShieldChip>()
+        for (c in extraIconChips) merged[c.id] = c
+        for (c in parsed.chips) merged[c.id] = c
+        val finalChips = merged.values.toList()
+        val greyNote = if (parsed.skippedGreyLines > 0) "（已滤除 ${parsed.skippedGreyLines} 条灰字已无视）" else ""
+
+        if (finalChips.isEmpty()) {
+            if (parsed.hasNoSkillBanner) {
+                ActiveStrategyStore.applyOcrChips(emptyList(), "自动识技：当前波敌人没有技能$greyNote")
+                if (!autoTriggered) toast("OCR：当前敌人「没有技能」，无需挂载解盾$greyNote")
+            } else {
+                ActiveStrategyStore.applyOcrChips(emptyList(), "未匹配到已知敌技词条$greyNote")
+                if (!autoTriggered) toast("未识别到已知敌技盾$greyNote")
+            }
+        } else {
+            val names = finalChips.joinToString(" · ") { it.label }
+            ActiveStrategyStore.applyOcrChips(finalChips, "已自动识盾：${names}$greyNote")
+            toast("已识别并挂载 ${finalChips.size} 项敌技盾：$names")
+        }
+    }
+
+    // ==================== No-Root Hold-and-Replan Execution (按住重算 / Legacy 问号‧转) ====================
+    private fun startHoldAndReplanExecution(forceNudge: Boolean = false) {
         if (currentPhase != OverlayPhase.IDLE) {
             toast("任务进行中，可点「停」立即中止")
             return
@@ -973,12 +1187,28 @@ class OverlayControllerService : Service() {
             }
             currentGeometry = geom
 
-            val startRow = (geom.rows / 2).coerceIn(0, geom.rows - 1)
-            val startCol = ((geom.cols - 1) / 2).coerceIn(0, geom.cols - 1)
+            val startPreset = activeTeamPreset().baseConfig.startPreset
+            val (startRow, startCol, nudgeCell) = when (startPreset) {
+                StartPointPreset.BOTTOM_LEFT -> {
+                    val r = (geom.rows - 1).coerceAtLeast(0)
+                    val target = if ((forceNudge || settings.holdReplanNudge) && r > 0) CellCoord(r - 1, 0) else null
+                    Triple(r, 0, target)
+                }
+                StartPointPreset.BOTTOM_RIGHT -> {
+                    val r = (geom.rows - 1).coerceAtLeast(0)
+                    val c = (geom.cols - 1).coerceAtLeast(0)
+                    val target = if ((forceNudge || settings.holdReplanNudge) && r > 0) CellCoord(r - 1, c) else null
+                    Triple(r, c, target)
+                }
+                StartPointPreset.ANY -> {
+                    // Matches Legacy AutoDora FullscreenQuestion: center cell nudged 1 cell left!
+                    val r = (geom.rows / 2).coerceIn(0, geom.rows - 1)
+                    val c = (geom.cols / 2).coerceIn(0, geom.cols - 1)
+                    val target = if ((forceNudge || settings.holdReplanNudge) && c > 0) CellCoord(r, c - 1) else null
+                    Triple(r, c, target)
+                }
+            }
             val startCell = CellCoord(startRow, startCol)
-            val nudgeCell = if (settings.holdReplanNudge && startCol + 1 < geom.cols) {
-                CellCoord(startRow, startCol + 1)
-            } else null
             val trigger = if (nudgeCell != null) {
                 HoldReplanTrigger.NUDGE_ONE_CELL_HOLD
             } else {
@@ -1266,42 +1496,67 @@ class OverlayControllerService : Service() {
         }
     }
 
-    // ==================== Background Flash-Reveal Watcher ====================
-    private fun syncFlashRevealWatcher() {
-        if (!settings.flashRevealMemoryEnabled) {
-            flashWatchJob?.cancel()
-            flashWatchJob = null
-            flashMemoryTracker.resetAll()
-            if (usedMemorizedSnapshot) {
-                usedMemorizedSnapshot = false
-                updateSummaryStrip()
-                refreshPathCanvas()
-            }
-            updateQuickModeChips()
-            return
-        }
-        if (flashWatchJob?.isActive == true) return
-        flashWatchJob = serviceScope.launch {
+    // ==================== Always-On 6Hz Background Watcher (Question Memory + Auto Wave Enemy Skill Scan) ====================
+    private fun ensureAlwaysOnBackgroundWatcher() {
+        if (backgroundWatchJob?.isActive == true) return
+        backgroundWatchJob = serviceScope.launch {
             while (isActive) {
-                delay(420L)
-                if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode) continue
+                delay(165L)
+                if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) continue
                 val capturer = ScreenCaptureSession.capturer.value ?: continue
                 if (!capturer.isReady.value) continue
                 if (lastSolveOutput != null && showPath) continue
 
                 val bmp = capturer.captureSingleFrame() ?: continue
                 try {
-                    val (geom, rec) = withContext(Dispatchers.Default) {
-                        val g = AutoGridDetector.detect(bmp, settings.calibration)
-                        g to boardRecognizer.recognize(listOf(bmp), g)
+                    val frame = BitmapVisionFrame(bmp)
+                    val (geom, rec, isModal, enemyHash) = withContext(Dispatchers.Default) {
+                        val modal = StageInfoUiAnalyzer.isStageInfoModalOpen(frame)
+                        if (modal) {
+                            Quadruple(null, null, true, 0L)
+                        } else {
+                            val g = AutoGridDetector.detect(bmp, settings.calibration)
+                            val r = boardRecognizer.recognize(listOf(bmp), g)
+                            val h = if (settings.autoEnemySkillEnabled) {
+                                EnemyStatusIconMatcher.computeBattleEnemyZoneHash(frame)
+                            } else 0L
+                            Quadruple(g, r, false, h)
+                        }
                     }
-                    val lockedNow = flashMemoryTracker.onWatchFrame(rec)
-                    if (lockedNow) {
-                        currentGeometry = geom
-                        refreshPathCanvas()
-                        toast("已捕捉先露后藏盘面，点「算」即可解全版问号珠")
+
+                    if (!isModal && geom != null && rec != null) {
+                        // 1. Always-On Full-Screen Question Orb Memory (no toggle required!)
+                        val lockedNow = flashMemoryTracker.onWatchFrame(rec)
+                        if (lockedNow) {
+                            currentGeometry = geom
+                            refreshPathCanvas()
+                            toast("已常驻记忆翻面前盘面，点「算」即可直接透视解全版问号珠")
+                        }
+
+                        // 2. Automatic Per-Wave Enemy Skill Recognition (active whenever autoEnemySkillEnabled == true!)
+                        if (settings.autoEnemySkillEnabled &&
+                            FlashRevealMemoryTracker.isCleanVividBattleBoard(rec, 0.65f)
+                        ) {
+                            val now = System.currentTimeMillis()
+                            val waveDiff = if (!hasScannedWaveOnce) 64 else StageInfoUiAnalyzer.hammingDistance(enemyHash, lastScannedEnemyHash)
+                            if (waveDiff >= 10 && (now - lastAutoSkillScanMs) >= 4_500L) {
+                                val stableDiff = StageInfoUiAnalyzer.hammingDistance(enemyHash, pendingEnemyHash)
+                                if (pendingWaveStableCount == 0 || stableDiff <= 4) {
+                                    pendingEnemyHash = enemyHash
+                                    pendingWaveStableCount++
+                                } else {
+                                    pendingEnemyHash = enemyHash
+                                    pendingWaveStableCount = 1
+                                }
+                                if (pendingWaveStableCount >= 3) {
+                                    pendingWaveStableCount = 0
+                                    runSmartEnemySkillScan(autoTriggered = true)
+                                }
+                            } else {
+                                pendingWaveStableCount = 0
+                            }
+                        }
                     }
-                    updateQuickModeChips()
                 } catch (_: Exception) {
                 } finally {
                     if (!bmp.isRecycled) bmp.recycle()
@@ -1309,6 +1564,8 @@ class OverlayControllerService : Service() {
             }
         }
     }
+
+    private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     // ==================== System Material 3 Theme & Unified Toggle Styling ====================
     private fun applyOverlayTheme() {
@@ -1375,34 +1632,16 @@ class OverlayControllerService : Service() {
     }
 
     private fun updateQuickModeChips() {
-        if (!::memoryChipBtn.isInitialized || !::palette.isInitialized) return
+        if (!::autoSkillToggleBtn.isInitialized || !::palette.isInitialized) return
         val p = palette
 
         // 1. Hold-and-Replan Toggle (按住转 -> unified via '行')
         holdReplanToggleBtn.text = if (settings.holdReplanEnabled) "●按住转" else "○按住转"
         styleToggleChip(holdReplanToggleBtn, isOn = settings.holdReplanEnabled, onBg = p.tertiary, onText = p.onTertiary)
 
-        // 2. Flash-Reveal Memory Toggle (先露后藏记忆)
-        val memLocked = flashMemoryTracker.currentLockedSnapshot() != null
-        val memFresh = flashMemoryTracker.hasFreshClearMemory()
-        when {
-            !settings.flashRevealMemoryEnabled -> {
-                memoryChipBtn.text = "○记忆"
-                styleToggleChip(memoryChipBtn, isOn = false, onBg = p.primary, onText = p.onPrimary)
-            }
-            memLocked -> {
-                memoryChipBtn.text = "●透视?"
-                styleToggleChip(memoryChipBtn, isOn = true, onBg = p.tertiary, onText = p.onTertiary, onStroke = p.onTertiary)
-            }
-            memFresh -> {
-                memoryChipBtn.text = "●记忆✓"
-                styleToggleChip(memoryChipBtn, isOn = true, onBg = p.primary, onText = p.onPrimary, onStroke = p.onPrimary)
-            }
-            else -> {
-                memoryChipBtn.text = "●记忆"
-                styleToggleChip(memoryChipBtn, isOn = true, onBg = p.primary, onText = p.onPrimary)
-            }
-        }
+        // 2. Auto Enemy Skill Recognition Toggle (开启即每波自动识别敌技！)
+        autoSkillToggleBtn.text = if (settings.autoEnemySkillEnabled) "●自动识技" else "○自动识技"
+        styleToggleChip(autoSkillToggleBtn, isOn = settings.autoEnemySkillEnabled, onBg = p.primary, onText = p.onPrimary)
 
         // 3. Inverted Drag Controls Toggle (颠倒操控)
         val invOn = settings.invertDragX || settings.invertDragY

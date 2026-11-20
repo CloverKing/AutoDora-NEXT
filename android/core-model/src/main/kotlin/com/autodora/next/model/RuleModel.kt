@@ -64,6 +64,22 @@ enum class ComboParity(val code: Int) {
     EVEN(2)
 }
 
+/**
+ * Legacy AutoDora-inspired high-level global goal modes (全局求解目标模式).
+ * Stored inside each Strategy Preset so players can express team goals cleanly.
+ */
+@Serializable
+enum class StrategyGoalMode(val label: String, val shortLabel: String) {
+    HIGH_COMBO("高连击 (Max Combo)", "高连击"),
+    THREE_COLORS("三色均衡 (水火木)", "三色"),
+    FOUR_COLORS("四色均衡", "四色"),
+    FIVE_COLORS("五色全消", "五色"),
+    FIVE_ORBS_SINGLE("消五珠 (单色强化/全攻)", "单色5珠"),
+    FIVE_ORBS_MULTI("消五珠 (多色强化)", "多色5珠"),
+    SIX_ORBS("消六珠 (横排/连消)", "消6珠"),
+    EIGHT_ORBS("消八珠 (大坨爆发)", "消8珠")
+}
+
 @Serializable
 data class ElementRule(
     val minMatchCount: Int = 3,
@@ -120,6 +136,7 @@ data class ShapeShieldRule(
 
 @Serializable
 data class RuleConfig(
+    val goalMode: StrategyGoalMode = StrategyGoalMode.HIGH_COMBO,
     val allowDiagonalMove: Boolean = true,
     val maxSteps: Int = 30,
     val exactSteps: Int = -1,
