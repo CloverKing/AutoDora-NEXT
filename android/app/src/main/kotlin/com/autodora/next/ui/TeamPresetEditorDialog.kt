@@ -1,5 +1,6 @@
 package com.autodora.next.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,19 +10,26 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.autodora.next.R
 import com.autodora.next.model.*
 
 /**
  * Full Strategy / Goal Profile Editor (作战策略编辑器), faithfully inheriting and upgrading
  * Legacy AutoDora's complete strategy/goal configuration matrix + 2026 ToS team mechanics:
- *  1) Basic Info, Step Budget, Beam Complexity Tier, Best-vs-First Search Policy
- *  2) Global Goal Mode (高连击 / 三色 / 四色 / 五色 / 消5/6/8珠) + Four-Plus / Not-Enough / Split-3 / First-Wave-Only
- *  3) Per-Element 4-Tuple Matrix (Shape / Priority / Timing / Min-Match) + Element Link Preset (兼属相连)
- *  4) Columns 1..6 Amelioration (直排昇华 关/3/4/5珠)
- *  5) Start Point Preset, Character Orb Pull, Diagonal Match, Enchanted/Race/Weathered Preferences
+ *  - Wide responsive Dialog (95% screen width) so no chips ever wrap onto multiple lines.
+ *  - Explicit aligned column headers for the Per-Element 4-Tuple Matrix (Shape / Priority / Timing / Min-Match).
+ *  - 2×3 grid for Columns 1..6 Amelioration and tidy 2-row selector for Character Orb slots 1..6.
+ *  - 100% localized via parent's live localized Context (immune to Compose DialogWrapper locale reset!).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -31,19 +39,31 @@ fun TeamPresetEditorDialog(
     onDismiss: () -> Unit,
     onConfirm: (TeamBasePreset) -> Unit
 ) {
-    var name by remember { mutableStateOf(initial.name) }
-    var desc by remember { mutableStateOf(initial.description) }
-    var cfg by remember { mutableStateOf(initial.baseConfig) }
-    var stepsText by remember { mutableStateOf(initial.baseConfig.maxSteps.toString()) }
+    // Capture the live localized Context BEFORE Dialog spins up its own DialogWrapper window!
+    val ctx = LocalContext.current
+    fun t(resId: Int): String = ctx.getString(resId)
+    fun t(resId: Int, vararg args: Any): String = ctx.getString(resId, *args)
 
-    val elemLabels = listOf("水", "火", "木", "光", "暗", "心")
+    var name by remember(initial.id) {
+        mutableStateOf(
+            if (initial.id.isBlank()) "" else LocaleHelper.displayPresetName(ctx, initial, isBuiltIn)
+        )
+    }
+    var desc by remember(initial.id) {
+        mutableStateOf(
+            if (initial.id.isBlank()) "" else LocaleHelper.displayPresetDesc(ctx, initial, isBuiltIn)
+        )
+    }
+    var cfg by remember(initial.id) { mutableStateOf(initial.baseConfig) }
+    var stepsText by remember(initial.id) { mutableStateOf(initial.baseConfig.maxSteps.toString()) }
+
     val complexityTiers = listOf(
-        "微" to 40,
-        "低" to 90,
-        "中" to 180,
-        "高" to 280,
-        "超" to 420,
-        "极" to 600
+        t(R.string.tier_tiny) to 40,
+        t(R.string.tier_low) to 90,
+        t(R.string.tier_mid) to 180,
+        t(R.string.tier_high) to 280,
+        t(R.string.tier_ultra) to 420,
+        t(R.string.tier_max) to 600
     )
 
     val shapeOrder = listOf(
@@ -59,438 +79,572 @@ fun TeamPresetEditorDialog(
         TargetShape.CLEAR_ALL
     )
 
-    fun shapeShortLabel(shape: TargetShape): String = when (shape) {
-        TargetShape.ANY -> "一般"
-        TargetShape.SPLIT_3 -> "切3"
-        TargetShape.COUNT_2 -> "2珠"
-        TargetShape.COUNT_4 -> "4珠"
-        TargetShape.COUNT_5 -> "5珠"
-        TargetShape.ROW -> "横排"
-        TargetShape.COUNT_6 -> "6珠"
-        TargetShape.COUNT_7 -> "7珠"
-        TargetShape.COUNT_8 -> "8珠"
-        TargetShape.COUNT_9 -> "9珠"
-        TargetShape.CLEAR_ALL -> "全消"
-        else -> "一般"
-    }
-
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = if (initial.id.isBlank()) "新建作战策略" else "编辑作战策略",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-        },
-        text = {
-            Column(
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        CompositionLocalProvider(
+            LocalContext provides ctx,
+            LocalConfiguration provides ctx.resources.configuration
+        ) {
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .fillMaxWidth(0.95f)
+                    .heightIn(max = 670.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 6.dp
             ) {
-                // ===== 1. 基础信息与搜索预算 =====
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("策略名称") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = desc,
-                    onValueChange = { desc = it },
-                    label = { Text("策略目标说明（可选）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = stepsText,
-                    onValueChange = { raw ->
-                        val d = raw.filter { it.isDigit() }.take(3)
-                        stepsText = d
-                        val v = d.toIntOrNull()
-                        if (v != null && v in 8..300) {
-                            cfg = cfg.copy(maxSteps = v)
-                        }
-                    },
-                    label = { Text("策略步数上限 (8 ~ 300)") },
-                    suffix = { Text("步") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Text(
-                    text = "搜索算力档位（旧版复杂度：${cfg.beamWidth}）",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    val nearest = complexityTiers.minByOrNull { kotlin.math.abs(it.second - cfg.beamWidth) }?.second
-                    for ((label, width) in complexityTiers) {
-                        FilterChip(
-                            selected = nearest == width,
-                            onClick = { cfg = cfg.copy(beamWidth = width) },
-                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                // ===== 2. 全局消珠目标与切珠策略（继承旧版 page_orbs） =====
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text(
-                    text = "全局求解目标模式",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    for (mode in StrategyGoalMode.entries) {
-                        FilterChip(
-                            selected = cfg.goalMode == mode,
-                            onClick = { cfg = cfg.copy(goalMode = mode) },
-                            label = { Text(mode.shortLabel, style = MaterialTheme.typography.labelSmall) }
-                        )
-                    }
-                }
-
-                Text(
-                    text = "四颗以上消除方式 · 珠数不足处理 · 求解倾向",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    listOf(
-                        FourPlusPolicy.MAX_COMBO to "最高C",
-                        FourPlusPolicy.MAX_ORBS to "最多珠",
-                        FourPlusPolicy.SINGLE_GROUP to "消一组"
-                    ).forEach { (pol, lbl) ->
-                        FilterChip(
-                            selected = cfg.fourPlusPolicy == pol,
-                            onClick = { cfg = cfg.copy(fourPlusPolicy = pol) },
-                            label = { Text(lbl, style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FilterChip(
-                        selected = cfg.notEnoughPolicy == NotEnoughPolicy.MATCH_ANYWAY,
-                        onClick = { cfg = cfg.copy(notEnoughPolicy = NotEnoughPolicy.MATCH_ANYWAY) },
-                        label = { Text("不足照常消", style = MaterialTheme.typography.labelSmall) },
-                        modifier = Modifier.weight(1f)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Dialog Title Bar
+                    Text(
+                        text = t(
+                            if (initial.id.isBlank()) R.string.dialog_new_strategy else R.string.dialog_edit_strategy
+                        ),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
                     )
-                    FilterChip(
-                        selected = cfg.notEnoughPolicy == NotEnoughPolicy.KEEP,
-                        onClick = { cfg = cfg.copy(notEnoughPolicy = NotEnoughPolicy.KEEP) },
-                        label = { Text("不足保留存珠", style = MaterialTheme.typography.labelSmall) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FilterChip(
-                        selected = !cfg.earlyStopOnGoal,
-                        onClick = { cfg = cfg.copy(earlyStopOnGoal = false) },
-                        label = { Text("最佳解 (Best)", style = MaterialTheme.typography.labelSmall) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = cfg.earlyStopOnGoal,
-                        onClick = { cfg = cfg.copy(earlyStopOnGoal = true) },
-                        label = { Text("最快达标 (First)", style = MaterialTheme.typography.labelSmall) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // ===== 3. 单属性精细四元组（消珠形态 / 优先权 / 时机 / 队长最低消） =====
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text(
-                    text = "单属性策略（形态 · 优先 · 时机 · 最低消）",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                for (e in 0 until 6) {
-                    val er = cfg.elementRules.getOrElse(e) { ElementRule() }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    // Scrollable Body
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer
+                        // ===== 1. Basic Info & Search Budget =====
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text(t(R.string.field_strategy_name)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = desc,
+                            onValueChange = { desc = it },
+                            label = { Text(t(R.string.field_strategy_desc)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = stepsText,
+                            onValueChange = { raw ->
+                                val d = raw.filter { it.isDigit() }.take(3)
+                                stepsText = d
+                                val v = d.toIntOrNull()
+                                if (v != null && v in 8..300) {
+                                    cfg = cfg.copy(maxSteps = v)
+                                }
+                            },
+                            label = { Text(t(R.string.field_strategy_steps)) },
+                            suffix = { Text(t(R.string.unit_steps)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        EditorSectionTitle(t(R.string.section_complexity, cfg.beamWidth))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Text(
-                                text = elemLabels[e],
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                            val nearest = complexityTiers.minByOrNull { kotlin.math.abs(it.second - cfg.beamWidth) }?.second
+                            for ((label, width) in complexityTiers) {
+                                CompactChoicePill(
+                                    label = label,
+                                    selected = nearest == width,
+                                    onClick = { cfg = cfg.copy(beamWidth = width) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        // ===== 2. Global Matching Goal & Policies =====
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        EditorSectionTitle(t(R.string.section_goal_mode))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            for (mode in StrategyGoalMode.entries) {
+                                CompactChoicePill(
+                                    label = LocaleHelper.goalModeLabel(ctx, mode),
+                                    selected = cfg.goalMode == mode,
+                                    onClick = { cfg = cfg.copy(goalMode = mode) }
+                                )
+                            }
+                        }
+
+                        EditorSectionTitle(t(R.string.section_match_policy))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                FourPlusPolicy.MAX_COMBO to t(R.string.policy_max_combo),
+                                FourPlusPolicy.MAX_ORBS to t(R.string.policy_max_orbs),
+                                FourPlusPolicy.SINGLE_GROUP to t(R.string.policy_single_group)
+                            ).forEach { (pol, lbl) ->
+                                CompactChoicePill(
+                                    label = lbl,
+                                    selected = cfg.fourPlusPolicy == pol,
+                                    onClick = { cfg = cfg.copy(fourPlusPolicy = pol) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CompactChoicePill(
+                                label = t(R.string.policy_not_enough_match),
+                                selected = cfg.notEnoughPolicy == NotEnoughPolicy.MATCH_ANYWAY,
+                                onClick = { cfg = cfg.copy(notEnoughPolicy = NotEnoughPolicy.MATCH_ANYWAY) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            CompactChoicePill(
+                                label = t(R.string.policy_not_enough_keep),
+                                selected = cfg.notEnoughPolicy == NotEnoughPolicy.KEEP,
+                                onClick = { cfg = cfg.copy(notEnoughPolicy = NotEnoughPolicy.KEEP) },
+                                modifier = Modifier.weight(1f)
                             )
                         }
-                        // Target shape (旧版 orbs_combo_type: 一般/2/4/5/横排/6/7/8/9/全消)
-                        FilterChip(
-                            selected = er.targetShape != TargetShape.ANY,
-                            onClick = {
-                                val curIdx = shapeOrder.indexOf(er.targetShape).takeIf { it >= 0 } ?: 0
-                                val nextShape = shapeOrder[(curIdx + 1) % shapeOrder.size]
-                                val list = cfg.elementRules.toMutableList()
-                                list[e] = er.copy(targetShape = nextShape)
-                                cfg = cfg.copy(elementRules = list)
-                            },
-                            label = { Text(shapeShortLabel(er.targetShape), style = MaterialTheme.typography.labelSmall) }
-                        )
-                        // Priority (旧版 PriorityButton: 一般/优先/保留)
-                        FilterChip(
-                            selected = er.priority != ElementPriority.NORMAL,
-                            onClick = {
-                                val next = when (er.priority) {
-                                    ElementPriority.NORMAL -> ElementPriority.HIGH
-                                    ElementPriority.HIGH -> ElementPriority.RESERVE
-                                    ElementPriority.RESERVE -> ElementPriority.NORMAL
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CompactChoicePill(
+                                label = t(R.string.policy_best_result),
+                                selected = !cfg.earlyStopOnGoal,
+                                onClick = { cfg = cfg.copy(earlyStopOnGoal = false) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            CompactChoicePill(
+                                label = t(R.string.policy_first_result),
+                                selected = cfg.earlyStopOnGoal,
+                                onClick = { cfg = cfg.copy(earlyStopOnGoal = true) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        // ===== 3. Per-Element 4-Tuple Strategy Matrix (With Clear Column Headers!) =====
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        EditorSectionTitle(t(R.string.section_elem_matrix))
+
+                        // Explicit Aligned Column Header Row
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                MatrixHeaderCell(t(R.string.col_hdr_elem), Modifier.width(38.dp))
+                                MatrixHeaderCell(t(R.string.col_hdr_shape), Modifier.weight(1.05f))
+                                MatrixHeaderCell(t(R.string.col_hdr_priority), Modifier.weight(1f))
+                                MatrixHeaderCell(t(R.string.col_hdr_timing), Modifier.weight(1f))
+                                MatrixHeaderCell(t(R.string.col_hdr_min), Modifier.weight(0.85f))
+                            }
+                        }
+
+                        // 6 Attribute Rows (Water, Fire, Wood, Light, Dark, Heart)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for (e in 0 until 6) {
+                                val er = cfg.elementRules.getOrElse(e) { ElementRule() }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    // Vibrant Color-Coded Element Badge
+                                    Surface(
+                                        shape = RoundedCornerShape(9.dp),
+                                        color = Color(LocaleHelper.elementBadgeArgb(e)),
+                                        modifier = Modifier
+                                            .width(38.dp)
+                                            .height(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = LocaleHelper.elementLabel(ctx, e),
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+
+                                    // Col 1: Target Shape
+                                    CompactChoicePill(
+                                        label = LocaleHelper.targetShapeLabel(ctx, er.targetShape),
+                                        selected = er.targetShape != TargetShape.ANY,
+                                        onClick = {
+                                            val curIdx = shapeOrder.indexOf(er.targetShape).takeIf { it >= 0 } ?: 0
+                                            val nextShape = shapeOrder[(curIdx + 1) % shapeOrder.size]
+                                            val list = cfg.elementRules.toMutableList()
+                                            list[e] = er.copy(targetShape = nextShape)
+                                            cfg = cfg.copy(elementRules = list)
+                                        },
+                                        modifier = Modifier.weight(1.05f)
+                                    )
+
+                                    // Col 2: Priority
+                                    CompactChoicePill(
+                                        label = LocaleHelper.elementPriorityLabel(ctx, er.priority),
+                                        selected = er.priority != ElementPriority.NORMAL,
+                                        activeContainer = if (er.priority == ElementPriority.HIGH) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.secondaryContainer
+                                        },
+                                        activeContent = if (er.priority == ElementPriority.HIGH) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        },
+                                        onClick = {
+                                            val next = when (er.priority) {
+                                                ElementPriority.NORMAL -> ElementPriority.HIGH
+                                                ElementPriority.HIGH -> ElementPriority.RESERVE
+                                                ElementPriority.RESERVE -> ElementPriority.NORMAL
+                                            }
+                                            val list = cfg.elementRules.toMutableList()
+                                            list[e] = er.copy(priority = next)
+                                            cfg = cfg.copy(elementRules = list)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    // Col 3: Timing
+                                    val timingActiveBg = when (er.timing) {
+                                        MatchTiming.FORBID_ALL -> MaterialTheme.colorScheme.errorContainer
+                                        MatchTiming.MUST_FIRST_WAVE -> MaterialTheme.colorScheme.tertiaryContainer
+                                        MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE -> MaterialTheme.colorScheme.secondaryContainer
+                                        MatchTiming.ANY -> MaterialTheme.colorScheme.primaryContainer
+                                    }
+                                    val timingActiveFg = when (er.timing) {
+                                        MatchTiming.FORBID_ALL -> MaterialTheme.colorScheme.onErrorContainer
+                                        MatchTiming.MUST_FIRST_WAVE -> MaterialTheme.colorScheme.onTertiaryContainer
+                                        MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE -> MaterialTheme.colorScheme.onSecondaryContainer
+                                        MatchTiming.ANY -> MaterialTheme.colorScheme.onPrimaryContainer
+                                    }
+                                    CompactChoicePill(
+                                        label = LocaleHelper.matchTimingLabel(ctx, er.timing),
+                                        selected = er.timing != MatchTiming.ANY,
+                                        activeContainer = timingActiveBg,
+                                        activeContent = timingActiveFg,
+                                        onClick = {
+                                            val next = when (er.timing) {
+                                                MatchTiming.ANY -> MatchTiming.MUST_FIRST_WAVE
+                                                MatchTiming.MUST_FIRST_WAVE -> MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE
+                                                MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE -> MatchTiming.FORBID_ALL
+                                                MatchTiming.FORBID_ALL -> MatchTiming.ANY
+                                            }
+                                            val list = cfg.elementRules.toMutableList()
+                                            list[e] = er.copy(timing = next)
+                                            cfg = cfg.copy(elementRules = list)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    // Col 4: Min Match Count
+                                    CompactChoicePill(
+                                        label = t(R.string.min_match_fmt, er.minMatchCount),
+                                        selected = er.minMatchCount != 3,
+                                        onClick = {
+                                            val next = when (er.minMatchCount) {
+                                                3 -> 2
+                                                2 -> 4
+                                                else -> 3
+                                            }
+                                            val list = cfg.elementRules.toMutableList()
+                                            list[e] = er.copy(minMatchCount = next)
+                                            cfg = cfg.copy(elementRules = list)
+                                        },
+                                        modifier = Modifier.weight(0.85f)
+                                    )
                                 }
-                                val list = cfg.elementRules.toMutableList()
-                                list[e] = er.copy(priority = next)
-                                cfg = cfg.copy(elementRules = list)
-                            },
-                            label = {
-                                Text(
-                                    when (er.priority) {
-                                        ElementPriority.HIGH -> "优先"
-                                        ElementPriority.RESERVE -> "保留"
-                                        ElementPriority.NORMAL -> "一般"
-                                    },
-                                    style = MaterialTheme.typography.labelSmall
+                            }
+                        }
+
+                        // Element Link Preset
+                        Text(
+                            text = t(R.string.section_link_preset),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        val isHeartAll = (cfg.compatibleLinkMask.getOrElse(5) { 1 shl 5 } and 0x3F) == 0x3F
+                        val isLightDark = ((cfg.compatibleLinkMask.getOrElse(3) { 1 shl 3 } and (1 shl 4)) != 0) && !isHeartAll
+                        val isWfgLink = ((cfg.compatibleLinkMask.getOrElse(0) { 1 shl 0 } and (1 shl 1)) != 0) && !isHeartAll
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CompactChoicePill(
+                                label = t(R.string.link_standard),
+                                selected = !isHeartAll && !isLightDark && !isWfgLink,
+                                onClick = { cfg = cfg.copy(compatibleLinkMask = List(6) { 1 shl it }) }
+                            )
+                            CompactChoicePill(
+                                label = t(R.string.link_heart_all),
+                                selected = isHeartAll,
+                                onClick = {
+                                    cfg = cfg.copy(
+                                        compatibleLinkMask = List(6) { e ->
+                                            if (e == 5) 0x3F else ((1 shl e) or (1 shl 5))
+                                        }
+                                    )
+                                }
+                            )
+                            CompactChoicePill(
+                                label = t(R.string.link_light_dark),
+                                selected = isLightDark,
+                                onClick = {
+                                    val ld = (1 shl 3) or (1 shl 4)
+                                    cfg = cfg.copy(
+                                        compatibleLinkMask = List(6) { e -> if (e == 3 || e == 4) ld else (1 shl e) }
+                                    )
+                                }
+                            )
+                            CompactChoicePill(
+                                label = t(R.string.link_wfg),
+                                selected = isWfgLink,
+                                onClick = {
+                                    val wfg = (1 shl 0) or (1 shl 1) or (1 shl 2)
+                                    cfg = cfg.copy(
+                                        compatibleLinkMask = List(6) { e -> if (e in 0..2) wfg else (1 shl e) }
+                                    )
+                                }
+                            )
+                        }
+
+                        // ===== 4. Columns 1..6 Amelioration (Clean 2×3 Grid — Zero Wrapping!) =====
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        EditorSectionTitle(t(R.string.section_columns))
+                        for (rowIdx in 0..1) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                for (offset in 0..2) {
+                                    val c = rowIdx * 3 + offset
+                                    val rule = cfg.columnRules.getOrElse(c) { ColumnAmeliorationRule() }
+                                    val label = if (!rule.enabled) {
+                                        t(R.string.col_off_fmt, c + 1)
+                                    } else {
+                                        t(R.string.col_on_fmt, c + 1, rule.minOrbs)
+                                    }
+                                    CompactChoicePill(
+                                        label = label,
+                                        selected = rule.enabled,
+                                        onClick = {
+                                            val next = when {
+                                                !rule.enabled -> rule.copy(enabled = true, minOrbs = 3)
+                                                rule.minOrbs == 3 -> rule.copy(enabled = true, minOrbs = 4)
+                                                rule.minOrbs == 4 -> rule.copy(enabled = true, minOrbs = 5)
+                                                else -> rule.copy(enabled = false, minOrbs = 4)
+                                            }
+                                            val list = cfg.columnRules.toMutableList()
+                                            list[c] = next
+                                            cfg = cfg.copy(columnRules = list)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+
+                        // ===== 5. Start Point, Character Orb Pull (Balanced 2 Rows!) & Strategy Switches =====
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        EditorSectionTitle(t(R.string.section_start_char))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                StartPointPreset.ANY to t(R.string.start_any),
+                                StartPointPreset.BOTTOM_LEFT to t(R.string.start_bl),
+                                StartPointPreset.BOTTOM_RIGHT to t(R.string.start_br)
+                            ).forEach { (preset, lbl) ->
+                                CompactChoicePill(
+                                    label = lbl,
+                                    selected = cfg.startPreset == preset,
+                                    onClick = { cfg = cfg.copy(startPreset = preset) },
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
-                        )
-                        // Timing (旧版 orbs_combo_flag: 常规/首消/叠珠/全禁)
-                        FilterChip(
-                            selected = er.timing != MatchTiming.ANY,
-                            onClick = {
-                                val next = when (er.timing) {
-                                    MatchTiming.ANY -> MatchTiming.MUST_FIRST_WAVE
-                                    MatchTiming.MUST_FIRST_WAVE -> MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE
-                                    MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE -> MatchTiming.FORBID_ALL
-                                    MatchTiming.FORBID_ALL -> MatchTiming.ANY
-                                }
-                                val list = cfg.elementRules.toMutableList()
-                                list[e] = er.copy(timing = next)
-                                cfg = cfg.copy(elementRules = list)
-                            },
-                            label = {
-                                Text(
-                                    when (er.timing) {
-                                        MatchTiming.ANY -> "无"
-                                        MatchTiming.MUST_FIRST_WAVE -> "首消"
-                                        MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE -> "叠珠"
-                                        MatchTiming.FORBID_ALL -> "禁消"
-                                    },
-                                    style = MaterialTheme.typography.labelSmall
+                        }
+
+                        // Character Orb Row 1: Off, Slot 1, Slot 2, Slot 3
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CompactChoicePill(
+                                label = t(R.string.char_off),
+                                selected = !cfg.useCharacterOrb,
+                                onClick = { cfg = cfg.copy(useCharacterOrb = false) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            for (c in 0..2) {
+                                CompactChoicePill(
+                                    label = t(R.string.char_slot_fmt, c + 1),
+                                    selected = cfg.useCharacterOrb && cfg.characterOrbCol == c,
+                                    onClick = { cfg = cfg.copy(useCharacterOrb = true, characterOrbCol = c) },
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
-                        )
-                        // Min match count (队长技: 3消 / 2消 / 4消)
-                        FilterChip(
-                            selected = er.minMatchCount != 3,
+                        }
+                        // Character Orb Row 2: Slot 4, Slot 5, Slot 6
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            for (c in 3..5) {
+                                CompactChoicePill(
+                                    label = t(R.string.char_slot_fmt, c + 1),
+                                    selected = cfg.useCharacterOrb && cfg.characterOrbCol == c,
+                                    onClick = { cfg = cfg.copy(useCharacterOrb = true, characterOrbCol = c) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        PresetSwitchRow(t(R.string.switch_split_three), cfg.forceSplitThree) {
+                            cfg = cfg.copy(forceSplitThree = it)
+                        }
+                        PresetSwitchRow(t(R.string.switch_first_wave_only), cfg.firstWaveOnlyScoring) {
+                            cfg = cfg.copy(firstWaveOnlyScoring = it)
+                        }
+                        PresetSwitchRow(t(R.string.switch_diag_match), cfg.allowDiagonalMatch) {
+                            cfg = cfg.copy(allowDiagonalMatch = it)
+                        }
+                        PresetSwitchRow(t(R.string.switch_prefer_ench), cfg.preferEnchanted) {
+                            cfg = cfg.copy(preferEnchanted = it)
+                        }
+                        PresetSwitchRow(t(R.string.switch_prefer_race), cfg.preferRace) {
+                            cfg = cfg.copy(preferRace = it)
+                        }
+                        PresetSwitchRow(t(R.string.switch_hit_weathered), cfg.allowHitWeatheredToClear) {
+                            cfg = cfg.copy(allowHitWeatheredToClear = it)
+                        }
+                    }
+
+                    // Bottom Action Bar
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = onDismiss) {
+                            Text(t(R.string.btn_cancel))
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
                             onClick = {
-                                val next = when (er.minMatchCount) {
-                                    3 -> 2
-                                    2 -> 4
-                                    else -> 3
+                                val safeSteps = (stepsText.toIntOrNull() ?: cfg.maxSteps).coerceIn(8, 300)
+                                val fallbackName = if (isBuiltIn) {
+                                    LocaleHelper.displayPresetName(ctx, initial, true)
+                                } else {
+                                    t(R.string.custom_strategy_default)
                                 }
-                                val list = cfg.elementRules.toMutableList()
-                                list[e] = er.copy(minMatchCount = next)
-                                cfg = cfg.copy(elementRules = list)
-                            },
-                            label = { Text("${er.minMatchCount}消", style = MaterialTheme.typography.labelSmall) }
-                        )
+                                onConfirm(
+                                    initial.copy(
+                                        name = name.trim().ifBlank { fallbackName },
+                                        description = desc.trim(),
+                                        baseConfig = cfg.copy(maxSteps = safeSteps)
+                                    )
+                                )
+                            }
+                        ) {
+                            Text(t(R.string.btn_save_strategy))
+                        }
                     }
                 }
-
-                // Element Link Preset (队长技兼属/相连消除，防止与实战首消C数偏差！)
-                Text(
-                    text = "队长技兼属相连（相连即可消除）",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val isHeartAll = (cfg.compatibleLinkMask.getOrElse(5) { 1 shl 5 } and 0x3F) == 0x3F
-                val isLightDark = ((cfg.compatibleLinkMask.getOrElse(3) { 1 shl 3 } and (1 shl 4)) != 0) && !isHeartAll
-                val isWfgLink = ((cfg.compatibleLinkMask.getOrElse(0) { 1 shl 0 } and (1 shl 1)) != 0) && !isHeartAll
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(
-                        selected = !isHeartAll && !isLightDark && !isWfgLink,
-                        onClick = { cfg = cfg.copy(compatibleLinkMask = List(6) { 1 shl it }) },
-                        label = { Text("标准独立", style = MaterialTheme.typography.labelSmall) }
-                    )
-                    FilterChip(
-                        selected = isHeartAll,
-                        onClick = {
-                            cfg = cfg.copy(
-                                compatibleLinkMask = List(6) { e ->
-                                    if (e == 5) 0x3F else ((1 shl e) or (1 shl 5))
-                                }
-                            )
-                        },
-                        label = { Text("心兼全属", style = MaterialTheme.typography.labelSmall) }
-                    )
-                    FilterChip(
-                        selected = isLightDark,
-                        onClick = {
-                            val ld = (1 shl 3) or (1 shl 4)
-                            cfg = cfg.copy(
-                                compatibleLinkMask = List(6) { e -> if (e == 3 || e == 4) ld else (1 shl e) }
-                            )
-                        },
-                        label = { Text("光暗互连", style = MaterialTheme.typography.labelSmall) }
-                    )
-                    FilterChip(
-                        selected = isWfgLink,
-                        onClick = {
-                            val wfg = (1 shl 0) or (1 shl 1) or (1 shl 2)
-                            cfg = cfg.copy(
-                                compatibleLinkMask = List(6) { e -> if (e in 0..2) wfg else (1 shl e) }
-                            )
-                        },
-                        label = { Text("水火木互连", style = MaterialTheme.typography.labelSmall) }
-                    )
-                }
-
-                // ===== 4. 直排昇华（第 1~6 列，每列 关 / 3 / 4 / 5 珠） =====
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text(
-                    text = "直排昇华（点击各列循环：关 → 3珠 → 4珠 → 5珠）",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    for (c in 0 until 6) {
-                        val rule = cfg.columnRules.getOrElse(c) { ColumnAmeliorationRule() }
-                        val label = if (!rule.enabled) "${c + 1}关" else "${c + 1}:${rule.minOrbs}珠"
-                        FilterChip(
-                            selected = rule.enabled,
-                            onClick = {
-                                val next = when {
-                                    !rule.enabled -> rule.copy(enabled = true, minOrbs = 3)
-                                    rule.minOrbs == 3 -> rule.copy(enabled = true, minOrbs = 4)
-                                    rule.minOrbs == 4 -> rule.copy(enabled = true, minOrbs = 5)
-                                    else -> rule.copy(enabled = false, minOrbs = 4)
-                                }
-                                val list = cfg.columnRules.toMutableList()
-                                list[c] = next
-                                cfg = cfg.copy(columnRules = list)
-                            },
-                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                // ===== 5. 起手点、角色符石与队伍专属开关 =====
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text(
-                    text = "常用起手位置 · 角色符石下拉起手",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(
-                        StartPointPreset.ANY to "任意起手",
-                        StartPointPreset.BOTTOM_LEFT to "固定左下",
-                        StartPointPreset.BOTTOM_RIGHT to "固定右下"
-                    ).forEach { (preset, lbl) ->
-                        FilterChip(
-                            selected = cfg.startPreset == preset,
-                            onClick = { cfg = cfg.copy(startPreset = preset) },
-                            label = { Text(lbl, style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    FilterChip(
-                        selected = !cfg.useCharacterOrb,
-                        onClick = { cfg = cfg.copy(useCharacterOrb = false) },
-                        label = { Text("关", style = MaterialTheme.typography.labelSmall) }
-                    )
-                    for (c in 0 until 6) {
-                        FilterChip(
-                            selected = cfg.useCharacterOrb && cfg.characterOrbCol == c,
-                            onClick = { cfg = cfg.copy(useCharacterOrb = true, characterOrbCol = c) },
-                            label = { Text("${c + 1}", style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                PresetSwitchRow("强制切珠（每组尽量 3 颗冲高 C）", cfg.forceSplitThree) {
-                    cfg = cfg.copy(forceSplitThree = it)
-                }
-                PresetSwitchRow("只计首批 Combo（不依赖天降叠珠）", cfg.firstWaveOnlyScoring) {
-                    cfg = cfg.copy(firstWaveOnlyScoring = it)
-                }
-                PresetSwitchRow("允许斜消（8 向相连消除队长技）", cfg.allowDiagonalMatch) {
-                    cfg = cfg.copy(allowDiagonalMatch = it)
-                }
-                PresetSwitchRow("强化符石优先消除", cfg.preferEnchanted) {
-                    cfg = cfg.copy(preferEnchanted = it)
-                }
-                PresetSwitchRow("种族符石优先消除", cfg.preferRace) {
-                    cfg = cfg.copy(preferRace = it)
-                }
-                PresetSwitchRow("允许撞击风化珠解状态", cfg.allowHitWeatheredToClear) {
-                    cfg = cfg.copy(allowHitWeatheredToClear = it)
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val safeSteps = (stepsText.toIntOrNull() ?: cfg.maxSteps).coerceIn(8, 300)
-                    onConfirm(
-                        initial.copy(
-                            name = name.trim().ifBlank { if (isBuiltIn) initial.name else "自定义策略" },
-                            description = desc.trim(),
-                            baseConfig = cfg.copy(maxSteps = safeSteps)
-                        )
-                    )
-                }
-            ) {
-                Text("保存策略")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
             }
         }
+    }
+}
+
+@Composable
+private fun EditorSectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary
     )
+}
+
+@Composable
+private fun MatrixHeaderCell(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+    )
+}
+
+@Composable
+internal fun CompactChoicePill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    activeContainer: Color = MaterialTheme.colorScheme.primaryContainer,
+    activeContent: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    activeBorder: Color? = MaterialTheme.colorScheme.primary
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) activeContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(
+            width = if (selected) 1.25.dp else 1.dp,
+            color = if (selected) (activeBorder ?: activeContainer) else MaterialTheme.colorScheme.outlineVariant
+        ),
+        modifier = modifier.heightIn(min = 34.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) activeContent else MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }
 
 @Composable
@@ -500,7 +654,11 @@ private fun PresetSwitchRow(title: String, checked: Boolean, onCheckedChange: (B
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(title, style = MaterialTheme.typography.bodySmall)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f).padding(end = 8.dp)
+        )
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

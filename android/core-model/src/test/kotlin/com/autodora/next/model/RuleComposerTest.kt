@@ -76,4 +76,42 @@ class RuleComposerTest {
         assertEquals(12, composed.requiredUniqueCellsVisited)
         assertTrue(composed.requireAnyRaceOrb)
     }
+
+    @Test
+    fun `compose supports parameterized combo, arbitrary element, and decoupled puzzle shields`() {
+        val customElemMask = Element.WATER.bitMask or Element.DARK.bitMask or Element.HEART.bitMask
+        val puzzlePacked = 0 or 2 or ((Element.FIRE.code + 1) shl 2) or (3 shl 8) // Normal + Enchanted + Fire + Cross shape
+        val chips = listOf(
+            WaveShieldChip("min_first_combo", "首消 ≥5C", ShieldCategory.COMBO, paramInt = 5),
+            WaveShieldChip("odd_combo", "奇数 Combo (总)", ShieldCategory.COMBO, paramInt = 1),
+            WaveShieldChip("min_distinct_elements", "≥ 4 属", ShieldCategory.COUNT_AND_ELEMENT, paramInt = 4),
+            WaveShieldChip("require_elements", "水暗心+", ShieldCategory.COUNT_AND_ELEMENT, paramInt = 1, paramElementMask = customElemMask),
+            WaveShieldChip("puzzle_shield", "普通拼图·含强化·火", ShieldCategory.SHAPE_AND_PUZZLE, paramInt = puzzlePacked),
+            WaveShieldChip("cross_shield", "双十字(≠)", ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 2 or 0x20),
+            WaveShieldChip("equal_pair_light_dark", "水=火", ShieldCategory.COMBO, paramElementMask = (Element.FIRE.code shl 4) or Element.WATER.code)
+        )
+
+        val composed = RuleComposer.compose(TeamBasePreset("default", "Default"), chips)
+        assertEquals(5, composed.minFirstWaveCombo)
+        assertEquals(ComboParity.ODD, composed.comboParity)
+        assertFalse(composed.comboParityFirstWaveOnly)
+        assertEquals(4, composed.minDistinctElements)
+        assertEquals(customElemMask, composed.requiredTotalElementsMask)
+        assertEquals(customElemMask, composed.requiredEnchantedElementsMask)
+
+        // Normal Puzzle + Enchanted + Fire (decoupled from Strict!)
+        assertTrue(composed.puzzle1.enabled)
+        assertFalse(composed.puzzle1.strictNoExternalTouch)
+        assertTrue(composed.puzzle1.requireEnchanted)
+        assertEquals(Element.FIRE.code, composed.puzzle1.requiredElement)
+
+        // Multi-cross distinct colors
+        assertEquals(2, composed.crossShield.requiredCount)
+        assertTrue(composed.crossShield.requireDistinctColors)
+
+        // Arbitrary equal-combo element pair
+        assertTrue(composed.requireEqualPairCombos)
+        assertEquals(Element.WATER.code, composed.equalPairElemA)
+        assertEquals(Element.FIRE.code, composed.equalPairElemB)
+    }
 }

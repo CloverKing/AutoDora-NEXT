@@ -62,7 +62,7 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
         dao.upsert(
             TeamPresetEntity(
                 id = preset.id.ifBlank { "custom_${UUID.randomUUID().toString().take(8)}" },
-                name = preset.name.trim().ifBlank { "未命名队伍" },
+                name = preset.name.trim().ifBlank { "未命名策略" },
                 description = preset.description.trim(),
                 ruleConfigJson = json.encodeToString(preset.baseConfig),
                 isBuiltIn = isBuiltIn,
@@ -111,7 +111,7 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
         fun defaultBuiltInPresets(): List<TeamBasePreset> = listOf(
             TeamBasePreset(
                 id = ID_GENERAL,
-                name = "通用高连击队",
+                name = "通用高连击策略",
                 description = "标准 3 消 · 8 向斜转 · 强化珠优先 · 兼顾高 Combo 与稳健手数",
                 baseConfig = RuleConfig(
                     allowDiagonalMove = true,
@@ -121,8 +121,8 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
             ),
             TeamBasePreset(
                 id = "builtin_two_match",
-                name = "火木心二消队",
-                description = "火 / 木 / 心 2 颗即消 · 拆珠冲高 Combo · 适配二消神与高倍率队",
+                name = "火木心二消策略",
+                description = "火 / 木 / 心 2 颗即消 · 拆珠冲高 Combo · 适配二消与高倍率队长",
                 baseConfig = RuleConfig(
                     allowDiagonalMove = true,
                     preferEnchanted = true,
@@ -137,8 +137,8 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
             ),
             TeamBasePreset(
                 id = "builtin_column_ameliorate",
-                name = "直排昇华爆发队",
-                description = "1~6 直行 ≥ 4 消昇华加权 · 优先保留直排剑/心增益",
+                name = "直排昇华爆发策略",
+                description = "1~6 直行 ≥ 4 消昇华加权 · 优先触发直排剑 / 心增益",
                 baseConfig = RuleConfig(
                     allowDiagonalMove = true,
                     preferEnchanted = true,
@@ -150,8 +150,8 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
             ),
             TeamBasePreset(
                 id = "builtin_char_orb",
-                name = "角色符石起手队",
-                description = "1 号位角色珠下拉起手（不计首步）· 适配角色通行/停放地形",
+                name = "角色符石起手策略",
+                description = "1 号位角色珠下拉起手（不计首步）· 适配角色通行 / 停放地形",
                 baseConfig = RuleConfig(
                     allowDiagonalMove = true,
                     useCharacterOrb = true,
@@ -162,7 +162,7 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
             ),
             TeamBasePreset(
                 id = "builtin_weijian_burst",
-                name = "违建长步爆发队",
+                name = "违建长步爆发策略",
                 description = "6×8 扩版特化 · 允许更长步数（100 步）与高算力广度搜索",
                 baseConfig = RuleConfig(
                     allowDiagonalMove = true,

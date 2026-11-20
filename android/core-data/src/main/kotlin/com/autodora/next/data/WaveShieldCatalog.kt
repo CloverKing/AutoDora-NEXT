@@ -69,9 +69,31 @@ object WaveShieldCatalog {
         else -> chip
     }
 
-    val COMBO_EXCLUSIVE_IDS = setOf("min_combo", "exact_combo", "exact_first_combo", "zero_combo", "odd_combo", "even_combo")
-    val PUZZLE_EXCLUSIVE_IDS = setOf("loose_puzzle", "strict_puzzle", "enchanted_puzzle")
+    val COMBO_EXCLUSIVE_IDS = setOf("min_combo", "min_first_combo", "exact_combo", "exact_first_combo", "zero_combo", "odd_combo", "even_combo")
+    val PUZZLE_EXCLUSIVE_IDS = setOf("puzzle_shield", "loose_puzzle", "strict_puzzle", "enchanted_puzzle")
     val CROSS_EXCLUSIVE_IDS = setOf("cross_shield", "cross_shield_2", "cross_shield_3")
+
+    /**
+     * Preset Puzzle Shield shape masks on a 6x5 (or wider) board centered around row 1..3, col 1..4.
+     * Used when the user explicitly selects a Puzzle Shape template (0 = Auto-Detect board golden border).
+     */
+    fun puzzleShapeTemplateCells(shapeId: Int, cols: Int, rows: Int): Set<Int> {
+        if (shapeId <= 0 || cols < 4 || rows < 4) return emptySet()
+        val cr = rows / 2
+        val cc = cols / 2
+        val coords = when (shapeId) {
+            1 -> listOf((cr - 1) to (cc - 1), cr to (cc - 1), (cr + 1) to (cc - 1), (cr + 1) to cc, (cr + 1) to (cc + 1)) // L 形 (5格)
+            2 -> listOf((cr - 1) to (cc - 1), (cr - 1) to cc, (cr - 1) to (cc + 1), cr to cc, (cr + 1) to cc)             // T 形 (5格)
+            3 -> listOf((cr - 1) to cc, cr to (cc - 1), cr to cc, cr to (cc + 1), (cr + 1) to cc)                         // 十字 (5格)
+            4 -> listOf(cr to (cc - 1), cr to cc, (cr + 1) to (cc - 1), (cr + 1) to cc)                                   // 田字 2×2 (4格)
+            5 -> listOf(cr to (cc - 1), cr to cc, cr to (cc + 1), (cr + 1) to (cc - 1), (cr + 1) to cc, (cr + 1) to (cc + 1)) // 3×2 矩形 (6格)
+            6 -> listOf((cr - 1) to (cc - 1), cr to (cc - 1), cr to cc, cr to (cc + 1), (cr - 1) to (cc + 1))             // 凹字 (5格)
+            else -> emptyList()
+        }
+        return coords.filter { (r, c) -> r in 0 until rows && c in 0 until cols }
+            .map { (r, c) -> r * cols + c }
+            .toSet()
+    }
 }
 
 /**

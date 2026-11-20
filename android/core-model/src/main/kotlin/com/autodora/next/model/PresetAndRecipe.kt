@@ -103,22 +103,40 @@ object RuleComposer {
                 "exact_combo" -> cfg = cfg.copy(exactTotalCombo = chip.paramInt, avoidSkyfallRisk = true)
                 "exact_first_combo" -> cfg = cfg.copy(exactFirstWaveCombo = chip.paramInt, avoidSkyfallRisk = true)
                 "min_combo" -> cfg = cfg.copy(minTotalCombo = maxOf(cfg.minTotalCombo, chip.paramInt))
+                "min_first_combo" -> cfg = cfg.copy(minFirstWaveCombo = maxOf(cfg.minFirstWaveCombo, chip.paramInt))
                 "zero_combo" -> cfg = cfg.copy(exactTotalCombo = 0, maxSteps = minOf(cfg.maxSteps, 6), earlyStopOnGoal = true)
-                "odd_combo" -> cfg = cfg.copy(comboParity = ComboParity.ODD, avoidSkyfallRisk = true)
-                "even_combo" -> cfg = cfg.copy(comboParity = ComboParity.EVEN, avoidSkyfallRisk = true)
+                "odd_combo" -> cfg = cfg.copy(
+                    comboParity = ComboParity.ODD,
+                    comboParityFirstWaveOnly = (chip.paramInt != 1),
+                    avoidSkyfallRisk = true
+                )
+                "even_combo" -> cfg = cfg.copy(
+                    comboParity = ComboParity.EVEN,
+                    comboParityFirstWaveOnly = (chip.paramInt != 1),
+                    avoidSkyfallRisk = true
+                )
                 "first_wave_only" -> cfg = cfg.copy(firstWaveOnlyScoring = true)
                 "same_combo_elements" -> cfg = cfg.copy(sameComboAcrossEliminatedElements = true)
 
+                "min_distinct_elements" -> cfg = cfg.copy(minDistinctElements = maxOf(cfg.minDistinctElements, chip.paramInt.coerceIn(1, 6)))
                 "five_elements" -> cfg = cfg.copy(requiredTotalElementsMask = cfg.requiredTotalElementsMask or FIVE_ELEMENTS_MASK)
                 "five_elements_enchanted" -> cfg = cfg.copy(
                     requiredTotalElementsMask = cfg.requiredTotalElementsMask or FIVE_ELEMENTS_MASK,
                     requiredEnchantedElementsMask = cfg.requiredEnchantedElementsMask or FIVE_ELEMENTS_MASK
                 )
                 "three_elements" -> cfg = cfg.copy(requiredTotalElementsMask = cfg.requiredTotalElementsMask or THREE_ELEMENTS_MASK)
-                "require_elements" -> cfg = cfg.copy(
-                    requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or chip.paramElementMask,
-                    requiredTotalElementsMask = cfg.requiredTotalElementsMask or chip.paramElementMask
-                )
+                "require_elements" -> {
+                    val requireEnch = chip.paramInt == 1
+                    cfg = cfg.copy(
+                        requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or chip.paramElementMask,
+                        requiredTotalElementsMask = cfg.requiredTotalElementsMask or chip.paramElementMask,
+                        requiredEnchantedElementsMask = if (requireEnch) {
+                            cfg.requiredEnchantedElementsMask or chip.paramElementMask
+                        } else {
+                            cfg.requiredEnchantedElementsMask
+                        }
+                    )
+                }
                 "require_enchanted_elements" -> cfg = cfg.copy(
                     requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or chip.paramElementMask,
                     requiredTotalElementsMask = cfg.requiredTotalElementsMask or chip.paramElementMask,
@@ -154,6 +172,25 @@ object RuleComposer {
                     }
                 }
 
+                "puzzle_shield" -> {
+                    // Parameterized Puzzle Shield:
+                    //  bit 0: strictNoExternalTouch (1=strict, 0=loose)
+                    //  bit 1: requireEnchanted (1=enchanted, 0=any)
+                    //  bits 2..5: requiredElement + 1 (0 => -1 any, 1..6 => 0..5 Water..Heart)
+                    val strict = (chip.paramInt and 1) != 0
+                    val ench = (chip.paramInt and 2) != 0
+                    val elemEncoded = (chip.paramInt ushr 2) and 0x0F
+                    val reqElem = if (elemEncoded in 1..6) elemEncoded - 1 else -1
+                    cfg = cfg.copy(
+                        puzzle1 = cfg.puzzle1.copy(
+                            enabled = true,
+                            strictNoExternalTouch = strict,
+                            requiredElement = reqElem,
+                            requireEnchanted = ench
+                        )
+                    )
+                    highDifficultyShield = true
+                }
                 "strict_puzzle" -> {
                     cfg = cfg.copy(puzzle1 = cfg.puzzle1.copy(enabled = true, strictNoExternalTouch = true))
                     highDifficultyShield = true
@@ -167,8 +204,14 @@ object RuleComposer {
                     highDifficultyShield = true
                 }
                 "cross_shield" -> {
-                    val count = chip.paramInt.coerceIn(1, 3)
-                    cfg = cfg.copy(crossShield = cfg.crossShield.copy(requiredCount = maxOf(cfg.crossShield.requiredCount, count)))
+                    val count = (chip.paramInt and 0x0F).coerceIn(1, 3)
+                    val distinctColors = (chip.paramInt and 0x20) != 0
+                    cfg = cfg.copy(
+                        crossShield = cfg.crossShield.copy(
+                            requiredCount = maxOf(cfg.crossShield.requiredCount, count),
+                            requireDistinctColors = cfg.crossShield.requireDistinctColors || distinctColors
+                        )
+                    )
                     highDifficultyShield = true
                 }
                 "l_shape" -> cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireLCount = maxOf(cfg.shapeShield.requireLCount, 1)))
@@ -198,17 +241,23 @@ object RuleComposer {
                     highDifficultyShield = true
                 }
                 "equal_pair_light_dark" -> {
+                    val elemA = if (chip.paramElementMask != 0) (chip.paramElementMask and 0x0F).coerceIn(0, 5) else Element.LIGHT.code
+                    val elemB = if (chip.paramElementMask != 0) ((chip.paramElementMask ushr 4) and 0x0F).coerceIn(0, 5) else Element.DARK.code
                     cfg = cfg.copy(
                         requireEqualPairCombos = true,
-                        equalPairElemA = Element.LIGHT.code,
-                        equalPairElemB = Element.DARK.code,
+                        equalPairElemA = elemA,
+                        equalPairElemB = elemB,
                         equalPairMustBeNonZero = true
                     )
                     highDifficultyShield = true
                 }
                 "same_elem_combos" -> {
+                    val targetElem = if (chip.paramElementMask != 0) {
+                        (0 until 6).firstOrNull { (chip.paramElementMask and (1 shl it)) != 0 } ?: -1
+                    } else -1
                     cfg = cfg.copy(
-                        requiredSameElementCombos = maxOf(cfg.requiredSameElementCombos, chip.paramInt.coerceAtLeast(2))
+                        requiredSameElementCombos = maxOf(cfg.requiredSameElementCombos, chip.paramInt.coerceAtLeast(2)),
+                        sameElementComboTarget = targetElem
                     )
                     highDifficultyShield = true
                 }

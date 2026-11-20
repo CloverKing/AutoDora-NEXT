@@ -23,6 +23,18 @@ enum class ThemeMode(val label: String) {
     }
 }
 
+enum class AppLanguage(val tag: String, val nativeLabel: String) {
+    SYSTEM("", "跟随系统"),
+    ZH_CN("zh-CN", "简体中文"),
+    ZH_TW("zh-TW", "繁體中文"),
+    EN("en", "English");
+
+    companion object {
+        fun fromOrdinalSafe(ord: Int?): AppLanguage =
+            entries.getOrNull(ord ?: 0) ?: SYSTEM
+    }
+}
+
 enum class EnemySkillScanMode(val label: String, val shortLabel: String) {
     HYBRID("图标快识 + 自动齿轮展开", "双模自动"),
     AUTO_GEAR_OCR("自动齿轮展开 OCR", "自动齿轮"),
@@ -36,6 +48,7 @@ enum class EnemySkillScanMode(val label: String, val shortLabel: String) {
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val language: AppLanguage = AppLanguage.SYSTEM,
     val calibration: BoardCalibration = BoardCalibration(),
     val maxSteps: Int = 28,
     val beamWidth: Int = 180,
@@ -79,6 +92,7 @@ class SettingsRepository(private val context: Context) {
 
     private object Keys {
         val THEME_MODE = intPreferencesKey("ui_theme_mode")
+        val APP_LANGUAGE = intPreferencesKey("ui_app_language")
         val LEFT_RATIO = floatPreferencesKey("calib_left_ratio")
         val RIGHT_RATIO = floatPreferencesKey("calib_right_ratio")
         val BOTTOM_RATIO = floatPreferencesKey("calib_bottom_ratio_v2")
@@ -110,6 +124,7 @@ class SettingsRepository(private val context: Context) {
 
     private fun readFromPrefs(p: Preferences): AppSettings = AppSettings(
         themeMode = ThemeMode.fromOrdinalSafe(p[Keys.THEME_MODE]),
+        language = AppLanguage.fromOrdinalSafe(p[Keys.APP_LANGUAGE]),
         calibration = BoardCalibration(
             leftRatio = p[Keys.LEFT_RATIO] ?: 0.0f,
             rightRatio = p[Keys.RIGHT_RATIO] ?: 1.0f,
@@ -145,6 +160,7 @@ class SettingsRepository(private val context: Context) {
             val current = readFromPrefs(p)
             val next = transform(current)
             p[Keys.THEME_MODE] = next.themeMode.ordinal
+            p[Keys.APP_LANGUAGE] = next.language.ordinal
             p[Keys.LEFT_RATIO] = next.calibration.leftRatio.coerceIn(0f, 0.35f)
             p[Keys.RIGHT_RATIO] = next.calibration.rightRatio.coerceIn(0.65f, 1f)
             p[Keys.BOTTOM_RATIO] = if (next.calibration.bottomRatio < 0f) {

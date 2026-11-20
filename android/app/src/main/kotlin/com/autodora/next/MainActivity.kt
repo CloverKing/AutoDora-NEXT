@@ -17,6 +17,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.autodora.next.capture.MediaProjectionForegroundService
@@ -29,6 +31,7 @@ import com.autodora.next.overlay.OverlayServiceState
 import com.autodora.next.touch.AccessibilityServiceBridge
 import com.autodora.next.ui.AutoDoraTheme
 import com.autodora.next.ui.DashboardScreen
+import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.PermissionHealthState
 import com.autodora.next.vision.EnemySkillOcrEngine
 import dagger.hilt.android.AndroidEntryPoint
@@ -47,6 +50,9 @@ class MainActivity : ComponentActivity() {
     private val notificationsGrantedState = MutableStateFlow(true)
     private val benchmarkReportState = MutableStateFlow<String?>(null)
     private val isBenchmarkingState = MutableStateFlow(false)
+    private var currentLanguage: AppLanguage = AppLanguage.SYSTEM
+
+    private fun lctx(): Context = LocaleHelper.localizedContext(this, currentLanguage)
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -54,9 +60,9 @@ class MainActivity : ComponentActivity() {
         val data = result.data
         if (result.resultCode == Activity.RESULT_OK && data != null) {
             MediaProjectionForegroundService.start(this, result.resultCode, data)
-            Toast.makeText(this, "屏幕采集服务已就绪", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, lctx().getString(R.string.toast_capture_ready), Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "未授予屏幕采集权限", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, lctx().getString(R.string.toast_capture_denied), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -73,82 +79,104 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val settings by settingsRepository.settingsFlow.collectAsState(initial = AppSettings())
+            SideEffect { currentLanguage = settings.language }
+            val baseCtx = LocalContext.current
+            val localizedCtx = remember(settings.language, baseCtx) {
+                LocaleHelper.localizedContext(baseCtx, settings.language)
+            }
             AutoDoraTheme(themeMode = settings.themeMode) {
-                val overlayGranted by overlayGrantedState.collectAsState()
-                val notifGranted by notificationsGrantedState.collectAsState()
-                val a11yConnected by AccessibilityServiceBridge.isConnected.collectAsState()
-                val capturer by ScreenCaptureSession.capturer.collectAsState()
-                val mediaReady by (capturer?.isReady ?: remember { MutableStateFlow(false) }).collectAsState()
-                val overlayRunning by OverlayServiceState.isRunning.collectAsState()
-                val presets by teamPresetRepository.observePresets().collectAsState(initial = emptyList())
-                val activeWaveChips by ActiveStrategyStore.activeChips.collectAsState()
-                val ocrSummary by ActiveStrategyStore.lastOcrSummary.collectAsState()
-                val benchReport by benchmarkReportState.collectAsState()
-                val isBench by isBenchmarkingState.collectAsState()
+                CompositionLocalProvider(
+                    LocalContext provides localizedCtx,
+                    LocalConfiguration provides localizedCtx.resources.configuration
+                ) {
+                    val overlayGranted by overlayGrantedState.collectAsState()
+                    val notifGranted by notificationsGrantedState.collectAsState()
+                    val a11yConnected by AccessibilityServiceBridge.isConnected.collectAsState()
+                    val capturer by ScreenCaptureSession.capturer.collectAsState()
+                    val mediaReady by (capturer?.isReady ?: remember { MutableStateFlow(false) }).collectAsState()
+                    val overlayRunning by OverlayServiceState.isRunning.collectAsState()
+                    val presets by teamPresetRepository.observePresets().collectAsState(initial = emptyList())
+                    val activeWaveChips by ActiveStrategyStore.activeChips.collectAsState()
+                    val ocrSummary by ActiveStrategyStore.lastOcrSummary.collectAsState()
+                    val benchReport by benchmarkReportState.collectAsState()
+                    val isBench by isBenchmarkingState.collectAsState()
 
-                DashboardScreen(
-                    health = PermissionHealthState(
-                        overlayGranted = overlayGranted,
-                        accessibilityConnected = a11yConnected,
-                        mediaProjectionReady = mediaReady,
-                        notificationsGranted = notifGranted,
-                        overlayRunning = overlayRunning
-                    ),
-                    settings = settings,
-                    presets = presets,
-                    activeWaveChips = activeWaveChips,
-                    lastOcrSummary = ocrSummary,
-                    benchmarkReport = benchReport,
-                    isBenchmarking = isBench,
-                    onRequestOverlay = { requestOverlayPermission() },
-                    onOpenAccessibility = { openAccessibilitySettings() },
-                    onOpenAppDetails = { openAppDetailsSettings() },
-                    onRequestMediaProjection = { requestMediaProjectionPermission() },
-                    onRequestNotifications = { requestNotificationPermission() },
-                    onToggleOverlayService = { toggleOverlayService() },
-                    onRunNativeBenchmark = { runOnDeviceBenchmark() },
-                    onUpdateSettings = { transform ->
-                        lifecycleScope.launch { settingsRepository.update(transform) }
-                    },
-                    onSelectPreset = { id ->
-                        lifecycleScope.launch {
-                            settingsRepository.update { it.copy(activePresetId = id) }
-                        }
-                    },
-                    onSavePreset = { preset, isBuiltIn ->
-                        lifecycleScope.launch {
-                            teamPresetRepository.savePreset(preset, isBuiltIn = isBuiltIn)
-                        }
-                    },
-                    onDuplicatePreset = { source ->
-                        lifecycleScope.launch {
-                            val newId = teamPresetRepository.duplicatePreset(source)
-                            settingsRepository.update { it.copy(activePresetId = newId) }
-                            Toast.makeText(this@MainActivity, "已复制并启用新预设", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onDeletePreset = { id ->
-                        lifecycleScope.launch {
-                            teamPresetRepository.deleteCustomPreset(id)
-                            if (settings.activePresetId == id) {
-                                settingsRepository.update { it.copy(activePresetId = TeamPresetRepository.ID_GENERAL) }
+                    DashboardScreen(
+                        health = PermissionHealthState(
+                            overlayGranted = overlayGranted,
+                            accessibilityConnected = a11yConnected,
+                            mediaProjectionReady = mediaReady,
+                            notificationsGranted = notifGranted,
+                            overlayRunning = overlayRunning
+                        ),
+                        settings = settings,
+                        presets = presets,
+                        activeWaveChips = activeWaveChips,
+                        lastOcrSummary = ocrSummary,
+                        benchmarkReport = benchReport,
+                        isBenchmarking = isBench,
+                        onRequestOverlay = { requestOverlayPermission() },
+                        onOpenAccessibility = { openAccessibilitySettings() },
+                        onOpenAppDetails = { openAppDetailsSettings() },
+                        onRequestMediaProjection = { requestMediaProjectionPermission() },
+                        onRequestNotifications = { requestNotificationPermission() },
+                        onToggleOverlayService = { toggleOverlayService() },
+                        onRunNativeBenchmark = { runOnDeviceBenchmark() },
+                        onUpdateSettings = { transform ->
+                            lifecycleScope.launch { settingsRepository.update(transform) }
+                        },
+                        onSelectPreset = { id ->
+                            lifecycleScope.launch {
+                                settingsRepository.update { it.copy(activePresetId = id) }
                             }
+                        },
+                        onSavePreset = { preset, isBuiltIn ->
+                            lifecycleScope.launch {
+                                teamPresetRepository.savePreset(preset, isBuiltIn = isBuiltIn)
+                            }
+                        },
+                        onDuplicatePreset = { source ->
+                            lifecycleScope.launch {
+                                val newId = teamPresetRepository.duplicatePreset(source)
+                                settingsRepository.update { it.copy(activePresetId = newId) }
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    lctx().getString(R.string.toast_preset_duplicated),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        onDeletePreset = { id ->
+                            lifecycleScope.launch {
+                                teamPresetRepository.deleteCustomPreset(id)
+                                if (settings.activePresetId == id) {
+                                    settingsRepository.update { it.copy(activePresetId = TeamPresetRepository.ID_GENERAL) }
+                                }
+                            }
+                        },
+                        onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
+                        onClearWaveChips = { ActiveStrategyStore.clearAll() },
+                        onParseSkillText = { text ->
+                            val parsed = enemySkillOcrEngine.parseText(text)
+                            val ctx = lctx()
+                            if (parsed.chips.isEmpty()) {
+                                Toast.makeText(this@MainActivity, ctx.getString(R.string.toast_ocr_none), Toast.LENGTH_SHORT).show()
+                            } else {
+                                val labels = parsed.chips.joinToString(" · ") { it.label }
+                                ActiveStrategyStore.applyOcrChips(
+                                    parsed.chips,
+                                    ctx.getString(R.string.ocr_text_applied_fmt, labels)
+                                )
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    ctx.getString(R.string.toast_ocr_imported, parsed.chips.size),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                            parsed.chips
                         }
-                    },
-                    onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
-                    onClearWaveChips = { ActiveStrategyStore.clearAll() },
-                    onParseSkillText = { text ->
-                        val parsed = enemySkillOcrEngine.parseText(text)
-                        if (parsed.chips.isEmpty()) {
-                            Toast.makeText(this@MainActivity, "未匹配到已知敌技词条", Toast.LENGTH_SHORT).show()
-                        } else {
-                            val labels = parsed.chips.joinToString(" · ") { it.label }
-                            ActiveStrategyStore.applyOcrChips(parsed.chips, "文本解析已启用：$labels")
-                            Toast.makeText(this@MainActivity, "已导入 ${parsed.chips.size} 项敌技盾", Toast.LENGTH_SHORT).show()
-                        }
-                        parsed.chips
-                    }
-                )
+                    )
+                }
             }
         }
     }
@@ -209,13 +237,14 @@ class MainActivity : ComponentActivity() {
             OverlayControllerService.stop(this)
             return
         }
+        val ctx = lctx()
         if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "请先授予「悬浮窗权限」", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, ctx.getString(R.string.toast_overlay_perm_needed), Toast.LENGTH_SHORT).show()
             requestOverlayPermission()
             return
         }
         OverlayControllerService.start(this)
-        Toast.makeText(this, "悬浮助手已启动，请切换到《神魔之塔》", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, ctx.getString(R.string.toast_overlay_started), Toast.LENGTH_SHORT).show()
     }
 
     private fun runOnDeviceBenchmark() {
@@ -249,9 +278,26 @@ class MainActivity : ComponentActivity() {
 
                 val s65 = out65.solutions.firstOrNull()
                 val s68 = out68.solutions.firstOrNull()
+                val ctx = lctx()
                 benchmarkReportState.value = buildString {
-                    appendLine("✓ 6×5 盘面：${s65?.totalCombo ?: 0}C (${s65?.stepCount ?: 0}步) · 耗时 ${out65.elapsedMs.toInt()} ms · 评估 ${out65.statesEvaluated} 局面")
-                    append("✓ 6×8 违建：${s68?.totalCombo ?: 0}C (${s68?.stepCount ?: 0}步) · 耗时 ${out68.elapsedMs.toInt()} ms · 评估 ${out68.statesEvaluated} 局面")
+                    appendLine(
+                        ctx.getString(
+                            R.string.bench_line_65,
+                            s65?.totalCombo ?: 0,
+                            s65?.stepCount ?: 0,
+                            out65.elapsedMs.toInt(),
+                            out65.statesEvaluated
+                        )
+                    )
+                    append(
+                        ctx.getString(
+                            R.string.bench_line_68,
+                            s68?.totalCombo ?: 0,
+                            s68?.stepCount ?: 0,
+                            out68.elapsedMs.toInt(),
+                            out68.statesEvaluated
+                        )
+                    )
                 }
             } catch (e: Exception) {
                 benchmarkReportState.value = "压测异常: ${e.message}"

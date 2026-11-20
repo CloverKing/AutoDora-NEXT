@@ -26,6 +26,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import com.autodora.next.R
 import com.autodora.next.capture.AutoGridDetector
 import com.autodora.next.capture.BoardCalibration
 import com.autodora.next.capture.ScreenCaptureSession
@@ -37,6 +38,7 @@ import com.autodora.next.touch.HoldReplanTrigger
 import com.autodora.next.touch.SwipeSpeedPreset
 import com.autodora.next.touch.TouchExecutionResult
 import com.autodora.next.touch.TouchExecutor
+import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.OverlayPalette
 import com.autodora.next.ui.OverlayThemeResolver
 import com.autodora.next.vision.BitmapVisionFrame
@@ -80,6 +82,7 @@ class OverlayControllerService : Service() {
     private var screenW = 1080
     private var screenH = 2400
     private var settings = AppSettings()
+    private var lctx: Context = this
     private var presetRecords: List<TeamPresetRecord> = emptyList()
     private var activeWaveChips: List<WaveShieldChip> = emptyList()
     private var lastOcrSummary: String? = null
@@ -272,6 +275,22 @@ class OverlayControllerService : Service() {
         return presetRecords.firstOrNull { it.preset.id == settings.activePresetId }?.preset
             ?: presetRecords.firstOrNull()?.preset
             ?: TeamPresetRepository.defaultBuiltInPresets().first()
+    }
+
+    private fun applyPuzzleShapeTemplateIfNeeded(board: BoardState): BoardState {
+        val pChip = activeWaveChips.firstOrNull { it.id == "puzzle_shield" } ?: return board
+        val shapeId = (pChip.paramInt ushr 8) and 0x0F
+        if (shapeId <= 0) return board
+        if (board.tileFlags.any { (it and TileFlagBits.PUZZLE_1) != 0 }) return board
+        val templateCells = WaveShieldCatalog.puzzleShapeTemplateCells(shapeId, board.cols, board.rows)
+        if (templateCells.isEmpty()) return board
+        val updatedFlags = board.tileFlags.toMutableList()
+        for (idx in templateCells) {
+            if (idx in updatedFlags.indices) {
+                updatedFlags[idx] = updatedFlags[idx] or TileFlagBits.PUZZLE_1
+            }
+        }
+        return board.copy(tileFlags = updatedFlags)
     }
 
     private fun composeEffectiveRuleConfig(
@@ -822,17 +841,18 @@ class OverlayControllerService : Service() {
                     return@launch
                 }
 
+                val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(boardToSolve)
                 currentGeometry = geom
-                lastRecognition = liveRec
-                editedBoard = boardToSolve
+                lastRecognition = liveRec.copy(board = effectiveBoard)
+                editedBoard = effectiveBoard
                 usedMemorizedSnapshot = resolvedFromMemory
                 updateQuickModeChips()
 
-                val ruleConfig = composeEffectiveRuleConfig(boardToSolve)
+                val ruleConfig = composeEffectiveRuleConfig(effectiveBoard)
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
                 val solveOut = try {
-                    NativeSolver.solve(boardToSolve, ruleConfig, token)
+                    NativeSolver.solve(effectiveBoard, ruleConfig, token)
                 } finally {
                     activeCancelToken = null
                     token.close()
@@ -880,11 +900,13 @@ class OverlayControllerService : Service() {
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.CALCULATING)
             try {
-                val ruleConfig = composeEffectiveRuleConfig(board)
+                val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(board)
+                editedBoard = effectiveBoard
+                val ruleConfig = composeEffectiveRuleConfig(effectiveBoard)
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
                 val solveOut = try {
-                    NativeSolver.solve(board, ruleConfig, token)
+                    NativeSolver.solve(effectiveBoard, ruleConfig, token)
                 } finally {
                     activeCancelToken = null
                     token.close()
@@ -1570,6 +1592,7 @@ class OverlayControllerService : Service() {
     // ==================== System Material 3 Theme & Unified Toggle Styling ====================
     private fun applyOverlayTheme() {
         if (!::toolbarContainer.isInitialized) return
+        lctx = LocaleHelper.localizedContext(this, settings.language)
         palette = OverlayThemeResolver.resolve(this, settings.themeMode)
         val p = palette
 
@@ -1581,15 +1604,26 @@ class OverlayControllerService : Service() {
         pagerText.setTextColor(p.onSurface)
         summaryTitle.setTextColor(p.onSurface)
 
+        solveBtn.text = lctx.getString(R.string.ov_solve)
+        stopChipBtn.text = lctx.getString(R.string.ov_stop)
+        ocrScanBtn.text = lctx.getString(R.string.ov_scan_now)
+
         styleChip(solveBtn, p.primary, p.onPrimary, null)
         styleChip(prevBtn, p.chipOffBg, p.onSurface, p.chipOffStroke)
         styleChip(nextBtn, p.chipOffBg, p.onSurface, p.chipOffStroke)
         styleChip(closeBtn, p.chipOffBg, p.onSurfaceVariant, p.chipOffStroke)
         styleChip(ocrScanBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
 
-        for (btn in calibNudgeBtns) {
+        val calibLabels = listOf(
+            R.string.ov_calib_up, R.string.ov_calib_down, R.string.ov_calib_narrow,
+            R.string.ov_calib_wide, R.string.ov_calib_hminus, R.string.ov_calib_hplus
+        )
+        calibNudgeBtns.forEachIndexed { idx, btn ->
+            if (idx in calibLabels.indices) btn.text = lctx.getString(calibLabels[idx])
             styleChip(btn, p.secondaryContainer, p.onSecondaryContainer, null)
         }
+        calibAutoBtn.text = lctx.getString(R.string.ov_calib_auto)
+        calibResetBtn.text = lctx.getString(R.string.ov_calib_reset)
         styleChip(calibAutoBtn, p.primary, p.onPrimary, null)
         styleChip(calibResetBtn, p.errorContainer, p.onErrorContainer, null)
 
@@ -1605,21 +1639,22 @@ class OverlayControllerService : Service() {
         if (!::pathToggleBtn.isInitialized || !::palette.isInitialized) return
         val p = palette
 
-        // '行' reflects unified execution mode (Hold-and-Replan highlight vs Standard execute)
+        val execText = lctx.getString(R.string.ov_exec)
+        executeBtn.text = execText
         if (settings.holdReplanEnabled) {
-            executeBtn.text = "行"
             styleChip(executeBtn, p.tertiaryContainer, p.onTertiaryContainer, p.tertiary)
         } else {
-            executeBtn.text = "行"
             styleChip(executeBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
         }
 
         // '线' controls swipe trajectory path ONLY
-        pathToggleBtn.text = if (showPath) "●线" else "○线"
+        val lineText = lctx.getString(R.string.ov_line)
+        pathToggleBtn.text = if (showPath) "●$lineText" else "○$lineText"
         styleToggleChip(pathToggleBtn, isOn = showPath, onBg = p.primary, onText = p.onPrimary)
 
         // '校' controls board alignment grid ONLY
-        calibToggleBtn.text = if (calibrationMode) "●校" else "○校"
+        val calibText = lctx.getString(R.string.ov_calib)
+        calibToggleBtn.text = if (calibrationMode) "●$calibText" else "○$calibText"
         styleToggleChip(calibToggleBtn, isOn = calibrationMode, onBg = p.tertiary, onText = p.onTertiary)
 
         // '⋯' / '▾' quick panel drawer toggle
@@ -1636,29 +1671,34 @@ class OverlayControllerService : Service() {
         val p = palette
 
         // 1. Hold-and-Replan Toggle (按住转 -> unified via '行')
-        holdReplanToggleBtn.text = if (settings.holdReplanEnabled) "●按住转" else "○按住转"
+        val holdLbl = lctx.getString(R.string.ov_hold)
+        holdReplanToggleBtn.text = if (settings.holdReplanEnabled) "●$holdLbl" else "○$holdLbl"
         styleToggleChip(holdReplanToggleBtn, isOn = settings.holdReplanEnabled, onBg = p.tertiary, onText = p.onTertiary)
 
-        // 2. Auto Enemy Skill Recognition Toggle (开启即每波自动识别敌技！)
-        autoSkillToggleBtn.text = if (settings.autoEnemySkillEnabled) "●自动识技" else "○自动识技"
+        // 2. Auto Enemy Skill Recognition Toggle
+        val autoLbl = lctx.getString(R.string.ov_auto_skill)
+        autoSkillToggleBtn.text = if (settings.autoEnemySkillEnabled) "●$autoLbl" else "○$autoLbl"
         styleToggleChip(autoSkillToggleBtn, isOn = settings.autoEnemySkillEnabled, onBg = p.primary, onText = p.onPrimary)
 
-        // 3. Inverted Drag Controls Toggle (颠倒操控)
+        // 3. Inverted Drag Controls Toggle
         val invOn = settings.invertDragX || settings.invertDragY
-        invertChipBtn.text = if (invOn) "●颠倒" else "○颠倒"
+        val invLbl = lctx.getString(R.string.ov_invert)
+        invertChipBtn.text = if (invOn) "●$invLbl" else "○$invLbl"
         styleToggleChip(invertChipBtn, isOn = invOn, onBg = p.tertiary, onText = p.onTertiary)
 
-        // 4. Unified 1:1 Thermal Speed Preset (Red -> Orange -> Primary Blue -> Emerald, uniform 1dp border!)
+        // 4. Unified 1:1 Thermal Speed Preset
         val preset = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
         val spdStyle = p.speedStyle(preset)
-        speedChipBtn.text = preset.compactLabel
+        speedChipBtn.text = LocaleHelper.speedLabel(lctx, preset)
         styleChip(speedChipBtn, spdStyle.bg, spdStyle.fg, spdStyle.stroke)
 
         // 5. Phase 3 Drawer & Board Editor Toggles
-        tuningDrawerToggleBtn.text = if (tuningDrawerOpen) "●解盾调参" else "○解盾调参"
+        val tuneLbl = lctx.getString(R.string.ov_tuning)
+        tuningDrawerToggleBtn.text = if (tuningDrawerOpen) "●$tuneLbl" else "○$tuneLbl"
         styleToggleChip(tuningDrawerToggleBtn, isOn = tuningDrawerOpen, onBg = p.primary, onText = p.onPrimary)
 
-        boardEditorToggleBtn.text = if (boardEditorMode) "●盘面编绘" else "○盘面编绘"
+        val editLbl = lctx.getString(R.string.ov_editor)
+        boardEditorToggleBtn.text = if (boardEditorMode) "●$editLbl" else "○$editLbl"
         styleToggleChip(boardEditorToggleBtn, isOn = boardEditorMode, onBg = p.tertiary, onText = p.onTertiary)
 
         refreshMainToggleChips()
@@ -1690,7 +1730,7 @@ class OverlayControllerService : Service() {
             activeShieldRow.addView(pill)
         }
         val clearAll = TextView(this).apply {
-            text = "清空"
+            text = lctx.getString(R.string.btn_clear)
             textSize = 9f
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
