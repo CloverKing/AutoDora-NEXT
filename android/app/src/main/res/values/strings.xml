@@ -152,7 +152,7 @@
     <string name="section_strategy_switches">进阶策略开关</string>
     <string name="switch_split_three">强制切珠（每组尽量 3 颗冲高连击）</string>
     <string name="switch_first_wave_only">只计首批连击（不依赖天降叠珠）</string>
-    <string name="switch_diag_match">允许斜消（八向相连消除）</string>
+    <string name="switch_diag_match">队长技斜向消除（仅限特殊斜消队长，非斜向拉珠）</string>
     <string name="switch_prefer_ench">强化符石优先消除</string>
     <string name="switch_prefer_race">种族符石优先消除</string>
     <string name="switch_hit_weathered">允许撞击风化珠解状态</string>
@@ -167,7 +167,7 @@
     <string name="tag_char_orb_fmt">%1$d号角色珠</string>
     <string name="tag_start_bl">左下起手</string>
     <string name="tag_start_br">右下起手</string>
-    <string name="tag_diag_match">允许斜消</string>
+    <string name="tag_diag_match">队长斜消</string>
 
     <!-- Shields Tab: Auto Skill Recognition Hub -->
     <string name="section_auto_skill">自动敌技识别</string>

@@ -118,7 +118,7 @@ struct RuleConfig {
     uint16_t maxSteps = 30;                // 步数上限 (1..300; 违建/排珠/长手转可达 100~300)
     int16_t exactSteps = -1;               // 精确步数盾 (-1 = 关闭)
     double stepPenaltyWeight = 0.08;       // 一步一伤时可调高至 5.0+
-    double diagonalPenaltyWeight = 0.05;   // 同分时略偏向直线
+    double diagonalPenaltyWeight = 0.45;   // 同分时优先稳健直线，仅在提 C/破盾/省步时斜转
     StartPointPreset startPreset = StartPointPreset::Any;
     int8_t fixedStartCell = -1;            // >=0 时强制从此格起手 (免 Root 问号‧转/风化‧转/烟雾重算专用!)
     bool allowHitWeatheredToClear = false; // 默认严避风化; 开启后允许故意撞掉风化解状态

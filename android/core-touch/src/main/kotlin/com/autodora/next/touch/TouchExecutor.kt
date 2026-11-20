@@ -30,7 +30,7 @@ enum class SwipeSpeedPreset(val label: String, val compactLabel: String, val ste
 
 data class SwipeConfig(
     val stepDurationMs: Long = SwipeSpeedPreset.STANDARD.stepDurationMs,
-    val diagonalSpeedFactor: Float = 0.85f, // Slightly brisker across 4-cell diagonal intersection
+    val diagonalSpeedFactor: Float = 0.68f, // Brisk 45° corner crossing prevents orthogonal neighbor bounce
     val startHoldMs: Long = 55L,           // Grab hold at starting orb before moving
     val endHoldMs: Long = 45L,             // Settle hold at destination orb before lifting finger
     val humanMode: Boolean = false,        // Subtle humanized micro-jitter & speed variance

@@ -1,0 +1,20 @@
+# AutoDora-NEXT Agent Guidelines
+
+## Starting the Android Emulator (Windows)
+
+When asked to start or reopen the Android emulator so the user can see and interact with it on Windows:
+
+1. **Do NOT launch `emulator.exe` or `android emulator start` directly from `run_command`**.
+   - Commands executed via `run_command` run on an isolated Windows desktop (hidden from `WinSta0\Default`), so the emulator window will not be visible on the user's screen, and non-daemon child processes exit when the command finishes.
+2. **Always start the emulator through the Android Device Hub sidecar HTTP API** (which runs in the user's interactive desktop session):
+   - Read the active loopback port from the latest `Device Hub listening on http://localhost:<PORT>` line in:
+     `%USERPROFILE%\.gemini\antigravity\sidecar_data\android-cli-plugin\device-hub\logs\sidecar.log`
+   - Query available AVDs via `GET http://127.0.0.1:<PORT>/api/devices` (primary test AVD: `medium_phone_api36_play`).
+   - Start the AVD via:
+     ```powershell
+     Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:<PORT>/api/start" `
+       -ContentType "application/json" `
+       -Body '{"device":"medium_phone_api36_play","cold":false}'
+     ```
+   - Wait until `adb wait-for-device` returns and `adb -s emulator-5554 shell getprop sys.boot_completed` equals `1`, then ensure overlay & accessibility permissions are active and launch `com.autodora.next/.MainActivity`.
+3. **Surface the sidecar pane pill** `[Android Device Hub](sidecar://android-cli-plugin/device-hub/)` so the user can also mirror/control the emulator inside Antigravity.

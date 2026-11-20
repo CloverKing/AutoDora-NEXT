@@ -102,7 +102,22 @@ object PathInterpolator {
                 pullTarget
             }
             else -> {
-                val grabEnd = ScreenPoint(firstCellPt.x + 0.5f, firstCellPt.y + 0.5f)
+                // Shift 0.5px strictly along the first move's direction so a diagonal first move
+                // stays mathematically centered on the exact 4-cell diagonal intersection!
+                val firstMove = solution.moves.firstOrNull()
+                val dirDx = when {
+                    firstMove == null -> 0.5f
+                    firstMove.dc > 0 -> 0.5f
+                    firstMove.dc < 0 -> -0.5f
+                    else -> 0.5f
+                }
+                val dirDy = when {
+                    firstMove == null -> 0.5f
+                    firstMove.dr > 0 -> 0.5f
+                    firstMove.dr < 0 -> -0.5f
+                    else -> 0f
+                }
+                val grabEnd = ScreenPoint(firstCellPt.x + dirDx, firstCellPt.y + dirDy)
                 draftSegments.add(listOf(firstCellPt, grabEnd) to config.startHoldMs.coerceAtLeast(24L))
                 grabEnd
             }
@@ -141,8 +156,11 @@ object PathInterpolator {
 
             if (move.isDiagonal) {
                 flushOrtho()
-                // Dedicated fast 45° diagonal segment so ToS crosses 4-cell corner cleanly without orthogonal bounce!
-                val diagMs = (config.stepDurationMs * config.diagonalSpeedFactor * speedVar).roundToLong().coerceAtLeast(18L)
+                // Brisk 45° diagonal crossing (22..52ms) minimizes samples lingering at the 4-cell corner boundary
+                // so ToS cleanly performs the diagonal swap without orthogonal neighbor bounce!
+                val diagMs = (config.stepDurationMs * config.diagonalSpeedFactor * speedVar)
+                    .roundToLong()
+                    .coerceIn(22L, 52L)
                 val midPt = ScreenPoint((prevPt.x + targetPt.x) * 0.5f, (prevPt.y + targetPt.y) * 0.5f)
                 draftSegments.add(listOf(prevPt, midPt, targetPt) to diagMs)
             } else {

@@ -313,13 +313,14 @@ fun TeamPresetEditorDialog(
                                         )
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             CompactChoicePill(
                                                 label = t(R.string.puzzle_elem_any),
                                                 selected = cfg.goalTargetElement < 0,
                                                 onClick = { cfg = cfg.copy(goalMode = goalGroup, goalTargetElement = -1) },
-                                                modifier = Modifier.weight(1.5f)
+                                                modifier = Modifier.weight(1.65f).height(34.dp)
                                             )
                                             for (e in 0 until 6) {
                                                 val sel = cfg.goalTargetElement == e
@@ -332,7 +333,7 @@ fun TeamPresetEditorDialog(
                                                         width = if (sel) 1.5.dp else 1.dp,
                                                         color = if (sel) badgeCol else MaterialTheme.colorScheme.outlineVariant
                                                     ),
-                                                    modifier = Modifier.weight(1f).height(32.dp)
+                                                    modifier = Modifier.weight(1f).height(34.dp)
                                                 ) {
                                                     Box(contentAlignment = Alignment.Center) {
                                                         Text(
@@ -359,6 +360,7 @@ fun TeamPresetEditorDialog(
                                         )
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             for (e in 0 until 6) {
@@ -380,7 +382,7 @@ fun TeamPresetEditorDialog(
                                                         width = if (sel) 1.5.dp else 1.dp,
                                                         color = if (sel) badgeCol else MaterialTheme.colorScheme.outlineVariant
                                                     ),
-                                                    modifier = Modifier.weight(1f).height(32.dp)
+                                                    modifier = Modifier.weight(1f).height(34.dp)
                                                 ) {
                                                     Box(contentAlignment = Alignment.Center) {
                                                         Text(

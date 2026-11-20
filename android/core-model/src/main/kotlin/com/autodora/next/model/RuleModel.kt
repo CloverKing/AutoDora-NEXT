@@ -180,7 +180,7 @@ data class RuleConfig(
     val maxSteps: Int = 30,
     val exactSteps: Int = -1,
     val stepPenaltyWeight: Double = 0.08,
-    val diagonalPenaltyWeight: Double = 0.05,
+    val diagonalPenaltyWeight: Double = 0.45,
     val startPreset: StartPointPreset = StartPointPreset.ANY,
     val fixedStartCell: Int = -1,
     val allowHitWeatheredToClear: Boolean = false,

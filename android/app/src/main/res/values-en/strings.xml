@@ -152,7 +152,7 @@
     <string name="section_strategy_switches">Advanced Strategy Switches</string>
     <string name="switch_split_three">Force Split 3-Orb Groups</string>
     <string name="switch_first_wave_only">First-Wave Combos Only</string>
-    <string name="switch_diag_match">Allow 8-Direction Diagonal Matches</string>
+    <string name="switch_diag_match">Leader Diagonal Match (Special leader only, NOT diagonal swiping)</string>
     <string name="switch_prefer_ench">Prioritize Enchanted Runestones</string>
     <string name="switch_prefer_race">Prioritize Race Runestones</string>
     <string name="switch_hit_weathered">Allow Hitting Weathered Runestones</string>
@@ -167,7 +167,7 @@
     <string name="tag_char_orb_fmt">Slot %1$d Char</string>
     <string name="tag_start_bl">Start BL</string>
     <string name="tag_start_br">Start BR</string>
-    <string name="tag_diag_match">Diag-Match</string>
+    <string name="tag_diag_match">Leader Diag-Match</string>
 
     <!-- Shields Tab: Auto Skill Recognition Hub -->
     <string name="section_auto_skill">Auto Enemy Skill Detection</string>

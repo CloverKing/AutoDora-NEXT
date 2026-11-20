@@ -924,10 +924,16 @@ class OverlayControllerService : Service() {
             val prevDrawer = tuningDrawerOpen
             if (prevDrawer) setTuningDrawerOpen(false)
 
-            // Hide our entire floating HUD so visual matching & text recognition NEVER read our own pills
-            controlRoot.visibility = View.INVISIBLE
+            // Keep the compact floating top bar visible unless the user dragged it down over the enemy/modal zone!
+            val barOverlapsScanZone = controlParams.y > (screenH * 0.13f).toInt()
+            if (barOverlapsScanZone) {
+                controlRoot.visibility = View.INVISIBLE
+            } else {
+                summaryStrip.visibility = View.GONE
+                activeShieldScroll.visibility = View.GONE
+            }
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
-            delay(55)
+            delay(50)
 
             var openedGearByAuto = false
             try {
@@ -1144,6 +1150,8 @@ class OverlayControllerService : Service() {
                     }
                 }
                 controlRoot.visibility = View.VISIBLE
+                refreshActiveShieldStrip()
+                updateSummaryStrip()
                 refreshPathCanvas()
                 setPhase(OverlayPhase.IDLE)
             }
