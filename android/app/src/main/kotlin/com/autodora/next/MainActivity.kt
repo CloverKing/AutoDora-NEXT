@@ -300,7 +300,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             } catch (e: Exception) {
-                benchmarkReportState.value = "压测异常: ${e.message}"
+                benchmarkReportState.value = lctx().getString(R.string.bench_error_fmt, e.message ?: "")
             } finally {
                 isBenchmarkingState.value = false
             }

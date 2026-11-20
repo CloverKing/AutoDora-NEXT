@@ -502,10 +502,25 @@ class OverlayTuningDrawerController(
         countRow.addView(makeToggle(s(R.string.shield_full_clear), "first_wave_full_clear" in activeIds, p) {
             onToggleWaveChip(WaveShieldChip("first_wave_full_clear", s(R.string.shield_full_clear), ShieldCategory.COUNT_AND_ELEMENT))
         })
-        countRow.addView(makeToggle(s(R.string.shield_race_orb), "race_orb_shield" in activeIds, p, marginEndDp = 0) {
-            onToggleWaveChip(WaveShieldChip("race_orb_shield", s(R.string.shield_race_orb), ShieldCategory.COUNT_AND_ELEMENT))
+        countRow.addView(makeToggle(s(R.string.shield_any_enchanted_orb), "any_enchanted_orb_shield" in activeIds, p, marginEndDp = 0) {
+            onToggleWaveChip(WaveShieldChip("any_enchanted_orb_shield", s(R.string.shield_any_enchanted_orb), ShieldCategory.COUNT_AND_ELEMENT))
         })
         contentHost.addView(countRow)
+
+        val specialOrbRow = hRow(bottomMarginDp = 5)
+        specialOrbRow.addView(makeToggle(s(R.string.shield_race_orb), "race_orb_shield" in activeIds, p) {
+            onToggleWaveChip(WaveShieldChip("race_orb_shield", s(R.string.shield_race_orb), ShieldCategory.COUNT_AND_ELEMENT))
+        })
+        specialOrbRow.addView(makeToggle(s(R.string.shield_char_orb_first), "char_orb_first_wave" in activeIds, p) {
+            onToggleWaveChip(WaveShieldChip("char_orb_first_wave", s(R.string.shield_char_orb_first), ShieldCategory.COUNT_AND_ELEMENT))
+        })
+        specialOrbRow.addView(makeToggle(s(R.string.shield_forbid_weakened), "forbid_weakened_orb" in activeIds, p) {
+            onToggleWaveChip(WaveShieldChip("forbid_weakened_orb", s(R.string.shield_forbid_weakened), ShieldCategory.COUNT_AND_ELEMENT))
+        })
+        specialOrbRow.addView(makeToggle(s(R.string.shield_luminous_orb), "luminous_orb_shield" in activeIds, p, marginEndDp = 0) {
+            onToggleWaveChip(WaveShieldChip("luminous_orb_shield", s(R.string.shield_luminous_orb), ShieldCategory.COUNT_AND_ELEMENT))
+        })
+        contentHost.addView(specialOrbRow)
 
         // 4. Puzzle Shield (Mode + Independent Enchanted + Shape!) & Standalone Shapes
         addSectionLabel(s(R.string.section_puzzle_shape_shield), p)

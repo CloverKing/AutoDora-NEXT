@@ -1714,7 +1714,7 @@ class OverlayControllerService : Service() {
         val p = palette
         for (chip in activeWaveChips) {
             val pill = TextView(this).apply {
-                text = "${chip.label} ×"
+                text = "${LocaleHelper.formatWaveChipLabel(lctx, chip)} ×"
                 textSize = 9f
                 typeface = Typeface.DEFAULT_BOLD
                 setSingleLine(true)

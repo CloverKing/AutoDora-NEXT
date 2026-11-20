@@ -586,7 +586,36 @@ EvalResult evaluateCandidate(
         soft += static_cast<double>(sim.luminousCleared) * 28.0;
     }
     if (sim.weakenedEliminated > 0) {
-        soft -= static_cast<double>(sim.weakenedEliminated) * 8.0;
+        if (rules.forbidWeakenedOrbs) {
+            hazardFail = true;
+            markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.weakenedEliminated) * 1.5);
+            shaping -= static_cast<double>(sim.weakenedEliminated) * 420.0;
+        } else {
+            soft -= static_cast<double>(sim.weakenedEliminated) * 8.0;
+        }
+    }
+    if (rules.requireLuminousOrbClear) {
+        bool boardHasLuminous = false;
+        for (uint8_t i = 0; i < totalCells; ++i) {
+            if ((boardAfterMoves.cells[i].hazards & HazardBits::Luminous) != 0) {
+                boardHasLuminous = true;
+                break;
+            }
+        }
+        if (boardHasLuminous) {
+            if (sim.luminousCleared > 0) {
+                markSat(ShieldStatusBits::HazardsClear);
+                shaping += 900.0;
+            } else {
+                hazardFail = true;
+                markFail(ShieldStatusBits::HazardsClear, 1.0);
+                for (uint8_t i = 0; i < totalCells; ++i) {
+                    if ((boardAfterMoves.cells[i].hazards & HazardBits::Luminous) != 0) {
+                        shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 120.0);
+                    }
+                }
+            }
+        }
     }
     if (rules.prioritizePetrifiedClear && sim.petrifiedAdjacentHits > 0) {
         soft += static_cast<double>(sim.petrifiedAdjacentHits) * 40.0;
@@ -817,6 +846,35 @@ EvalResult evaluateCandidate(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if (rules.requireAnyEnchantedOrb) {
+        if (sim.firstWaveEnchantedElementsMask != 0) {
+            markSat(ShieldStatusBits::EnchantedShield);
+            shaping += 1100.0;
+        } else {
+            unmetFocusShield = true;
+            markFail(ShieldStatusBits::EnchantedShield, 1.0);
+            for (uint8_t i = 0; i < totalCells; ++i) {
+                const Cell& c = boardAfterMoves.cells[i];
+                if (c.variant == Variant::Enchanted && c.isMatchable()) {
+                    shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 140.0);
+                }
+            }
+        }
+    }
+
+    if (rules.requireCharOrbFirstWave) {
+        if (path.charOrbEndIdx < totalCells && (sim.firstWaveClearedMask & bitOf(path.charOrbEndIdx)) != 0) {
+            markSat(ShieldStatusBits::CharOrbTerrain);
+            shaping += 1100.0;
+        } else {
+            unmetFocusShield = true;
+            markFail(ShieldStatusBits::CharOrbTerrain, 1.0);
+            if (path.charOrbEndIdx < totalCells) {
+                shaping += computeAnchorOrbShaping(boardAfterMoves, path.charOrbEndIdx, path.endIdx, 130.0);
             }
         }
     }

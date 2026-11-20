@@ -121,4 +121,25 @@ class RuleComposerTest {
         assertEquals(Element.WATER.code, composed.equalPairElemA)
         assertEquals(Element.FIRE.code, composed.equalPairElemB)
     }
+
+    @Test
+    fun `compose supports 7-orb and 9-orb global goals and special orb-type shields`() {
+        val base7 = TeamBasePreset("g7", "7-Orb", baseConfig = RuleConfig(goalMode = StrategyGoalMode.SEVEN_ORBS))
+        val composed7 = RuleComposer.compose(base7, emptyList())
+        assertEquals(TargetShape.COUNT_7, composed7.elementRules[0].targetShape)
+
+        val base9 = TeamBasePreset("g9", "9-Orb", baseConfig = RuleConfig(goalMode = StrategyGoalMode.NINE_ORBS))
+        val chips = listOf(
+            WaveShieldChip("any_enchanted_orb_shield", "强化符石首消", ShieldCategory.COUNT_AND_ELEMENT),
+            WaveShieldChip("char_orb_first_wave", "角色符石首消", ShieldCategory.COUNT_AND_ELEMENT),
+            WaveShieldChip("forbid_weakened_orb", "避消弱化符石", ShieldCategory.COUNT_AND_ELEMENT),
+            WaveShieldChip("luminous_orb_shield", "光晕符石首消", ShieldCategory.COUNT_AND_ELEMENT)
+        )
+        val composed9 = RuleComposer.compose(base9, chips)
+        assertEquals(TargetShape.COUNT_9, composed9.elementRules[1].targetShape)
+        assertTrue(composed9.requireAnyEnchantedOrb)
+        assertTrue(composed9.requireCharOrbFirstWave)
+        assertTrue(composed9.forbidWeakenedOrbs)
+        assertTrue(composed9.requireLuminousOrbClear)
+    }
 }

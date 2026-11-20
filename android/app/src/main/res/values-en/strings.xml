@@ -36,11 +36,11 @@
     <string name="guide_line_1">• \"Solve\" scans &amp; previews paths; \"◀ / ▶\" switches candidates; \"Go\" executes (or Hold-Replan when toggled ON).</string>
     <string name="guide_line_2">• \"Path\" toggles swipe line only; \"Grid\" toggles alignment frame; \"Stop\" aborts immediately.</string>
     <string name="guide_line_3">• Tap \"⋯\" for quick toggles, 4-tab tuning drawer, board painter &amp; skill scan.</string>
-    <string name="hyperos_title">HyperOS &amp; Restricted Settings Guide</string>
+    <string name="hyperos_title">Restricted Accessibility Guide</string>
     <string name="hyperos_app_details">App Info</string>
     <string name="action_expand">Expand</string>
     <string name="action_collapse">Collapse</string>
-    <string name="hyperos_guide_body">1. Tap \"App Info\" → top-right \"⋮\" → \"Allow restricted settings\";\n2. Go to Accessibility → Downloaded Apps → enable this app;\n3. Set battery saver to \"No restrictions\" and lock the app in Recents.</string>
+    <string name="hyperos_guide_body">On Android 13+, sideloaded apps may have Accessibility locked by default:\n1. Tap \"App Info\" → top-right \"⋮\" or bottom menu → \"Allow restricted settings\";\n2. Go to Accessibility → Downloaded Apps → enable this app;\n3. Set battery policy to \"Unrestricted\" and lock the app in Recents.</string>
 
     <!-- Built-in Strategy Localized Names & Descriptions -->
     <string name="preset_general_name">General Max Combo</string>
@@ -75,7 +75,7 @@
     <string name="unit_orbs">orbs</string>
     <string name="unit_times">hits</string>
     <string name="unit_ms">ms</string>
-    <string name="section_complexity">Search Width Tier (%1$d)</string>
+    <string name="section_complexity">Solver Compute Tier (%1$d)</string>
     <string name="tier_tiny">XS</string>
     <string name="tier_low">Low</string>
     <string name="tier_mid">Mid</string>
@@ -90,7 +90,9 @@
     <string name="goal_5_single">1-Color 5</string>
     <string name="goal_5_multi">Multi 5</string>
     <string name="goal_6_orbs">6 Orbs</string>
+    <string name="goal_7_orbs">7 Orbs</string>
     <string name="goal_8_orbs">8 Orbs</string>
+    <string name="goal_9_orbs">9 Orbs</string>
     <string name="section_match_policy">Multi-Orb &amp; Search Policy</string>
     <string name="policy_max_combo">Max Combo</string>
     <string name="policy_max_orbs">Max Orbs</string>
@@ -225,11 +227,15 @@
     <string name="elem_limit_anti">Anti-1st Stack</string>
     <string name="elem_limit_forbid">Forbid All</string>
     <string name="elem_limit_clear_all">Clear All 1st</string>
-    <string name="elem_count_label">Orb Count &amp; Race Runestones</string>
+    <string name="elem_count_label">Orb Count &amp; Special Runestones</string>
     <string name="shield_digital_orbs_fmt">Exact %1$d Orbs</string>
     <string name="shield_digital_orbs_step">Exact 1st-Wave Orb Count</string>
     <string name="shield_full_clear">Full-Board 1st Clear</string>
-    <string name="shield_race_orb">Race Runestone 1st</string>
+    <string name="shield_any_enchanted_orb">Enchanted Rune 1st</string>
+    <string name="shield_race_orb">Race Rune 1st</string>
+    <string name="shield_char_orb_first">Character Rune 1st</string>
+    <string name="shield_forbid_weakened">Avoid Weakened</string>
+    <string name="shield_luminous_orb">Luminous Rune 1st</string>
 
     <!-- Shields Tab: 3. Puzzle & Shape Shield -->
     <string name="section_puzzle_shape_shield">Puzzle &amp; Shape Shields</string>
@@ -295,11 +301,13 @@
     <string name="field_max_steps">Global Max Steps (8 – 300)</string>
     <string name="error_max_steps">Enter an integer between 8 and 300</string>
     <string name="support_max_steps">Active: %1$d steps (> 60 auto-extends search budget; tap Stop anytime)</string>
-    <string name="slider_beam">Search Width</string>
+    <string name="slider_beam">Solver Compute</string>
     <string name="slider_hold_delay">Hold-Replan Reveal Delay</string>
     <string name="slider_countdown">Pre-Swipe Countdown</string>
     <string name="unit_seconds">%1$d s</string>
     <string name="countdown_none">None (Immediate)</string>
+    <string name="rule_tester_sample_text">Fixed 4 Combo Shield\n5-Element Enchanted Shield\nStrict Puzzle Shield</string>
+    <string name="bench_error_fmt">Benchmark error: %1$s</string>
     <string name="section_modes">Interaction &amp; Assist Modes</string>
     <string name="mode_test_title">Preview Before Swipe</string>
     <string name="mode_test_sub">Tap Solve to preview path first, then tap Go to swipe</string>
@@ -328,10 +336,12 @@
     <!-- Detailed Contextual Help Dialogs (?) -->
     <string name="help_strategy_library_title">Strategy Profiles Guide</string>
     <string name="help_strategy_library_body">[Purpose]\nStrategy profiles define your dungeon-wide matching goals, leader skill traits, and solver budget. Temporary enemy shields configured in the Shields tab stack on top of your active strategy.\n\n[Scenarios]\n• General teams: use General Max Combo.\n• 2-Match or shape-based leaders: duplicate a profile and customize Min-Match and Shape.\n• Column Amelioration, Character Orb starter, or 6×8 expanded boards: activate the matching preset or create your own.</string>
-    <string name="help_basic_steps_title">Step Budget &amp; Search Width</string>
-    <string name="help_basic_steps_body">[Step Budget]\nMaximum moves per path (8–300). 30–60 steps fit standard 6×5 boards; 80–150 steps are ideal for 6×8 expanded boards or strict puzzles and multi-cross shields.\n\n[Search Width]\nNumber of candidate board states kept per depth (40 to 600). Higher widths solve harder composite shields with slightly longer solve time.</string>
+    <string name="help_basic_steps_title">Step Budget &amp; Solver Compute</string>
+    <string name="help_basic_steps_body">[Step Budget]\nMaximum moves per path (8–300). 30–60 steps fit standard 6×5 boards; 80–150 steps are ideal for 6×8 expanded boards or strict puzzles and multi-cross shields.\n\n[Solver Compute]\nControls the full path-search and solution-evaluation beam width (40 to 600): at every step, candidate routes are simulated, checked against all shields, scored, and pruned to the top N branches. Higher compute solves harder composite shields with slightly longer solve time.</string>
+    <string name="help_engine_settings_title">Solver Engine &amp; Compute Budget</string>
+    <string name="help_engine_settings_body">• Global Max Steps: maximum moves allowed per swipe path (8–300).\n• Solver Compute: controls the native solver\'s full path-search and solution-calculation width per step (simulating matches, checking shields, and scoring candidates). Higher values solve harder composite shields at slightly more CPU time.\n• Hold-Replan Reveal Delay: wait time (ms) while holding the start orb for hidden orbs to flip open.\n• Pre-Swipe Countdown: optional countdown seconds before swiping begins after tapping Go.</string>
     <string name="help_goal_policy_title">Matching Goals &amp; Search Policy</string>
-    <string name="help_goal_policy_body">[Global Goal]\nGuides overall scoring toward Max Combo, 3/4/5 distinct colors, or 5/6/8-orb groups.\n\n[Multi-Orb Handling]\n• Max Combo: splits surplus same-color orbs into more combos.\n• Max Orbs: clears as many orbs of that color as possible.\n• Single Group: matches just one group to conserve orbs or steps.\n\n[Insufficient Orbs &amp; Search Style]\n• Match Anyway / Reserve Orbs: decides whether to make a normal 3-match or save orbs when too few exist for a target shape.\n• Best Result: finds the highest-scoring solution within budget.\n• First Match: returns as soon as all hard shields are satisfied.</string>
+    <string name="help_goal_policy_body">[Global Goal]\nGuides overall scoring toward Max Combo, 3/4/5 distinct colors, or 5/6/7/8/9-orb groups.\n\n[Multi-Orb Handling]\n• Max Combo: splits surplus same-color orbs into more combos.\n• Max Orbs: clears as many orbs of that color as possible.\n• Single Group: matches just one group to conserve orbs or steps.\n\n[Insufficient Orbs &amp; Search Style]\n• Match Anyway / Reserve Orbs: decides whether to make a normal 3-match or save orbs when too few exist for a target shape.\n• Best Result: finds the highest-scoring solution within budget.\n• First Match: returns as soon as all hard shields are satisfied.</string>
     <string name="help_elem_matrix_title">Per-Element Rules Matrix</string>
     <string name="help_elem_matrix_body">Configure 4 rules independently for Water, Fire, Wood, Light, Dark, and Heart (tap any cell to cycle):\n\n1. Shape: Auto, 2+, 4+..9+, Row, or Clear All.\n2. Priority: Normal, High (prioritize matching), or Keep (save orbs).\n3. Timing: Any, 1st (must match Wave 1), Stack (forbid Wave 1, allow cascade), or Ban (forbid all).\n4. Min: leader minimum match count (2, 3, or 4).\n\n[Leader Attribute Link]\nEnable Heart+All, Light+Dark, or W+F+G if your leader links attributes so the solver\'s 1st-wave combo count matches in-game rules exactly.</string>
     <string name="help_columns_title">Column Amelioration Guide</string>
@@ -347,7 +357,7 @@
     <string name="help_combo_shield_title">Combo Shield Rules &amp; Modifiers</string>
     <string name="help_combo_shield_body">[Primary Combo Rule (Mutually Exclusive)]\n• Min Total (≥ N): counts Wave 1 plus cascades (standard combo shields).\n• Min 1st-Wave (≥ N): counts Wave 1 combos only (cascades ignored).\n• Exact Total (= N): final total combos must equal N; solver avoids skyfall risk.\n• Exact 1st-Wave (= N): Wave 1 combos must equal exactly N (fixed combo shields).\n• Zero Combo: makes 0 matches to pass a turn safely (clears conflicting structural modifiers).\n• Odd / Even Combo: requires odd or even combos, selectable between 1st Wave Only and Total Combos.\n\n[Structural Modifiers (Composable with non-zero shields)]\n• Equal 1st Combos / Attr: every matched attribute in Wave 1 must have the same combo count.\n• 2nd Wave Cascade: requires at least N cascade combos in Wave 2.\n• Same-Attr Groups: requires at least N Wave-1 combos of one attribute (optional specific color).\n• Equal Pair: requires two chosen attributes to match equally in Wave 1 (at least 1 each).</string>
     <string name="help_elem_count_title">Attribute &amp; Orb-Count Rules</string>
-    <string name="help_elem_count_body">[Min Distinct vs Required Attributes]\n• Min Distinct (≥ 2–6): matches at least N different attributes of any color. Changing this count clears specific required colors below to prevent mismatches.\n• Required Attributes: matches every selected color, with an independent Enchanted toggle.\n\n[Attribute Restrictions (Mutually Exclusive per Color)]\n• Anti-1st Stack: forbids Wave-1 match while allowing Wave-2 cascade.\n• Forbid All: forbids matching in any wave (automatically clears required status for that color).\n• Clear All 1st: clears every orb of the selected color in Wave 1.\n\n[Orb Count &amp; Race]\n• Exact Orbs: matches an exact Wave-1 orb total (mutually exclusive with Full-Board Clear).\n• Full-Board 1st Clear: eliminates every matchable orb on Wave 1.\n• Race Runestone 1st: includes at least one Race runestone in Wave 1.</string>
+    <string name="help_elem_count_body">[Min Distinct vs Required Attributes]\n• Min Distinct (≥ 2–6): matches at least N different attributes of any color. Changing this count clears specific required colors below to prevent mismatches.\n• Required Attributes: matches every selected color, with an independent Enchanted toggle.\n\n[Attribute Restrictions (Mutually Exclusive per Color)]\n• Anti-1st Stack: forbids Wave-1 match while allowing Wave-2 cascade.\n• Forbid All: forbids matching in any wave (automatically clears required status for that color).\n• Clear All 1st: clears every orb of the selected color in Wave 1.\n\n[Orb Count &amp; Special Runestones]\n• Exact Orbs: matches an exact Wave-1 orb total (mutually exclusive with Full-Board Clear).\n• Full-Board 1st Clear: eliminates every matchable orb on Wave 1.\n• Enchanted Rune 1st: eliminates any Enchanted runestone in Wave 1 (classic Enchanted Shield).\n• Race Rune 1st: eliminates at least one Race runestone in Wave 1.\n• Character Rune 1st: includes the held/pulled Character Runestone in a Wave-1 match.\n• Avoid Weakened: forbids eliminating Weakened runestones to preserve attack.\n• Luminous Rune 1st: clears Luminous runestones in Wave 1.\n(Note: Electrified, Frozen, Blood-Drain, Bomb, Locked-Hurt, and Foam hazards are cleared automatically once detected on the board.)</string>
     <string name="help_puzzle_shape_title">Puzzle &amp; Shape Shield Rules</string>
     <string name="help_puzzle_shape_body">[Puzzle Shield]\n• Normal Puzzle: fills the golden puzzle frame with same-color matches; external same-color orbs may touch.\n• Strict Puzzle: fills the frame with NO external same-color orbs touching the boundary.\n• Enchanted &amp; Attribute: independently require Enchanted runestones or a specific color inside the puzzle.\n• Shape Source: defaults to Auto-Detect Frame, or pick a preset shape template when effects obscure the frame.\n\n[Standalone Shape Shields]\n• Cross Shield: 1/2/3 crosses; multi-cross supports Distinct Colors and lets you pick 1–3 specific cross colors (e.g. Water + Fire dual cross). Reducing cross count resets excess colors automatically.\n• L-Shape / T-Shape / 2×2 Square / All Cols ≥ 4: builds the target geometric match in Wave 1.</string>
     <string name="help_path_hazard_title">Path, Terrain &amp; Step Shields</string>

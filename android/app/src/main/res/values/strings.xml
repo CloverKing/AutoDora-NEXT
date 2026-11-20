@@ -36,27 +36,27 @@
     <string name="guide_line_1">• 「算」识盘解盾并画线预览；「◀ / ▶」切换候选解；「行」执行转珠（开「按住转」时执行按住重算）。</string>
     <string name="guide_line_2">• 「线」控制转珠路径显示；「校」控制盘面校准网格与四角拖拽；「停」随时一键急停。</string>
     <string name="guide_line_3">• 点「⋯」可展开快捷开关、四分页调参抽屉、盘面编绘与敌技识别。</string>
-    <string name="hyperos_title">澎湃系统与受限设置指引</string>
+    <string name="hyperos_title">无障碍受限设置指引</string>
     <string name="hyperos_app_details">应用详情</string>
     <string name="action_expand">展开</string>
     <string name="action_collapse">收起</string>
-    <string name="hyperos_guide_body">1. 点击「应用详情」→ 右上角「⋮」→「允许受限设置」；\n2. 返回「无障碍」→「已下载的应用」→ 开启本应用；\n3. 建议在系统省电策略中设为「无限制」并在多任务卡片锁定。</string>
+    <string name="hyperos_guide_body">Android 13 及以上系统安装本地应用时，无障碍开关可能被默认锁定：\n1. 点击「应用详情」→ 右上角「⋮」或底部菜单 →「允许受限设置」；\n2. 返回「无障碍」→「已下载的应用」→ 开启本应用；\n3. 建议将电池策略设为「无限制」并在后台任务卡片锁定，防止系统回收悬浮栏。</string>
 
     <!-- Built-in Strategy Localized Names & Descriptions -->
     <string name="preset_general_name">通用高连击策略</string>
     <string name="preset_general_desc">标准 3 消 · 八向斜转 · 强化珠优先 · 兼顾高连击与稳健手数</string>
     <string name="preset_two_match_name">火木心二消策略</string>
     <string name="preset_two_match_desc">火 / 木 / 心 2 颗即消 · 拆珠冲高连击 · 适配二消队长</string>
-    <string name="preset_col_name">直排昇华爆发策略</string>
-    <string name="preset_col_desc">1～6 直行 ≥ 4 消昇华加权 · 优先触发直排增益</string>
+    <string name="preset_col_name">直排升华爆发策略</string>
+    <string name="preset_col_desc">1～6 直行 ≥ 4 消升华加权 · 优先触发直排增益</string>
     <string name="preset_char_name">角色符石起手策略</string>
     <string name="preset_char_desc">1 号位角色珠下拉起手 · 适配角色通行与停放地形</string>
     <string name="preset_weijian_name">违建长步爆发策略</string>
-    <string name="preset_weijian_desc">6×8 扩版特化 · 允许更长步数（100 步）与高算力广度搜索</string>
+    <string name="preset_weijian_desc">6×8 扩版特化 · 允许更长步数（100 步）与高算力解盘</string>
 
     <!-- Strategies Tab & Strategy Editor -->
     <string name="strategies_title">作战策略库</string>
-    <string name="strategies_subtitle">配置消珠目标、单属性规则矩阵、直排昇华与队长特性</string>
+    <string name="strategies_subtitle">配置消珠目标、单属性规则矩阵、直排升华与队长特性</string>
     <string name="btn_new_strategy">新建策略</string>
     <string name="badge_active">生效中</string>
     <string name="btn_enable">启用</string>
@@ -75,7 +75,7 @@
     <string name="unit_orbs">颗</string>
     <string name="unit_times">次</string>
     <string name="unit_ms">毫秒</string>
-    <string name="section_complexity">搜索算力档位（%1$d）</string>
+    <string name="section_complexity">解盘算力档位（%1$d）</string>
     <string name="tier_tiny">微</string>
     <string name="tier_low">低</string>
     <string name="tier_mid">中</string>
@@ -90,7 +90,9 @@
     <string name="goal_5_single">单色五珠</string>
     <string name="goal_5_multi">多色五珠</string>
     <string name="goal_6_orbs">消六珠</string>
+    <string name="goal_7_orbs">消七珠</string>
     <string name="goal_8_orbs">消八珠</string>
+    <string name="goal_9_orbs">消九珠</string>
     <string name="section_match_policy">多珠消除与求解倾向</string>
     <string name="policy_max_combo">最高连击</string>
     <string name="policy_max_orbs">消最多珠</string>
@@ -138,7 +140,7 @@
     <string name="link_light_dark">光暗互连</string>
     <string name="link_wfg">水火木互连</string>
 
-    <string name="section_columns">直排昇华（第 1～6 列）</string>
+    <string name="section_columns">直排升华（第 1～6 列）</string>
     <string name="col_off_fmt">列%1$d · 关</string>
     <string name="col_on_fmt">列%1$d · %2$d珠</string>
     <string name="section_start_char">起手位置与角色符石</string>
@@ -161,7 +163,7 @@
     <string name="tag_first_only">只计首批</string>
     <string name="tag_two_match">含二消</string>
     <string name="tag_custom_shape">指定形态</string>
-    <string name="tag_col_amel">直排昇华</string>
+    <string name="tag_col_amel">直排升华</string>
     <string name="tag_char_orb_fmt">%1$d号角色珠</string>
     <string name="tag_start_bl">左下起手</string>
     <string name="tag_start_br">右下起手</string>
@@ -225,11 +227,15 @@
     <string name="elem_limit_anti">反首消叠珠</string>
     <string name="elem_limit_forbid">全禁消</string>
     <string name="elem_limit_clear_all">首消全清</string>
-    <string name="elem_count_label">首消颗数与种族符石</string>
+    <string name="elem_count_label">首消颗数与特殊符石盾</string>
     <string name="shield_digital_orbs_fmt">数字盾 %1$d 颗</string>
     <string name="shield_digital_orbs_step">首消精确总颗数</string>
     <string name="shield_full_clear">首消全版</string>
+    <string name="shield_any_enchanted_orb">强化符石首消</string>
     <string name="shield_race_orb">种族符石首消</string>
+    <string name="shield_char_orb_first">角色符石首消</string>
+    <string name="shield_forbid_weakened">避消弱化符石</string>
+    <string name="shield_luminous_orb">光晕符石首消</string>
 
     <!-- Shields Tab: 3. Puzzle & Shape Shield -->
     <string name="section_puzzle_shape_shield">拼图盾与形状盾</string>
@@ -295,11 +301,13 @@
     <string name="field_max_steps">最大步数上限（8 ～ 300）</string>
     <string name="error_max_steps">请输入 8 ～ 300 之间的整数</string>
     <string name="support_max_steps">当前生效：%1$d 步（超过 60 步自动放宽算路预算，随时可点「停」中止）</string>
-    <string name="slider_beam">搜索算力</string>
+    <string name="slider_beam">解盘算力</string>
     <string name="slider_hold_delay">按住重算显形延时</string>
     <string name="slider_countdown">执行前倒数</string>
     <string name="unit_seconds">%1$d 秒</string>
     <string name="countdown_none">无倒数（立即执行）</string>
+    <string name="rule_tester_sample_text">【固定 4 连击盾】\n首批消除 4 连击\n五属强化盾\n拼图盾-限</string>
+    <string name="bench_error_fmt">性能测试异常：%1$s</string>
     <string name="section_modes">交互与辅助模式</string>
     <string name="mode_test_title">试跑确认模式</string>
     <string name="mode_test_sub">点击「算」后先画线预览，确认后再点「行」执行</string>
@@ -327,15 +335,17 @@
 
     <!-- Detailed Contextual Help Dialogs (?) -->
     <string name="help_strategy_library_title">作战策略库说明</string>
-    <string name="help_strategy_library_body">【功能作用】\n作战策略用于定义整场副本中通用的消珠习惯、队长技特性与算力预算，与“解盾”中针对单个敌人的临时规则相互叠加生效。\n\n【适用场景】\n• 常规队：选择「通用高连击策略」。\n• 二消队 / 特定珠数队长：复制并配置「最低消」与「消珠形态」。\n• 直排昇华 / 角色符石起手 / 违建扩版：直接启用对应预设或自定义新策略。</string>
-    <string name="help_basic_steps_title">策略步数与搜索算力说明</string>
-    <string name="help_basic_steps_body">【步数上限】\n限制单次转珠路径的最大步数（8～300 步）。常规 6×5 盘面建议 30～60 步；6×8 违建或高难拼图/多十字建议 80～150 步。\n\n【搜索算力】\n控制每层搜索保留的候选盘面宽度（微 40 ～ 极 600）。档位越高越容易解出复杂复合盾，耗时也会略微增加。</string>
+    <string name="help_strategy_library_body">【功能作用】\n作战策略用于定义整场副本中通用的消珠习惯、队长技特性与解盘算力预算，与“解盾”中针对单个敌人的临时规则相互叠加生效。\n\n【适用场景】\n• 常规队：选择「通用高连击策略」。\n• 二消队 / 特定珠数队长：复制并配置「最低消」与「消珠形态」。\n• 直排升华 / 角色符石起手 / 违建扩版：直接启用对应预设或自定义新策略。</string>
+    <string name="help_basic_steps_title">策略步数与解盘算力说明</string>
+    <string name="help_basic_steps_body">【步数上限】\n限制单次转珠路径的最大步数（8～300 步）。常规 6×5 盘面建议 30～60 步；6×8 违建或高难拼图/多十字建议 80～150 步。\n\n【解盘算力】\n控制整套路径搜索与解法评估的计算宽度（微 40 ～ 极 600）：每推进 1 步都会对所有候选路线进行模拟消除、破盾判定与综合评分，并保留前 N 条最优分支继续演化。数值越高，破复杂复合盾成功率越高，单次解盘耗时也会略增。</string>
+    <string name="help_engine_settings_title">解盘引擎与算力说明</string>
+    <string name="help_engine_settings_body">• 最大步数上限：全局转珠路径允许的最大移动步数（8～300 步）。\n• 解盘算力：控制本地求解引擎每一步同时展开、模拟消除并评分的候选路线宽度（包含路径搜索与解法计算的全部算力）。数值越高越能解出拼图、多十字等复杂复合盾，耗时相应增加。\n• 按住重算显形延时：开启「按住转」后按住起手珠等待盘面翻开显形的毫秒数。\n• 执行前倒数：点击「行」后延迟指定秒数再开始划珠，方便手动确认或提前切回游戏。</string>
     <string name="help_goal_policy_title">全局目标与多珠消除策略说明</string>
-    <string name="help_goal_policy_body">【全局消珠目标】\n设定整体求解偏好，例如追求最高连击、三/四/五色均衡，或优先凑单色/多色五珠、六珠、八珠触发队长倍率。\n\n【多珠消除方式】\n• 最高连击：同色珠多于 3 颗时优先切开冲高连击。\n• 消最多珠：优先把该色珠尽量消完。\n• 消除一组：仅保留一组消除，节省步数或留珠。\n\n【不足处理与求解倾向】\n• 不足照常消除 / 不足保留存珠：当版面某色珠数达不到目标形态时决定照常 3 消还是留珠给下回合。\n• 最佳解：在预算内寻找综合评分最高解。\n• 最快达标：一旦找到满足全部硬盾的路线即提前返回。</string>
+    <string name="help_goal_policy_body">【全局消珠目标】\n设定整体求解偏好，例如追求最高连击、三/四/五色均衡，或优先凑单色/多色五珠、六珠、七珠、八珠、九珠触发队长倍率与强化珠。\n\n【多珠消除方式】\n• 最高连击：同色珠多于 3 颗时优先切开冲高连击。\n• 消最多珠：优先把该色珠尽量消完。\n• 消除一组：仅保留一组消除，节省步数或留珠。\n\n【不足处理与求解倾向】\n• 不足照常消除 / 不足保留存珠：当版面某色珠数达不到目标形态时决定照常 3 消还是留珠给下回合。\n• 最佳解：在预算内寻找综合评分最高解。\n• 最快达标：一旦找到满足全部硬盾的路线即提前返回。</string>
     <string name="help_elem_matrix_title">单属性规则矩阵说明</string>
     <string name="help_elem_matrix_body">对水、火、木、光、暗、心 6 种属性分别设定 4 项规则（点击单元格循环切换）：\n\n1. 消珠形态：默认（随全局）、2珠、4～9珠、横排、全消。\n2. 优先权：普通、优先（重点消除）、保留（尽量留珠不消）。\n3. 消除时机：任意、首消（必须首批消除）、叠珠（避开首消改为天降次批）、禁消（严禁消除）。\n4. 最低消：适配队长技的 2 消、标准 3 消或 4 消。\n\n【队长技兼属相连】\n若队长技带「心兼全属」「光暗互连」等效果，请务必勾选，否则引擎算出的首批连击数会与游戏实战不一致。</string>
-    <string name="help_columns_title">直排昇华说明</string>
-    <string name="help_columns_body">【功能作用】\n为第 1～6 直行分别设定直排消珠颗数（关 / 3珠 / 4珠 / 5珠），引擎会优先在对应列凑出竖排消除。\n\n【适用场景】\n触发角色直排昇华剑、直排心回血，或应对指定直行消除敌技。</string>
+    <string name="help_columns_title">直排升华说明</string>
+    <string name="help_columns_body">【功能作用】\n为第 1～6 直行分别设定直排消珠颗数（关 / 3珠 / 4珠 / 5珠），引擎会优先在对应列凑出竖排消除。\n\n【适用场景】\n触发角色直排升华剑、直排心回血，或应对指定直行消除敌技。</string>
     <string name="help_start_char_title">起手位置与角色符石说明</string>
     <string name="help_start_char_body">【起手位置】\n默认任意起手；若关卡限定左下/右下固定起点，可锁定起手格。\n\n【角色符石下拉起手】\n开启并选择 1～6 号位后，转珠将从对应队员头像下拉角色珠进场（首步拉出不计入常规步数），适用于角色珠通行/停放地形及角色珠增伤队伍。</string>
     <string name="help_strategy_switches_title">进阶策略开关说明</string>
@@ -347,7 +357,7 @@
     <string name="help_combo_shield_title">连击盾规则与组合说明</string>
     <string name="help_combo_shield_body">【基础连击盾（按游戏真实判定互斥选择）】\n• 总连击下限（≥ N）：对应常规连击盾/追击盾，首批与天降次批均计入。\n• 首消连击下限（≥ N）：仅计算首批消除的连击数，天降不计入。\n• 指定总连击（= N）：最终总连击数须恰好等于目标值，引擎会自动避开高天降风险结构。\n• 指定首消连击（= N）：对应「固定连击盾」，首批连击数须恰好等于目标值，天降不计入。\n• 零连击空转：全程不产生任何消除，用于空转拖回合或应对零连击反击盾（启用时自动清空冲突的结构规则）。\n• 奇数 / 偶数连击：要求连击数为奇数或偶数，可独立切换「仅计首批」或「计总连击」。\n\n【结构附加条件（可与非零连击盾自由叠加）】\n• 首消同属同连击：首批消除的所有属性各自连击数必须相同。\n• 次批叠珠连击：要求首批消除后，通过叠珠落下在第二批产生至少 N 组连击。\n• 同属多组首消：要求单一属性（可指定颜色或任意色）在首批消出至少 N 组。\n• 两属同等连击：要求指定的两种属性在首批各自至少消 1 组且连击数相等（如光暗同等盾）。</string>
     <string name="help_elem_count_title">属性与数量盾规则说明</string>
-    <string name="help_elem_count_body">【属性数量盾与指定必消属性】\n• 属性数量盾（≥ 2～6 属）：要求本回合至少消除指定种数的不同属性（不限具体颜色）。切换属性数量时，下方已选的指定颜色会自动清空以防规则冲突。\n• 指定必消属性：要求必须消除选中的每一种颜色，并可独立开关「要求所选属性为强化符石」（如五属强化盾、指定水火强化盾）。\n\n【属性消除限制（同色自动互斥）】\n• 反首消叠珠：严禁首批消除所选颜色，但允许叠珠在次批消除。\n• 全禁消：首批与次批均严禁消除所选颜色（会自动取消该色的必消勾选）。\n• 首消全清：必须将盘面上所选颜色的符石在首批全部消光。\n\n【首消颗数与种族符石】\n• 数字盾：首批消除总颗数必须恰好等于设定值（与首消全版互斥）。\n• 首消全版：首批清空盘面上全部可消符石。\n• 种族符石首消：要求首批至少消除一颗种族符石。</string>
+    <string name="help_elem_count_body">【属性数量盾与指定必消属性】\n• 属性数量盾（≥ 2～6 属）：要求本回合至少消除指定种数的不同属性（不限具体颜色）。切换属性数量时，下方已选的指定颜色会自动清空以防规则冲突。\n• 指定必消属性：要求必须消除选中的每一种颜色，并可独立开关「要求所选属性为强化符石」（如五属强化盾、指定水火强化盾）。\n\n【属性消除限制（同色自动互斥）】\n• 反首消叠珠：严禁首批消除所选颜色，但允许叠珠在次批消除。\n• 全禁消：首批与次批均严禁消除所选颜色（会自动取消该色的必消勾选）。\n• 首消全清：必须将盘面上所选颜色的符石在首批全部消光。\n\n【首消颗数与特殊符石盾】\n• 数字盾：首批消除总颗数必须恰好等于设定值（与首消全版互斥）。\n• 首消全版：首批清空盘面上全部可消符石。\n• 强化符石首消：不限属性颜色，要求首批至少消除一颗强化符石（经典强化盾）。\n• 种族符石首消：要求首批至少消除一颗种族符石（神/魔/人/兽/龙/妖/机械符石盾）。\n• 角色符石首消：要求起手/拉出的角色符石纳入首批消除。\n• 避消弱化符石：严禁消除带弱化状态的符石（应对弱化围城降攻）。\n• 光晕符石首消：优先并要求首批清除盘面上的光晕/耀眼符石。\n（注：电击、冻结、化血、炸弹、受伤锁定、泡沫等负面障碍珠由引擎识别后自动必清，无需手动勾选。）</string>
     <string name="help_puzzle_shape_title">拼图盾与形状盾说明</string>
     <string name="help_puzzle_shape_body">【拼图盾（官方金框区域）】\n• 普通拼图：拼图金框内全部填满同色消除即可，允许外部有同色符石黏连。\n• 严格拼图（限）：金框内必须同色消除，且严禁金框外相邻格存在同色黏连。\n• 强化与属性：可独立勾选「包含强化符石」及指定拼图颜色。\n• 拼图形状来源：默认自动识别画面金框；若画面特效遮挡或需离线试算，可直接选用预设形状模板。\n\n【独立形状盾（非拼图区域）】\n• 十字盾：支持单/双/三十字；多十字可开启「要求不同属性」，并可直接指定 1～3 种十字属性颜色（例如水+火双十字）。减少十字数量时会自动清空超出数量的颜色选择。\n• L形盾 / T形盾 / 田字 2×2 盾 / 全直排 ≥ 4 消：在首批消除中构筑对应几何形状。</string>
     <string name="help_path_hazard_title">路径、地形与步数盾说明</string>

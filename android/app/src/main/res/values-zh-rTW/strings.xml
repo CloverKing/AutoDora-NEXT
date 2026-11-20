@@ -36,11 +36,11 @@
     <string name="guide_line_1">• 「算」識盤解盾並畫線預覽；「◀ / ▶」切換候選解；「行」執行轉珠（開「按住轉」時執行按住重算）。</string>
     <string name="guide_line_2">• 「線」控制轉珠路徑顯示；「校」控制盤面校準網格與四角拖曳；「停」隨時一鍵急停。</string>
     <string name="guide_line_3">• 點「⋯」可展開快捷開關、四分頁調參抽屜、盤面編繪與敵技辨識。</string>
-    <string name="hyperos_title">澎湃系統與受限設定指引</string>
+    <string name="hyperos_title">無障礙受限設定指引</string>
     <string name="hyperos_app_details">應用程式詳情</string>
     <string name="action_expand">展開</string>
     <string name="action_collapse">收合</string>
-    <string name="hyperos_guide_body">1. 點擊「應用程式詳情」→ 右上角「⋮」→「允許受限設定」；\n2. 返回「無障礙」→「已下載的應用程式」→ 開啟本應用；\n3. 建議在系統省電策略設為「無限制」並於多工卡片鎖定。</string>
+    <string name="hyperos_guide_body">Android 13 及以上系統安裝本機應用時，無障礙開關可能預設遭鎖定：\n1. 點擊「應用程式詳情」→ 右上角「⋮」或底部選單 →「允許受限設定」；\n2. 返回「無障礙」→「已下載的應用程式」→ 開啟本應用；\n3. 建議將電池策略設為「無限制」並於多工卡片鎖定，避免系統回收懸浮列。</string>
 
     <!-- Built-in Strategy Localized Names & Descriptions -->
     <string name="preset_general_name">通用高連擊策略</string>
@@ -75,7 +75,7 @@
     <string name="unit_orbs">粒</string>
     <string name="unit_times">次</string>
     <string name="unit_ms">毫秒</string>
-    <string name="section_complexity">搜尋算力檔位（%1$d）</string>
+    <string name="section_complexity">解盤算力檔位（%1$d）</string>
     <string name="tier_tiny">微</string>
     <string name="tier_low">低</string>
     <string name="tier_mid">中</string>
@@ -90,7 +90,9 @@
     <string name="goal_5_single">單色五珠</string>
     <string name="goal_5_multi">多色五珠</string>
     <string name="goal_6_orbs">消六珠</string>
+    <string name="goal_7_orbs">消七珠</string>
     <string name="goal_8_orbs">消八珠</string>
+    <string name="goal_9_orbs">消九珠</string>
     <string name="section_match_policy">多珠消除與求解傾向</string>
     <string name="policy_max_combo">最高連擊</string>
     <string name="policy_max_orbs">消最多珠</string>
@@ -225,11 +227,15 @@
     <string name="elem_limit_anti">反首消疊珠</string>
     <string name="elem_limit_forbid">全禁消</string>
     <string name="elem_limit_clear_all">首消全清</string>
-    <string name="elem_count_label">首消粒數與種族符石</string>
+    <string name="elem_count_label">首消粒數與特殊符石盾</string>
     <string name="shield_digital_orbs_fmt">數字盾 %1$d 粒</string>
     <string name="shield_digital_orbs_step">首消精確總粒數</string>
     <string name="shield_full_clear">首消全版</string>
+    <string name="shield_any_enchanted_orb">強化符石首消</string>
     <string name="shield_race_orb">種族符石首消</string>
+    <string name="shield_char_orb_first">角色符石首消</string>
+    <string name="shield_forbid_weakened">避消弱化符石</string>
+    <string name="shield_luminous_orb">光暈符石首消</string>
 
     <!-- Shields Tab: 3. Puzzle & Shape Shield -->
     <string name="section_puzzle_shape_shield">拼圖盾與形狀盾</string>
@@ -295,11 +301,13 @@
     <string name="field_max_steps">最大步數上限（8 ～ 300）</string>
     <string name="error_max_steps">請輸入 8 ～ 300 之間的整數</string>
     <string name="support_max_steps">目前生效：%1$d 步（超過 60 步自動放寬算路預算，隨時可點「停」中止）</string>
-    <string name="slider_beam">搜尋算力</string>
+    <string name="slider_beam">解盤算力</string>
     <string name="slider_hold_delay">按住重算顯形延時</string>
     <string name="slider_countdown">執行前倒數</string>
     <string name="unit_seconds">%1$d 秒</string>
     <string name="countdown_none">無倒數（立即執行）</string>
+    <string name="rule_tester_sample_text">【固定 4 連擊盾】\n首批消除 4 連擊\n五屬強化盾\n拼圖盾-限</string>
+    <string name="bench_error_fmt">效能測試異常：%1$s</string>
     <string name="section_modes">互動與輔助模式</string>
     <string name="mode_test_title">試跑確認模式</string>
     <string name="mode_test_sub">點擊「算」後先畫線預覽，確認後再點「行」執行</string>
@@ -328,10 +336,12 @@
     <!-- Detailed Contextual Help Dialogs (?) -->
     <string name="help_strategy_library_title">作戰策略庫說明</string>
     <string name="help_strategy_library_body">【功能作用】\n作戰策略用於定義整場副本中通用的消珠習慣、隊長技特性與算力預算，與「解盾」中針對單個敵人的臨時規則相互疊加生效。\n\n【適用場景】\n• 常規隊：選擇「通用高連擊策略」。\n• 二消隊 / 特定珠數隊長：複製並配置「最低消」與「消珠形態」。\n• 直排昇華 / 角色符石起手 / 違建擴版：直接啟用對應預設或自訂新策略。</string>
-    <string name="help_basic_steps_title">策略步數與搜尋算力說明</string>
-    <string name="help_basic_steps_body">【步數上限】\n限制單次轉珠路徑的最大步數（8～300 步）。常規 6×5 盤面建議 30～60 步；6×8 違建或高難拼圖/多十字建議 80～150 步。\n\n【搜尋算力】\n控制每層搜尋保留的候選盤面寬度（微 40 ～ 極 600）。檔位越高越容易解出複雜複合盾，耗時亦會略增。</string>
+    <string name="help_basic_steps_title">策略步數與解盤算力說明</string>
+    <string name="help_basic_steps_body">【步數上限】\n限制單次轉珠路徑的最大步數（8～300 步）。常規 6×5 盤面建議 30～60 步；6×8 違建或高難拼圖/多十字建議 80～150 步。\n\n【解盤算力】\n控制整套路徑搜尋與解法評估的計算寬度（微 40 ～ 極 600）：每推進 1 步都會對所有候選路線進行模擬消除、破盾判定與綜合評分，並保留前 N 條最佳分支繼續演化。數值越高，破複雜複合盾成功率越高，單次解盤耗時亦會略增。</string>
+    <string name="help_engine_settings_title">解盤引擎與算力說明</string>
+    <string name="help_engine_settings_body">• 最大步數上限：全域轉珠路徑允許的最大移動步數（8～300 步）。\n• 解盤算力：控制本地求解引擎每一步同時展開、模擬消除並評分的候選路線寬度（包含路徑搜尋與解法計算的全部算力）。數值越高越能解出拼圖、多十字等複雜複合盾，耗時相應增加。\n• 按住重算顯形延時：開啟「按住轉」後按住起手珠等待盤面翻開顯形的毫秒數。\n• 執行前倒數：點擊「行」後延遲指定秒數再開始滑珠，方便手動確認或提前切回遊戲。</string>
     <string name="help_goal_policy_title">全域目標與多珠消除策略說明</string>
-    <string name="help_goal_policy_body">【全域消珠目標】\n設定整體求解偏好，例如追求最高連擊、三/四/五色均衡，或優先湊單色/多色五珠、六珠、八珠觸發隊長倍率。\n\n【多珠消除方式】\n• 最高連擊：同色珠多於 3 粒時優先切開衝高連擊。\n• 消最多珠：優先把該色珠盡量消完。\n• 消除一組：僅保留一組消除，節省步數或留珠。\n\n【不足處理與求解傾向】\n• 不足照常消除 / 不足保留存珠：當版面某色珠數達不到目標形態時決定照常 3 消或留珠給下回合。\n• 最佳解：在預算內尋找綜合評分最高解。\n• 最快達標：一旦找到滿足全部硬盾的路線即提前返回。</string>
+    <string name="help_goal_policy_body">【全域消珠目標】\n設定整體求解偏好，例如追求最高連擊、三/四/五色均衡，或優先湊單色/多色五珠、六珠、七珠、八珠、九珠觸發隊長倍率與強化珠。\n\n【多珠消除方式】\n• 最高連擊：同色珠多於 3 粒時優先切開衝高連擊。\n• 消最多珠：優先把該色珠盡量消完。\n• 消除一組：僅保留一組消除，節省步數或留珠。\n\n【不足處理與求解傾向】\n• 不足照常消除 / 不足保留存珠：當版面某色珠數達不到目標形態時決定照常 3 消或留珠給下回合。\n• 最佳解：在預算內尋找綜合評分最高解。\n• 最快達標：一旦找到滿足全部硬盾的路線即提前返回。</string>
     <string name="help_elem_matrix_title">單屬性規則矩陣說明</string>
     <string name="help_elem_matrix_body">對水、火、木、光、暗、心 6 種屬性分別設定 4 項規則（點擊儲存格循環切換）：\n\n1. 消珠形態：預設（隨全域）、2珠、4～9珠、橫排、全消。\n2. 優先權：普通、優先（重點消除）、保留（盡量留珠不消）。\n3. 消除時機：任意、首消（必須首批消除）、疊珠（避開首消改為天降次批）、禁消（嚴禁消除）。\n4. 最低消：適配隊長技的 2 消、標準 3 消或 4 消。\n\n【隊長技兼屬相連】\n若隊長技帶「心兼全屬」「光暗互連」等效果，請務必勾選，否則引擎算出的首批連擊數會與實戰不一致。</string>
     <string name="help_columns_title">直排昇華說明</string>
@@ -347,7 +357,7 @@
     <string name="help_combo_shield_title">連擊盾規則與組合說明</string>
     <string name="help_combo_shield_body">【基礎連擊盾（依遊戲真實判定互斥選擇）】\n• 總連擊下限（≥ N）：對應常規連擊盾/追擊盾，首批與天降次批均計入。\n• 首消連擊下限（≥ N）：僅計算首批消除的連擊數，天降不計入。\n• 指定總連擊（= N）：最終總連擊數須恰好等於目標值，引擎會自動避開高天降風險結構。\n• 指定首消連擊（= N）：對應「固定連擊盾」，首批連擊數須恰好等於目標值，天降不計入。\n• 零連擊空轉：全程不產生任何消除，用於空轉拖回合或應對零連擊反擊盾（啟用時自動清空衝突的結構規則）。\n• 奇數 / 偶數連擊：要求連擊數為奇數或偶數，可獨立切換「僅計首批」或「計總連擊」。\n\n【結構附加條件（可與非零連擊盾自由疊加）】\n• 首消同屬同連擊：首批消除的所有屬性各自連擊數必須相同。\n• 次批疊珠連擊：要求首批消除後，透過疊珠落下在第二批產生至少 N 組連擊。\n• 同屬多組首消：要求單一屬性（可指定顏色或任意色）在首批消出至少 N 組。\n• 兩屬同等連擊：要求指定的兩種屬性在首批各自至少消 1 組且連擊數相等（如光暗同等盾）。</string>
     <string name="help_elem_count_title">屬性與數量盾規則說明</string>
-    <string name="help_elem_count_body">【屬性數量盾與指定必消屬性】\n• 屬性數量盾（≥ 2～6 屬）：要求本回合至少消除指定種數的不同屬性（不限具體顏色）。切換屬性數量時，下方已選的指定顏色會自動清空以防規則衝突。\n• 指定必消屬性：要求必須消除選中的每一種顏色，並可獨立開關「要求所選屬性為強化符石」（如五屬強化盾、指定水火強化盾）。\n\n【屬性消除限制（同色自動互斥）】\n• 反首消疊珠：嚴禁首批消除所選顏色，但允許疊珠在次批消除。\n• 全禁消：首批與次批均嚴禁消除所選顏色（會自動取消該色的必消勾選）。\n• 首消全清：必須將盤面上所選顏色的符石在首批全部消光。\n\n【首消粒數與種族符石】\n• 數字盾：首批消除總粒數必須恰好等於設定值（與首消全版互斥）。\n• 首消全版：首批清空盤面上全部可消符石。\n• 種族符石首消：要求首批至少消除一粒種族符石。</string>
+    <string name="help_elem_count_body">【屬性數量盾與指定必消屬性】\n• 屬性數量盾（≥ 2～6 屬）：要求本回合至少消除指定種數的不同屬性（不限具體顏色）。切換屬性數量時，下方已選的指定顏色會自動清空以防規則衝突。\n• 指定必消屬性：要求必須消除選中的每一種顏色，並可獨立開關「要求所選屬性為強化符石」（如五屬強化盾、指定水火強化盾）。\n\n【屬性消除限制（同色自動互斥）】\n• 反首消疊珠：嚴禁首批消除所選顏色，但允許疊珠在次批消除。\n• 全禁消：首批與次批均嚴禁消除所選顏色（會自動取消該色的必消勾選）。\n• 首消全清：必須將盤面上所選顏色的符石在首批全部消光。\n\n【首消粒數與特殊符石盾】\n• 數字盾：首批消除總粒數必須恰好等於設定值（與首消全版互斥）。\n• 首消全版：首批清空盤面上全部可消符石。\n• 強化符石首消：不限屬性顏色，要求首批至少消除一粒強化符石（經典強化盾）。\n• 種族符石首消：要求首批至少消除一粒種族符石（神/魔/人/獸/龍/妖/機械符石盾）。\n• 角色符石首消：要求起手/拉出的角色符石納入首批消除。\n• 避消弱化符石：嚴禁消除帶弱化狀態的符石（應對弱化圍城降攻）。\n• 光暈符石首消：優先並要求首批清除盤面上的光暈/耀眼符石。\n（註：電擊、凍結、化血、炸彈、受傷鎖定、泡沫等負面障礙珠由引擎辨識後自動必清，無需手動勾選。）</string>
     <string name="help_puzzle_shape_title">拼圖盾與形狀盾說明</string>
     <string name="help_puzzle_shape_body">【拼圖盾（官方金框區域）】\n• 普通拼圖：拼圖金框內全部填滿同色消除即可，允許外部有同色符石黏連。\n• 嚴格拼圖（限）：金框內必須同色消除，且嚴禁金框外相鄰格存在同色黏連。\n• 強化與屬性：可獨立勾選「包含強化符石」及指定拼圖顏色。\n• 拼圖形狀來源：預設自動偵測畫面金框；若畫面特效遮擋或需離線試算，可直接選用預設形狀模板。\n\n【獨立形狀盾（非拼圖區域）】\n• 十字盾：支援單/雙/三十字；多十字可開啟「要求不同屬性」，並可直接指定 1～3 種十字屬性顏色（例如水+火雙十字）。減少十字數量時會自動清空超出數量的顏色選擇。\n• L形盾 / T形盾 / 田字 2×2 盾 / 全直排 ≥ 4 消：在首批消除中構築對應幾何形狀。</string>
     <string name="help_path_hazard_title">路徑、地形與步數盾說明</string>

@@ -275,6 +275,10 @@ Java_com_autodora_next_jni_NativeSolver_nativeSolve(
     rules.avoidCorroded                   = riAt(86, 1) != 0;
     rules.prioritizeLuminous              = riAt(87, 1) != 0;
     rules.crossShield.requiredElementsMask = static_cast<uint8_t>(riAt(88, 0));
+    rules.requireAnyEnchantedOrb          = riAt(89, 0) != 0;
+    rules.requireCharOrbFirstWave         = riAt(90, 0) != 0;
+    rules.forbidWeakenedOrbs              = riAt(91, 0) != 0;
+    rules.requireLuminousOrbClear         = riAt(92, 0) != 0;
 
     rules.stepPenaltyWeight     = rdAt(0, 0.08);
     rules.diagonalPenaltyWeight = rdAt(1, 0.05);

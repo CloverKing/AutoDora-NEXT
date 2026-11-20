@@ -174,8 +174,12 @@ struct RuleConfig {
     uint8_t requiredFirstWaveElementsMask = 0; // 位掩码 (如五属首消 = 0b011111)
     uint8_t requiredTotalElementsMask = 0;     // 全回合需消属性掩码
     uint8_t requiredEnchantedElementsMask = 0; // 五属强化盾等
+    bool requireAnyEnchantedOrb = false;       // 任意强化符石首消盾 (不限颜色)
     uint8_t requiredRaceElementsMask = 0;      // 指定属性种族符石首消盾
     bool requireAnyRaceOrb = false;            // 任意种族符石首消盾
+    bool requireCharOrbFirstWave = false;      // 角色符石首消盾 (起手/角色珠须纳入首批消除)
+    bool forbidWeakenedOrbs = false;           // 避消弱化符石 (弱化围城等严禁消除弱化珠)
+    bool requireLuminousOrbClear = false;      // 光晕/耀眼符石首消盾
     uint8_t minDistinctElements = 0;           // 3/4/5 色模式
     int8_t maximizeElementOrbIndex = -1;       // 累积消除盾: 0..5 = 最大化该属性消珠数
 

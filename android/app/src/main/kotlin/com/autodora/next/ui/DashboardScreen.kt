@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -229,7 +230,8 @@ fun DashboardScreen(
                     benchmarkReport = benchmarkReport,
                     isBenchmarking = isBenchmarking,
                     onUpdateSettings = onUpdateSettings,
-                    onRunNativeBenchmark = onRunNativeBenchmark
+                    onRunNativeBenchmark = onRunNativeBenchmark,
+                    onShowHelp = { title, body -> helpPopup = title to body }
                 )
             }
         }
@@ -913,7 +915,12 @@ private fun ShieldsTab(
                             InputChip(
                                 selected = true,
                                 onClick = { onToggleWaveChip(chip) },
-                                label = { Text(chip.label, style = MaterialTheme.typography.labelMedium) },
+                                label = {
+                                    Text(
+                                        LocaleHelper.formatWaveChipLabel(ctx, chip),
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                },
                                 trailingIcon = {
                                     Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(14.dp))
                                 }
@@ -986,10 +993,11 @@ private fun ShieldsTab(
                             paramInt = exactFirstComboVal
                         )
                         "zero_combo" -> {
-                            // Zero Combo cannot coexist with structural combo extras, full clear, or digital orb count!
+                            // Zero Combo cannot coexist with structural combo extras, full clear, digital orb count, or first-wave special orb shields!
                             listOf(
                                 "same_combo_elements", "second_wave_combo", "same_elem_combos",
-                                "equal_pair_light_dark", "first_wave_full_clear", "digital_orb_count"
+                                "equal_pair_light_dark", "first_wave_full_clear", "digital_orb_count",
+                                "any_enchanted_orb_shield", "race_orb_shield", "char_orb_first_wave", "luminous_orb_shield"
                             ).forEach { ActiveStrategyStore.removeChip(it) }
                             WaveShieldChip(
                                 "zero_combo",
@@ -1589,12 +1597,74 @@ private fun ShieldsTab(
                             }
                         }
                     )
+                    val enchOrbLabel = stringResource(R.string.shield_any_enchanted_orb)
+                    CompactChoicePill(
+                        label = enchOrbLabel,
+                        selected = "any_enchanted_orb_shield" in activeIds,
+                        onClick = {
+                            if ("any_enchanted_orb_shield" in activeIds) {
+                                ActiveStrategyStore.removeChip("any_enchanted_orb_shield")
+                            } else {
+                                ActiveStrategyStore.removeChip("zero_combo")
+                                ActiveStrategyStore.upsertChip(
+                                    WaveShieldChip("any_enchanted_orb_shield", enchOrbLabel, ShieldCategory.COUNT_AND_ELEMENT)
+                                )
+                            }
+                        }
+                    )
                     val raceLabel = stringResource(R.string.shield_race_orb)
                     CompactChoicePill(
                         label = raceLabel,
                         selected = "race_orb_shield" in activeIds,
                         onClick = {
-                            onToggleWaveChip(WaveShieldChip("race_orb_shield", raceLabel, ShieldCategory.COUNT_AND_ELEMENT))
+                            if ("race_orb_shield" in activeIds) {
+                                ActiveStrategyStore.removeChip("race_orb_shield")
+                            } else {
+                                ActiveStrategyStore.removeChip("zero_combo")
+                                ActiveStrategyStore.upsertChip(
+                                    WaveShieldChip("race_orb_shield", raceLabel, ShieldCategory.COUNT_AND_ELEMENT)
+                                )
+                            }
+                        }
+                    )
+                    val charOrbFirstLabel = stringResource(R.string.shield_char_orb_first)
+                    CompactChoicePill(
+                        label = charOrbFirstLabel,
+                        selected = "char_orb_first_wave" in activeIds,
+                        onClick = {
+                            if ("char_orb_first_wave" in activeIds) {
+                                ActiveStrategyStore.removeChip("char_orb_first_wave")
+                            } else {
+                                ActiveStrategyStore.removeChip("zero_combo")
+                                ActiveStrategyStore.upsertChip(
+                                    WaveShieldChip("char_orb_first_wave", charOrbFirstLabel, ShieldCategory.COUNT_AND_ELEMENT)
+                                )
+                            }
+                        }
+                    )
+                    val forbidWeakLabel = stringResource(R.string.shield_forbid_weakened)
+                    CompactChoicePill(
+                        label = forbidWeakLabel,
+                        selected = "forbid_weakened_orb" in activeIds,
+                        onClick = {
+                            onToggleWaveChip(
+                                WaveShieldChip("forbid_weakened_orb", forbidWeakLabel, ShieldCategory.COUNT_AND_ELEMENT)
+                            )
+                        }
+                    )
+                    val luminousLabel = stringResource(R.string.shield_luminous_orb)
+                    CompactChoicePill(
+                        label = luminousLabel,
+                        selected = "luminous_orb_shield" in activeIds,
+                        onClick = {
+                            if ("luminous_orb_shield" in activeIds) {
+                                ActiveStrategyStore.removeChip("luminous_orb_shield")
+                            } else {
+                                ActiveStrategyStore.removeChip("zero_combo")
+                                ActiveStrategyStore.upsertChip(
+                                    WaveShieldChip("luminous_orb_shield", luminousLabel, ShieldCategory.COUNT_AND_ELEMENT)
+                                )
+                            }
                         }
                     )
                 }
@@ -2109,7 +2179,7 @@ private fun ShieldsTab(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { testSkillText = "【固定 4 連擊盾】\n首批消除 4 連擊\n五屬強化盾\n拼圖盾-限" },
+                        onClick = { testSkillText = ctx.getString(R.string.rule_tester_sample_text) },
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(stringResource(R.string.btn_sample), style = MaterialTheme.typography.labelMedium)
@@ -2214,7 +2284,8 @@ private fun SettingsTab(
     benchmarkReport: String?,
     isBenchmarking: Boolean,
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
-    onRunNativeBenchmark: () -> Unit
+    onRunNativeBenchmark: () -> Unit,
+    onShowHelp: (String, String) -> Unit
 ) {
     val context = LocalContext.current
     val overlayPalette = remember(settings.themeMode) { OverlayThemeResolver.resolve(context, settings.themeMode) }
@@ -2373,7 +2444,15 @@ private fun SettingsTab(
         }
 
         // 3. Solver Budget, Slim Native Sliders & Countdown Dropdown
-        SectionHeader(stringResource(R.string.section_engine_steps))
+        SectionHeaderWithHelp(
+            text = stringResource(R.string.section_engine_steps),
+            onHelp = {
+                onShowHelp(
+                    context.getString(R.string.help_engine_settings_title),
+                    context.getString(R.string.help_engine_settings_body)
+                )
+            }
+        )
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -2434,14 +2513,19 @@ private fun SettingsTab(
                     onValueChange = { v -> onUpdateSettings { it.copy(holdReplanDelayMs = (v / 20f).roundToLong() * 20L) } }
                 )
 
-                // Pre-Swipe Countdown Native Exposed Dropdown
+                // Pre-Swipe Countdown Native Exposed Dropdown (pre-resolved with localized context so Popup never falls back to system locale!)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                val countdownOptions = listOf(0, 1, 2, 3, 5)
-                val currentCountdownText = if (settings.countdownSeconds == 0) {
-                    stringResource(R.string.countdown_none)
-                } else {
-                    stringResource(R.string.unit_seconds, settings.countdownSeconds)
+                val countdownItems = remember(settings.language, context) {
+                    listOf(0, 1, 2, 3, 5).map { sec ->
+                        sec to if (sec == 0) {
+                            context.getString(R.string.countdown_none)
+                        } else {
+                            context.getString(R.string.unit_seconds, sec)
+                        }
+                    }
                 }
+                val currentCountdownText = countdownItems.firstOrNull { it.first == settings.countdownSeconds }?.second
+                    ?: context.getString(R.string.unit_seconds, settings.countdownSeconds)
                 ExposedDropdownMenuBox(
                     expanded = countdownMenuExpanded,
                     onExpandedChange = { countdownMenuExpanded = !countdownMenuExpanded }
@@ -2451,7 +2535,7 @@ private fun SettingsTab(
                         onValueChange = {},
                         readOnly = true,
                         singleLine = true,
-                        label = { Text(stringResource(R.string.slider_countdown)) },
+                        label = { Text(context.getString(R.string.slider_countdown)) },
                         trailingIcon = {
                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = countdownMenuExpanded)
                         },
@@ -2463,19 +2547,19 @@ private fun SettingsTab(
                         expanded = countdownMenuExpanded,
                         onDismissRequest = { countdownMenuExpanded = false }
                     ) {
-                        countdownOptions.forEach { sec ->
-                            val itemText = if (sec == 0) {
-                                stringResource(R.string.countdown_none)
-                            } else {
-                                stringResource(R.string.unit_seconds, sec)
+                        CompositionLocalProvider(
+                            LocalContext provides context,
+                            LocalConfiguration provides context.resources.configuration
+                        ) {
+                            countdownItems.forEach { (sec, itemText) ->
+                                DropdownMenuItem(
+                                    text = { Text(itemText) },
+                                    onClick = {
+                                        onUpdateSettings { it.copy(countdownSeconds = sec) }
+                                        countdownMenuExpanded = false
+                                    }
+                                )
                             }
-                            DropdownMenuItem(
-                                text = { Text(itemText) },
-                                onClick = {
-                                    onUpdateSettings { it.copy(countdownSeconds = sec) }
-                                    countdownMenuExpanded = false
-                                }
-                            )
                         }
                     }
                 }

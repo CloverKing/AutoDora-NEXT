@@ -87,10 +87,24 @@ object RuleComposer {
                     }
                 }
             }
+            StrategyGoalMode.SEVEN_ORBS -> {
+                for (e in 0 until 5) {
+                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
+                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_7)
+                    }
+                }
+            }
             StrategyGoalMode.EIGHT_ORBS -> {
                 for (e in 0 until 5) {
                     if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
                         elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_8)
+                    }
+                }
+            }
+            StrategyGoalMode.NINE_ORBS -> {
+                for (e in 0 until 5) {
+                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
+                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_9)
                     }
                 }
             }
@@ -263,12 +277,26 @@ object RuleComposer {
                     )
                     highDifficultyShield = true
                 }
+                "any_enchanted_orb_shield" -> {
+                    cfg = cfg.copy(requireAnyEnchantedOrb = true)
+                    highDifficultyShield = true
+                }
                 "race_orb_shield" -> {
                     cfg = cfg.copy(
                         requiredRaceElementsMask = cfg.requiredRaceElementsMask or chip.paramElementMask,
                         requireAnyRaceOrb = chip.paramElementMask == 0
                     )
                     highDifficultyShield = true
+                }
+                "char_orb_first_wave" -> {
+                    cfg = cfg.copy(requireCharOrbFirstWave = true)
+                    highDifficultyShield = true
+                }
+                "forbid_weakened_orb" -> {
+                    cfg = cfg.copy(forbidWeakenedOrbs = true)
+                }
+                "luminous_orb_shield" -> {
+                    cfg = cfg.copy(requireLuminousOrbClear = true, prioritizeLuminous = true)
                 }
                 "maximize_element_orbs" -> cfg = cfg.copy(maximizeElementOrbIndex = chip.paramInt)
                 "char_orb_terrain" -> {

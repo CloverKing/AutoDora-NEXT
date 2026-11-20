@@ -12,6 +12,7 @@ import com.autodora.next.model.MatchTiming
 import com.autodora.next.model.StrategyGoalMode
 import com.autodora.next.model.TargetShape
 import com.autodora.next.model.TeamBasePreset
+import com.autodora.next.model.WaveShieldChip
 import com.autodora.next.touch.SwipeSpeedPreset
 import java.util.Locale
 
@@ -84,7 +85,111 @@ object LocaleHelper {
         StrategyGoalMode.FIVE_ORBS_SINGLE -> ctx.getString(R.string.goal_5_single)
         StrategyGoalMode.FIVE_ORBS_MULTI -> ctx.getString(R.string.goal_5_multi)
         StrategyGoalMode.SIX_ORBS -> ctx.getString(R.string.goal_6_orbs)
+        StrategyGoalMode.SEVEN_ORBS -> ctx.getString(R.string.goal_7_orbs)
         StrategyGoalMode.EIGHT_ORBS -> ctx.getString(R.string.goal_8_orbs)
+        StrategyGoalMode.NINE_ORBS -> ctx.getString(R.string.goal_9_orbs)
+    }
+
+    /**
+     * Dynamically formats any active [WaveShieldChip] into the CURRENT UI language so switching
+     * languages or importing auto-detected shields never leaves mismatched-language pill labels.
+     */
+    fun formatWaveChipLabel(ctx: Context, chip: WaveShieldChip): String {
+        val elemNames = (0..5).filter { (chip.paramElementMask and (1 shl it)) != 0 }
+            .joinToString("") { elementLabel(ctx, it) }
+        return when (chip.id) {
+            "min_combo" -> "${ctx.getString(R.string.combo_type_min_total)} ≥${chip.paramInt}"
+            "min_first_combo" -> "${ctx.getString(R.string.combo_type_min_first)} ≥${chip.paramInt}"
+            "exact_combo" -> "${ctx.getString(R.string.combo_type_exact_total)} ${chip.paramInt}"
+            "exact_first_combo" -> "${ctx.getString(R.string.combo_type_exact_first)} ${chip.paramInt}"
+            "zero_combo" -> ctx.getString(R.string.combo_type_zero)
+            "odd_combo" -> {
+                val scope = ctx.getString(if (chip.paramInt == 1) R.string.combo_parity_scope_total else R.string.combo_parity_scope_first)
+                "${ctx.getString(R.string.combo_type_odd)}（$scope）"
+            }
+            "even_combo" -> {
+                val scope = ctx.getString(if (chip.paramInt == 1) R.string.combo_parity_scope_total else R.string.combo_parity_scope_first)
+                "${ctx.getString(R.string.combo_type_even)}（$scope）"
+            }
+            "same_combo_elements" -> ctx.getString(R.string.combo_extra_same_c)
+            "second_wave_combo" -> ctx.getString(R.string.combo_extra_second_wave, chip.paramInt.coerceAtLeast(1))
+            "same_elem_combos" -> {
+                val n = chip.paramInt.coerceAtLeast(2)
+                val base = ctx.getString(R.string.combo_extra_same_elem, n)
+                if (elemNames.isNotEmpty()) "$base·$elemNames" else base
+            }
+            "equal_pair_light_dark" -> {
+                val a = if (chip.paramElementMask != 0) (chip.paramElementMask and 0x0F).coerceIn(0, 5) else 3
+                val b = if (chip.paramElementMask != 0) ((chip.paramElementMask ushr 4) and 0x0F).coerceIn(0, 5) else 4
+                ctx.getString(R.string.combo_extra_equal_pair, elementLabel(ctx, a), elementLabel(ctx, b))
+            }
+            "min_distinct_elements" -> ctx.getString(R.string.elem_min_distinct_fmt, chip.paramInt.coerceIn(2, 6))
+            "require_elements" -> {
+                val ench = chip.paramInt == 1
+                if (elemNames.isNotEmpty()) {
+                    if (ench) "$elemNames·${ctx.getString(R.string.ov_puzzle_ench)}" else elemNames
+                } else chip.label
+            }
+            "five_elements" -> (0..4).joinToString("") { elementLabel(ctx, it) }
+            "five_elements_enchanted" -> (0..4).joinToString("") { elementLabel(ctx, it) } + "·" + ctx.getString(R.string.ov_puzzle_ench)
+            "three_elements" -> (0..2).joinToString("") { elementLabel(ctx, it) }
+            "anti_first_wave" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_anti)}:$elemNames" else ctx.getString(R.string.elem_limit_anti)
+            "forbid_all" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_forbid)}:$elemNames" else ctx.getString(R.string.elem_limit_forbid)
+            "clear_all_element" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_clear_all)}:$elemNames" else ctx.getString(R.string.elem_limit_clear_all)
+            "digital_orb_count" -> ctx.getString(R.string.shield_digital_orbs_fmt, chip.paramInt.coerceIn(1, 48))
+            "first_wave_full_clear" -> ctx.getString(R.string.shield_full_clear)
+            "any_enchanted_orb_shield" -> ctx.getString(R.string.shield_any_enchanted_orb)
+            "race_orb_shield" -> ctx.getString(R.string.shield_race_orb)
+            "char_orb_first_wave" -> ctx.getString(R.string.shield_char_orb_first)
+            "forbid_weakened_orb" -> ctx.getString(R.string.shield_forbid_weakened)
+            "luminous_orb_shield" -> ctx.getString(R.string.shield_luminous_orb)
+            "puzzle_shield" -> {
+                val strict = (chip.paramInt and 1) != 0
+                val ench = (chip.paramInt and 2) != 0
+                val elemEnc = (chip.paramInt ushr 2) and 0x0F
+                val shapeId = (chip.paramInt ushr 8) and 0x0F
+                val parts = buildList {
+                    add(ctx.getString(if (strict) R.string.puzzle_mode_strict else R.string.puzzle_mode_normal))
+                    if (ench) add(ctx.getString(R.string.ov_puzzle_ench))
+                    if (elemEnc in 1..6) add(elementLabel(ctx, elemEnc - 1))
+                    if (shapeId > 0) add(puzzleShapeLabel(ctx, shapeId))
+                }
+                parts.joinToString("·")
+            }
+            "strict_puzzle" -> ctx.getString(R.string.puzzle_mode_strict)
+            "loose_puzzle" -> ctx.getString(R.string.puzzle_mode_normal)
+            "enchanted_puzzle" -> "${ctx.getString(R.string.puzzle_mode_strict)}·${ctx.getString(R.string.ov_puzzle_ench)}"
+            "cross_shield", "cross_shield_2", "cross_shield_3" -> {
+                val cnt = (chip.paramInt and 0x0F).coerceIn(1, 3)
+                val distinct = (chip.paramInt and 0x20) != 0
+                val base = when (cnt) {
+                    1 -> ctx.getString(R.string.cross_1)
+                    2 -> ctx.getString(R.string.cross_2)
+                    else -> ctx.getString(R.string.cross_3)
+                }
+                when {
+                    elemNames.isNotEmpty() -> "$base·$elemNames"
+                    distinct -> "$base(≠)"
+                    else -> base
+                }
+            }
+            "l_shape" -> ctx.getString(R.string.shield_l_shape)
+            "t_shape" -> ctx.getString(R.string.shield_t_shape)
+            "square_2x2" -> ctx.getString(R.string.shield_sq_2x2)
+            "all_columns_ameliorate" -> ctx.getString(R.string.shield_all_cols)
+            "zero_trail_burning" -> {
+                val tLen = chip.paramInt and 0xFF
+                val maxH = (chip.paramInt ushr 8) and 0xFF
+                val lenStr = ctx.getString(if (tLen == 6) R.string.ov_burn_len_6 else R.string.ov_burn_len_max)
+                "${ctx.getString(R.string.burn_path_title)}·$lenStr·≤$maxH"
+            }
+            "step_limit" -> ctx.getString(R.string.shield_step_limit_fmt, chip.paramInt.coerceAtLeast(1))
+            "trail_corrosion" -> ctx.getString(R.string.shield_trail_corrosion)
+            "step_hurt_minimize" -> ctx.getString(R.string.shield_step_hurt)
+            "char_orb_terrain" -> ctx.getString(R.string.shield_char_terrain)
+            "weijian_burst" -> ctx.getString(R.string.shield_weijian_burst)
+            else -> chip.label
+        }
     }
 
     /**
