@@ -33,9 +33,9 @@
     <string name="perm_grant">Grant</string>
     <string name="perm_enable">Enable</string>
     <string name="guide_title">Floating Capsule Guide</string>
-    <string name="guide_line_1">• \"Solve\" scans &amp; previews paths; \"◀ / ▶\" switches candidates; \"Go\" executes (or Hold-Replan when toggled ON).</string>
-    <string name="guide_line_2">• \"Path\" toggles swipe line only; \"Grid\" toggles alignment frame; \"Stop\" aborts immediately.</string>
-    <string name="guide_line_3">• Tap \"⋯\" for quick toggles, 4-tab tuning drawer, board painter &amp; skill scan.</string>
+    <string name="guide_line_1">• Top icon bar: Solve, Run, Path, Result card, Grid, Stop &amp; full 4-tab drawer in an ultra-compact footprint.</string>
+    <string name="guide_line_2">• Preview ON: Run stays disabled until Solve computes a path. Preview OFF: Solve hides and Run solves + swipes immediately.</string>
+    <string name="guide_line_3">• Precedence: Wave Shields (highest) &gt; Active Strategy &gt; Global System Settings.</string>
     <string name="hyperos_title">Restricted Accessibility Guide</string>
     <string name="hyperos_app_details">App Info</string>
     <string name="action_expand">Expand</string>
@@ -337,9 +337,9 @@
     <string name="help_strategy_library_title">Strategy Profiles Guide</string>
     <string name="help_strategy_library_body">[Purpose]\nStrategy profiles define your dungeon-wide matching goals, leader skill traits, and solver budget. Temporary enemy shields configured in the Shields tab stack on top of your active strategy.\n\n[Scenarios]\n• General teams: use General Max Combo.\n• 2-Match or shape-based leaders: duplicate a profile and customize Min-Match and Shape.\n• Column Amelioration, Character Orb starter, or 6×8 expanded boards: activate the matching preset or create your own.</string>
     <string name="help_basic_steps_title">Step Budget &amp; Solver Compute</string>
-    <string name="help_basic_steps_body">[Step Budget]\nMaximum moves per path (8–300). 30–60 steps fit standard 6×5 boards; 80–150 steps are ideal for 6×8 expanded boards or strict puzzles and multi-cross shields.\n\n[Solver Compute]\nControls the full path-search and solution-evaluation beam width (40 to 600): at every step, candidate routes are simulated, checked against all shields, scored, and pruned to the top N branches. Higher compute solves harder composite shields with slightly longer solve time.</string>
-    <string name="help_engine_settings_title">Solver Engine &amp; Compute Budget</string>
-    <string name="help_engine_settings_body">• Global Max Steps: maximum moves allowed per swipe path (8–300).\n• Solver Compute: controls the native solver\'s full path-search and solution-calculation width per step (simulating matches, checking shields, and scoring candidates). Higher values solve harder composite shields at slightly more CPU time.\n• Hold-Replan Reveal Delay: wait time (ms) while holding the start orb for hidden orbs to flip open.\n• Pre-Swipe Countdown: optional countdown seconds before swiping begins after tapping Go.</string>
+    <string name="help_basic_steps_body">[Priority: Wave Shields &gt; Strategy &gt; System]\nSettings values are System defaults. Each Strategy can follow System or override Steps &amp; Compute with its own slider. Active Wave Shields always hold the highest priority.\n\n[Step Budget]\nMaximum moves per path (8–300). 30–60 steps fit 6×5 boards; 80–150 fit 6×8 or complex puzzles/crosses.\n\n[Solver Compute]\nControls the full path-search &amp; solution-calculation width per step (40–600).</string>
+    <string name="help_engine_settings_title">Solver Engine &amp; Priority Hierarchy</string>
+    <string name="help_engine_settings_body">[Priority: Wave Shields &gt; Strategy &gt; System]\nGlobal Steps and Solver Compute in Settings serve as System defaults. Custom values inside a Strategy override System, and active Wave Shields override both.\n\n• Global Max Steps: default move limit per swipe path (8–300).\n• Solver Compute: full path-search and solution-evaluation beam width per step.\n• Hold-Replan Reveal Delay: wait time (ms) for hidden orbs to flip open.\n• Pre-Swipe Countdown: optional countdown seconds before swiping.</string>
     <string name="help_goal_policy_title">Matching Goals &amp; Search Policy</string>
     <string name="help_goal_policy_body">[Global Goal]\nGuides overall scoring toward Max Combo, 3/4/5 distinct colors, or 5/6/7/8/9-orb groups.\n\n[Multi-Orb Handling]\n• Max Combo: splits surplus same-color orbs into more combos.\n• Max Orbs: clears as many orbs of that color as possible.\n• Single Group: matches just one group to conserve orbs or steps.\n\n[Insufficient Orbs &amp; Search Style]\n• Match Anyway / Reserve Orbs: decides whether to make a normal 3-match or save orbs when too few exist for a target shape.\n• Best Result: finds the highest-scoring solution within budget.\n• First Match: returns as soon as all hard shields are satisfied.</string>
     <string name="help_elem_matrix_title">Per-Element Rules Matrix</string>
@@ -422,4 +422,38 @@
     <string name="ocr_text_applied_fmt">Parsed &amp; applied: %1$s</string>
     <string name="bench_line_65">✓ 6×5 Board: %1$d combos (%2$d steps) · %3$d ms · %4$d states</string>
     <string name="bench_line_68">✓ 6×8 Expanded: %1$d combos (%2$d steps) · %3$d ms · %4$d states</string>
+
+    <!-- v2 Grouped Global Goals, Per-Color Enchanted, 3-Tier Precedence & Icon Floating HUD -->
+    <string name="goal_group_high_combo">Max Combo</string>
+    <string name="goal_group_n_balance">N-Color Bal</string>
+    <string name="goal_group_n_all">N-Color All</string>
+    <string name="goal_group_single_x">1-Color X</string>
+    <string name="goal_group_multi_x">N-Color X</string>
+    <string name="goal_param_n_label">Target Colors (N)</string>
+    <string name="goal_param_x_label">Target Orbs (X)</string>
+    <string name="goal_target_elem_label">Target Color (Optional)</string>
+    <string name="goal_colors_opt_label">Specific Colors (Optional)</string>
+    <string name="goal_summary_n_balance">%1$d-Color Bal</string>
+    <string name="goal_summary_n_all">%1$d-Color All</string>
+    <string name="goal_summary_single_x">1-Col %1$d-Orb</string>
+    <string name="goal_summary_multi_x">%1$d-Col %2$d-Orb</string>
+    <string name="goal_unit_colors">%1$d Col</string>
+    <string name="goal_unit_orbs">%1$d Orbs</string>
+    <string name="elem_req_ench_row">Per-Color Enchanted Toggle</string>
+    <string name="budget_follow_system">Follow System</string>
+    <string name="budget_override_strategy">Strategy Override</string>
+    <string name="priority_tier_hint_settings">System defaults · Priority: Shields &gt; Strategy &gt; System</string>
+    <string name="priority_tier_hint_strategy">Strategy level · Overrides System, below Wave Shields</string>
+    <string name="priority_tier_hint_shields">Wave Shield level · Highest priority over Strategy &amp; System</string>
+    <string name="ov_tab_quick">Quick</string>
+    <string name="ov_tab_settings">Settings</string>
+    <string name="ov_result_btn">Result</string>
+    <string name="ov_toast_need_solve">Preview mode is ON: tap Solve first</string>
+    <string name="ov_toast_icon_none">Icon scan: no known shield badge detected</string>
+    <string name="ov_toast_icon_found_fmt">Icon scan: %1$s</string>
+    <string name="ov_toast_need_a11y_gear">Enable Accessibility to auto-tap Gear &amp; expand skills</string>
+    <string name="ov_toast_no_skill">Skill scan: enemy has no skills</string>
+    <string name="ov_toast_applied_fmt">Applied %1$d shield(s): %2$s</string>
+    <string name="ov_toast_stopped">Stopped</string>
+    <string name="ov_summary_fmt">%1$d×%2$d · 1st:%3$d/Tot:%4$dC · %5$d moves · %6$dms</string>
 </resources>

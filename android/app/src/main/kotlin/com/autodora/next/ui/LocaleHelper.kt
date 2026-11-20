@@ -9,6 +9,7 @@ import com.autodora.next.data.EnemySkillScanMode
 import com.autodora.next.data.ThemeMode
 import com.autodora.next.model.ElementPriority
 import com.autodora.next.model.MatchTiming
+import com.autodora.next.model.RuleConfig
 import com.autodora.next.model.StrategyGoalMode
 import com.autodora.next.model.TargetShape
 import com.autodora.next.model.TeamBasePreset
@@ -78,7 +79,11 @@ object LocaleHelper {
     }
 
     fun goalModeLabel(ctx: Context, mode: StrategyGoalMode): String = when (mode) {
-        StrategyGoalMode.HIGH_COMBO -> ctx.getString(R.string.goal_high_combo)
+        StrategyGoalMode.HIGH_COMBO -> ctx.getString(R.string.goal_group_high_combo)
+        StrategyGoalMode.N_COLOR_BALANCE -> ctx.getString(R.string.goal_group_n_balance)
+        StrategyGoalMode.N_COLOR_ALL -> ctx.getString(R.string.goal_group_n_all)
+        StrategyGoalMode.SINGLE_COLOR_X_ORBS -> ctx.getString(R.string.goal_group_single_x)
+        StrategyGoalMode.MULTI_COLOR_X_ORBS -> ctx.getString(R.string.goal_group_multi_x)
         StrategyGoalMode.THREE_COLORS -> ctx.getString(R.string.goal_3_colors)
         StrategyGoalMode.FOUR_COLORS -> ctx.getString(R.string.goal_4_colors)
         StrategyGoalMode.FIVE_COLORS -> ctx.getString(R.string.goal_5_colors)
@@ -88,6 +93,23 @@ object LocaleHelper {
         StrategyGoalMode.SEVEN_ORBS -> ctx.getString(R.string.goal_7_orbs)
         StrategyGoalMode.EIGHT_ORBS -> ctx.getString(R.string.goal_8_orbs)
         StrategyGoalMode.NINE_ORBS -> ctx.getString(R.string.goal_9_orbs)
+    }
+
+    fun goalSummary(ctx: Context, cfg: RuleConfig): String {
+        val g = cfg.goalMode.normalizedGroup()
+        val n = if (cfg.goalMode == g) cfg.goalParamN else cfg.goalMode.defaultParamN()
+        val x = if (cfg.goalMode == g) cfg.goalParamX else cfg.goalMode.defaultParamX()
+        return when (g) {
+            StrategyGoalMode.HIGH_COMBO -> ctx.getString(R.string.goal_group_high_combo)
+            StrategyGoalMode.N_COLOR_BALANCE -> ctx.getString(R.string.goal_summary_n_balance, n.coerceIn(2, 5))
+            StrategyGoalMode.N_COLOR_ALL -> ctx.getString(R.string.goal_summary_n_all, n.coerceIn(2, 6))
+            StrategyGoalMode.SINGLE_COLOR_X_ORBS -> {
+                val base = ctx.getString(R.string.goal_summary_single_x, x.coerceIn(4, 9))
+                if (cfg.goalTargetElement in 0..5) "$base·${elementLabel(ctx, cfg.goalTargetElement)}" else base
+            }
+            StrategyGoalMode.MULTI_COLOR_X_ORBS -> ctx.getString(R.string.goal_summary_multi_x, n.coerceIn(2, 5), x.coerceIn(4, 9))
+            else -> goalModeLabel(ctx, cfg.goalMode)
+        }
     }
 
     /**
@@ -125,10 +147,14 @@ object LocaleHelper {
             }
             "min_distinct_elements" -> ctx.getString(R.string.elem_min_distinct_fmt, chip.paramInt.coerceIn(2, 6))
             "require_elements" -> {
-                val ench = chip.paramInt == 1
-                if (elemNames.isNotEmpty()) {
-                    if (ench) "$elemNames·${ctx.getString(R.string.ov_puzzle_ench)}" else elemNames
-                } else chip.label
+                val reqMask = chip.paramElementMask and 0x3F
+                val perColorEnch = (chip.paramElementMask ushr 8) and 0x3F
+                val effEnch = if (perColorEnch != 0) perColorEnch else if (chip.paramInt == 1) reqMask else 0
+                val formatted = (0..5).filter { (reqMask and (1 shl it)) != 0 }.joinToString("") { idx ->
+                    val name = elementLabel(ctx, idx)
+                    if ((effEnch and (1 shl idx)) != 0) "$name+" else name
+                }
+                formatted.ifEmpty { chip.label }
             }
             "five_elements" -> (0..4).joinToString("") { elementLabel(ctx, it) }
             "five_elements_enchanted" -> (0..4).joinToString("") { elementLabel(ctx, it) } + "·" + ctx.getString(R.string.ov_puzzle_ench)

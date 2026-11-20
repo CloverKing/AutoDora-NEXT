@@ -23,9 +23,9 @@ data class IconMatchCandidate(
 /**
  * Zero-tap Stage-1 Battle Enemy Status Icon Matcher & Wave-Change Detector.
  *
- * Uses compact 8x8 perceptual RGB descriptors calibrated directly from 44 official
- * Tower of Saviors battle status icon assets (`GameplayIcons/ICON###`), fused with
- * live board CV signals (Storm cells, Golden Puzzle borders, Question orbs).
+ * Uses alpha-masked 12x12 perceptual RGB descriptors calibrated directly from 44 official
+ * Tower of Saviors battle status icon assets (`GameplayIcons/ICON###`), with 2-stage
+ * coarse-to-fine alignment, fused with live board CV signals (Storm, Puzzle frame, Question orbs).
  */
 object EnemyStatusIconMatcher {
 
@@ -53,14 +53,14 @@ object EnemyStatusIconMatcher {
         val notes = ArrayList<String>()
         val enemyHash = computeBattleEnemyZoneHash(frame)
 
-        // 1. Official-asset calibrated status badge template matching across the enemy badge strip
+        // 1. Official-asset calibrated 12x12 alpha-masked status badge matching across the enemy strip
         val matchedIcons = matchOfficialStatusBadges(frame)
         for (hit in matchedIcons) {
             val chip = hit.template.toChip().copy(autoDetected = true)
             chipsById.putIfAbsent(chip.id, chip)
             notes.add("${hit.template.defaultLabel} (${hit.template.iconId})")
         }
-        // Fallback generic badge cluster presence detector (handles exotic / unmapped event status badges)
+        // Fallback generic badge presence detector (handles unmapped / event-exclusive icons like Tornado)
         val genericBadgeClusters = if (matchedIcons.isEmpty()) countDistinctStatusIconClusters(frame) else matchedIcons.size
 
         // 2. Fuse board-level real CV signals
@@ -92,63 +92,72 @@ object EnemyStatusIconMatcher {
     }
 
     /**
-     * Matches an 8x8 packed-RGB patch (`0xRRGGBB`, 64 ints) against all 44 official ToS icon descriptors
-     * using combined zero-mean RGB NCC (0.65) + L1 RGB similarity (0.35).
+     * Matches a 12x12 packed-RGB patch (`0xRRGGBB`, 144 ints) against all 44 official ToS icon
+     * descriptors using alpha-masked zero-mean RGB NCC (0.75) + L1 similarity (0.25).
+     * Transparent battle-background corners are excluded by each template's foreground mask bit!
      */
-    fun matchPatchRgb8x8(
-        patchRgb8x8: IntArray,
-        minScore: Float = 0.82f,
-        minMargin: Float = 0.03f
+    fun matchPatchRgb12x12(
+        patchRgb12x12: IntArray,
+        minScore: Float = 0.80f,
+        minMargin: Float = 0.04f
     ): IconMatchCandidate? {
-        if (patchRgb8x8.size != 64) return null
+        val nPix = OfficialEnemyIconTemplates.PIXEL_COUNT
+        if (patchRgb12x12.size != nPix) return null
 
-        // Precompute zero-mean vector norm for candidate patch
-        val pVec = FloatArray(192)
-        var pSum = 0f
-        for (i in 0 until 64) {
-            val rgb = patchRgb8x8[i]
-            val r = ((rgb ushr 16) and 0xFF).toFloat()
-            val g = ((rgb ushr 8) and 0xFF).toFloat()
-            val b = (rgb and 0xFF).toFloat()
-            pVec[i * 3] = r
-            pVec[i * 3 + 1] = g
-            pVec[i * 3 + 2] = b
-            pSum += r + g + b
+        // Quick energy check to skip flat sky/backdrop patches
+        var sumAll = 0f
+        for (i in 0 until nPix) {
+            val rgb = patchRgb12x12[i]
+            sumAll += ((rgb ushr 16) and 0xFF) + ((rgb ushr 8) and 0xFF) + (rgb and 0xFF)
         }
-        val pMean = pSum / 192f
-        var pNormSq = 0f
-        for (k in 0 until 192) {
-            val d = pVec[k] - pMean
-            pNormSq += d * d
+        val meanAll = sumAll / (nPix * 3f)
+        var varAll = 0f
+        for (i in 0 until nPix) {
+            val rgb = patchRgb12x12[i]
+            val dr = ((rgb ushr 16) and 0xFF) - meanAll
+            val dg = ((rgb ushr 8) and 0xFF) - meanAll
+            val db = (rgb and 0xFF) - meanAll
+            varAll += dr * dr + dg * dg + db * db
         }
-        val pNorm = sqrt(pNormSq)
-        // Reject flat/empty patches (dark background or uniform sky)
-        if (pNorm < 220f) return null
+        if (sqrt(varAll) < 300f) return null
 
         var bestTmpl: OfficialEnemyIconTemplates.IconTemplate? = null
         var bestScore = -1f
         var secondScore = -1f
 
         for (tmpl in OfficialEnemyIconTemplates.templates) {
-            val tArr = tmpl.rgb8x8
+            val tArr = tmpl.argb12x12
+            var fgCount = 0
+            var pSum = 0f
             var tSum = 0f
-            for (i in 0 until 64) {
-                val rgb = tArr[i]
-                tSum += ((rgb ushr 16) and 0xFF) + ((rgb ushr 8) and 0xFF) + (rgb and 0xFF)
+            for (i in 0 until nPix) {
+                val tv = tArr[i]
+                if ((tv ushr 24) == 0) continue
+                fgCount++
+                val pv = patchRgb12x12[i]
+                pSum += ((pv ushr 16) and 0xFF) + ((pv ushr 8) and 0xFF) + (pv and 0xFF)
+                tSum += ((tv ushr 16) and 0xFF) + ((tv ushr 8) and 0xFF) + (tv and 0xFF)
             }
-            val tMean = tSum / 192f
+            if (fgCount < 24) continue
+            val denom = fgCount * 3f
+            val pMean = pSum / denom
+            val tMean = tSum / denom
+
             var dot = 0f
+            var pNormSq = 0f
             var tNormSq = 0f
             var l1Diff = 0f
-            for (i in 0 until 64) {
-                val rgb = tArr[i]
-                val tr = ((rgb ushr 16) and 0xFF).toFloat()
-                val tg = ((rgb ushr 8) and 0xFF).toFloat()
-                val tb = (rgb and 0xFF).toFloat()
+            for (i in 0 until nPix) {
+                val tv = tArr[i]
+                if ((tv ushr 24) == 0) continue
+                val pv = patchRgb12x12[i]
 
-                val pr = pVec[i * 3]
-                val pg = pVec[i * 3 + 1]
-                val pb = pVec[i * 3 + 2]
+                val pr = ((pv ushr 16) and 0xFF).toFloat()
+                val pg = ((pv ushr 8) and 0xFF).toFloat()
+                val pb = (pv and 0xFF).toFloat()
+                val tr = ((tv ushr 16) and 0xFF).toFloat()
+                val tg = ((tv ushr 8) and 0xFF).toFloat()
+                val tb = (tv and 0xFF).toFloat()
 
                 val dpr = pr - pMean
                 val dpg = pg - pMean
@@ -158,23 +167,31 @@ object EnemyStatusIconMatcher {
                 val dtb = tb - tMean
 
                 dot += dpr * dtr + dpg * dtg + dpb * dtb
+                pNormSq += dpr * dpr + dpg * dpg + dpb * dpb
                 tNormSq += dtr * dtr + dtg * dtg + dtb * dtb
                 l1Diff += abs(pr - tr) + abs(pg - tg) + abs(pb - tb)
             }
+            val pNorm = sqrt(pNormSq)
             val tNorm = sqrt(tNormSq)
-            if (tNorm < 1f) continue
+            if (pNorm < 180f || tNorm < 1f) continue
+
             val ncc = (dot / (pNorm * tNorm)).coerceIn(-1f, 1f)
-            val l1Sim = (1f - (l1Diff / (192f * 255f))).coerceIn(0f, 1f)
-            val score = 0.65f * ncc + 0.35f * l1Sim
+            val l1Sim = (1f - (l1Diff / (denom * 255f))).coerceIn(0f, 1f)
+            val score = 0.75f * ncc + 0.25f * l1Sim
+
+            // Treat different (chipId, paramInt, paramElementMask) as distinct competing shields (e.g., 3C vs 4C vs 6C!)
+            val isSameShield = bestTmpl != null &&
+                bestTmpl.chipId == tmpl.chipId &&
+                bestTmpl.paramInt == tmpl.paramInt &&
+                bestTmpl.paramElementMask == tmpl.paramElementMask
 
             if (score > bestScore) {
-                // Only treat a different chipId as a competing runner-up
-                if (bestTmpl != null && bestTmpl.chipId != tmpl.chipId) {
+                if (bestTmpl != null && !isSameShield) {
                     secondScore = max(secondScore, bestScore)
                 }
                 bestScore = score
                 bestTmpl = tmpl
-            } else if (bestTmpl != null && tmpl.chipId != bestTmpl.chipId && score > secondScore) {
+            } else if (!isSameShield && score > secondScore) {
                 secondScore = score
             }
         }
@@ -189,25 +206,26 @@ object EnemyStatusIconMatcher {
     }
 
     /**
-     * Downsamples a square region `[x0, y0, size]` from [frame] into an 8x8 packed RGB descriptor.
+     * Downsamples a square region `[x0, y0, size]` from [frame] into a 12x12 packed RGB descriptor.
      */
-    fun samplePatchRgb8x8(frame: VisionFrame, x0: Int, y0: Int, size: Int): IntArray {
-        val out = IntArray(64)
+    fun samplePatchRgb12x12(frame: VisionFrame, x0: Int, y0: Int, size: Int): IntArray {
+        val g = OfficialEnemyIconTemplates.GRID_SIZE
+        val out = IntArray(g * g)
         val w = frame.width
         val h = frame.height
-        val cell = size / 8f
-        for (gy in 0 until 8) {
+        val cell = size / g.toFloat()
+        for (gy in 0 until g) {
             val py0 = (y0 + gy * cell).toInt().coerceIn(0, h - 1)
             val py1 = (y0 + (gy + 1) * cell).toInt().coerceIn(py0 + 1, h)
-            for (gx in 0 until 8) {
+            for (gx in 0 until g) {
                 val px0 = (x0 + gx * cell).toInt().coerceIn(0, w - 1)
                 val px1 = (x0 + (gx + 1) * cell).toInt().coerceIn(px0 + 1, w)
                 var sr = 0
                 var sg = 0
                 var sb = 0
                 var cnt = 0
-                val stepY = max(1, (py1 - py0) / 3)
-                val stepX = max(1, (px1 - px0) / 3)
+                val stepY = max(1, (py1 - py0) / 2)
+                val stepX = max(1, (px1 - px0) / 2)
                 var py = py0
                 while (py < py1) {
                     var px = px0
@@ -222,7 +240,7 @@ object EnemyStatusIconMatcher {
                     py += stepY
                 }
                 if (cnt > 0) {
-                    out[gy * 8 + gx] = ((sr / cnt) shl 16) or ((sg / cnt) shl 8) or (sb / cnt)
+                    out[gy * g + gx] = ((sr / cnt) shl 16) or ((sg / cnt) shl 8) or (sb / cnt)
                 }
             }
         }
@@ -230,52 +248,87 @@ object EnemyStatusIconMatcher {
     }
 
     /**
-     * Scans the enemy status-icon strip below "CD N" (y ∈ [15%..34%], x ∈ [8%..92%]) for compact
-     * high-contrast enemy status badges and matches each candidate against [OfficialEnemyIconTemplates].
+     * Two-stage coarse-to-fine scanner across the enemy status-icon strip below "CD N"
+     * (`y ∈ [18%..34%]`, `x ∈ [8%..92%]`):
+     *  - Coarse scan locates compact dark-bordered vivid/bright icon candidates (~5.0% screen width).
+     *  - Fine 1px-level refinement aligns `(x, y, size)` cleanly before accepting a match!
      */
     private fun matchOfficialStatusBadges(frame: VisionFrame): List<IconMatchCandidate> {
         val w = frame.width
         val h = frame.height
         if (w < 160 || h < 280) return emptyList()
 
-        val yStart = (h * 0.15f).toInt()
-        val yEnd = (h * 0.34f).toInt()
+        // Start strictly below the top HUD/floating bar (y >= 19.5% of H)
+        val yStart = (h * 0.195f).toInt()
+        val yEnd = (h * 0.345f).toInt()
         val xStart = (w * 0.08f).toInt()
         val xEnd = (w * 0.92f).toInt()
-        val badgeSizes = intArrayOf(
-            max(16, (w * 0.044f).toInt()),
-            max(20, (w * 0.056f).toInt())
-        )
+        val baseSize = max(18, (w * 0.049f).toInt())
+        val coarseStride = max(3, baseSize / 5)
 
-        val bestByChip = LinkedHashMap<String, IconMatchCandidate>()
-        for (size in badgeSizes) {
-            val stride = max(4, size / 4)
-            var y = yStart
-            while (y + size <= yEnd) {
-                var x = xStart
-                while (x + size <= xEnd) {
-                    if (isLikelyBadgePatch(frame, x, y, size)) {
-                        val patch = samplePatchRgb8x8(frame, x, y, size)
-                        val hit = matchPatchRgb8x8(patch, minScore = 0.84f, minMargin = 0.035f)
-                        if (hit != null) {
-                            val prev = bestByChip[hit.template.chipId]
-                            if (prev == null || hit.score > prev.score) {
-                                bestByChip[hit.template.chipId] = hit
-                            }
-                            x += size - stride // Skip past matched badge
-                        }
+        val candidateCenters = ArrayList<Pair<Int, Int>>()
+        var y = yStart
+        while (y + baseSize <= yEnd) {
+            var x = xStart
+            while (x + baseSize <= xEnd) {
+                if (isLikelyBadgePatch(frame, x, y, baseSize)) {
+                    val cx = x + baseSize / 2
+                    val cy = y + baseSize / 2
+                    // Non-maximum spatial clustering: merge nearby candidate detections within 0.65 * baseSize
+                    val mergeR = (baseSize * 0.65f).toInt()
+                    val already = candidateCenters.any { abs(it.first - cx) <= mergeR && abs(it.second - cy) <= mergeR }
+                    if (!already) {
+                        candidateCenters.add(cx to cy)
                     }
-                    x += stride
                 }
-                y += stride
+                x += coarseStride
+            }
+            y += coarseStride
+        }
+
+        val bestByKey = LinkedHashMap<String, IconMatchCandidate>()
+        val refineSizes = intArrayOf(
+            max(16, (w * 0.047f).toInt()),
+            max(18, (w * 0.050f).toInt()),
+            max(20, (w * 0.053f).toInt())
+        )
+        val fineStep = max(1, baseSize / 16)
+        val fineRadius = max(2, baseSize / 7)
+
+        for ((cx, cy) in candidateCenters) {
+            var localBest: IconMatchCandidate? = null
+            for (size in refineSizes) {
+                val half = size / 2
+                var dy = -fineRadius
+                while (dy <= fineRadius) {
+                    var dx = -fineRadius
+                    while (dx <= fineRadius) {
+                        val px = (cx + dx - half).coerceIn(0, w - size)
+                        val py = (cy + dy - half).coerceIn(0, h - size)
+                        val patch = samplePatchRgb12x12(frame, px, py, size)
+                        val hit = matchPatchRgb12x12(patch, minScore = 0.80f, minMargin = 0.04f)
+                        if (hit != null && (localBest == null || hit.score > localBest.score)) {
+                            localBest = hit
+                        }
+                        dx += fineStep
+                    }
+                    dy += fineStep
+                }
+            }
+            if (localBest != null) {
+                val key = "${localBest.template.chipId}_${localBest.template.paramElementMask}"
+                val prev = bestByKey[key]
+                if (prev == null || localBest.score > prev.score) {
+                    bestByKey[key] = localBest
+                }
             }
         }
-        return bestByChip.values.sortedByDescending { it.score }
+        return bestByKey.values.sortedByDescending { it.score }
     }
 
     private fun isLikelyBadgePatch(frame: VisionFrame, x0: Int, y0: Int, size: Int): Boolean {
-        val step = max(2, size / 6)
-        var darkBorder = 0
+        val step = max(2, size / 7)
+        var darkPixels = 0
         var brightOrVivid = 0
         var y = 0
         while (y < size) {
@@ -287,21 +340,17 @@ object EnemyStatusIconMatcher {
                 val b = argb and 0xFF
                 val maxC = max(r, max(g, b))
                 val minC = min(r, min(g, b))
-                val onEdge = x < step || y < step || x >= size - step || y >= size - step
-                if (onEdge) {
-                    if (maxC < 65) darkBorder++
-                } else {
-                    if (maxC >= 150 || (maxC >= 115 && (maxC - minC) >= 50)) brightOrVivid++
-                }
+                if (maxC < 68) darkPixels++
+                if (maxC >= 165 || (maxC >= 120 && (maxC - minC) >= 55)) brightOrVivid++
                 x += step
             }
             y += step
         }
-        return darkBorder >= 4 && brightOrVivid >= 4
+        return darkPixels >= 4 && brightOrVivid >= 5
     }
 
     /**
-     * Counts compact high-contrast status icon badges below "CD N" (y ∈ [19%..30%]) regardless of
+     * Counts compact high-contrast status icon badges below "CD N" (y ∈ [19.5%..31%]) regardless of
      * whether the icon is in the curated shield dictionary, so Stage-2 inspection still triggers on
      * exotic / event-exclusive enemy skills.
      */
@@ -310,12 +359,12 @@ object EnemyStatusIconMatcher {
         val h = frame.height
         if (w < 120 || h < 200) return 0
 
-        val y0 = (h * 0.19f).toInt()
-        val y1 = (h * 0.30f).toInt()
+        val y0 = (h * 0.195f).toInt()
+        val y1 = (h * 0.31f).toInt()
         val x0 = (w * 0.14f).toInt()
         val x1 = (w * 0.86f).toInt()
         val step = max(2, w / 270)
-        val cellSize = max(12, (w * 0.042f).toInt())
+        val cellSize = max(12, (w * 0.045f).toInt())
 
         var iconClusters = 0
         var x = x0
@@ -337,7 +386,7 @@ object EnemyStatusIconMatcher {
                         val minCh = min(r, min(g, b))
                         val isBorder = dx < step * 2 || dy < step * 2 || dx >= cellSize - step * 2 || dy >= cellSize - step * 2
                         if (isBorder) {
-                            if (maxCh < 55) darkBorder++
+                            if (maxCh < 58) darkBorder++
                         } else {
                             if (maxCh >= 165) brightInterior++
                             if (maxCh >= 140 && (maxCh - minCh) >= 55) vividInterior++

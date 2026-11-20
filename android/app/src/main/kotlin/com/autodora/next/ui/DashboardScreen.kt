@@ -581,9 +581,15 @@ private fun StrategiesTab(
             val displayName = LocaleHelper.displayPresetName(ctx, p, rec.isBuiltIn)
             val displayDesc = LocaleHelper.displayPresetDesc(ctx, p, rec.isBuiltIn)
             val tags = buildList {
-                add(LocaleHelper.goalModeLabel(ctx, cfg.goalMode))
-                add(ctx.getString(R.string.tag_steps_fmt, cfg.maxSteps))
-                add(ctx.getString(R.string.tag_beam_fmt, cfg.beamWidth))
+                add(LocaleHelper.goalSummary(ctx, cfg))
+                if (cfg.useSystemSteps) {
+                    add(ctx.getString(R.string.budget_follow_system))
+                } else {
+                    add(ctx.getString(R.string.tag_steps_fmt, cfg.maxSteps))
+                }
+                if (!cfg.useSystemBeam) {
+                    add(ctx.getString(R.string.tag_beam_fmt, cfg.beamWidth))
+                }
                 if (cfg.earlyStopOnGoal) add(ctx.getString(R.string.tag_first_result))
                 if (cfg.forceSplitThree) add(ctx.getString(R.string.tag_split_three))
                 if (cfg.firstWaveOnlyScoring) add(ctx.getString(R.string.tag_first_only))
@@ -797,19 +803,23 @@ private fun ShieldsTab(
         }
     }
 
-    fun writeRequiredElements(newMask: Int, requireEnch: Boolean) {
-        if (newMask == 0) {
+    fun writeRequiredElements(reqMask: Int, enchMask: Int) {
+        val cleanReq = reqMask and 0x3F
+        val cleanEnch = enchMask and cleanReq
+        if (cleanReq == 0) {
             ActiveStrategyStore.replaceGroup(legacyReqIds, null)
             return
         }
-        val names = (0..5).filter { (newMask and (1 shl it)) != 0 }
-            .joinToString("") { LocaleHelper.elementLabel(ctx, it) }
+        val names = (0..5).filter { (cleanReq and (1 shl it)) != 0 }.joinToString("") { idx ->
+            val n = LocaleHelper.elementLabel(ctx, idx)
+            if ((cleanEnch and (1 shl idx)) != 0) "$n+" else n
+        }
         val chip = WaveShieldChip(
             id = "require_elements",
-            label = if (requireEnch) "$names+" else names,
+            label = names,
             category = ShieldCategory.COUNT_AND_ELEMENT,
-            paramInt = if (requireEnch) 1 else 0,
-            paramElementMask = newMask
+            paramInt = if (cleanEnch == cleanReq && cleanEnch != 0) 1 else 0,
+            paramElementMask = cleanReq or (cleanEnch shl 8)
         )
         ActiveStrategyStore.replaceGroup(legacyReqIds, chip)
     }
@@ -1386,16 +1396,16 @@ private fun ShieldsTab(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // 2b. Required Attributes + Independent Enchanted Switch (mutually exclusive with Forbid All!)
+                // 2b. Required Attributes + Independent Per-Color Enchanted Row (mutually exclusive with Forbid All!)
                 Text(
                     text = stringResource(R.string.elem_req_label),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                val reqMaskFromChip = byId["require_elements"]?.paramElementMask ?: 0
-                val reqEnchFromChip = (byId["require_elements"]?.paramInt ?: 0) == 1 ||
-                    "five_elements_enchanted" in activeIds ||
-                    (0..5).any { "require_ench_$it" in activeIds }
+                val rawReqParam = byId["require_elements"]?.paramElementMask ?: 0
+                val reqMaskFromChip = rawReqParam and 0x3F
+                val perColorEnchFromChip = (rawReqParam ushr 8) and 0x3F
+                val legacyAllEnch = perColorEnchFromChip == 0 && (byId["require_elements"]?.paramInt ?: 0) == 1
                 val effectiveReqMask = remember(activeWaveChips) {
                     var m = reqMaskFromChip
                     if ("three_elements" in activeIds) m = m or 0x07
@@ -1404,6 +1414,14 @@ private fun ShieldsTab(
                         if ("require_elem_$e" in activeIds || "require_ench_$e" in activeIds) m = m or (1 shl e)
                     }
                     m
+                }
+                val effectiveEnchMask = remember(activeWaveChips) {
+                    var em = if (perColorEnchFromChip != 0) perColorEnchFromChip else if (legacyAllEnch) reqMaskFromChip else 0
+                    if ("five_elements_enchanted" in activeIds) em = em or 0x1F
+                    for (e in 0..5) {
+                        if ("require_ench_$e" in activeIds) em = em or (1 shl e)
+                    }
+                    em and effectiveReqMask
                 }
 
                 val antiMask = readMaskForLimit("anti_first_wave")
@@ -1415,22 +1433,22 @@ private fun ShieldsTab(
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     for (e in 0 until 6) {
-                        val isOn = (effectiveReqMask and (1 shl e)) != 0
+                        val bit = 1 shl e
+                        val isOn = (effectiveReqMask and bit) != 0
                         ElementColorTogglePill(
                             elemIndex = e,
                             selected = isOn,
-                            suffix = if (isOn && reqEnchFromChip) "+" else "",
                             onClick = {
-                                val nextMask = effectiveReqMask xor (1 shl e)
-                                val adding = (nextMask and (1 shl e)) != 0
+                                val nextReq = effectiveReqMask xor bit
+                                val adding = (nextReq and bit) != 0
+                                val nextEnch = if (adding) effectiveEnchMask else (effectiveEnchMask and bit.inv())
                                 if (adding) {
                                     // Clear Forbid-All on this color to prevent impossible conflict!
-                                    val newForbid = forbidMask and (1 shl e).inv()
+                                    val newForbid = forbidMask and bit.inv()
                                     if (newForbid != forbidMask) {
                                         writeMaskForLimit("forbid_all", ctx.getString(R.string.elem_limit_forbid), newForbid)
                                     }
-                                    // Keep Min Distinct consistent if selected colors exceed it!
-                                    val bitCnt = Integer.bitCount(nextMask)
+                                    val bitCnt = Integer.bitCount(nextReq)
                                     if (curMinDistinct in 2..5 && bitCnt > curMinDistinct) {
                                         ActiveStrategyStore.upsertChip(
                                             WaveShieldChip(
@@ -1442,28 +1460,54 @@ private fun ShieldsTab(
                                         )
                                     }
                                 }
-                                writeRequiredElements(nextMask, reqEnchFromChip && nextMask != 0)
+                                writeRequiredElements(nextReq, nextEnch)
                             },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
+                Text(
+                    text = stringResource(R.string.elem_req_ench_row),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Text(
-                        text = stringResource(R.string.elem_req_ench_switch),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (effectiveReqMask != 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f).padding(end = 8.dp)
-                    )
-                    Switch(
-                        checked = reqEnchFromChip && effectiveReqMask != 0,
-                        enabled = effectiveReqMask != 0,
-                        onCheckedChange = { ench -> writeRequiredElements(effectiveReqMask, ench) }
-                    )
+                    for (e in 0 until 6) {
+                        val bit = 1 shl e
+                        val isEnchOn = (effectiveEnchMask and bit) != 0
+                        ElementColorTogglePill(
+                            elemIndex = e,
+                            selected = isEnchOn,
+                            suffix = "+",
+                            onClick = {
+                                val turningOn = !isEnchOn
+                                val nextReq = if (turningOn) (effectiveReqMask or bit) else effectiveReqMask
+                                val nextEnch = if (turningOn) (effectiveEnchMask or bit) else (effectiveEnchMask and bit.inv())
+                                if (turningOn) {
+                                    val newForbid = forbidMask and bit.inv()
+                                    if (newForbid != forbidMask) {
+                                        writeMaskForLimit("forbid_all", ctx.getString(R.string.elem_limit_forbid), newForbid)
+                                    }
+                                    val bitCnt = Integer.bitCount(nextReq)
+                                    if (curMinDistinct in 2..5 && bitCnt > curMinDistinct) {
+                                        ActiveStrategyStore.upsertChip(
+                                            WaveShieldChip(
+                                                id = "min_distinct_elements",
+                                                label = ctx.getString(R.string.elem_min_distinct_fmt, bitCnt),
+                                                category = ShieldCategory.COUNT_AND_ELEMENT,
+                                                paramInt = bitCnt
+                                            )
+                                        )
+                                    }
+                                }
+                                writeRequiredElements(nextReq, nextEnch)
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -1535,7 +1579,8 @@ private fun ShieldsTab(
                                             // Forbid-All conflicts with Required Attribute on the same color!
                                             if ((effectiveReqMask and bit) != 0) {
                                                 val prunedReq = effectiveReqMask and bit.inv()
-                                                writeRequiredElements(prunedReq, reqEnchFromChip && prunedReq != 0)
+                                                val prunedEnch = effectiveEnchMask and bit.inv()
+                                                writeRequiredElements(prunedReq, prunedEnch)
                                             }
                                         }
                                     }
@@ -2458,6 +2503,11 @@ private fun SettingsTab(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Text(
+                    text = stringResource(R.string.priority_tier_hint_settings),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
                 OutlinedTextField(
                     value = maxStepsInput,
                     onValueChange = { raw ->
@@ -2501,9 +2551,9 @@ private fun SettingsTab(
                 SliderSettingRow(
                     label = stringResource(R.string.slider_beam),
                     valueText = "${settings.beamWidth}",
-                    value = settings.beamWidth.toFloat(),
-                    valueRange = 60f..400f,
-                    onValueChange = { v -> onUpdateSettings { it.copy(beamWidth = (v / 20f).roundToInt() * 20) } }
+                    value = settings.beamWidth.toFloat().coerceIn(40f, 600f),
+                    valueRange = 40f..600f,
+                    onValueChange = { v -> onUpdateSettings { it.copy(beamWidth = ((v / 20f).roundToInt() * 20).coerceIn(40, 600)) } }
                 )
                 SliderSettingRow(
                     label = stringResource(R.string.slider_hold_delay),
@@ -2825,7 +2875,7 @@ private fun SwitchSettingRow(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SlimNativeSlider(
+internal fun SlimNativeSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float>,

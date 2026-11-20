@@ -965,6 +965,197 @@ void testRaceOrbShield() {
     require((best.simulation.firstWaveRaceElementsMask & elementBit(Element::Water)) != 0, "Water Race orb must clear in wave 1");
 }
 
+// ============================================================================
+// 27. Exact First-Wave 4C on Real Screenshot Board (MUST NEVER return 0 steps!)
+// ============================================================================
+void testExactFirst4CRealBoardNeverZeroSteps() {
+    // Exact 6x5 board from real user battle screenshot (Screenshot 4)
+    BoardState b = BoardState::fromString(
+        "GDDLFW"
+        "LGLDWG"
+        "DHFWDW"
+        "FDHFGL"
+        "DGWHFF",
+        6, 5
+    );
+    PuzzleSolver solver;
+
+    // Case A: Standard orthogonal matching
+    RuleConfig r1;
+    r1.exactFirstWaveCombo = 4;
+    r1.maxSteps = 30;
+    r1.beamWidth = 180;
+    SolveOutput out1 = solver.solve(b, r1);
+    require(!out1.solutions.empty(), "real board exact first 4C no solution");
+    const auto& best1 = out1.solutions[0];
+    verifyPathReplay(b, r1, best1);
+    require(best1.metrics.stepCount >= 1, "exact first 4C must move >= 1 step");
+    require(best1.evaluation.allHardConstraintsMet, "exact first 4C hard constraint must be met");
+    require(best1.simulation.firstWaveCombo == 4, "must achieve exact 4 first-wave combos");
+
+    // Case B: Even with allowDiagonalMatch=true (where depth-0 already has 4 diagonal combos!), MUST move >= 1 step!
+    RuleConfig r2 = r1;
+    r2.allowDiagonalMatch = true;
+    SolveOutput out2 = solver.solve(b, r2);
+    require(!out2.solutions.empty(), "diag-match exact first 4C no solution");
+    const auto& best2 = out2.solutions[0];
+    verifyPathReplay(b, r2, best2);
+    require(best2.metrics.stepCount >= 1, "diag-match exact first 4C must NEVER return 0 steps!");
+    require(best2.evaluation.allHardConstraintsMet, "diag-match exact first 4C must be met");
+    require(best2.simulation.firstWaveCombo == 4, "diag-match must achieve exact 4 first-wave combos");
+}
+
+// ============================================================================
+// 28. Zero Combo Empty Turn (0C 空转: MUST move >= 1 step with 0 combos)
+// ============================================================================
+void testZeroComboRequiresRealMove() {
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.exactTotalCombo = 0;
+    r.maxSteps = 6;
+    r.earlyStopOnGoal = true;
+    r.beamWidth = 120;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "0C empty turn no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.metrics.stepCount >= 1, "0C empty turn must still swipe >= 1 step to pass turn");
+    require(best.simulation.totalCombo == 0, "0C empty turn must have 0 combos");
+    require(best.evaluation.allHardConstraintsMet, "0C empty turn must meet all hard constraints");
+}
+
+// ============================================================================
+// 29. Per-Color Independent Enchanted Shield (水普通 + 火强化)
+// ============================================================================
+void testPerColorIndependentEnchanted() {
+    BoardState b = BoardState::fromString(
+        "WF+GLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    // Require Water (normal OK) + Fire (MUST be Enchanted!)
+    r.requiredFirstWaveElementsMask = elementBit(Element::Water) | elementBit(Element::Fire);
+    r.requiredTotalElementsMask = elementBit(Element::Water) | elementBit(Element::Fire);
+    r.requiredEnchantedElementsMask = elementBit(Element::Fire);
+    r.maxSteps = 20;
+    r.beamWidth = 180;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "per-color enchanted no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "Water normal + Fire enchanted must be satisfied");
+    require((best.simulation.firstWaveElementsMask & elementBit(Element::Water)) != 0, "Water must match");
+    require((best.simulation.totalEnchantedElementsMask & elementBit(Element::Fire)) != 0, "Fire enchanted must match");
+}
+
+// ============================================================================
+// 30. Special Orb Shields (Any Enchanted + Avoid Weakened + Char Orb 1st Wave)
+// ============================================================================
+void testSpecialOrbShields() {
+    BoardState b = BoardState::fromString(
+        "W+FGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    // Mark a Wood orb as Weakened (must NOT be eliminated!)
+    b.at(2, 0).variant = Variant::Weakened;
+    b.rebuildMasks();
+
+    RuleConfig r;
+    r.requireAnyEnchantedOrb = true;
+    r.forbidWeakenedOrbs = true;
+    r.requireCharOrbFirstWave = true;
+    r.maxSteps = 20;
+    r.beamWidth = 200;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "special orb shields no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "AnyEnchanted + ForbidWeakened + CharOrb1st must all be met");
+    require(best.simulation.firstWaveEnchantedElementsMask != 0, "must match an enchanted orb in wave 1");
+    require(best.simulation.weakenedEliminated == 0, "must NOT eliminate weakened orb");
+    require((best.simulation.firstWaveClearedMask & bitOf(best.metrics.charOrbEndIdx)) != 0, "held/char orb must clear in wave 1");
+}
+
+// ============================================================================
+// 31. Dual-Cross Specific Colors Shield (水+火双十字)
+// ============================================================================
+void testDualCrossSpecificColors() {
+    BoardState b = BoardState::fromString(
+        "WWWFGG"
+        "WFWWFG"
+        "LWFGLF"
+        "DFWFFD"
+        "HHFFLL",
+        6, 5
+    );
+    RuleConfig r;
+    r.crossShield.requiredCount = 2;
+    r.crossShield.requireDistinctColors = true;
+    r.crossShield.requiredElementsMask = elementBit(Element::Water) | elementBit(Element::Fire);
+    r.maxSteps = 32;
+    r.beamWidth = 300;
+    r.maxTimeMs = 1200;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "dual cross specific colors no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "Water+Fire dual cross must succeed");
+}
+
+// ============================================================================
+// 32. Composite Multi-Shield Stack (首消>=4C + >=3属 + 反首消心 + 任意强化)
+// ============================================================================
+void testCompositeMultiShieldStack() {
+    BoardState b = BoardState::fromString(
+        "W+FGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.minFirstWaveCombo = 4;
+    r.minDistinctElements = 3;
+    r.elementRules[static_cast<size_t>(Element::Heart)].timing = MatchTiming::ForbidFirstWaveAllowCascade;
+    r.requireAnyEnchantedOrb = true;
+    r.maxSteps = 26;
+    r.beamWidth = 260;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "composite multi-shield no solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "composite multi-shield stack must all be met");
+    require(best.simulation.firstWaveCombo >= 4, "firstWaveCombo >= 4");
+    require((best.simulation.firstWaveElementsMask & elementBit(Element::Heart)) == 0, "Heart must not match wave 1");
+    require(best.simulation.firstWaveEnchantedElementsMask != 0, "must match enchanted orb");
+}
+
 } // namespace
 
 int main() {
@@ -996,6 +1187,12 @@ int main() {
     runTest("24. Character Orb Pass + End Terrain (角色珠通行/停放)", testCharOrbPassAndEndTerrain);
     runTest("25. Trail Corrosion Self-Avoiding Walk (轨迹腐蚀)", testTrailCorrosionUniqueCells);
     runTest("26. Race Orb Shield (种族符石盾)", testRaceOrbShield);
+    runTest("27. Exact First-Wave 4C Real Board (Never 0 Steps)", testExactFirst4CRealBoardNeverZeroSteps);
+    runTest("28. Zero Combo Empty Turn (Must Move >= 1 Step)", testZeroComboRequiresRealMove);
+    runTest("29. Per-Color Independent Enchanted Shield", testPerColorIndependentEnchanted);
+    runTest("30. Special Orb Shields (Enchanted/Weakened/Char1st)", testSpecialOrbShields);
+    runTest("31. Dual-Cross Specific Colors Shield (Water+Fire)", testDualCrossSpecificColors);
+    runTest("32. Composite Multi-Shield Stack", testCompositeMultiShieldStack);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;

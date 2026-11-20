@@ -59,15 +59,6 @@ fun TeamPresetEditorDialog(
     var stepsText by remember(initial.id) { mutableStateOf(initial.baseConfig.maxSteps.toString()) }
     var activeHelp by remember { mutableStateOf<Pair<String, String>?>(null) }
 
-    val complexityTiers = listOf(
-        t(R.string.tier_tiny) to 40,
-        t(R.string.tier_low) to 90,
-        t(R.string.tier_mid) to 180,
-        t(R.string.tier_high) to 280,
-        t(R.string.tier_ultra) to 420,
-        t(R.string.tier_max) to 600
-    )
-
     val shapeOrder = listOf(
         TargetShape.ANY,
         TargetShape.COUNT_2,
@@ -139,44 +130,68 @@ fun TeamPresetEditorDialog(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        OutlinedTextField(
-                            value = stepsText,
-                            onValueChange = { raw ->
-                                val d = raw.filter { it.isDigit() }.take(3)
-                                stepsText = d
-                                val v = d.toIntOrNull()
-                                if (v != null && v in 8..300) {
-                                    cfg = cfg.copy(maxSteps = v)
-                                }
-                            },
-                            label = { Text(t(R.string.field_strategy_steps)) },
-                            suffix = { Text(t(R.string.unit_steps)) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth()
+                        Text(
+                            text = t(R.string.priority_tier_hint_strategy),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
                         )
 
-                        Text(
-                            text = t(R.string.section_complexity, cfg.beamWidth),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        // Strategy Max Steps with Follow-System / Strategy-Override toggle
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val nearest = complexityTiers.minByOrNull { kotlin.math.abs(it.second - cfg.beamWidth) }?.second
-                            for ((label, width) in complexityTiers) {
-                                CompactChoicePill(
-                                    label = label,
-                                    selected = nearest == width,
-                                    onClick = { cfg = cfg.copy(beamWidth = width) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+                            OutlinedTextField(
+                                value = stepsText,
+                                onValueChange = { raw ->
+                                    val d = raw.filter { it.isDigit() }.take(3)
+                                    stepsText = d
+                                    val v = d.toIntOrNull()
+                                    if (v != null && v in 8..300) {
+                                        cfg = cfg.copy(maxSteps = v, useSystemSteps = false)
+                                    }
+                                },
+                                label = { Text(t(R.string.field_strategy_steps)) },
+                                suffix = { Text(t(R.string.unit_steps)) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                            CompactChoicePill(
+                                label = t(if (cfg.useSystemSteps) R.string.budget_follow_system else R.string.budget_override_strategy),
+                                selected = cfg.useSystemSteps,
+                                onClick = { cfg = cfg.copy(useSystemSteps = !cfg.useSystemSteps) }
+                            )
                         }
 
-                        // ===== 2. Global Matching Goal & Multi-Orb Policies =====
+                        // Unified Native Slim Slider for Solver Compute (matching Settings tab 1:1!)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = t(R.string.slider_beam) + " · ${cfg.beamWidth}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            CompactChoicePill(
+                                label = t(if (cfg.useSystemBeam) R.string.budget_follow_system else R.string.budget_override_strategy),
+                                selected = cfg.useSystemBeam,
+                                onClick = { cfg = cfg.copy(useSystemBeam = !cfg.useSystemBeam) }
+                            )
+                        }
+                        SlimNativeSlider(
+                            value = cfg.beamWidth.toFloat().coerceIn(40f, 600f),
+                            onValueChange = { v ->
+                                val stepped = ((v / 20f).toInt() * 20).coerceIn(40, 600)
+                                cfg = cfg.copy(beamWidth = stepped, useSystemBeam = false)
+                            },
+                            valueRange = 40f..600f
+                        )
+
+                        // ===== 2. Grouped & Parameterized Global Matching Goal (N / X) =====
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         EditorSectionTitleRow(
                             title = t(R.string.section_goal_mode),
@@ -184,16 +199,202 @@ fun TeamPresetEditorDialog(
                                 activeHelp = t(R.string.help_goal_policy_title) to t(R.string.help_goal_policy_body)
                             }
                         )
+                        val goalGroup = cfg.goalMode.normalizedGroup()
+                        val curGoalN = if (cfg.goalMode == goalGroup) cfg.goalParamN else cfg.goalMode.defaultParamN()
+                        val curGoalX = if (cfg.goalMode == goalGroup) cfg.goalParamX else cfg.goalMode.defaultParamX()
+                        val groupedModes = listOf(
+                            StrategyGoalMode.HIGH_COMBO,
+                            StrategyGoalMode.N_COLOR_BALANCE,
+                            StrategyGoalMode.N_COLOR_ALL,
+                            StrategyGoalMode.SINGLE_COLOR_X_ORBS,
+                            StrategyGoalMode.MULTI_COLOR_X_ORBS
+                        )
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            for (mode in StrategyGoalMode.entries) {
+                            for (grp in groupedModes) {
                                 CompactChoicePill(
-                                    label = LocaleHelper.goalModeLabel(ctx, mode),
-                                    selected = cfg.goalMode == mode,
-                                    onClick = { cfg = cfg.copy(goalMode = mode) }
+                                    label = LocaleHelper.goalModeLabel(ctx, grp),
+                                    selected = goalGroup == grp,
+                                    onClick = {
+                                        val defN = when (grp) {
+                                            StrategyGoalMode.N_COLOR_BALANCE -> curGoalN.coerceIn(2, 5)
+                                            StrategyGoalMode.N_COLOR_ALL -> curGoalN.coerceIn(2, 6)
+                                            StrategyGoalMode.MULTI_COLOR_X_ORBS -> curGoalN.coerceIn(2, 5)
+                                            else -> 3
+                                        }
+                                        val defX = curGoalX.coerceIn(4, 9)
+                                        cfg = cfg.copy(
+                                            goalMode = grp,
+                                            goalParamN = defN,
+                                            goalParamX = defX,
+                                            goalElementsMask = if (grp != goalGroup) 0 else cfg.goalElementsMask
+                                        )
+                                    }
                                 )
+                            }
+                        }
+
+                        if (goalGroup != StrategyGoalMode.HIGH_COMBO) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    // Parameter N (Number of Colors)
+                                    if (goalGroup == StrategyGoalMode.N_COLOR_BALANCE ||
+                                        goalGroup == StrategyGoalMode.N_COLOR_ALL ||
+                                        goalGroup == StrategyGoalMode.MULTI_COLOR_X_ORBS
+                                    ) {
+                                        val nRange = if (goalGroup == StrategyGoalMode.N_COLOR_ALL) 2..6 else 2..5
+                                        Text(
+                                            text = t(R.string.goal_param_n_label),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                        ) {
+                                            for (n in nRange) {
+                                                CompactChoicePill(
+                                                    label = t(R.string.goal_unit_colors, n),
+                                                    selected = curGoalN == n,
+                                                    onClick = {
+                                                        cfg = cfg.copy(
+                                                            goalMode = goalGroup,
+                                                            goalParamN = n,
+                                                            goalElementsMask = 0 // Reset specific mask when N changes
+                                                        )
+                                                    },
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Parameter X (Orbs per group: 4..9!)
+                                    if (goalGroup == StrategyGoalMode.SINGLE_COLOR_X_ORBS ||
+                                        goalGroup == StrategyGoalMode.MULTI_COLOR_X_ORBS
+                                    ) {
+                                        Text(
+                                            text = t(R.string.goal_param_x_label),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            for (x in 4..9) {
+                                                CompactChoicePill(
+                                                    label = t(R.string.goal_unit_orbs, x),
+                                                    selected = curGoalX == x,
+                                                    onClick = {
+                                                        cfg = cfg.copy(goalMode = goalGroup, goalParamX = x)
+                                                    },
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Optional Target Color for Single-Color X Orbs
+                                    if (goalGroup == StrategyGoalMode.SINGLE_COLOR_X_ORBS) {
+                                        Text(
+                                            text = t(R.string.goal_target_elem_label),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            CompactChoicePill(
+                                                label = t(R.string.puzzle_elem_any),
+                                                selected = cfg.goalTargetElement < 0,
+                                                onClick = { cfg = cfg.copy(goalMode = goalGroup, goalTargetElement = -1) },
+                                                modifier = Modifier.weight(1.5f)
+                                            )
+                                            for (e in 0 until 6) {
+                                                val sel = cfg.goalTargetElement == e
+                                                val badgeCol = Color(LocaleHelper.elementBadgeArgb(e))
+                                                Surface(
+                                                    onClick = { cfg = cfg.copy(goalMode = goalGroup, goalTargetElement = e) },
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = if (sel) badgeCol else MaterialTheme.colorScheme.surface,
+                                                    border = BorderStroke(
+                                                        width = if (sel) 1.5.dp else 1.dp,
+                                                        color = if (sel) badgeCol else MaterialTheme.colorScheme.outlineVariant
+                                                    ),
+                                                    modifier = Modifier.weight(1f).height(32.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Text(
+                                                            text = LocaleHelper.elementLabel(ctx, e),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                                                            color = if (sel) Color.White else MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Optional Specific Colors Mask for N-Color modes
+                                    if (goalGroup == StrategyGoalMode.N_COLOR_BALANCE ||
+                                        goalGroup == StrategyGoalMode.N_COLOR_ALL ||
+                                        goalGroup == StrategyGoalMode.MULTI_COLOR_X_ORBS
+                                    ) {
+                                        Text(
+                                            text = t(R.string.goal_colors_opt_label),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            for (e in 0 until 6) {
+                                                val bit = 1 shl e
+                                                val sel = (cfg.goalElementsMask and bit) != 0
+                                                val badgeCol = Color(LocaleHelper.elementBadgeArgb(e))
+                                                Surface(
+                                                    onClick = {
+                                                        var nextMask = cfg.goalElementsMask xor bit
+                                                        if ((nextMask and bit) != 0 && Integer.bitCount(nextMask) > curGoalN) {
+                                                            // Cap selection to N colors
+                                                            nextMask = cfg.goalElementsMask
+                                                        }
+                                                        cfg = cfg.copy(goalMode = goalGroup, goalElementsMask = nextMask)
+                                                    },
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = if (sel) badgeCol else MaterialTheme.colorScheme.surface,
+                                                    border = BorderStroke(
+                                                        width = if (sel) 1.5.dp else 1.dp,
+                                                        color = if (sel) badgeCol else MaterialTheme.colorScheme.outlineVariant
+                                                    ),
+                                                    modifier = Modifier.weight(1f).height(32.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Text(
+                                                            text = LocaleHelper.elementLabel(ctx, e),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                                                            color = if (sel) Color.White else MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 

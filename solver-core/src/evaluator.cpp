@@ -1213,11 +1213,12 @@ EvalResult evaluateCandidate(
             soft += static_cast<double>(sim.firstWaveCombo) * 20.0 * sideComboScale;
         }
     } else {
-        if (rules.avoidSkyfallRisk && comboOk) {
+        if (rules.avoidSkyfallRisk && comboOk && rules.exactTotalCombo >= 0) {
             soft -= static_cast<double>(sim.skyfallRiskPairs) * 8.5;
         }
-        if (rules.exactFirstWaveCombo >= 0 && sim.cascadeWaves > 1) {
-            soft -= static_cast<double>(sim.totalCombo - sim.firstWaveCombo) * 25.0;
+        // For Exact First-Wave Combo (固定首消 N 连击盾), wave 2+ cascade combos are BONUS damage, not a failure!
+        if (rules.exactFirstWaveCombo >= 0 && comboOk && sim.totalCombo > sim.firstWaveCombo) {
+            soft += static_cast<double>(sim.totalCombo - sim.firstWaveCombo) * 18.0;
         }
     }
 

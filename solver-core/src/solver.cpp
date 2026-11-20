@@ -323,6 +323,9 @@ SolveOutput PuzzleSolver::solve(
         }
     };
 
+    // In Tower of Saviors, a 0-step move does NOT trigger rune matching or pass a turn!
+    // Only record depth-0 as a terminal solution if exactSteps == 0 or pulling a Character Orb itself moved a rune.
+    const bool allowZeroStepSolution = (rules.exactSteps == 0) || rules.useCharacterOrb;
     bool foundGoalEarly = false;
     for (SearchNode& node : frontier) {
         const SimulationResult sim = simulateBoard(node.board, rules);
@@ -330,10 +333,12 @@ SolveOutput PuzzleSolver::solve(
         node.beamScore = ev.totalScore;
         node.allHardMet = ev.allHardConstraintsMet;
         out.statesEvaluated++;
-        recordCandidate(node);
-        if (rules.earlyStopOnGoal && ev.allHardConstraintsMet &&
-            (rules.exactSteps < 0 || rules.exactSteps == 0)) {
-            foundGoalEarly = true;
+        if (allowZeroStepSolution) {
+            recordCandidate(node);
+            if (rules.earlyStopOnGoal && ev.allHardConstraintsMet &&
+                (rules.exactSteps < 0 || rules.exactSteps == 0)) {
+                foundGoalEarly = true;
+            }
         }
     }
 

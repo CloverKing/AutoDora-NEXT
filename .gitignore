@@ -11,6 +11,7 @@ cmake-build-*/
 
 # Android / Gradle
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/**/build/
 android/.idea/

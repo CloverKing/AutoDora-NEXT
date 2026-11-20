@@ -33,9 +33,9 @@
     <string name="perm_grant">授权</string>
     <string name="perm_enable">去开启</string>
     <string name="guide_title">悬浮胶囊操作说明</string>
-    <string name="guide_line_1">• 「算」识盘解盾并画线预览；「◀ / ▶」切换候选解；「行」执行转珠（开「按住转」时执行按住重算）。</string>
-    <string name="guide_line_2">• 「线」控制转珠路径显示；「校」控制盘面校准网格与四角拖拽；「停」随时一键急停。</string>
-    <string name="guide_line_3">• 点「⋯」可展开快捷开关、四分页调参抽屉、盘面编绘与敌技识别。</string>
+    <string name="guide_line_1">• 顶部图标栏：计算、执行、路径、结果卡片、校准网格、急停与四分页完整调参抽屉，常驻更紧凑。</string>
+    <string name="guide_line_2">• 试跑确认开启时，须先点计算生成路径后才启用执行；关闭试跑确认时，计算图标隐藏，点执行即自动算路并转珠。</string>
+    <string name="guide_line_3">• 优先级规则：本波解盾（解盾级）&gt; 当前作战策略（策略级）&gt; 全局设置默认（系统级）。</string>
     <string name="hyperos_title">无障碍受限设置指引</string>
     <string name="hyperos_app_details">应用详情</string>
     <string name="action_expand">展开</string>
@@ -337,9 +337,9 @@
     <string name="help_strategy_library_title">作战策略库说明</string>
     <string name="help_strategy_library_body">【功能作用】\n作战策略用于定义整场副本中通用的消珠习惯、队长技特性与解盘算力预算，与“解盾”中针对单个敌人的临时规则相互叠加生效。\n\n【适用场景】\n• 常规队：选择「通用高连击策略」。\n• 二消队 / 特定珠数队长：复制并配置「最低消」与「消珠形态」。\n• 直排升华 / 角色符石起手 / 违建扩版：直接启用对应预设或自定义新策略。</string>
     <string name="help_basic_steps_title">策略步数与解盘算力说明</string>
-    <string name="help_basic_steps_body">【步数上限】\n限制单次转珠路径的最大步数（8～300 步）。常规 6×5 盘面建议 30～60 步；6×8 违建或高难拼图/多十字建议 80～150 步。\n\n【解盘算力】\n控制整套路径搜索与解法评估的计算宽度（微 40 ～ 极 600）：每推进 1 步都会对所有候选路线进行模拟消除、破盾判定与综合评分，并保留前 N 条最优分支继续演化。数值越高，破复杂复合盾成功率越高，单次解盘耗时也会略增。</string>
-    <string name="help_engine_settings_title">解盘引擎与算力说明</string>
-    <string name="help_engine_settings_body">• 最大步数上限：全局转珠路径允许的最大移动步数（8～300 步）。\n• 解盘算力：控制本地求解引擎每一步同时展开、模拟消除并评分的候选路线宽度（包含路径搜索与解法计算的全部算力）。数值越高越能解出拼图、多十字等复杂复合盾，耗时相应增加。\n• 按住重算显形延时：开启「按住转」后按住起手珠等待盘面翻开显形的毫秒数。\n• 执行前倒数：点击「行」后延迟指定秒数再开始划珠，方便手动确认或提前切回游戏。</string>
+    <string name="help_basic_steps_body">【层级优先级：解盾级 &gt; 策略级 &gt; 系统级】\n设置页中的步数上限与解盘算力属于「系统级默认值」；策略内可勾选「跟随系统」或拖动滑块/修改步数切换为「策略级覆盖」；本波解盾（如限 15 步、高难复合盾）拥有最高优先级。\n\n【步数上限】\n限制单次转珠路径的最大步数（8～300 步）。常规 6×5 盘面建议 30～60 步；6×8 违建或高难拼图/多十字建议 80～150 步。\n\n【解盘算力】\n控制整套路径搜索与解法评估的计算宽度（40～600）：每推进 1 步都会对候选路线进行模拟消除、破盾判定与综合评分。</string>
+    <string name="help_engine_settings_title">解盘引擎与优先级说明</string>
+    <string name="help_engine_settings_body">【配置优先级：解盾级 &gt; 策略级 &gt; 系统级】\n设置页中的步数上限、解盘算力等属于系统级默认值；若当前作战策略设置了独立步数或算力，则以策略级为准；若本波挂载了限步盾等敌技，则以解盾级为最高优先级。\n\n• 最大步数上限：全局默认允许的最大移动步数（8～300 步）。\n• 解盘算力：控制本地求解引擎每一步同时展开、模拟消除并评分的候选路线宽度（包含路径搜索与解法计算的全部算力）。\n• 按住重算显形延时：开启「按住转」后等待盘面翻开显形的毫秒数。\n• 执行前倒数：点击执行后延迟指定秒数再开始划珠。</string>
     <string name="help_goal_policy_title">全局目标与多珠消除策略说明</string>
     <string name="help_goal_policy_body">【全局消珠目标】\n设定整体求解偏好，例如追求最高连击、三/四/五色均衡，或优先凑单色/多色五珠、六珠、七珠、八珠、九珠触发队长倍率与强化珠。\n\n【多珠消除方式】\n• 最高连击：同色珠多于 3 颗时优先切开冲高连击。\n• 消最多珠：优先把该色珠尽量消完。\n• 消除一组：仅保留一组消除，节省步数或留珠。\n\n【不足处理与求解倾向】\n• 不足照常消除 / 不足保留存珠：当版面某色珠数达不到目标形态时决定照常 3 消还是留珠给下回合。\n• 最佳解：在预算内寻找综合评分最高解。\n• 最快达标：一旦找到满足全部硬盾的路线即提前返回。</string>
     <string name="help_elem_matrix_title">单属性规则矩阵说明</string>
@@ -422,4 +422,38 @@
     <string name="ocr_text_applied_fmt">文字解析已启用：%1$s</string>
     <string name="bench_line_65">✓ 6×5 盘面：%1$d 连击 (%2$d 步) · 耗时 %3$d 毫秒 · 评估 %4$d 局面</string>
     <string name="bench_line_68">✓ 6×8 违建：%1$d 连击 (%2$d 步) · 耗时 %3$d 毫秒 · 评估 %4$d 局面</string>
+
+    <!-- v2 Grouped Global Goals, Per-Color Enchanted, 3-Tier Precedence & Icon Floating HUD -->
+    <string name="goal_group_high_combo">高连击</string>
+    <string name="goal_group_n_balance">多色均衡</string>
+    <string name="goal_group_n_all">多色全消</string>
+    <string name="goal_group_single_x">单色多珠</string>
+    <string name="goal_group_multi_x">多色多珠</string>
+    <string name="goal_param_n_label">目标属性数</string>
+    <string name="goal_param_x_label">目标连消颗数</string>
+    <string name="goal_target_elem_label">指定目标颜色（选填）</string>
+    <string name="goal_colors_opt_label">指定属性颜色（选填）</string>
+    <string name="goal_summary_n_balance">%1$d色均衡</string>
+    <string name="goal_summary_n_all">%1$d色全消</string>
+    <string name="goal_summary_single_x">单色%1$d珠</string>
+    <string name="goal_summary_multi_x">%1$d色%2$d珠</string>
+    <string name="goal_unit_colors">%1$d色</string>
+    <string name="goal_unit_orbs">%1$d珠</string>
+    <string name="elem_req_ench_row">各属性独立强化符石</string>
+    <string name="budget_follow_system">跟随系统</string>
+    <string name="budget_override_strategy">策略覆盖</string>
+    <string name="priority_tier_hint_settings">系统级默认值 · 优先级：解盾级 &gt; 策略级 &gt; 系统级</string>
+    <string name="priority_tier_hint_strategy">策略级配置 · 覆盖系统默认，低于本波解盾</string>
+    <string name="priority_tier_hint_shields">解盾级配置 · 最高优先级，覆盖策略与系统</string>
+    <string name="ov_tab_quick">快捷</string>
+    <string name="ov_tab_settings">设置</string>
+    <string name="ov_result_btn">结果</string>
+    <string name="ov_toast_need_solve">试跑确认已开启，请先点击计算生成路线</string>
+    <string name="ov_toast_icon_none">图标识别：未检测到已知状态盾</string>
+    <string name="ov_toast_icon_found_fmt">图标识别：%1$s</string>
+    <string name="ov_toast_need_a11y_gear">需开启无障碍服务才能自动点击齿轮展开敌技</string>
+    <string name="ov_toast_no_skill">敌技识别：当前敌人没有技能</string>
+    <string name="ov_toast_applied_fmt">已挂载 %1$d 项敌技盾：%2$s</string>
+    <string name="ov_toast_stopped">已急停中止</string>
+    <string name="ov_summary_fmt">%1$d×%2$d · 首%3$d/总%4$d连 · %5$d步 · %6$d毫秒</string>
 </resources>

@@ -166,6 +166,8 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
                 description = "6×8 扩版特化 · 允许更长步数（100 步）与高算力广度搜索",
                 baseConfig = RuleConfig(
                     allowDiagonalMove = true,
+                    useSystemSteps = false,
+                    useSystemBeam = false,
                     maxSteps = 100,
                     beamWidth = 260,
                     maxTimeMs = 1100,

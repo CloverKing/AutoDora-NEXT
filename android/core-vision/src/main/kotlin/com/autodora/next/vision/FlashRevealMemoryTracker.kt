@@ -62,6 +62,11 @@ class FlashRevealMemoryTracker(
     @Synchronized
     fun onWatchFrame(result: RecognitionResult, nowMs: Long = System.currentTimeMillis()): Boolean {
         val total = result.board.cols * result.board.rows
+        val unknownCount = result.board.cells.count { it.element == Element.UNKNOWN || it.element == Element.EMPTY }
+        // Never treat dark modals/menus/home screens (high UNKNOWN cells) as a question-orb flip!
+        if (unknownCount >= max(6, total / 3)) {
+            return false
+        }
         val hiddenCount = countHiddenOrQuestion(result.board)
         val hiddenFlipThreshold = max(6, total / 3)
 

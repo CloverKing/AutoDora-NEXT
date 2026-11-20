@@ -231,6 +231,7 @@ class CvBoardRecognizer : BoardRecognizer {
         var outerRingValSum = 0f
         var outerRingSatSum = 0f
         var outerRingCount = 0
+        var maxSampleVal = 0f
 
         // Sample 3 concentric rings inside the rune orb (0.18*r, 0.36*r, and 0.62*r)
         //  - 0.18*r inner ring captures vivid Heart/Light core even inside white-rimmed Shield/Enchanted orbs!
@@ -254,6 +255,7 @@ class CvBoardRecognizer : BoardRecognizer {
                     val argb = f.getArgb(px, py)
                     val (h, s, v) = rgbToHsv(argb)
                     sampleCount++
+                    if (v > maxSampleVal) maxSampleVal = v
 
                     if (ringIdx == 2) {
                         outerRingValSum += v
@@ -322,8 +324,17 @@ class CvBoardRecognizer : BoardRecognizer {
         val outerAvgS = outerRingSatSum / max(1, outerRingCount)
 
         if (bestIdx < 0 || totalSatWeight < 0.5f || lowSatRatio > 0.82f) {
-            // Likely BlackWhite, Question, Hidden, or Petrified orb — flag low confidence
-            val haz = if (lowSatRatio > 0.82f) HazardBits.BLACK_WHITE else HazardBits.QUESTION
+            // Flat pitch-dark modal/menu backdrop (e.g. long-press enemy info popup) has NO bright '?' glyph or orb rim!
+            if (outerAvgV < 0.24f && maxSampleVal < 0.42f) {
+                return CellState(
+                    element = Element.UNKNOWN,
+                    variant = Variant.NORMAL,
+                    hazards = HazardBits.NONE,
+                    confidence = 0.08f
+                ) to 0f
+            }
+            // Genuine Question / BlackWhite / Petrified orb has bright orb rim or '?' glyph highlights
+            val haz = if (lowSatRatio > 0.82f && outerAvgV >= 0.28f) HazardBits.BLACK_WHITE else HazardBits.QUESTION
             return CellState(
                 element = Element.HIDDEN,
                 variant = Variant.NORMAL,

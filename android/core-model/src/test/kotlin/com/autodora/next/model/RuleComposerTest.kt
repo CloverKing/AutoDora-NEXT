@@ -142,4 +142,48 @@ class RuleComposerTest {
         assertTrue(composed9.forbidWeakenedOrbs)
         assertTrue(composed9.requireLuminousOrbClear)
     }
+
+    @Test
+    fun `compose supports grouped parameterized goals (N-color, X-orb) and per-color independent enchanted shield`() {
+        val baseSingle7Fire = TeamBasePreset(
+            "g_single7",
+            "Fire 7",
+            baseConfig = RuleConfig(
+                goalMode = StrategyGoalMode.SINGLE_COLOR_X_ORBS,
+                goalParamX = 7,
+                goalTargetElement = Element.FIRE.code
+            )
+        )
+        val comp7 = RuleComposer.compose(baseSingle7Fire, emptyList())
+        assertEquals(TargetShape.COUNT_7, comp7.elementRules[Element.FIRE.code].targetShape)
+        assertEquals(ElementPriority.HIGH, comp7.elementRules[Element.FIRE.code].priority)
+        assertEquals(TargetShape.ANY, comp7.elementRules[Element.WATER.code].targetShape)
+
+        val baseMulti = TeamBasePreset(
+            "g_multi",
+            "3-Color 6-Orb",
+            baseConfig = RuleConfig(
+                goalMode = StrategyGoalMode.MULTI_COLOR_X_ORBS,
+                goalParamN = 3,
+                goalParamX = 6
+            )
+        )
+        // Per-color independent enchanted: Water (normal) + Fire (enchanted!) + Dark (enchanted!)
+        val reqMask = Element.WATER.bitMask or Element.FIRE.bitMask or Element.DARK.bitMask
+        val enchMask = Element.FIRE.bitMask or Element.DARK.bitMask
+        val chip = WaveShieldChip(
+            "require_elements",
+            "水火+暗+",
+            ShieldCategory.COUNT_AND_ELEMENT,
+            paramInt = 0,
+            paramElementMask = reqMask or (enchMask shl 8)
+        )
+        val compMulti = RuleComposer.compose(baseMulti, listOf(chip))
+        assertEquals(3, compMulti.minDistinctElements)
+        assertEquals(TargetShape.COUNT_6, compMulti.elementRules[0].targetShape)
+        assertEquals(TargetShape.COUNT_6, compMulti.elementRules[2].targetShape)
+        assertEquals(TargetShape.ANY, compMulti.elementRules[3].targetShape)
+        assertEquals(reqMask, compMulti.requiredFirstWaveElementsMask)
+        assertEquals(enchMask, compMulti.requiredEnchantedElementsMask)
+    }
 }

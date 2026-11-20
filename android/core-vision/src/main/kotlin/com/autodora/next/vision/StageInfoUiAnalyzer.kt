@@ -81,6 +81,51 @@ object StageInfoUiAnalyzer {
     }
 
     /**
+     * Detects when the user is long-pressing an enemy in battle to view the dark enemy-detail skill popup.
+     * Samples the upper card band covering the team portrait & HP bar (`x ∈ [0.18..0.82], y ∈ [0.41..0.53]`):
+     * real long-press popup has ~90% dark charcoal backdrop and <3% vivid pixels vs ~3-13% dark on battle screens.
+     */
+    fun isEnemyLongPressPopupOpen(frame: VisionFrame): Boolean {
+        val w = frame.width
+        val h = frame.height
+        if (w < 120 || h < 200) return false
+        val x0 = (w * 0.18f).toInt()
+        val x1 = (w * 0.82f).toInt()
+        val y0 = (h * 0.41f).toInt()
+        val y1 = (h * 0.53f).toInt()
+        val stepX = max(2, (x1 - x0) / 18)
+        val stepY = max(2, (y1 - y0) / 10)
+
+        var darkNeutral = 0
+        var vividColored = 0
+        var total = 0
+        var y = y0
+        while (y <= y1) {
+            var x = x0
+            while (x <= x1) {
+                val argb = frame.getArgb(x, y)
+                val r = (argb ushr 16) and 0xFF
+                val g = (argb ushr 8) and 0xFF
+                val b = argb and 0xFF
+                val maxC = max(r, max(g, b))
+                val minC = min(r, min(g, b))
+                if (maxC <= 62 && (maxC - minC) <= 24) {
+                    darkNeutral++
+                } else if (maxC >= 120 && (maxC - minC) >= 55) {
+                    vividColored++
+                }
+                total++
+                x += stepX
+            }
+            y += stepY
+        }
+        if (total == 0) return false
+        val darkRatio = darkNeutral.toFloat() / total
+        val vividRatio = vividColored.toFloat() / total
+        return darkRatio >= 0.58f && vividRatio <= 0.08f
+    }
+
+    /**
      * Finds all COLLAPSED white right-pointing triangles (▶) inside the 「關卡資訊」 skill panel.
      * Reliably distinguishes ▶ (L / R >= 1.50, balanced T/B) from already-expanded ▼ (T / B >= 1.50)
      * and from the HP water-drop icon above the skill list!

@@ -52,62 +52,95 @@ object RuleComposer {
         val elemRules = cfg.elementRules.toMutableList()
         val colRules = cfg.columnRules.toMutableList()
 
-        // Apply Strategy Goal Mode (inherited & upgraded from legacy AutoDora 'mode' selector)
-        when (cfg.goalMode) {
+        // Apply Grouped & Parameterized Global Matching Goal (v2: N色均衡 / N色全消 / 单色X珠 / N色X珠)
+        val goalGroup = cfg.goalMode.normalizedGroup()
+        val effN = if (cfg.goalMode == goalGroup) cfg.goalParamN else cfg.goalMode.defaultParamN()
+        val effX = if (cfg.goalMode == goalGroup) cfg.goalParamX else cfg.goalMode.defaultParamX()
+        fun shapeForX(x: Int): TargetShape = when (x.coerceIn(4, 9)) {
+            4 -> TargetShape.COUNT_4
+            5 -> TargetShape.COUNT_5
+            6 -> TargetShape.COUNT_6
+            7 -> TargetShape.COUNT_7
+            8 -> TargetShape.COUNT_8
+            else -> TargetShape.COUNT_9
+        }
+        when (goalGroup) {
             StrategyGoalMode.HIGH_COMBO -> Unit
-            StrategyGoalMode.THREE_COLORS -> {
-                cfg = cfg.copy(minDistinctElements = maxOf(cfg.minDistinctElements, 3))
+            StrategyGoalMode.N_COLOR_BALANCE -> {
+                val n = effN.coerceIn(2, 5)
+                cfg = cfg.copy(minDistinctElements = maxOf(cfg.minDistinctElements, n))
+                if (cfg.goalElementsMask != 0) {
+                    val m = cfg.goalElementsMask and 0x3F
+                    for (e in 0 until 6) {
+                        if ((m and (1 shl e)) != 0 && elemRules[e].priority == ElementPriority.NORMAL) {
+                            elemRules[e] = elemRules[e].copy(priority = ElementPriority.HIGH)
+                        }
+                    }
+                }
             }
-            StrategyGoalMode.FOUR_COLORS -> {
-                cfg = cfg.copy(minDistinctElements = maxOf(cfg.minDistinctElements, 4))
-            }
-            StrategyGoalMode.FIVE_COLORS -> {
+            StrategyGoalMode.N_COLOR_ALL -> {
+                val n = effN.coerceIn(2, 6)
+                val mask = if (cfg.goalElementsMask != 0) {
+                    cfg.goalElementsMask and 0x3F
+                } else {
+                    (0 until n).fold(0) { acc, i -> acc or (1 shl i) }
+                }
                 cfg = cfg.copy(
-                    requiredTotalElementsMask = cfg.requiredTotalElementsMask or FIVE_ELEMENTS_MASK,
-                    minDistinctElements = maxOf(cfg.minDistinctElements, 5)
+                    requiredTotalElementsMask = cfg.requiredTotalElementsMask or mask,
+                    minDistinctElements = maxOf(cfg.minDistinctElements, Integer.bitCount(mask).coerceAtLeast(n))
                 )
+                for (e in 0 until 6) {
+                    if ((mask and (1 shl e)) != 0) {
+                        elemRules[e] = elemRules[e].copy(
+                            priority = ElementPriority.HIGH,
+                            clearAllFirstWave = true
+                        )
+                    }
+                }
             }
-            StrategyGoalMode.FIVE_ORBS_SINGLE -> {
-                val targetIdx = elemRules.indexOfFirst { it.priority == ElementPriority.HIGH }.takeIf { it >= 0 } ?: 0
+            StrategyGoalMode.SINGLE_COLOR_X_ORBS -> {
+                val targetIdx = if (cfg.goalTargetElement in 0..5) {
+                    cfg.goalTargetElement
+                } else {
+                    elemRules.indexOfFirst { it.priority == ElementPriority.HIGH }.takeIf { it >= 0 } ?: 0
+                }
                 if (elemRules[targetIdx].targetShape == TargetShape.ANY) {
-                    elemRules[targetIdx] = elemRules[targetIdx].copy(targetShape = TargetShape.COUNT_5)
+                    elemRules[targetIdx] = elemRules[targetIdx].copy(
+                        targetShape = shapeForX(effX),
+                        priority = ElementPriority.HIGH
+                    )
                 }
             }
-            StrategyGoalMode.FIVE_ORBS_MULTI -> {
-                for (e in 0 until 5) {
-                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
-                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_5)
+            StrategyGoalMode.MULTI_COLOR_X_ORBS -> {
+                val n = effN.coerceIn(2, 5)
+                val shape = shapeForX(effX)
+                val mask = cfg.goalElementsMask and 0x3F
+                var applied = 0
+                if (mask != 0) {
+                    for (e in 0 until 6) {
+                        if ((mask and (1 shl e)) != 0 && elemRules[e].priority != ElementPriority.RESERVE) {
+                            if (elemRules[e].targetShape == TargetShape.ANY) {
+                                elemRules[e] = elemRules[e].copy(targetShape = shape)
+                            }
+                            applied++
+                        }
+                    }
+                } else {
+                    for (e in 0 until 5) {
+                        if (applied >= n) break
+                        if (elemRules[e].priority != ElementPriority.RESERVE) {
+                            if (elemRules[e].targetShape == TargetShape.ANY) {
+                                elemRules[e] = elemRules[e].copy(targetShape = shape)
+                            }
+                            applied++
+                        }
                     }
                 }
-            }
-            StrategyGoalMode.SIX_ORBS -> {
-                for (e in 0 until 5) {
-                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
-                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_6)
-                    }
+                if (applied >= 2) {
+                    cfg = cfg.copy(minDistinctElements = maxOf(cfg.minDistinctElements, minOf(applied, n)))
                 }
             }
-            StrategyGoalMode.SEVEN_ORBS -> {
-                for (e in 0 until 5) {
-                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
-                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_7)
-                    }
-                }
-            }
-            StrategyGoalMode.EIGHT_ORBS -> {
-                for (e in 0 until 5) {
-                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
-                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_8)
-                    }
-                }
-            }
-            StrategyGoalMode.NINE_ORBS -> {
-                for (e in 0 until 5) {
-                    if (elemRules[e].targetShape == TargetShape.ANY && elemRules[e].priority != ElementPriority.RESERVE) {
-                        elemRules[e] = elemRules[e].copy(targetShape = TargetShape.COUNT_9)
-                    }
-                }
-            }
+            else -> Unit
         }
 
         var highDifficultyShield = false
@@ -140,15 +173,15 @@ object RuleComposer {
                 )
                 "three_elements" -> cfg = cfg.copy(requiredTotalElementsMask = cfg.requiredTotalElementsMask or THREE_ELEMENTS_MASK)
                 "require_elements" -> {
-                    val requireEnch = chip.paramInt == 1
+                    // Low 6 bits: required elements mask; bits 8..13: independent per-color enchanted mask!
+                    // Legacy compat: if bits 8..13 are 0 and paramInt == 1, treat all required elements as enchanted.
+                    val reqMask = chip.paramElementMask and 0x3F
+                    val perColorEnch = (chip.paramElementMask ushr 8) and 0x3F
+                    val effEnch = if (perColorEnch != 0) perColorEnch else if (chip.paramInt == 1) reqMask else 0
                     cfg = cfg.copy(
-                        requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or chip.paramElementMask,
-                        requiredTotalElementsMask = cfg.requiredTotalElementsMask or chip.paramElementMask,
-                        requiredEnchantedElementsMask = if (requireEnch) {
-                            cfg.requiredEnchantedElementsMask or chip.paramElementMask
-                        } else {
-                            cfg.requiredEnchantedElementsMask
-                        }
+                        requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or reqMask,
+                        requiredTotalElementsMask = cfg.requiredTotalElementsMask or reqMask,
+                        requiredEnchantedElementsMask = cfg.requiredEnchantedElementsMask or effEnch
                     )
                 }
                 "require_enchanted_elements" -> cfg = cfg.copy(

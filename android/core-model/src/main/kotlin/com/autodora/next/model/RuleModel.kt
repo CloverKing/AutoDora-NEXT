@@ -71,6 +71,12 @@ enum class ComboParity(val code: Int) {
 @Serializable
 enum class StrategyGoalMode(val label: String, val shortLabel: String) {
     HIGH_COMBO("高连击", "高连击"),
+    // Grouped parameterized goal modes (v2)
+    N_COLOR_BALANCE("多色均衡", "多色均衡"),
+    N_COLOR_ALL("多色全消", "多色全消"),
+    SINGLE_COLOR_X_ORBS("单色多珠", "单色多珠"),
+    MULTI_COLOR_X_ORBS("多色多珠", "多色多珠"),
+    // Legacy aliases retained for seamless Room JSON migration
     THREE_COLORS("三色均衡", "三色"),
     FOUR_COLORS("四色均衡", "四色"),
     FIVE_COLORS("五色全消", "五色"),
@@ -79,7 +85,31 @@ enum class StrategyGoalMode(val label: String, val shortLabel: String) {
     SIX_ORBS("消六珠", "消6珠"),
     SEVEN_ORBS("消七珠", "消7珠"),
     EIGHT_ORBS("消八珠", "消8珠"),
-    NINE_ORBS("消九珠", "消9珠")
+    NINE_ORBS("消九珠", "消9珠");
+
+    fun normalizedGroup(): StrategyGoalMode = when (this) {
+        HIGH_COMBO -> HIGH_COMBO
+        N_COLOR_BALANCE, THREE_COLORS, FOUR_COLORS -> N_COLOR_BALANCE
+        N_COLOR_ALL, FIVE_COLORS -> N_COLOR_ALL
+        SINGLE_COLOR_X_ORBS, FIVE_ORBS_SINGLE -> SINGLE_COLOR_X_ORBS
+        MULTI_COLOR_X_ORBS, FIVE_ORBS_MULTI, SIX_ORBS, SEVEN_ORBS, EIGHT_ORBS, NINE_ORBS -> MULTI_COLOR_X_ORBS
+    }
+
+    fun defaultParamN(): Int = when (this) {
+        THREE_COLORS -> 3
+        FOUR_COLORS -> 4
+        FIVE_COLORS, FIVE_ORBS_MULTI, SIX_ORBS, SEVEN_ORBS, EIGHT_ORBS, NINE_ORBS -> 5
+        N_COLOR_ALL -> 5
+        else -> 3
+    }
+
+    fun defaultParamX(): Int = when (this) {
+        SIX_ORBS -> 6
+        SEVEN_ORBS -> 7
+        EIGHT_ORBS -> 8
+        NINE_ORBS -> 9
+        else -> 5
+    }
 }
 
 @Serializable
@@ -140,6 +170,12 @@ data class ShapeShieldRule(
 @Serializable
 data class RuleConfig(
     val goalMode: StrategyGoalMode = StrategyGoalMode.HIGH_COMBO,
+    val goalParamN: Int = 3,                  // N colors (2..6) for N_COLOR_BALANCE / N_COLOR_ALL / MULTI_COLOR_X_ORBS
+    val goalParamX: Int = 5,                  // X orbs (4..9) for SINGLE_COLOR_X_ORBS / MULTI_COLOR_X_ORBS
+    val goalTargetElement: Int = -1,          // -1 = auto/high-priority, 0..5 = specific color for SINGLE_COLOR_X_ORBS
+    val goalElementsMask: Int = 0,            // Optional specific element bitmask for N_COLOR_ALL / MULTI_COLOR_X_ORBS
+    val useSystemSteps: Boolean = true,       // true = inherit System Settings maxSteps; false = Strategy overrides System
+    val useSystemBeam: Boolean = true,        // true = inherit System Settings beamWidth; false = Strategy overrides System
     val allowDiagonalMove: Boolean = true,
     val maxSteps: Int = 30,
     val exactSteps: Int = -1,

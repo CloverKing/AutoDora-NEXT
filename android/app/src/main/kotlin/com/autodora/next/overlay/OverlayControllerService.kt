@@ -10,6 +10,8 @@ import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -22,6 +24,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -96,35 +99,28 @@ class OverlayControllerService : Service() {
     private lateinit var statusOrbView: TextView
     private lateinit var toolbarContainer: LinearLayout
 
-    // Main bar controls
-    private lateinit var solveBtn: TextView
-    private lateinit var prevBtn: TextView
-    private lateinit var pagerText: TextView
-    private lateinit var nextBtn: TextView
-    private lateinit var executeBtn: TextView
-    private lateinit var stopChipBtn: TextView
-    private lateinit var pathToggleBtn: TextView
-    private lateinit var calibToggleBtn: TextView
-    private lateinit var moreToggleBtn: TextView
-    private lateinit var closeBtn: TextView
-
-    // Collapsible quick-controls card (2 tidy rows under '⋯')
-    private lateinit var quickPanel: LinearLayout
-    private lateinit var holdReplanToggleBtn: TextView
-    private lateinit var autoSkillToggleBtn: TextView
-    private lateinit var invertChipBtn: TextView
-    private lateinit var speedChipBtn: TextView
-    private lateinit var tuningDrawerToggleBtn: TextView
-    private lateinit var boardEditorToggleBtn: TextView
-    private lateinit var ocrScanBtn: TextView
+    // Compact All-Icon Main Bar Controls
+    private lateinit var solveIconBtn: ImageView
+    private lateinit var executeIconBtn: ImageView
+    private lateinit var stopIconBtn: ImageView
+    private lateinit var pathIconBtn: ImageView
+    private lateinit var resultIconBtn: ImageView
+    private lateinit var scanIconBtn: ImageView
+    private lateinit var calibIconBtn: ImageView
+    private lateinit var tuneIconBtn: ImageView
+    private lateinit var closeIconBtn: ImageView
 
     // Active wave shields strip
     private lateinit var activeShieldScroll: HorizontalScrollView
     private lateinit var activeShieldRow: LinearLayout
 
-    // Solution summary strip
+    // Compact Solution Result Card (with inline ‹ 1/5 › alternative switcher)
     private lateinit var summaryStrip: LinearLayout
     private lateinit var summaryTitle: TextView
+    private lateinit var solutionSwitcherBox: LinearLayout
+    private lateinit var prevBtn: TextView
+    private lateinit var pagerText: TextView
+    private lateinit var nextBtn: TextView
     private lateinit var groupsScroll: HorizontalScrollView
     private lateinit var groupsRow: LinearLayout
 
@@ -134,19 +130,21 @@ class OverlayControllerService : Service() {
     private lateinit var calibAutoBtn: TextView
     private lateinit var calibResetBtn: TextView
 
-    // Phase 3 in-game drawers
+    // In-game 4-Tab Drawer & Board Editor
     private lateinit var tuningDrawer: OverlayTuningDrawerController
     private lateinit var boardEditor: OverlayBoardEditorController
 
     // Interactive state
     private var currentPhase = OverlayPhase.IDLE
     private var toolbarExpanded = true
-    private var modeRowExpanded = false
     private var tuningDrawerOpen = false
     private var boardEditorMode = false
+    private var showResultCard = true
     private var summaryPillsExpanded = true
     private var showPath = true
     private var calibrationMode = false
+    private var enemyPopupCoveringBoard = false
+    private var lastPresetConfigHash: Int = 0
     private var currentGeometry: BoardGeometry? = null
     private var lastRecognition: RecognitionResult? = null
     private var editedBoard: BoardState? = null
@@ -181,8 +179,13 @@ class OverlayControllerService : Service() {
         serviceScope.launch {
             settingsRepository.settingsFlow.collectLatest { latest ->
                 val wasAutoSkill = settings.autoEnemySkillEnabled
+                val presetSwitched = settings.activePresetId != latest.activePresetId
+                val previewModeChanged = settings.testModeOnlyDraw != latest.testModeOnlyDraw
                 settings = latest
-                stopChipBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
+                if (presetSwitched || previewModeChanged) {
+                    invalidateLastSolution()
+                }
+                stopIconBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
                 applyOverlayTheme()
                 ensureAlwaysOnBackgroundWatcher()
                 if (!wasAutoSkill && latest.autoEnemySkillEnabled) {
@@ -199,12 +202,21 @@ class OverlayControllerService : Service() {
         serviceScope.launch {
             teamPresetRepository.observePresets().collectLatest { list ->
                 presetRecords = list
+                val cfgHash = activeTeamPreset().baseConfig.hashCode()
+                if (lastPresetConfigHash != 0 && cfgHash != lastPresetConfigHash) {
+                    invalidateLastSolution()
+                }
+                lastPresetConfigHash = cfgHash
                 syncDrawerData()
             }
         }
         serviceScope.launch {
             ActiveStrategyStore.activeChips.collectLatest { chips ->
+                val changed = chips != activeWaveChips
                 activeWaveChips = chips
+                if (changed && lastSolveOutput != null) {
+                    invalidateLastSolution()
+                }
                 refreshActiveShieldStrip()
                 syncDrawerData()
             }
@@ -300,10 +312,21 @@ class OverlayControllerService : Service() {
     ): RuleConfig {
         val preset = activeTeamPreset()
         val global = settings.toRuleConfig()
+        // Strict 3-tier precedence: System Defaults < Strategy Overrides < Wave Shield Overrides
+        val effectiveSteps = if (preset.baseConfig.useSystemSteps) {
+            settings.maxSteps
+        } else {
+            preset.baseConfig.maxSteps
+        }.coerceIn(8, 300)
+        val effectiveBeam = if (preset.baseConfig.useSystemBeam) {
+            settings.beamWidth
+        } else {
+            preset.baseConfig.beamWidth
+        }.coerceIn(40, 600)
         val mergedBase = preset.baseConfig.copy(
             allowDiagonalMove = settings.allowDiagonalMove,
-            maxSteps = maxOf(global.maxSteps, preset.baseConfig.maxSteps).coerceIn(8, 300),
-            beamWidth = if (fastMode) minOf(settings.beamWidth, 140) else maxOf(settings.beamWidth, preset.baseConfig.beamWidth),
+            maxSteps = effectiveSteps,
+            beamWidth = if (fastMode) minOf(effectiveBeam, 140) else effectiveBeam,
             maxTimeMs = if (fastMode) 170 else maxOf(global.maxTimeMs, preset.baseConfig.maxTimeMs),
             topK = if (fastMode) 2 else 5,
             fixedStartCell = fixedStartCell
@@ -401,152 +424,61 @@ class OverlayControllerService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             elevation = dp(3).toFloat()
-            setPadding(dp(4), dp(3), dp(3), dp(3))
+            setPadding(dp(4), dp(3), dp(4), dp(3))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
 
-        solveBtn = makeChipBtn("算", minW = 24, padH = 5) { startCaptureAndSolve() }
-        toolbarContainer.addView(solveBtn)
+        // Permanent High-Frequency Vector Icon Bar (compact & touch-friendly, zero cluttered text pills!)
+        solveIconBtn = makeIconBtn(R.drawable.ic_ov_solve) { startCaptureAndSolve(autoExecuteAfterSolve = false) }
+        toolbarContainer.addView(solveIconBtn)
 
-        prevBtn = makeChipBtn("◀", minW = 18, padH = 3) { switchSolution(-1) }
-        toolbarContainer.addView(prevBtn)
+        executeIconBtn = makeIconBtn(R.drawable.ic_ov_play) { handleUnifiedExecute() }
+        toolbarContainer.addView(executeIconBtn)
 
-        pagerText = TextView(this).apply {
-            text = "0/0"
-            textSize = 9f
-            setSingleLine(true)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(2), 0, dp(2), 0)
-        }
-        toolbarContainer.addView(pagerText)
-
-        nextBtn = makeChipBtn("▶", minW = 18, padH = 3) { switchSolution(+1) }
-        toolbarContainer.addView(nextBtn)
-
-        // Unified Execution Button: runs Hold-and-Replan when '按住转' toggle is ON, otherwise executes solved path!
-        executeBtn = makeChipBtn("行", minW = 24, padH = 5) { handleUnifiedExecute() }
-        toolbarContainer.addView(executeBtn)
-
-        stopChipBtn = makeChipBtn("停", minW = 24, padH = 5) {
+        stopIconBtn = makeIconBtn(R.drawable.ic_ov_stop) {
             triggerEmergencyStop()
-            toast("已急停中止")
+            toast(lctx.getString(R.string.ov_toast_stopped))
         }
-        toolbarContainer.addView(stopChipBtn)
+        toolbarContainer.addView(stopIconBtn)
 
-        // '线' controls ONLY trajectory lines (NOT the board grid!)
-        pathToggleBtn = makeChipBtn("●线", minW = 28, padH = 4) {
+        // Trajectory path overlay toggle ('线')
+        pathIconBtn = makeIconBtn(R.drawable.ic_ov_path) {
             showPath = !showPath
             refreshMainToggleChips()
             refreshPathCanvas()
         }
-        toolbarContainer.addView(pathToggleBtn)
+        toolbarContainer.addView(pathIconBtn)
 
-        // '校' controls ONLY the board alignment grid & crosshairs
-        calibToggleBtn = makeChipBtn("○校", minW = 28, padH = 4) { toggleCalibrationMode() }
-        toolbarContainer.addView(calibToggleBtn)
-
-        moreToggleBtn = makeChipBtn("⋯", minW = 20, padH = 3) {
-            modeRowExpanded = !modeRowExpanded
-            quickPanel.visibility = if (modeRowExpanded && toolbarExpanded) View.VISIBLE else View.GONE
+        // Solution result card visibility toggle ('结')
+        resultIconBtn = makeIconBtn(R.drawable.ic_ov_result) {
+            showResultCard = !showResultCard
             refreshMainToggleChips()
-            clampControlWindowToScreen()
+            updateSummaryStrip()
         }
-        toolbarContainer.addView(moreToggleBtn)
+        toolbarContainer.addView(resultIconBtn)
 
-        closeBtn = makeChipBtn("✕", minW = 20, padH = 3, marginEndDp = 0) { stopSelf() }
-        toolbarContainer.addView(closeBtn)
+        // 1-tap Enemy Skill Recognition trigger
+        scanIconBtn = makeIconBtn(R.drawable.ic_ov_scan) {
+            runSmartEnemySkillScan(autoTriggered = false)
+        }
+        toolbarContainer.addView(scanIconBtn)
+
+        // Board alignment calibration grid toggle ('校')
+        calibIconBtn = makeIconBtn(R.drawable.ic_ov_grid) { toggleCalibrationMode() }
+        toolbarContainer.addView(calibIconBtn)
+
+        // 4-Tab Full-Feature Floating Drawer toggle (快捷 | 策略 | 解盾 | 设置)
+        tuneIconBtn = makeIconBtn(R.drawable.ic_ov_tune) { toggleTuningDrawer() }
+        toolbarContainer.addView(tuneIconBtn)
+
+        closeIconBtn = makeIconBtn(R.drawable.ic_ov_close, marginEndDp = 0) { stopSelf() }
+        toolbarContainer.addView(closeIconBtn)
 
         topRow.addView(toolbarContainer)
         controlRoot.addView(topRow)
-
-        // Collapsible Quick Controls Card (2 clean rows under '⋯')
-        quickPanel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            elevation = dp(2).toFloat()
-            visibility = View.GONE
-            setPadding(dp(5), dp(4), dp(5), dp(4))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(3)
-                marginStart = dp(34)
-            }
-        }
-
-        // Row A: Mode Toggles + 1:1 Thermal Speed Preset
-        val rowA = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        holdReplanToggleBtn = makeChipBtn("○按住转", padH = 5) {
-            serviceScope.launch {
-                val next = !settings.holdReplanEnabled
-                settingsRepository.update { it.copy(holdReplanEnabled = next) }
-                toast(if (next) "已开启「按住转」：点「行」将按住重算续滑" else "已关闭「按住转」：恢复常规解盘执行")
-            }
-        }
-        rowA.addView(holdReplanToggleBtn)
-
-        autoSkillToggleBtn = makeChipBtn("○自动识技", padH = 5) {
-            serviceScope.launch {
-                val next = !settings.autoEnemySkillEnabled
-                settingsRepository.update { it.copy(autoEnemySkillEnabled = next) }
-                toast(
-                    if (next) "已开启自动识敌技（${settings.enemySkillScanMode.shortLabel}）"
-                    else "已关闭自动识敌技"
-                )
-            }
-        }
-        rowA.addView(autoSkillToggleBtn)
-
-        invertChipBtn = makeChipBtn("○颠倒", padH = 5) {
-            serviceScope.launch {
-                settingsRepository.update {
-                    val next = !(it.invertDragX || it.invertDragY)
-                    it.copy(invertDragX = next, invertDragY = next)
-                }
-            }
-        }
-        rowA.addView(invertChipBtn)
-
-        speedChipBtn = makeChipBtn(SwipeSpeedPreset.STANDARD.compactLabel, padH = 6, marginEndDp = 0) {
-            serviceScope.launch {
-                settingsRepository.update { s ->
-                    val nextPreset = SwipeSpeedPreset.fromStepDurationMs(s.stepDurationMs).next()
-                    s.copy(stepDurationMs = nextPreset.stepDurationMs)
-                }
-            }
-        }
-        rowA.addView(speedChipBtn)
-        quickPanel.addView(rowA)
-
-        // Row B: Phase 3 Power Tools (4-Tab Tuning Drawer + Interactive Board Editor + Offline OCR)
-        val rowB = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(3) }
-        }
-        tuningDrawerToggleBtn = makeChipBtn("○解盾调参", padH = 6) { toggleTuningDrawer() }
-        rowB.addView(tuningDrawerToggleBtn)
-
-        boardEditorToggleBtn = makeChipBtn("○盘面编绘", padH = 6) { toggleBoardEditorMode() }
-        rowB.addView(boardEditorToggleBtn)
-
-        ocrScanBtn = makeChipBtn("识敌技", padH = 6, marginEndDp = 0) { runSmartEnemySkillScan(autoTriggered = false) }
-        rowB.addView(ocrScanBtn)
-        quickPanel.addView(rowB)
-        controlRoot.addView(quickPanel)
 
         // Active Wave Shield Pills Strip (auto-visible when >=1 shield is active)
         activeShieldScroll = HorizontalScrollView(this).apply {
@@ -567,39 +499,82 @@ class OverlayControllerService : Service() {
         activeShieldScroll.addView(activeShieldRow)
         controlRoot.addView(activeShieldScroll)
 
-        // Ultra-Compact Solution Summary Strip (tap to fold/unfold orb pills!)
+        // Compact Solution Result Card (controlled by '结' icon; inline ‹ 1/5 › alternative switcher!)
         summaryStrip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             elevation = dp(2).toFloat()
             visibility = View.GONE
-            setPadding(dp(7), dp(3), dp(7), dp(3))
+            setPadding(dp(7), dp(4), dp(7), dp(4))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(2)
-                marginStart = dp(34)
+                topMargin = dp(3)
+                marginStart = dp(4)
             }
+        }
+
+        val summaryHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        summaryTitle = TextView(this).apply {
+            textSize = 10f
+            setSingleLine(true)
+            ellipsize = TextUtils.TruncateAt.END
+            typeface = Typeface.DEFAULT_BOLD
+            maxWidth = (screenW * 0.72f).toInt()
             setOnClickListener {
                 summaryPillsExpanded = !summaryPillsExpanded
                 groupsScroll.visibility = if (summaryPillsExpanded) View.VISIBLE else View.GONE
             }
         }
-        summaryTitle = TextView(this).apply {
+        summaryHeaderRow.addView(summaryTitle)
+
+        // Compact Inline Solution Switcher (‹ 1/5 ›) nested neatly inside the result card
+        solutionSwitcherBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), dp(1), dp(2), dp(1))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginStart = dp(6) }
+        }
+        prevBtn = makeChipBtn("‹", minW = 18, padH = 4, marginEndDp = 1) { switchSolution(-1) }.apply {
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(1) }
+            setPadding(0, 0, 0, 0)
+            textSize = 12f
+        }
+        pagerText = TextView(this).apply {
+            text = "1/1"
             textSize = 9.5f
             setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
             typeface = Typeface.DEFAULT_BOLD
-            maxWidth = screenW - dp(54)
+            gravity = Gravity.CENTER
+            setPadding(dp(3), 0, dp(3), 0)
         }
-        summaryStrip.addView(summaryTitle)
+        nextBtn = makeChipBtn("›", minW = 18, padH = 4, marginEndDp = 0) { switchSolution(+1) }.apply {
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginStart = dp(1) }
+            setPadding(0, 0, 0, 0)
+            textSize = 12f
+        }
+        solutionSwitcherBox.addView(prevBtn)
+        solutionSwitcherBox.addView(pagerText)
+        solutionSwitcherBox.addView(nextBtn)
+        summaryHeaderRow.addView(solutionSwitcherBox)
+        summaryStrip.addView(summaryHeaderRow)
 
         groupsScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
+            ).apply { topMargin = dp(3) }
         }
         groupsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -619,7 +594,7 @@ class OverlayControllerService : Service() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 topMargin = dp(3)
-                marginStart = dp(34)
+                marginStart = dp(4)
             }
         }
         calibNudgeBtns.clear()
@@ -642,7 +617,7 @@ class OverlayControllerService : Service() {
         calibrationBar.addView(calibResetBtn)
         controlRoot.addView(calibrationBar)
 
-        // Phase 3 Interactive Board Editor Brush Bar
+        // Interactive Board Editor Brush Bar
         boardEditor = OverlayBoardEditorController(
             context = this,
             onSolveEditedBoard = { solveEditedBoardNow() },
@@ -658,21 +633,22 @@ class OverlayControllerService : Service() {
         )
         controlRoot.addView(boardEditor.rootView)
 
-        // Phase 3 In-Game 4-Tab Tuning Drawer
+        // Full-Feature 4-Tab Floating Drawer (快捷 | 策略 | 解盾 | 设置)
         tuningDrawer = OverlayTuningDrawerController(
             context = this,
             onRunAutoSkillScan = { runSmartEnemySkillScan(autoTriggered = false) },
+            onToggleBoardEditor = { toggleBoardEditorMode() },
             onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
             onUpsertWaveChip = { chip -> ActiveStrategyStore.upsertChip(chip) },
             onClearWaveChips = {
                 ActiveStrategyStore.clearAll()
-                toast("已清空本波全部敌技盾")
+                toast(lctx.getString(R.string.btn_clear))
             },
             onSelectPreset = { id ->
                 serviceScope.launch {
                     settingsRepository.update { it.copy(activePresetId = id) }
-                    val name = presetRecords.firstOrNull { it.preset.id == id }?.preset?.name ?: "已切换"
-                    toast("当前作战策略：$name")
+                    val rec = presetRecords.firstOrNull { it.preset.id == id }
+                    if (rec != null) toast(LocaleHelper.displayPresetName(lctx, rec.preset, rec.isBuiltIn))
                 }
             },
             onUpdateActivePresetConfig = { transform ->
@@ -737,7 +713,6 @@ class OverlayControllerService : Service() {
                     if (!moved) {
                         toolbarExpanded = !toolbarExpanded
                         toolbarContainer.visibility = if (toolbarExpanded) View.VISIBLE else View.GONE
-                        quickPanel.visibility = if (toolbarExpanded && modeRowExpanded) View.VISIBLE else View.GONE
                         tuningDrawer.setVisible(toolbarExpanded && tuningDrawerOpen)
                         boardEditor.rootView.visibility = if (toolbarExpanded && boardEditorMode) View.VISIBLE else View.GONE
                         if (!toolbarExpanded) {
@@ -746,7 +721,7 @@ class OverlayControllerService : Service() {
                             activeShieldScroll.visibility = View.GONE
                         } else {
                             if (calibrationMode) calibrationBar.visibility = View.VISIBLE
-                            if (lastSolveOutput != null) summaryStrip.visibility = View.VISIBLE
+                            updateSummaryStrip()
                             refreshActiveShieldStrip()
                         }
                         clampControlWindowToScreen()
@@ -763,20 +738,30 @@ class OverlayControllerService : Service() {
     private fun handleUnifiedExecute() {
         if (settings.holdReplanEnabled) {
             startHoldAndReplanExecution()
-        } else {
-            executeSelectedSolution()
+            return
         }
+        if (!settings.testModeOnlyDraw) {
+            // Preview-Confirm OFF: 1-tap Play directly captures, solves, and auto-swipes!
+            startCaptureAndSolve(autoExecuteAfterSolve = true)
+            return
+        }
+        // Preview-Confirm ON: strictly require a freshly calculated solution first!
+        if (currentSolution() == null) {
+            toast(lctx.getString(R.string.ov_toast_need_solve))
+            return
+        }
+        executeSelectedSolution()
     }
 
     // ==================== Capture & Solve ('算') ====================
-    private fun startCaptureAndSolve() {
+    private fun startCaptureAndSolve(autoExecuteAfterSolve: Boolean = false) {
         if (currentPhase != OverlayPhase.IDLE) {
-            toast("任务进行中，可点「停」立即中止")
+            toast(lctx.getString(R.string.ov_toast_stopped))
             return
         }
         val capturer = ScreenCaptureSession.capturer.value
         if (capturer == null || !capturer.isReady.value) {
-            toast("请先在主界面授权「屏幕采集」")
+            toast(lctx.getString(R.string.toast_capture_denied))
             return
         }
 
@@ -793,7 +778,7 @@ class OverlayControllerService : Service() {
             if (frames.isEmpty()) {
                 setPhase(OverlayPhase.IDLE)
                 refreshPathCanvas()
-                toast("截屏失败，请确认屏幕采集授权仍有效")
+                toast(lctx.getString(R.string.toast_capture_denied))
                 return@launch
             }
 
@@ -808,14 +793,10 @@ class OverlayControllerService : Service() {
                 val boardToSolve = when (val res = flashMemoryTracker.resolveForSolve(liveRec)) {
                     is FlashRevealMemoryTracker.MemoryResolution.UseMemorizedSnapshot -> {
                         resolvedFromMemory = true
-                        toast("已从常驻记忆还原 ${res.liveHiddenCount} 颗问号珠")
                         res.rememberedBoard
                     }
                     is FlashRevealMemoryTracker.MemoryResolution.NeedHoldAndNudgeReveal -> {
-                        // Direct full-screen '?' board (e.g. 问号‧转) with no prior clear flash:
-                        // Automatically execute Legacy AutoDora's proven Hold-and-Nudge-Reveal!
                         setPhase(OverlayPhase.IDLE)
-                        toast("检测到全屏问号珠 (${res.liveHiddenCount}颗)，自动执行按住微移显形重算…")
                         startHoldAndReplanExecution(forceNudge = true)
                         return@launch
                     }
@@ -835,9 +816,9 @@ class OverlayControllerService : Service() {
                         liveRec.averageConfidence < 0.38f
                     )
                 if (notInBattleBoard) {
-                    hidePathOverlay()
+                    invalidateLastSolution()
                     setPhase(OverlayPhase.IDLE)
-                    toast("未检测到战斗符石盘面，请进入战斗后再点「算」")
+                    toast(lctx.getString(R.string.ov_toast_icon_none))
                     return@launch
                 }
 
@@ -846,7 +827,6 @@ class OverlayControllerService : Service() {
                 lastRecognition = liveRec.copy(board = effectiveBoard)
                 editedBoard = effectiveBoard
                 usedMemorizedSnapshot = resolvedFromMemory
-                updateQuickModeChips()
 
                 val ruleConfig = composeEffectiveRuleConfig(effectiveBoard)
                 val token = NativeSolver.createCancelToken()
@@ -860,9 +840,8 @@ class OverlayControllerService : Service() {
 
                 val bestSol = solveOut.solutions.firstOrNull()
                 if (bestSol == null || (bestSol.totalCombo == 0 && bestSol.stepCount == 0)) {
-                    hidePathOverlay()
+                    invalidateLastSolution()
                     setPhase(OverlayPhase.IDLE)
-                    toast("当前盘面无可消除路线，请确认战斗状态或检查校准框")
                     return@launch
                 }
 
@@ -874,15 +853,14 @@ class OverlayControllerService : Service() {
                 refreshPathCanvas()
                 setPhase(OverlayPhase.IDLE)
 
-                if (!settings.testModeOnlyDraw) {
-                    handleUnifiedExecute()
+                if (autoExecuteAfterSolve || !settings.testModeOnlyDraw) {
+                    executeSelectedSolution()
                 }
             } catch (e: CancellationException) {
                 setPhase(OverlayPhase.IDLE)
             } catch (e: Exception) {
                 Log.e(TAG, "Capture/Solve failed", e)
                 setPhase(OverlayPhase.IDLE)
-                toast("识盘算路异常：${e.message}")
             } finally {
                 frames.forEach { if (!it.isRecycled) it.recycle() }
             }
@@ -929,15 +907,12 @@ class OverlayControllerService : Service() {
         }
     }
 
-    // ==================== Smart Automatic Enemy Skill Recognition (Battle Icons + Auto Gear ▶ Expand + Scroll + OCR) ====================
+    // ==================== Smart Automatic Enemy Skill Recognition (Official 12x12 Icons + Auto Gear ▶ Expand + Scroll + Text) ====================
     private fun runSmartEnemySkillScan(autoTriggered: Boolean) {
-        if (currentPhase != OverlayPhase.IDLE) {
-            if (!autoTriggered) toast("任务进行中，请稍候")
-            return
-        }
+        if (currentPhase != OverlayPhase.IDLE) return
         val capturer = ScreenCaptureSession.capturer.value
         if (capturer == null || !capturer.isReady.value) {
-            if (!autoTriggered) toast("请先在主界面授权「屏幕采集」")
+            if (!autoTriggered) toast(lctx.getString(R.string.toast_capture_denied))
             return
         }
         val scanMode = settings.enemySkillScanMode
@@ -949,64 +924,101 @@ class OverlayControllerService : Service() {
             val prevDrawer = tuningDrawerOpen
             if (prevDrawer) setTuningDrawerOpen(false)
 
-            // Hide our entire floating HUD so OCR & StageInfo UI detection NEVER read our own pills
+            // Hide our entire floating HUD so visual matching & text recognition NEVER read our own pills
             controlRoot.visibility = View.INVISIBLE
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
             delay(55)
 
             var openedGearByAuto = false
             try {
-                val initBmp = capturer.captureSingleFrame()
-                if (initBmp == null) {
-                    if (!autoTriggered) toast("截屏失败，请重试")
-                    return@launch
-                }
-
+                val initBmp = capturer.captureSingleFrame() ?: return@launch
                 val initFrame = BitmapVisionFrame(initBmp)
-                val alreadyInStageInfo = withContext(Dispatchers.Default) {
-                    StageInfoUiAnalyzer.isStageInfoModalOpen(initFrame)
+                val (alreadyInStageInfo, alreadyInEnemyPopup) = withContext(Dispatchers.Default) {
+                    StageInfoUiAnalyzer.isStageInfoModalOpen(initFrame) to
+                        StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(initFrame)
                 }
 
-                // Stage 1: Battle screen zero-tap icon + board CV scan (when not already inside Stage Info)
+                // Stage 1: Battle screen zero-tap official 12×12 icon + board CV scan (when not in Stage Info)
                 val battleIconChips = ArrayList<WaveShieldChip>()
                 val iconNotes = ArrayList<String>()
                 if (!alreadyInStageInfo) {
                     val iconScan = withContext(Dispatchers.Default) {
                         val g = AutoGridDetector.detect(initBmp, settings.calibration)
-                        val rec = boardRecognizer.recognize(listOf(initBmp), g)
+                        val rec = if (alreadyInEnemyPopup) null else boardRecognizer.recognize(listOf(initBmp), g)
                         EnemyStatusIconMatcher.scanBattleScreen(initFrame, rec)
                     }
                     battleIconChips.addAll(iconScan.detectedChips)
                     iconNotes.addAll(iconScan.detectedBadgesSummary)
-                    lastScannedEnemyHash = iconScan.enemyZoneHash
-                    hasScannedWaveOnce = true
+                    if (!alreadyInEnemyPopup) {
+                        lastScannedEnemyHash = iconScan.enemyZoneHash
+                        hasScannedWaveOnce = true
+                    }
+                }
+
+                // If user already opened an enemy long-press card, read its text directly (expanding any ▶ arrows)
+                if (alreadyInEnemyPopup && !alreadyInStageInfo) {
+                    var workingPopupBmp = initBmp
+                    if (canTouch) {
+                        var expandClicks = 0
+                        while (isActive && expandClicks < 5) {
+                            val collapsed = withContext(Dispatchers.Default) {
+                                StageInfoUiAnalyzer.findCollapsedSkillArrows(BitmapVisionFrame(workingPopupBmp))
+                            }
+                            if (collapsed.isEmpty()) break
+                            val arrow = collapsed.first()
+                            touchExecutor.performTap(arrow.x, arrow.y, holdMs = 34L)
+                            delay(220)
+                            val nextBmp = capturer.captureSingleFrame() ?: break
+                            if (!workingPopupBmp.isRecycled) workingPopupBmp.recycle()
+                            workingPopupBmp = nextBmp
+                            expandClicks++
+                        }
+                    }
+                    val (lines, skipped) = withContext(Dispatchers.Default) {
+                        enemySkillOcrEngine.recognizeActiveLines(workingPopupBmp)
+                    }
+                    if (!workingPopupBmp.isRecycled) workingPopupBmp.recycle()
+                    val parsed = withContext(Dispatchers.Default) {
+                        enemySkillOcrEngine.parseText(lines.joinToString("\n"), skippedGreyLines = skipped)
+                    }
+                    applyParsedEnemySkills(parsed, battleIconChips, autoTriggered)
+                    return@launch
                 }
 
                 // If user chose Battle-Icons-Only mode and Stage Info is NOT open, finish with zero taps!
                 if (scanMode == EnemySkillScanMode.BATTLE_ICONS && !alreadyInStageInfo) {
                     if (!initBmp.isRecycled) initBmp.recycle()
                     val summary = if (battleIconChips.isNotEmpty()) {
-                        "图标快识：${battleIconChips.joinToString(" · ") { it.label }}"
+                        val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
+                        lctx.getString(R.string.ov_toast_icon_found_fmt, labels)
                     } else if (iconNotes.isNotEmpty()) {
-                        "图标快识：${iconNotes.joinToString(" · ")}"
+                        lctx.getString(R.string.ov_toast_icon_found_fmt, iconNotes.joinToString(" · "))
                     } else {
-                        "图标快识：未检测到特殊状态盾"
+                        lctx.getString(R.string.ov_toast_icon_none)
                     }
                     ActiveStrategyStore.applyOcrChips(battleIconChips, summary)
                     if (!autoTriggered || battleIconChips.isNotEmpty()) toast(summary)
                     return@launch
                 }
 
-                // Stage 2: Full-Auto 「齿轮 ⚙ → 關卡資訊 → 展开全部 ▶ 小三角 → 超屏自动下划 → 多敌切换 → ML Kit OCR → 取消关闭」
+                // Stage 2: Full-Auto 「齿轮 ⚙ → 關卡資訊 → 展开全部 ▶ 小三角 → 超屏自动下划 → 多敌切换 → 识别 → 取消关闭」
                 var workingBmp: android.graphics.Bitmap = initBmp
                 if (!alreadyInStageInfo) {
                     if (!canTouch) {
-                        // Without AccessibilityService we cannot auto-click Gear: fallback to direct OCR on current screen
+                        // Without AccessibilityService we cannot auto-click Gear: still apply official icon detections + notify clearly
                         val directParsed = withContext(Dispatchers.Default) {
                             enemySkillOcrEngine.recognizeEnemySkills(workingBmp)
                         }
                         if (!workingBmp.isRecycled) workingBmp.recycle()
-                        applyParsedEnemySkills(directParsed, battleIconChips, autoTriggered)
+                        applyParsedEnemySkills(directParsed, battleIconChips, autoTriggered = true)
+                        if (!autoTriggered) {
+                            if (battleIconChips.isNotEmpty()) {
+                                val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
+                                toast(lctx.getString(R.string.ov_toast_icon_found_fmt, labels))
+                            } else {
+                                toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
+                            }
+                        }
                         return@launch
                     }
 
@@ -1014,7 +1026,7 @@ class OverlayControllerService : Service() {
                     val gearPt = StageInfoUiAnalyzer.findGearTapPoint(screenW, screenH)
                     val tappedGear = touchExecutor.performTap(gearPt.x, gearPt.y, holdMs = 36L)
                     if (!tappedGear) {
-                        if (!autoTriggered) toast("自动点击右上角齿轮失败，请确认无障碍服务")
+                        if (!autoTriggered) toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
                         return@launch
                     }
                     delay(460)
@@ -1024,14 +1036,13 @@ class OverlayControllerService : Service() {
                     }
                     if (!modalOpen) {
                         if (!afterGearBmp.isRecycled) afterGearBmp.recycle()
-                        // Could be a manual long-press popup or non-battle screen; fallback gracefully
                         if (battleIconChips.isNotEmpty()) {
-                            ActiveStrategyStore.applyOcrChips(
-                                battleIconChips,
-                                "图标快识：${battleIconChips.joinToString(" · ") { it.label }}"
-                            )
+                            val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
+                            val msg = lctx.getString(R.string.ov_toast_icon_found_fmt, labels)
+                            ActiveStrategyStore.applyOcrChips(battleIconChips, msg)
+                            toast(msg)
                         } else if (!autoTriggered) {
-                            toast("未打开「關卡資訊」，请确认处于战斗界面")
+                            toast(lctx.getString(R.string.ov_toast_icon_none))
                         }
                         return@launch
                     }
@@ -1063,7 +1074,6 @@ class OverlayControllerService : Service() {
                     // Expand all collapsed ▶ skill arrows + auto-scroll down until skill list stops moving!
                     var scrollSteps = 0
                     while (isActive && scrollSteps <= 3) {
-                        // Expand every visible collapsed white right-triangle ▶ (re-scan after each tap since list shifts!)
                         var expandClicks = 0
                         while (isActive && canTouch && expandClicks < 6) {
                             val collapsed = withContext(Dispatchers.Default) {
@@ -1079,18 +1089,15 @@ class OverlayControllerService : Service() {
                             expandClicks++
                         }
 
-                        // Run offline ML Kit Chinese OCR (+ 2026 greyed-out bypassed-skill filter) on expanded view
                         val (lines, skipped) = withContext(Dispatchers.Default) {
                             enemySkillOcrEngine.recognizeActiveLines(workingBmp)
                         }
                         collectedLines.addAll(lines)
                         totalSkippedGrey += skipped
 
-                        // If enemy explicitly has "沒有技能", no need to scroll this portrait!
                         val hasNoSkill = lines.any { it.contains("沒有技能") || it.contains("没有技能") }
                         if (hasNoSkill || !canTouch || scrollSteps >= 3) break
 
-                        // Check if skill panel scrolls further down by comparing before/after region dHash
                         val beforeHash = withContext(Dispatchers.Default) {
                             StageInfoUiAnalyzer.computeRegionHash(BitmapVisionFrame(workingBmp))
                         }
@@ -1109,7 +1116,7 @@ class OverlayControllerService : Service() {
                             StageInfoUiAnalyzer.computeRegionHash(BitmapVisionFrame(workingBmp))
                         }
                         if (StageInfoUiAnalyzer.hammingDistance(beforeHash, afterHash) <= 3) {
-                            break // Reached bottom of skill box!
+                            break
                         }
                         scrollSteps++
                     }
@@ -1128,9 +1135,7 @@ class OverlayControllerService : Service() {
                 // Emergency stop cancelled scan
             } catch (e: Exception) {
                 Log.e(TAG, "Smart enemy skill scan failed", e)
-                if (!autoTriggered) toast("自动识敌技异常：${e.message}")
             } finally {
-                // Always tap 「取消」 to close 「關卡資訊」 cleanly if we opened Gear automatically!
                 if (openedGearByAuto && touchExecutor.isAvailable.value) {
                     val cancelPt = StageInfoUiAnalyzer.findCancelTapPoint(screenW, screenH)
                     runCatching {
@@ -1154,36 +1159,35 @@ class OverlayControllerService : Service() {
         for (c in extraIconChips) merged[c.id] = c
         for (c in parsed.chips) merged[c.id] = c
         val finalChips = merged.values.toList()
-        val greyNote = if (parsed.skippedGreyLines > 0) "（已滤除 ${parsed.skippedGreyLines} 条灰字已无视）" else ""
 
         if (finalChips.isEmpty()) {
             if (parsed.hasNoSkillBanner) {
-                ActiveStrategyStore.applyOcrChips(emptyList(), "自动识技：当前波敌人没有技能$greyNote")
-                if (!autoTriggered) toast("识敌技：当前敌人「没有技能」，无需挂载解盾$greyNote")
+                val msg = lctx.getString(R.string.ov_toast_no_skill)
+                ActiveStrategyStore.applyOcrChips(emptyList(), msg)
+                if (!autoTriggered) toast(msg)
             } else {
-                ActiveStrategyStore.applyOcrChips(emptyList(), "未匹配到已知敌技词条$greyNote")
-                if (!autoTriggered) toast("未识别到已知敌技盾$greyNote")
+                val msg = lctx.getString(R.string.toast_ocr_none)
+                ActiveStrategyStore.applyOcrChips(emptyList(), msg)
+                if (!autoTriggered) toast(msg)
             }
         } else {
-            val names = finalChips.joinToString(" · ") { it.label }
-            ActiveStrategyStore.applyOcrChips(finalChips, "已自动识盾：${names}$greyNote")
-            toast("已识别并挂载 ${finalChips.size} 项敌技盾：$names")
+            val names = finalChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
+            val msg = lctx.getString(R.string.ov_toast_applied_fmt, finalChips.size, names)
+            ActiveStrategyStore.applyOcrChips(finalChips, msg)
+            toast(msg)
         }
     }
 
     // ==================== No-Root Hold-and-Replan Execution (按住重算 / Legacy 问号‧转) ====================
     private fun startHoldAndReplanExecution(forceNudge: Boolean = false) {
-        if (currentPhase != OverlayPhase.IDLE) {
-            toast("任务进行中，可点「停」立即中止")
-            return
-        }
+        if (currentPhase != OverlayPhase.IDLE) return
         val capturer = ScreenCaptureSession.capturer.value
         if (capturer == null || !capturer.isReady.value) {
-            toast("请先在主界面授权「屏幕采集」")
+            toast(lctx.getString(R.string.toast_capture_denied))
             return
         }
         if (!touchExecutor.isAvailable.value) {
-            toast("请先开启 AutoDora-NEXT 无障碍服务")
+            toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
             return
         }
         if (calibrationMode) setCalibrationMode(false)
@@ -1223,7 +1227,6 @@ class OverlayControllerService : Service() {
                     Triple(r, c, target)
                 }
                 StartPointPreset.ANY -> {
-                    // Matches Legacy AutoDora FullscreenQuestion: center cell nudged 1 cell left!
                     val r = (geom.rows / 2).coerceIn(0, geom.rows - 1)
                     val c = (geom.cols / 2).coerceIn(0, geom.cols - 1)
                     val target = if ((forceNudge || settings.holdReplanNudge) && c > 0) CellCoord(r, c - 1) else null
@@ -1281,19 +1284,19 @@ class OverlayControllerService : Service() {
                     is TouchExecutionResult.Success -> {
                         flashMemoryTracker.clearLock()
                         usedMemorizedSnapshot = false
-                        hidePathOverlay()
+                        invalidateLastSolution()
                         Log.i(TAG, "Hold-and-Replan completed in ${result.elapsedMs}ms (${result.segmentsDispatched} segs)")
                     }
                     is TouchExecutionResult.Cancelled -> {
                         hidePathOverlay()
-                        toast("按住重算已中止")
+                        toast(lctx.getString(R.string.ov_toast_stopped))
                     }
-                    is TouchExecutionResult.Failed -> toast("按住重算失败：${result.reason}")
+                    is TouchExecutionResult.Failed -> Log.w(TAG, "Hold-and-Replan failed: ${result.reason}")
                 }
             } finally {
                 setControlBarTouchable(true)
                 setPhase(OverlayPhase.IDLE)
-                updateQuickModeChips()
+                refreshMainToggleChips()
                 refreshPathCanvas()
             }
         }
@@ -1304,11 +1307,11 @@ class OverlayControllerService : Service() {
         if (currentPhase != OverlayPhase.IDLE) return
         val geom = currentGeometry ?: return
         val sol = currentSolution() ?: run {
-            toast("请先点击「算」生成路线")
+            toast(lctx.getString(R.string.ov_toast_need_solve))
             return
         }
         if (!touchExecutor.isAvailable.value) {
-            toast("请先开启 AutoDora-NEXT 无障碍服务")
+            toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
             return
         }
 
@@ -1331,20 +1334,31 @@ class OverlayControllerService : Service() {
                     is TouchExecutionResult.Success -> {
                         flashMemoryTracker.clearLock()
                         usedMemorizedSnapshot = false
-                        hidePathOverlay()
-                        updateQuickModeChips()
+                        invalidateLastSolution()
                         Log.i(TAG, "Auto-swipe completed in ${result.elapsedMs}ms (${result.segmentsDispatched} segs)")
                     }
                     is TouchExecutionResult.Cancelled -> {
                         hidePathOverlay()
-                        toast("自动转珠已中止")
+                        toast(lctx.getString(R.string.ov_toast_stopped))
                     }
-                    is TouchExecutionResult.Failed -> toast("自动转珠失败：${result.reason}")
+                    is TouchExecutionResult.Failed -> Log.w(TAG, "Auto-swipe failed: ${result.reason}")
                 }
             } finally {
                 setControlBarTouchable(true)
                 setPhase(OverlayPhase.IDLE)
+                refreshMainToggleChips()
             }
+        }
+    }
+
+    private fun invalidateLastSolution() {
+        lastSolveOutput = null
+        selectedSolutionIdx = 0
+        showPath = false
+        if (::summaryStrip.isInitialized) {
+            updateSummaryStrip()
+            refreshMainToggleChips()
+            refreshPathCanvas(countdown = null)
         }
     }
 
@@ -1372,7 +1386,7 @@ class OverlayControllerService : Service() {
         refreshPathCanvas()
     }
 
-    // ==================== Modes: Calibration ('校') / Board Editor ('盘面编绘') / Tuning Drawer ('解盾调参') ====================
+    // ==================== Modes: Calibration / Board Editor / 4-Tab Tuning Drawer ====================
     private fun toggleCalibrationMode() {
         setCalibrationMode(!calibrationMode)
     }
@@ -1412,7 +1426,8 @@ class OverlayControllerService : Service() {
             }
         }
         updatePathOverlayTouchability()
-        updateQuickModeChips()
+        refreshMainToggleChips()
+        syncDrawerData()
         refreshPathCanvas()
         clampControlWindowToScreen()
     }
@@ -1426,7 +1441,7 @@ class OverlayControllerService : Service() {
         if (open && boardEditorMode) setBoardEditorMode(false)
         tuningDrawerOpen = open
         tuningDrawer.setVisible(tuningDrawerOpen && toolbarExpanded)
-        updateQuickModeChips()
+        refreshMainToggleChips()
         syncDrawerData()
         clampControlWindowToScreen()
     }
@@ -1527,13 +1542,13 @@ class OverlayControllerService : Service() {
                 if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) continue
                 val capturer = ScreenCaptureSession.capturer.value ?: continue
                 if (!capturer.isReady.value) continue
-                if (lastSolveOutput != null && showPath) continue
 
                 val bmp = capturer.captureSingleFrame() ?: continue
                 try {
                     val frame = BitmapVisionFrame(bmp)
                     val (geom, rec, isModal, enemyHash) = withContext(Dispatchers.Default) {
-                        val modal = StageInfoUiAnalyzer.isStageInfoModalOpen(frame)
+                        val modal = StageInfoUiAnalyzer.isStageInfoModalOpen(frame) ||
+                            StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(frame)
                         if (modal) {
                             Quadruple(null, null, true, 0L)
                         } else {
@@ -1546,16 +1561,26 @@ class OverlayControllerService : Service() {
                         }
                     }
 
-                    if (!isModal && geom != null && rec != null) {
-                        // 1. Always-On Full-Screen Question Orb Memory (no toggle required!)
+                    if (isModal) {
+                        pendingWaveStableCount = 0
+                        if (!enemyPopupCoveringBoard) {
+                            enemyPopupCoveringBoard = true
+                            refreshPathCanvas()
+                        }
+                    } else if (geom != null && rec != null) {
+                        if (enemyPopupCoveringBoard) {
+                            enemyPopupCoveringBoard = false
+                            refreshPathCanvas()
+                        }
+
+                        // 1. Always-On Full-Screen Question Orb Memory (no toggle required; flat dark modals already excluded!)
                         val lockedNow = flashMemoryTracker.onWatchFrame(rec)
                         if (lockedNow) {
                             currentGeometry = geom
                             refreshPathCanvas()
-                            toast("已常驻记忆翻面前盘面，点「算」即可直接透视解全版问号珠")
                         }
 
-                        // 2. Automatic Per-Wave Enemy Skill Recognition (active whenever autoEnemySkillEnabled == true!)
+                        // 2. Non-Blocking Automatic Per-Wave Enemy Skill Recognition (active whenever autoEnemySkillEnabled == true!)
                         if (settings.autoEnemySkillEnabled &&
                             FlashRevealMemoryTracker.isCleanVividBattleBoard(rec, 0.65f)
                         ) {
@@ -1572,6 +1597,9 @@ class OverlayControllerService : Service() {
                                 }
                                 if (pendingWaveStableCount >= 3) {
                                     pendingWaveStableCount = 0
+                                    if (lastSolveOutput != null) {
+                                        invalidateLastSolution()
+                                    }
                                     runSmartEnemySkillScan(autoTriggered = true)
                                 }
                             } else {
@@ -1589,7 +1617,7 @@ class OverlayControllerService : Service() {
 
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-    // ==================== System Material 3 Theme & Unified Toggle Styling ====================
+    // ==================== System Material 3 Theme & Unified Icon Styling ====================
     private fun applyOverlayTheme() {
         if (!::toolbarContainer.isInitialized) return
         lctx = LocaleHelper.localizedContext(this, settings.language)
@@ -1597,22 +1625,25 @@ class OverlayControllerService : Service() {
         val p = palette
 
         toolbarContainer.background = roundedBg(p.containerBg, dp(16).toFloat(), p.containerStroke)
-        quickPanel.background = roundedBg(p.containerBg, dp(12).toFloat(), p.containerStroke)
-        summaryStrip.background = roundedBg(p.containerBg, dp(10).toFloat(), p.containerStroke)
+        summaryStrip.background = roundedBg(p.containerBg, dp(11).toFloat(), p.containerStroke)
+        solutionSwitcherBox.background = roundedBg(p.chipOffBg, dp(8).toFloat(), p.chipOffStroke)
         calibrationBar.background = roundedBg(p.containerBg, dp(11).toFloat(), p.tertiary)
 
         pagerText.setTextColor(p.onSurface)
         summaryTitle.setTextColor(p.onSurface)
+        styleChip(prevBtn, Color.TRANSPARENT, p.onSurface, null)
+        styleChip(nextBtn, Color.TRANSPARENT, p.onSurface, null)
 
-        solveBtn.text = lctx.getString(R.string.ov_solve)
-        stopChipBtn.text = lctx.getString(R.string.ov_stop)
-        ocrScanBtn.text = lctx.getString(R.string.ov_scan_now)
-
-        styleChip(solveBtn, p.primary, p.onPrimary, null)
-        styleChip(prevBtn, p.chipOffBg, p.onSurface, p.chipOffStroke)
-        styleChip(nextBtn, p.chipOffBg, p.onSurface, p.chipOffStroke)
-        styleChip(closeBtn, p.chipOffBg, p.onSurfaceVariant, p.chipOffStroke)
-        styleChip(ocrScanBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
+        // Localized Accessibility Labels for every permanent icon
+        solveIconBtn.contentDescription = lctx.getString(R.string.ov_solve)
+        executeIconBtn.contentDescription = lctx.getString(R.string.ov_exec)
+        stopIconBtn.contentDescription = lctx.getString(R.string.ov_stop)
+        pathIconBtn.contentDescription = lctx.getString(R.string.ov_line)
+        resultIconBtn.contentDescription = lctx.getString(R.string.ov_result_btn)
+        scanIconBtn.contentDescription = lctx.getString(R.string.ov_scan_now)
+        calibIconBtn.contentDescription = lctx.getString(R.string.ov_calib)
+        tuneIconBtn.contentDescription = lctx.getString(R.string.ov_tuning)
+        closeIconBtn.contentDescription = lctx.getString(R.string.btn_close)
 
         val calibLabels = listOf(
             R.string.ov_calib_up, R.string.ov_calib_down, R.string.ov_calib_narrow,
@@ -1630,78 +1661,77 @@ class OverlayControllerService : Service() {
         boardEditor.applyTheme(p)
         setPhase(currentPhase)
         refreshMainToggleChips()
-        updateQuickModeChips()
         refreshActiveShieldStrip()
+        updateSummaryStrip()
         syncDrawerData()
     }
 
     private fun refreshMainToggleChips() {
-        if (!::pathToggleBtn.isInitialized || !::palette.isInitialized) return
+        if (!::solveIconBtn.isInitialized || !::palette.isInitialized) return
         val p = palette
 
-        val execText = lctx.getString(R.string.ov_exec)
-        executeBtn.text = execText
-        if (settings.holdReplanEnabled) {
-            styleChip(executeBtn, p.tertiaryContainer, p.onTertiaryContainer, p.tertiary)
+        // Preview-Confirm State Machine:
+        //  - Preview OFF: hide '算' icon; clicking '行' calculates & auto-swipes in 1 tap!
+        //  - Preview ON:  show '算' icon; '行' stays disabled until '算' produces a solution (or Hold-Replan is ON)!
+        solveIconBtn.visibility = if (settings.testModeOnlyDraw) View.VISIBLE else View.GONE
+        styleIconBtn(solveIconBtn, bgColor = p.primary, iconTint = p.onPrimary, strokeColor = null, enabled = true)
+
+        val hasSol = currentSolution() != null
+        val canExecute = !settings.testModeOnlyDraw || settings.holdReplanEnabled || hasSol
+        executeIconBtn.setImageResource(
+            if (settings.holdReplanEnabled) R.drawable.ic_ov_hold else R.drawable.ic_ov_play
+        )
+        executeIconBtn.isEnabled = canExecute
+        executeIconBtn.isClickable = canExecute
+        if (!canExecute) {
+            styleIconBtn(executeIconBtn, bgColor = p.chipOffBg, iconTint = p.onSurfaceVariant, strokeColor = p.chipOffStroke, enabled = false)
+        } else if (settings.holdReplanEnabled) {
+            styleIconBtn(executeIconBtn, bgColor = p.tertiaryContainer, iconTint = p.onTertiaryContainer, strokeColor = p.tertiary, enabled = true)
         } else {
-            styleChip(executeBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
+            styleIconBtn(executeIconBtn, bgColor = p.primaryContainer, iconTint = p.onPrimaryContainer, strokeColor = p.primary, enabled = true)
         }
 
-        // '线' controls swipe trajectory path ONLY
-        val lineText = lctx.getString(R.string.ov_line)
-        pathToggleBtn.text = if (showPath) "●$lineText" else "○$lineText"
-        styleToggleChip(pathToggleBtn, isOn = showPath, onBg = p.primary, onText = p.onPrimary)
-
-        // '校' controls board alignment grid ONLY
-        val calibText = lctx.getString(R.string.ov_calib)
-        calibToggleBtn.text = if (calibrationMode) "●$calibText" else "○$calibText"
-        styleToggleChip(calibToggleBtn, isOn = calibrationMode, onBg = p.tertiary, onText = p.onTertiary)
-
-        // '⋯' / '▾' quick panel drawer toggle
-        moreToggleBtn.text = if (modeRowExpanded) "▾" else "⋯"
-        if (modeRowExpanded) {
-            styleChip(moreToggleBtn, p.primaryContainer, p.onPrimaryContainer, p.primary)
+        // Trajectory line toggle ('线')
+        if (showPath) {
+            styleIconBtn(pathIconBtn, bgColor = p.primary, iconTint = p.onPrimary, strokeColor = null)
         } else {
-            styleChip(moreToggleBtn, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+            styleIconBtn(pathIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
         }
-    }
 
-    private fun updateQuickModeChips() {
-        if (!::autoSkillToggleBtn.isInitialized || !::palette.isInitialized) return
-        val p = palette
+        // Result card toggle ('结')
+        if (showResultCard) {
+            styleIconBtn(
+                resultIconBtn,
+                bgColor = if (hasSol) p.primaryContainer else p.secondaryContainer,
+                iconTint = if (hasSol) p.onPrimaryContainer else p.onSecondaryContainer,
+                strokeColor = if (hasSol) p.primary else null
+            )
+        } else {
+            styleIconBtn(resultIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
+        }
 
-        // 1. Hold-and-Replan Toggle (按住转 -> unified via '行')
-        val holdLbl = lctx.getString(R.string.ov_hold)
-        holdReplanToggleBtn.text = if (settings.holdReplanEnabled) "●$holdLbl" else "○$holdLbl"
-        styleToggleChip(holdReplanToggleBtn, isOn = settings.holdReplanEnabled, onBg = p.tertiary, onText = p.onTertiary)
+        // Enemy Skill Scan button (highlight subtle ring when auto-skill is ON)
+        if (settings.autoEnemySkillEnabled) {
+            styleIconBtn(scanIconBtn, bgColor = p.secondaryContainer, iconTint = p.onSecondaryContainer, strokeColor = p.primary)
+        } else {
+            styleIconBtn(scanIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
+        }
 
-        // 2. Auto Enemy Skill Recognition Toggle
-        val autoLbl = lctx.getString(R.string.ov_auto_skill)
-        autoSkillToggleBtn.text = if (settings.autoEnemySkillEnabled) "●$autoLbl" else "○$autoLbl"
-        styleToggleChip(autoSkillToggleBtn, isOn = settings.autoEnemySkillEnabled, onBg = p.primary, onText = p.onPrimary)
+        // Alignment Grid Calibration toggle ('校')
+        if (calibrationMode) {
+            styleIconBtn(calibIconBtn, bgColor = p.tertiary, iconTint = p.onTertiary, strokeColor = null)
+        } else {
+            styleIconBtn(calibIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
+        }
 
-        // 3. Inverted Drag Controls Toggle
-        val invOn = settings.invertDragX || settings.invertDragY
-        val invLbl = lctx.getString(R.string.ov_invert)
-        invertChipBtn.text = if (invOn) "●$invLbl" else "○$invLbl"
-        styleToggleChip(invertChipBtn, isOn = invOn, onBg = p.tertiary, onText = p.onTertiary)
+        // 4-Tab Drawer toggle
+        if (tuningDrawerOpen) {
+            styleIconBtn(tuneIconBtn, bgColor = p.primary, iconTint = p.onPrimary, strokeColor = null)
+        } else {
+            styleIconBtn(tuneIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
+        }
 
-        // 4. Unified 1:1 Thermal Speed Preset
-        val preset = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
-        val spdStyle = p.speedStyle(preset)
-        speedChipBtn.text = LocaleHelper.speedLabel(lctx, preset)
-        styleChip(speedChipBtn, spdStyle.bg, spdStyle.fg, spdStyle.stroke)
-
-        // 5. Phase 3 Drawer & Board Editor Toggles
-        val tuneLbl = lctx.getString(R.string.ov_tuning)
-        tuningDrawerToggleBtn.text = if (tuningDrawerOpen) "●$tuneLbl" else "○$tuneLbl"
-        styleToggleChip(tuningDrawerToggleBtn, isOn = tuningDrawerOpen, onBg = p.primary, onText = p.onPrimary)
-
-        val editLbl = lctx.getString(R.string.ov_editor)
-        boardEditorToggleBtn.text = if (boardEditorMode) "●$editLbl" else "○$editLbl"
-        styleToggleChip(boardEditorToggleBtn, isOn = boardEditorMode, onBg = p.tertiary, onText = p.onTertiary)
-
-        refreshMainToggleChips()
+        styleIconBtn(closeIconBtn, bgColor = p.chipOffBg, iconTint = p.onSurfaceVariant, strokeColor = p.chipOffStroke)
     }
 
     private fun refreshActiveShieldStrip() {
@@ -1752,7 +1782,8 @@ class OverlayControllerService : Service() {
             presets = presetRecords,
             activePreset = activeTeamPreset(),
             activeChips = activeWaveChips,
-            ocrSummary = lastOcrSummary
+            ocrSummary = lastOcrSummary,
+            boardEditorOpen = boardEditorMode
         )
     }
 
@@ -1765,29 +1796,38 @@ class OverlayControllerService : Service() {
         val out = lastSolveOutput
         val sol = currentSolution()
         val geom = currentGeometry
-        if (out == null || sol == null || geom == null) {
-            pagerText.text = "0/0"
+        if (out == null || sol == null || geom == null || !showResultCard || !toolbarExpanded) {
             summaryStrip.visibility = View.GONE
             return
         }
 
         pagerText.text = "${selectedSolutionIdx + 1}/${out.solutions.size}"
-        val sizeBadge = if (geom.isWeijianExpanded) "${geom.cols}×${geom.rows} 违建" else "${geom.cols}×${geom.rows}"
-        val shieldBadge = if (sol.allHardConstraintsMet) "✓" else "!"
-        val memTag = if (usedMemorizedSnapshot) " · 记忆" else ""
-        val stormCnt = lastRecognition?.stormCellsDetected ?: 0
-        val stormTag = if (stormCnt > 0) " · 暴风$stormCnt" else ""
-        val lowWarn = if (usedMemorizedSnapshot) 0 else (lastRecognition?.lowConfidenceIndices?.size ?: 0)
-        val lowStr = if (lowWarn > 0) " · 低置信 $lowWarn" else ""
+        solutionSwitcherBox.visibility = if (out.solutions.size > 1) View.VISIBLE else View.GONE
 
-        summaryTitle.text = "$sizeBadge · ${sol.totalCombo}C(首${sol.firstWaveCombo}) · ${sol.stepCount}步 · ${out.elapsedMs.toInt()}ms $shieldBadge$memTag$stormTag$lowStr"
+        val shieldBadge = if (sol.allHardConstraintsMet) "✓" else "!"
+        val coreSummary = lctx.getString(
+            R.string.ov_summary_fmt,
+            geom.cols,
+            geom.rows,
+            sol.firstWaveCombo,
+            sol.totalCombo,
+            sol.stepCount,
+            out.elapsedMs.toInt()
+        )
+        val extra = buildString {
+            append(" ").append(shieldBadge)
+            if (usedMemorizedSnapshot) append(" · ★")
+            val stormCnt = lastRecognition?.stormCellsDetected ?: 0
+            if (stormCnt > 0) append(" · 🌀").append(stormCnt)
+        }
+        summaryTitle.text = coreSummary + extra
 
         groupsRow.removeAllViews()
         for (grp in sol.groups) {
             val pill = TextView(this).apply {
                 val ench = if (grp.hasEnchanted) "+" else ""
                 val waveMark = if (grp.wave > 1) "↓" else ""
-                text = "${PathOverlayView.elementShortZh(grp.element)}${grp.orbCount}$ench$waveMark"
+                text = "${LocaleHelper.elementLabel(lctx, grp.element.code)}${grp.orbCount}$ench$waveMark"
                 textSize = 9f
                 setSingleLine(true)
                 setTextColor(Color.WHITE)
@@ -1802,13 +1842,18 @@ class OverlayControllerService : Service() {
             groupsRow.addView(pill)
         }
         groupsScroll.visibility = if (summaryPillsExpanded && sol.groups.isNotEmpty()) View.VISIBLE else View.GONE
-        summaryStrip.visibility = if (toolbarExpanded) View.VISIBLE else View.GONE
+        summaryStrip.visibility = View.VISIBLE
         summaryTitle.requestLayout()
         summaryStrip.requestLayout()
         clampControlWindowToScreen()
     }
 
     private fun refreshPathCanvas(countdown: String? = null) {
+        if (enemyPopupCoveringBoard && !calibrationMode && !boardEditorMode) {
+            // Never paint memorized colored orb circles or swipe arrows on top of Enemy Long-Press / Stage Info modals!
+            pathOverlayView.updateState(null, null, emptyList(), null, false, false, false, null, null, false)
+            return
+        }
         val memBoard = flashMemoryTracker.currentLockedSnapshot()
         val displayBoard = when {
             boardEditorMode -> editedBoard ?: lastRecognition?.board
@@ -1838,45 +1883,63 @@ class OverlayControllerService : Service() {
                 statusOrbView.text = "D"
                 statusOrbView.setTextColor(p.onPrimary)
                 statusOrbView.background = circleBg(p.primary, p.orbStroke)
-                if (::stopChipBtn.isInitialized) {
-                    styleChip(stopChipBtn, p.errorContainer, p.onErrorContainer, null)
+                if (::stopIconBtn.isInitialized) {
+                    styleIconBtn(stopIconBtn, p.errorContainer, p.onErrorContainer, null)
                 }
             }
             OverlayPhase.CALCULATING -> {
-                statusOrbView.text = "算"
+                statusOrbView.text = "…"
                 statusOrbView.setTextColor(p.onTertiary)
                 statusOrbView.background = circleBg(p.tertiary, p.orbStroke)
-                if (::stopChipBtn.isInitialized) {
-                    styleChip(stopChipBtn, p.error, p.onError, p.onError)
+                if (::stopIconBtn.isInitialized) {
+                    styleIconBtn(stopIconBtn, p.error, p.onError, p.onError)
                 }
             }
             OverlayPhase.MOVING -> {
-                statusOrbView.text = "转"
+                statusOrbView.text = "▶"
                 statusOrbView.setTextColor(p.onPrimaryContainer)
                 statusOrbView.background = circleBg(p.primaryContainer, p.primary)
-                if (::stopChipBtn.isInitialized) {
-                    styleChip(stopChipBtn, p.error, p.onError, p.onError)
+                if (::stopIconBtn.isInitialized) {
+                    styleIconBtn(stopIconBtn, p.error, p.onError, p.onError)
                 }
             }
         }
+    }
+
+    private fun makeIconBtn(
+        drawableRes: Int,
+        marginEndDp: Int = 3,
+        onClick: () -> Unit
+    ): ImageView {
+        return ImageView(this).apply {
+            setImageResource(drawableRes)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            val size = dp(28)
+            val pad = dp(5)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                marginEnd = dp(marginEndDp)
+            }
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun styleIconBtn(
+        view: ImageView,
+        bgColor: Int,
+        iconTint: Int,
+        strokeColor: Int?,
+        enabled: Boolean = true
+    ) {
+        view.background = roundedBg(bgColor, dp(9).toFloat(), strokeColor)
+        view.colorFilter = PorterDuffColorFilter(iconTint, PorterDuff.Mode.SRC_IN)
+        view.alpha = if (enabled) 1.0f else 0.30f
     }
 
     private fun styleChip(view: TextView, bgColor: Int, textColor: Int, strokeColor: Int?) {
         view.setTextColor(textColor)
         view.background = roundedBg(bgColor, dp(8).toFloat(), strokeColor)
         view.alpha = 1.0f
-    }
-
-    private fun styleToggleChip(
-        view: TextView,
-        isOn: Boolean,
-        onBg: Int,
-        onText: Int,
-        onStroke: Int? = null
-    ) {
-        val p = palette
-        if (isOn) styleChip(view, onBg, onText, onStroke)
-        else styleChip(view, p.chipOffBg, p.chipOffText, p.chipOffStroke)
     }
 
     private fun clampControlWindowToScreen() {
