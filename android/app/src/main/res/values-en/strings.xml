@@ -538,7 +538,15 @@
     <string name="about_up_to_date_fmt">Up to date (v%1$s)</string>
     <string name="about_update_avail_fmt">Update available: v%1$s</string>
     <string name="about_update_prerelease_tag">Pre-release</string>
-    <string name="about_update_download_btn">Download</string>
-    <string name="about_update_error_fmt">Update check failed: %1$s</string>
+    <string name="about_update_download_btn">Download &amp; Install</string>
+    <string name="about_update_browser_btn">Open Release</string>
+    <string name="about_update_downloading_fmt">Downloading v%1$s…</string>
+    <string name="about_update_progress_fmt">%1$s / %2$s (%3$d%%)</string>
+    <string name="about_update_ready_fmt">v%1$s downloaded; starting installer</string>
+    <string name="about_update_install_now_btn">Install Now</string>
+    <string name="about_update_cancel_btn">Cancel</string>
+    <string name="about_update_need_install_perm">Allow \"Install unknown apps\" permission; install will resume automatically</string>
+    <string name="about_update_install_failed">Failed to launch installer: %1$s</string>
+    <string name="about_update_error_fmt">Update failed: %1$s</string>
     <string name="about_open_link_failed">Unable to open link in browser</string>
 </resources>

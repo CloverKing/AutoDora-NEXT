@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.autodora.next.capture.MediaProjectionForegroundService
 import com.autodora.next.capture.ScreenCaptureSession
@@ -34,8 +35,11 @@ import com.autodora.next.ui.DashboardScreen
 import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.PermissionHealthState
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -49,9 +53,21 @@ class MainActivity : ComponentActivity() {
     private val benchmarkReportState = MutableStateFlow<String?>(null)
     private val isBenchmarkingState = MutableStateFlow(false)
     private val updateCheckState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
+    private var updateDownloadJob: Job? = null
+    private var pendingInstallApk: File? = null
     private var currentLanguage: AppLanguage = AppLanguage.SYSTEM
 
     private fun lctx(): Context = LocaleHelper.localizedContext(this, currentLanguage)
+
+    private val unknownAppSourcesLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val apk = pendingInstallApk
+        if (apk != null && apk.isFile && packageManager.canRequestPackageInstalls()) {
+            pendingInstallApk = null
+            launchApkInstaller(apk)
+        }
+    }
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -123,6 +139,9 @@ class MainActivity : ComponentActivity() {
                         onRunNativeBenchmark = { runOnDeviceBenchmark() },
                         onOpenGitHub = { openExternalUrl(UpdateChecker.GITHUB_REPO_URL) },
                         onCheckForUpdates = { checkForUpdates() },
+                        onDownloadUpdate = { avail -> downloadAndInstallUpdate(avail) },
+                        onCancelUpdateDownload = { cancelUpdateDownload() },
+                        onInstallReadyApk = { path -> installApkOrRequestPermission(File(path)) },
                         onOpenUpdateUrl = { url -> openExternalUrl(url) },
                         onUpdateSettings = { transform ->
                             lifecycleScope.launch { settingsRepository.update(transform) }
@@ -309,10 +328,110 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkForUpdates() {
-        if (updateCheckState.value is UpdateCheckState.Checking) return
+        val cur = updateCheckState.value
+        if (cur is UpdateCheckState.Checking || cur is UpdateCheckState.Downloading) return
         lifecycleScope.launch {
             updateCheckState.value = UpdateCheckState.Checking
             updateCheckState.value = UpdateChecker.checkLatestRelease(BuildConfig.VERSION_NAME)
+        }
+    }
+
+    private fun downloadAndInstallUpdate(avail: UpdateCheckState.UpdateAvailable) {
+        val apkUrl = avail.apkDownloadUrl
+        if (apkUrl.isNullOrBlank()) {
+            openExternalUrl(avail.releaseUrl)
+            return
+        }
+        updateDownloadJob?.cancel()
+        pendingInstallApk = null
+        updateDownloadJob = lifecycleScope.launch {
+            updateCheckState.value = UpdateCheckState.Downloading(
+                latestVersion = avail.latestVersion,
+                downloadedBytes = 0L,
+                totalBytes = -1L,
+                releaseUrl = avail.releaseUrl
+            )
+            try {
+                val updatesDir = File(cacheDir, "updates")
+                val apkFile = UpdateChecker.downloadApk(
+                    downloadUrl = apkUrl,
+                    version = avail.latestVersion,
+                    updatesDir = updatesDir,
+                    userAgentVersion = BuildConfig.VERSION_NAME
+                ) { downloaded, total ->
+                    updateCheckState.value = UpdateCheckState.Downloading(
+                        latestVersion = avail.latestVersion,
+                        downloadedBytes = downloaded,
+                        totalBytes = total,
+                        releaseUrl = avail.releaseUrl
+                    )
+                }
+                updateCheckState.value = UpdateCheckState.ReadyToInstall(
+                    latestVersion = avail.latestVersion,
+                    apkPath = apkFile.absolutePath,
+                    releaseUrl = avail.releaseUrl
+                )
+                installApkOrRequestPermission(apkFile)
+            } catch (e: CancellationException) {
+                updateCheckState.value = avail
+            } catch (e: Exception) {
+                updateCheckState.value = UpdateCheckState.Error(e.localizedMessage ?: e.javaClass.simpleName)
+            } finally {
+                updateDownloadJob = null
+            }
+        }
+    }
+
+    private fun cancelUpdateDownload() {
+        updateDownloadJob?.cancel()
+        updateDownloadJob = null
+    }
+
+    private fun installApkOrRequestPermission(apkFile: File) {
+        if (!apkFile.isFile) {
+            updateCheckState.value = UpdateCheckState.Error("APK file missing")
+            return
+        }
+        if (!packageManager.canRequestPackageInstalls()) {
+            pendingInstallApk = apkFile
+            Toast.makeText(
+                this,
+                lctx().getString(R.string.about_update_need_install_perm),
+                Toast.LENGTH_LONG
+            ).show()
+            try {
+                val permIntent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:$packageName")
+                )
+                unknownAppSourcesLauncher.launch(permIntent)
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this,
+                    lctx().getString(R.string.about_update_install_failed, e.localizedMessage ?: ""),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            return
+        }
+        launchApkInstaller(apkFile)
+    }
+
+    private fun launchApkInstaller(apkFile: File) {
+        try {
+            val apkUri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(installIntent)
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                lctx().getString(R.string.about_update_install_failed, e.localizedMessage ?: e.javaClass.simpleName),
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 }

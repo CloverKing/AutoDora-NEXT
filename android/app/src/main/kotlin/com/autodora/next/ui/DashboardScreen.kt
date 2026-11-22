@@ -73,6 +73,9 @@ fun DashboardScreen(
     onRunNativeBenchmark: () -> Unit,
     onOpenGitHub: () -> Unit = {},
     onCheckForUpdates: () -> Unit = {},
+    onDownloadUpdate: (UpdateCheckState.UpdateAvailable) -> Unit = {},
+    onCancelUpdateDownload: () -> Unit = {},
+    onInstallReadyApk: (String) -> Unit = {},
     onOpenUpdateUrl: (String) -> Unit = {},
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onSelectPreset: (String) -> Unit,
@@ -230,6 +233,9 @@ fun DashboardScreen(
                     onRunNativeBenchmark = onRunNativeBenchmark,
                     onOpenGitHub = onOpenGitHub,
                     onCheckForUpdates = onCheckForUpdates,
+                    onDownloadUpdate = onDownloadUpdate,
+                    onCancelUpdateDownload = onCancelUpdateDownload,
+                    onInstallReadyApk = onInstallReadyApk,
                     onOpenUpdateUrl = onOpenUpdateUrl,
                     onShowHelp = { title, body -> helpPopup = title to body }
                 )
@@ -568,6 +574,9 @@ private fun SettingsTab(
     onRunNativeBenchmark: () -> Unit,
     onOpenGitHub: () -> Unit,
     onCheckForUpdates: () -> Unit,
+    onDownloadUpdate: (UpdateCheckState.UpdateAvailable) -> Unit,
+    onCancelUpdateDownload: () -> Unit,
+    onInstallReadyApk: (String) -> Unit,
     onOpenUpdateUrl: (String) -> Unit,
     onShowHelp: (String, String) -> Unit
 ) {
@@ -1057,9 +1066,10 @@ private fun SettingsTab(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                val updateBusy = updateCheckState is UpdateCheckState.Checking || updateCheckState is UpdateCheckState.Downloading
                 FilledTonalButton(
                     onClick = onCheckForUpdates,
-                    enabled = updateCheckState !is UpdateCheckState.Checking,
+                    enabled = !updateBusy,
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                 ) {
@@ -1155,41 +1165,31 @@ private fun SettingsTab(
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.about_update_avail_fmt, st.latestVersion),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                    if (st.isPrerelease) {
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = MaterialTheme.colorScheme.tertiaryContainer
-                                        ) {
-                                            Text(
-                                                text = stringResource(R.string.about_update_prerelease_tag),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
+                                Text(
+                                    text = stringResource(R.string.about_update_avail_fmt, st.latestVersion),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (st.isPrerelease) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.tertiaryContainer
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.about_update_prerelease_tag),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
                                     }
-                                }
-                                Button(
-                                    onClick = { onOpenUpdateUrl(st.apkDownloadUrl ?: st.releaseUrl) },
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.about_update_download_btn),
-                                        style = MaterialTheme.typography.labelMedium
-                                    )
                                 }
                             }
                             if (st.releaseNotes.isNotBlank()) {
@@ -1199,6 +1199,138 @@ private fun SettingsTab(
                                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.88f),
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    if (!st.apkDownloadUrl.isNullOrBlank()) {
+                                        onDownloadUpdate(st)
+                                    } else {
+                                        onOpenUpdateUrl(st.releaseUrl)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        if (!st.apkDownloadUrl.isNullOrBlank()) {
+                                            R.string.about_update_download_btn
+                                        } else {
+                                            R.string.about_update_browser_btn
+                                        }
+                                    ),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
+                }
+                is UpdateCheckState.Downloading -> {
+                    val hasTotal = st.totalBytes > 0L
+                    val progress = if (hasTotal) {
+                        (st.downloadedBytes.toFloat() / st.totalBytes.toFloat()).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
+                    val pct = (progress * 100f).roundToInt().coerceIn(0, 100)
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.about_update_downloading_fmt, st.latestVersion),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = if (hasTotal) {
+                                            stringResource(
+                                                R.string.about_update_progress_fmt,
+                                                UpdateChecker.formatBytesMb(st.downloadedBytes),
+                                                UpdateChecker.formatBytesMb(st.totalBytes),
+                                                pct
+                                            )
+                                        } else {
+                                            UpdateChecker.formatBytesMb(st.downloadedBytes)
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                    )
+                                }
+                                TextButton(
+                                    onClick = onCancelUpdateDownload,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.about_update_cancel_btn),
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                            if (hasTotal) {
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                }
+                is UpdateCheckState.ReadyToInstall -> {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = stringResource(R.string.about_update_ready_fmt, st.latestVersion),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                            Button(
+                                onClick = { onInstallReadyApk(st.apkPath) },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.about_update_install_now_btn),
+                                    style = MaterialTheme.typography.labelMedium
                                 )
                             }
                         }

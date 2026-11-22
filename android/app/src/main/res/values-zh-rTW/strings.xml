@@ -538,7 +538,15 @@
     <string name="about_up_to_date_fmt">目前已是最新版本 (v%1$s)</string>
     <string name="about_update_avail_fmt">發現新版本 v%1$s</string>
     <string name="about_update_prerelease_tag">預覽版</string>
-    <string name="about_update_download_btn">前往下載</string>
-    <string name="about_update_error_fmt">檢查更新失敗：%1$s</string>
+    <string name="about_update_download_btn">下載並安裝</string>
+    <string name="about_update_browser_btn">前往下載</string>
+    <string name="about_update_downloading_fmt">正在下載 v%1$s…</string>
+    <string name="about_update_progress_fmt">%1$s / %2$s (%3$d%%)</string>
+    <string name="about_update_ready_fmt">v%1$s 下載完成，正在自動安裝</string>
+    <string name="about_update_install_now_btn">立即安裝</string>
+    <string name="about_update_cancel_btn">取消</string>
+    <string name="about_update_need_install_perm">請先允許「安裝未知應用程式」權限，授權返回後將自動開始安裝</string>
+    <string name="about_update_install_failed">啟動系統安裝程式失敗：%1$s</string>
+    <string name="about_update_error_fmt">更新失敗：%1$s</string>
     <string name="about_open_link_failed">無法開啟瀏覽器連結</string>
 </resources>
