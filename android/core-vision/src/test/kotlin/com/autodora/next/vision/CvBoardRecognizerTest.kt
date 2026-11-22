@@ -985,4 +985,124 @@ class CvBoardRecognizerTest {
             }
         }
     }
+
+    @Test
+    fun `detects BloodDrain Heart and Wood orbs accurately without misclassifying as Dark or Enchanted`() {
+        // 1) Synthetic BloodDrain Heart (pale lilac shell + mauve core) + BloodDrain Wood (muted olive + dark vines)
+        val cell = 80
+        val w = cell * 6
+        val h = cell * 5
+        val pixels = IntArray(w * h) { 0xFF1A1614.toInt() }
+        val normalPalette = intArrayOf(
+            0xFF22A0FF.toInt(), // Water
+            0xFFFF3A28.toInt(), // Fire
+            0xFF34C844.toInt(), // Wood
+            0xFFFFDA24.toInt(), // Light
+            0xFFD438F4.toInt(), // Dark
+            0xFFFF5CA8.toInt()  // Heart
+        )
+        for (r in 0 until 5) {
+            for (c in 0 until 6) {
+                val cx = c * cell + cell * 0.5f
+                val cy = r * cell + cell * 0.5f
+                val rad = cell * 0.42f
+                for (y in r * cell until (r + 1) * cell) {
+                    for (x in c * cell until (c + 1) * cell) {
+                        val d = hypot((x - cx).toDouble(), (y - cy).toDouble()).toFloat()
+                        if (d > rad) continue
+                        pixels[y * w + x] = when {
+                            r == 0 && c == 0 -> {
+                                // BloodDrain Heart: mauve heart core up to 0.52*r (H~302, S~0.27, V~0.54) + pale lilac outer shell (S~0.14, V~0.72) + dark vines
+                                when {
+                                    d < rad * 0.52f -> 0xFF8A6588.toInt()
+                                    (x + y) % 5 == 0 -> 0xFF665664.toInt()
+                                    else -> 0xFFB8A6B6.toInt()
+                                }
+                            }
+                            r == 0 && c == 3 -> {
+                                // BloodDrain Wood: muted olive stone (H~112, S~0.28, V~0.42) + dark thorny vines
+                                if ((x * 3 + y) % 5 == 0) 0xFF475744.toInt() else 0xFF5A7356.toInt()
+                            }
+                            else -> normalPalette[(r * 2 + c) % normalPalette.size]
+                        }
+                    }
+                }
+            }
+        }
+        val frame = object : VisionFrame {
+            override val width = w
+            override val height = h
+            override fun getArgb(x: Int, y: Int): Int =
+                pixels[y.coerceIn(0, height - 1) * width + x.coerceIn(0, width - 1)]
+        }
+        val recognizer = CvBoardRecognizer()
+        val rec = recognizer.recognizeFrames(listOf(frame), BoardGeometry(0f, 0f, w.toFloat(), h.toFloat(), 6, 5))
+
+        val bh = rec.board.cellAt(0, 0)
+        assertEquals("Synthetic BloodDrain Heart must classify as HEART (not DARK!)", Element.HEART, bh.element)
+        assertTrue("Synthetic BloodDrain Heart must carry BLOOD_DRAIN hazard", (bh.hazards and HazardBits.BLOOD_DRAIN) != 0)
+        assertEquals("Synthetic BloodDrain Heart must not false-trigger ENCHANTED", Variant.NORMAL, bh.variant)
+
+        val bg = rec.board.cellAt(0, 3)
+        assertEquals("Synthetic BloodDrain Wood must classify as WOOD", Element.WOOD, bg.element)
+        assertTrue("Synthetic BloodDrain Wood must carry BLOOD_DRAIN hazard", (bg.hazards and HazardBits.BLOOD_DRAIN) != 0)
+
+        for (r in 0 until 5) {
+            for (c in 0 until 6) {
+                if ((r == 0 && c == 0) || (r == 0 && c == 3)) continue
+                assertEquals(
+                    "Normal cell ($r,$c) must NOT false-trigger BLOOD_DRAIN",
+                    0,
+                    rec.board.cellAt(r, c).hazards and HazardBits.BLOOD_DRAIN
+                )
+            }
+        }
+
+        // 2) Optional local verification on real ToS BloodDrain video frame (30/30 elements + exact 8/8 BloodDrain orbs!)
+        val bloodFile = java.io.File("../../backups/user_training_media/20261122_blood_drain/frames/t_01688ms.png")
+        if (bloodFile.exists()) {
+            val imageIo = Class.forName("javax.imageio.ImageIO")
+            val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, bloodFile)
+            val imgCls = img.javaClass
+            val iw = imgCls.getMethod("getWidth").invoke(img) as Int
+            val ih = imgCls.getMethod("getHeight").invoke(img) as Int
+            val getRgb = imgCls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            val vf = object : VisionFrame {
+                override val width = iw
+                override val height = ih
+                override fun getArgb(x: Int, y: Int): Int =
+                    getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+            }
+            val gameH = iw * (16f / 9f)
+            val lb = ((ih - gameH) * 0.5f).coerceAtLeast(0f)
+            val botPx = (ih - lb + gameH * 0.004f).coerceAtMost(ih.toFloat())
+            val cSize = iw / 6f
+            val bot = botPx.coerceIn(cSize * 5f, ih.toFloat())
+            val geom = BoardGeometry(0f, (bot - cSize * 5f).coerceAtLeast(0f), iw.toFloat(), bot, 6, 5)
+            val brec = recognizer.recognizeFrames(listOf(vf), geom)
+
+            val expectedElements = arrayOf(
+                arrayOf(Element.HEART, Element.DARK, Element.WATER, Element.WOOD, Element.LIGHT, Element.LIGHT),
+                arrayOf(Element.WATER, Element.WATER, Element.DARK, Element.LIGHT, Element.FIRE, Element.WATER),
+                arrayOf(Element.DARK, Element.DARK, Element.LIGHT, Element.WOOD, Element.WOOD, Element.DARK),
+                arrayOf(Element.FIRE, Element.FIRE, Element.WATER, Element.HEART, Element.DARK, Element.HEART),
+                arrayOf(Element.DARK, Element.DARK, Element.HEART, Element.WATER, Element.WATER, Element.HEART)
+            )
+            val expectedBlood = setOf(
+                0 to 0, 0 to 3, 2 to 3, 2 to 4, 3 to 3, 3 to 5, 4 to 2, 4 to 5
+            )
+            for (r in 0 until 5) {
+                for (c in 0 until 6) {
+                    val cellState = brec.board.cellAt(r, c)
+                    assertEquals("Real BloodDrain ($r,$c) element mismatch", expectedElements[r][c], cellState.element)
+                    val isBlood = (cellState.hazards and HazardBits.BLOOD_DRAIN) != 0
+                    assertEquals("Real BloodDrain ($r,$c) hazard flag mismatch", (r to c) in expectedBlood, isBlood)
+                    if ((r to c) in expectedBlood) {
+                        assertNotEquals("Real BloodDrain ($r,$c) must not false-trigger ENCHANTED", Variant.ENCHANTED, cellState.variant)
+                    }
+                }
+            }
+            assertEquals("Real BloodDrain board must have 0 false question orbs", 0, brec.questionOrbsDetected)
+        }
+    }
 }

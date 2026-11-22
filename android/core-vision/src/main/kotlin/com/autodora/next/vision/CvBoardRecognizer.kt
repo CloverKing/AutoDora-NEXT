@@ -461,10 +461,19 @@ class CvBoardRecognizer : BoardRecognizer {
         var totalSatWeight = 0f
         var sampleCount = 0
         var lowSatCount = 0
+        var low35Count = 0
+        var vineCount = 0
         var maxBrightStarCount = 0
+        var allSatSum = 0f
+        var allValSum = 0f
+        var innerRingValSum = 0f
+        var innerRingSatSum = 0f
+        var innerRingCount = 0
         var outerRingValSum = 0f
         var outerRingSatSum = 0f
         var outerRingCount = 0
+        var hueSinSum = 0.0
+        var hueCosSum = 0.0
         var maxSampleVal = 0f
 
         // Sample 3 concentric rings inside the rune orb (0.18*r, 0.36*r, and 0.62*r)
@@ -489,12 +498,27 @@ class CvBoardRecognizer : BoardRecognizer {
                     val argb = f.getArgb(px, py)
                     val (h, s, v) = rgbToHsv(argb)
                     sampleCount++
+                    allSatSum += s
+                    allValSum += v
                     if (v > maxSampleVal) maxSampleVal = v
 
-                    if (ringIdx == 2) {
+                    if (ringIdx == 0) {
+                        innerRingValSum += v
+                        innerRingSatSum += s
+                        innerRingCount++
+                    } else if (ringIdx == 2) {
                         outerRingValSum += v
                         outerRingSatSum += s
                         outerRingCount++
+                    }
+
+                    if (s < 0.35f) low35Count++
+                    if (s < 0.38f && v in 0.16f..0.48f) vineCount++
+                    if (s >= 0.08f && v >= 0.18f) {
+                        val hRad = h.toDouble() * PI / 180.0
+                        val hw = (s * v).toDouble()
+                        hueCosSum += hw * cos(hRad)
+                        hueSinSum += hw * sin(hRad)
                     }
 
                     // Detect bright white specular star sparkle (only on middle ring outside race badge)
@@ -552,8 +576,16 @@ class CvBoardRecognizer : BoardRecognizer {
         }
 
         val lowSatRatio = lowSatCount.toFloat() / max(1, sampleCount)
+        val low35Ratio = low35Count.toFloat() / max(1, sampleCount)
+        val vineRatio = vineCount.toFloat() / max(1, sampleCount)
+        val allAvgS = allSatSum / max(1, sampleCount)
+        val allAvgV = allValSum / max(1, sampleCount)
+        val innerAvgV = innerRingValSum / max(1, innerRingCount)
+        val innerAvgS = innerRingSatSum / max(1, innerRingCount)
         val outerAvgV = outerRingValSum / max(1, outerRingCount)
         val outerAvgS = outerRingSatSum / max(1, outerRingCount)
+        var meanHueDeg = (atan2(hueSinSum, hueCosSum) * 180.0 / PI).toFloat()
+        if (meanHueDeg < 0f) meanHueDeg += 360f
 
         if (bestIdx < 0 || totalSatWeight < 0.5f || lowSatRatio > 0.82f) {
             // Flat pitch-dark modal/menu backdrop (e.g. long-press enemy info popup) has NO bright '?' glyph or orb rim!
@@ -572,6 +604,44 @@ class CvBoardRecognizer : BoardRecognizer {
                 variant = Variant.NORMAL,
                 hazards = haz,
                 confidence = 0.22f
+            )
+        }
+
+        // Dedicated Blood-Drain Runestone (化血符石, Encyclopedia #8) Detector:
+        // Verified against real ToS gameplay (化血符石 - 木、心) & official Encyclopedia #8 (化血水):
+        //  1) Blood-Drain Heart turns pale bleached lilac-white outer shell (outS<=0.25, outV 0.52..0.82 > inV)
+        //     around a dusty mauve heart core (inS>=0.14, meanHue ~301°..304°), which previously misclassified as DARK!
+        //  2) Blood-Drain Colored orbs (Wood/Water/Fire/Light/Dark) turn muted stone-greyish wrapped in dark vines
+        //     (allAvgS 0.14..0.35, allAvgV 0.30..0.62, low35Ratio>=0.62, vineRatio>=0.26, innerAvgV<=0.68),
+        //     cleanly separated from normal/Barrier orbs (allAvgV>=0.67, vine<=0.11) & Question orbs (inV>=0.78, vine=0).
+        val isBloodDrainHeart = !isTrafficLightStart &&
+            meanHueDeg in 296f..346f &&
+            allAvgS <= 0.30f &&
+            allAvgV in 0.44f..0.76f &&
+            innerAvgS >= 0.14f &&
+            innerAvgV <= 0.64f &&
+            outerAvgS <= 0.25f &&
+            outerAvgV >= innerAvgV + 0.04f &&
+            outerAvgV in 0.52f..0.92f &&
+            low35Ratio >= 0.75f &&
+            lowSatRatio <= 0.68f
+
+        val isBloodDrainColored = !isTrafficLightStart &&
+            !isBloodDrainHeart &&
+            bestIdx >= 0 &&
+            allAvgS in 0.14f..0.35f &&
+            allAvgV in 0.30f..0.62f &&
+            innerAvgV <= 0.68f &&
+            low35Ratio >= 0.62f &&
+            lowSatRatio <= 0.55f &&
+            vineRatio >= 0.26f
+
+        if (isBloodDrainHeart || isBloodDrainColored) {
+            return CellState(
+                element = if (isBloodDrainHeart) Element.HEART else Element.fromCode(bestIdx),
+                variant = if (hasRaceBadge) Variant.RACE else Variant.NORMAL,
+                hazards = HazardBits.BLOOD_DRAIN,
+                confidence = 0.88f
             )
         }
 
