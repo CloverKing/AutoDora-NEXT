@@ -373,6 +373,10 @@ object RuleComposer {
                     cfg = cfg.copy(requireLuminousOrbClear = true, prioritizeLuminous = true)
                 }
                 "maximize_element_orbs" -> cfg = cfg.copy(maximizeElementOrbIndex = chip.paramInt)
+                "traffic_light" -> {
+                    cfg = cfg.copy(startPreset = StartPointPreset.ANY)
+                    highDifficultyShield = true
+                }
                 "char_orb_terrain" -> {
                     cfg = cfg.copy(requireCharOrbPass = true, requireCharOrbEnd = true)
                     highDifficultyShield = true
@@ -395,6 +399,14 @@ object RuleComposer {
             }
             if (hasP2 && !cfg.puzzle2.enabled) {
                 cfg = cfg.copy(puzzle2 = cfg.puzzle2.copy(enabled = true))
+                highDifficultyShield = true
+            }
+            val hasTrafficStart = board.tileFlags.any { (it and TileFlagBits.START_ALLOWED) != 0 }
+            val hasTrafficEnd = board.tileFlags.any { (it and TileFlagBits.END_REQUIRED) != 0 }
+            if (hasTrafficStart || hasTrafficEnd) {
+                if (hasTrafficStart) {
+                    cfg = cfg.copy(startPreset = StartPointPreset.ANY)
+                }
                 highDifficultyShield = true
             }
         }

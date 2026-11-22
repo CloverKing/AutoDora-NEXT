@@ -237,6 +237,19 @@ class MediaProjectionCapturer(
         }
     }
 
+    override fun clearCachedFrame() {
+        synchronized(imageLock) {
+            try {
+                // Drain any pending pre-hide image sitting in ImageReader before discarding latestImage
+                val stale = imageReader?.acquireLatestImage()
+                stale?.close()
+            } catch (_: Exception) {
+            }
+            latestImage?.close()
+            latestImage = null
+        }
+    }
+
     override suspend fun captureMultiFrames(count: Int, intervalMs: Long): List<Bitmap> {
         val safeCount = count.coerceIn(1, 5)
         val frames = ArrayList<Bitmap>(safeCount)

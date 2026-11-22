@@ -202,6 +202,7 @@ object LocaleHelper {
                 "${ctx.getString(R.string.burn_path_title)}·$lenStr·≤$maxH"
             }
             "step_limit" -> ctx.getString(R.string.shield_step_limit_fmt, chip.paramInt.coerceAtLeast(1))
+            "traffic_light" -> ctx.getString(R.string.shield_traffic_light)
             "trail_corrosion" -> ctx.getString(R.string.shield_trail_corrosion)
             "step_hurt_minimize" -> ctx.getString(R.string.shield_step_hurt)
             "char_orb_terrain" -> ctx.getString(R.string.shield_char_terrain)

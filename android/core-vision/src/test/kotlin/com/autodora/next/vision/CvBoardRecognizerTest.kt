@@ -621,6 +621,195 @@ class CvBoardRecognizerTest {
             val frame = loadRealVisionFrame(neg) ?: continue
             val rec = recognizer.recognizeFrames(listOf(frame), autoBaseGeom(frame.width, frame.height))
             assertEquals("Non-puzzle real battle $neg must detect 0 puzzle cells", 0, rec.puzzleCellsDetected)
+            assertEquals("Non-TL real battle $neg must detect 0 traffic-light starts", 0, rec.trafficLightStartCount)
+            assertEquals("Non-TL real battle $neg must detect 0 traffic-light ends", 0, rec.trafficLightEndCount)
+        }
+    }
+
+    @Test
+    fun `1x5 full-column puzzle ignores bright white HP bar text and metallic bottom rim on adjacent columns`() {
+        val cell = 84
+        val cols = 6
+        val rows = 5
+        val palette = mapOf(
+            Element.WATER to 0xFF1E9CFF.toInt(),
+            Element.FIRE to 0xFFFF3020.toInt(),
+            Element.WOOD to 0xFF2EC840.toInt(),
+            Element.LIGHT to 0xFFFFDF20.toInt(),
+            Element.DARK to 0xFF8C32E6.toInt(),
+            Element.HEART to 0xFFFF5CA8.toInt()
+        )
+        val geom = BoardGeometry(0f, 0f, (cols * cell).toFloat(), (rows * cell).toFloat(), cols, rows)
+        val frame = SyntheticBoardFrame(cols * cell, rows * cell)
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                frame.drawCell(c * cell, r * cell, cell, palette.getValue(Element.MATCHABLE[(r * cols + c) % 6]))
+            }
+        }
+        // Draw antique-gold filigree strictly along V[0..4, 3] and V[0..4, 4] (1x5 full vertical column at col 3)
+        val antiqueGold = 0xFFB89E4A.toInt()
+        for (r in 0 until rows) {
+            for (cSeam in listOf(3, 4)) {
+                for (x in (cSeam * cell - 2)..(cSeam * cell + 2)) {
+                    for (y in (r * cell + 3) until ((r + 1) * cell - 3)) {
+                        frame.pixels[y * frame.width + x] = antiqueGold
+                    }
+                }
+            }
+        }
+        // Pollute top outer rim (HP numbers "66732/70694") and bottom outer rim across cols 4..5 with bright white/gold!
+        for (c in 4 until 6) {
+            for (x in (c * cell + 2) until ((c + 1) * cell - 2)) {
+                for (y in 0..4) frame.pixels[y * frame.width + x] = 0xFFF8F4F6.toInt()
+                for (y in (frame.height - 5) until frame.height) frame.pixels[y * frame.width + x] = 0xFFD4C490.toInt()
+            }
+        }
+
+        val rec = CvBoardRecognizer().recognizeFrames(listOf(frame), geom)
+        val expectedCol3 = (0 until 5).map { it to 3 }.toSet()
+        val detected = (0 until 30)
+            .filter { (rec.board.tileFlags[it] and TileFlagBits.PUZZLE_1) != 0 }
+            .map { (it / 6) to (it % 6) }
+            .toSet()
+        assertEquals("1x5 full-column puzzle must detect exact col 3 without gluing cols 4..5", expectedCol3, detected)
+        assertEquals(5, rec.puzzleCellsDetected)
+    }
+
+    @Test
+    fun `detects Traffic Light green GO start and red burst end with zero false positives on Fire and Wood orbs`() {
+        val cell = 90
+        val cols = 6
+        val rows = 5
+        val palette = mapOf(
+            Element.WATER to 0xFF1E9CFF.toInt(),
+            Element.FIRE to 0xFFFF2418.toInt(),
+            Element.WOOD to 0xFF28C83C.toInt(),
+            Element.LIGHT to 0xFFFFD820.toInt(),
+            Element.DARK to 0xFF8C32E6.toInt(),
+            Element.HEART to 0xFFFF5CA8.toInt()
+        )
+        val geom = BoardGeometry(0f, 0f, (cols * cell).toFloat(), (rows * cell).toFloat(), cols, rows)
+        val frame = SyntheticBoardFrame(cols * cell, rows * cell)
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val el = when {
+                    r == 1 && c == 5 -> Element.LIGHT
+                    r == 3 && c == 2 -> Element.LIGHT
+                    (r + c) % 2 == 0 -> Element.FIRE
+                    else -> Element.WOOD
+                }
+                frame.drawCell(c * cell, r * cell, cell, palette.getValue(el))
+            }
+        }
+
+        // Paint neon-green corner rays + bold white "GO" band on (1, 5)
+        val gCx = (5 + 0.5f) * cell
+        val gCy = (1 + 0.5f) * cell
+        val neonGreen = 0xFF22FF38.toInt()
+        for (sx in listOf(-1f, 1f)) {
+            for (sy in listOf(-1f, 1f)) {
+                for (d in 36..44) {
+                    val px = (gCx + sx * d).toInt().coerceIn(0, frame.width - 1)
+                    val py = (gCy + sy * d).toInt().coerceIn(0, frame.height - 1)
+                    frame.pixels[py * frame.width + px] = neonGreen
+                    val px2 = (gCx + sx * d).toInt().coerceIn(0, frame.width - 1)
+                    val py2 = (gCy + sy * (d - 6)).toInt().coerceIn(0, frame.height - 1)
+                    frame.pixels[py2 * frame.width + px2] = neonGreen
+                }
+            }
+        }
+        for (dy in (-cell * 0.12f).toInt()..(cell * 0.12f).toInt()) {
+            for (dx in (-cell * 0.28f).toInt()..(cell * 0.28f).toInt()) {
+                val px = (gCx + dx).toInt().coerceIn(0, frame.width - 1)
+                val py = (gCy + dy).toInt().coerceIn(0, frame.height - 1)
+                frame.pixels[py * frame.width + px] = 0xFFFFFFFF.toInt()
+            }
+        }
+
+        // Paint vivid crimson-red 8-ray burst into all 4 extreme corners on (3, 2)
+        val rCx = (2 + 0.5f) * cell
+        val rCy = (3 + 0.5f) * cell
+        val crimsonRed = 0xFFFF1818.toInt()
+        for (sx in listOf(-1f, 1f)) {
+            for (sy in listOf(-1f, 1f)) {
+                for (d in 36..44) {
+                    val px = (rCx + sx * d).toInt().coerceIn(0, frame.width - 1)
+                    val py = (rCy + sy * d).toInt().coerceIn(0, frame.height - 1)
+                    frame.pixels[py * frame.width + px] = crimsonRed
+                    val px2 = (rCx + sx * (d - 5)).toInt().coerceIn(0, frame.width - 1)
+                    val py2 = (rCy + sy * d).toInt().coerceIn(0, frame.height - 1)
+                    frame.pixels[py2 * frame.width + px2] = crimsonRed
+                }
+            }
+        }
+
+        val rec = CvBoardRecognizer().recognizeFrames(listOf(frame), geom)
+        assertEquals("Must detect exactly 1 Traffic Light start", 1, rec.trafficLightStartCount)
+        assertEquals("Must detect exactly 1 Traffic Light end", 1, rec.trafficLightEndCount)
+        assertTrue("(1,5) must have START_ALLOWED", (rec.board.tileFlags[1 * 6 + 5] and TileFlagBits.START_ALLOWED) != 0)
+        assertTrue("(3,2) must have END_REQUIRED", (rec.board.tileFlags[3 * 6 + 2] and TileFlagBits.END_REQUIRED) != 0)
+        assertEquals("(1,5) GO orb must still be classified as LIGHT", Element.LIGHT, rec.board.cellAt(1, 5).element)
+        assertEquals("(3,2) Red-Burst orb must still be classified as LIGHT", Element.LIGHT, rec.board.cellAt(3, 2).element)
+        assertEquals("Zero false question orbs", 0, rec.questionOrbsDetected)
+    }
+
+    @Test
+    fun `local Phase-4 dataset regression verifies 1x5 strict column puzzle and real Traffic Light screenshot`() {
+        val datasetRoot = java.io.File("../../backups/phase4_training_dataset")
+        if (!datasetRoot.exists()) return
+        val recognizer = CvBoardRecognizer()
+
+        fun loadDatasetFrame(rel: String): VisionFrame? {
+            val f = java.io.File(datasetRoot, rel)
+            if (!f.exists()) return null
+            val imageIo = Class.forName("javax.imageio.ImageIO")
+            val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, f)
+            val imgCls = img.javaClass
+            val w = imgCls.getMethod("getWidth").invoke(img) as Int
+            val h = imgCls.getMethod("getHeight").invoke(img) as Int
+            val getRgb = imgCls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            return object : VisionFrame {
+                override val width = w
+                override val height = h
+                override fun getArgb(x: Int, y: Int): Int =
+                    getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+            }
+        }
+
+        fun autoBaseGeom(w: Int, h: Int): BoardGeometry {
+            val gameH = w * (16f / 9f)
+            val letterbox = ((h - gameH) * 0.5f).coerceAtLeast(0f)
+            val bottomPx = (h - letterbox + gameH * 0.004f).coerceAtMost(h.toFloat())
+            val cell = w / 6f
+            val bottom = bottomPx.coerceIn(cell * 5f, h.toFloat())
+            val top = (bottom - cell * 5f).coerceAtLeast(0f)
+            return BoardGeometry(0f, top, w.toFloat(), bottom, 6, 5)
+        }
+
+        // 1) Video 3 clean un-overlayed frames: 1x5 full-column strict puzzle at col 3
+        val expectedCol3 = (0 until 5).map { it to 3 }.toSet()
+        for (name in listOf("t_7700ms.png", "t_10200ms.png")) {
+            val frame = loadDatasetFrame("extracted_frames/strict_gold_1x5_col_puzzle/$name") ?: continue
+            val rec = recognizer.recognizeFrames(listOf(frame), autoBaseGeom(frame.width, frame.height))
+            val detected = (0 until 30)
+                .filter { (rec.board.tileFlags[it] and TileFlagBits.PUZZLE_1) != 0 }
+                .map { (it / 6) to (it % 6) }
+                .toSet()
+            assertEquals("Video 3 clean frame $name must detect exact 5-cell col 3", expectedCol3, detected)
+            assertEquals(5, rec.puzzleCellsDetected)
+        }
+
+        // 2) Real ToS Traffic Light screenshot: GO start at (1,5), Red-Burst end at (3,2), 30/30 elements!
+        loadDatasetFrame("raw_uploads/images/media_1795321079536_b0156749.jpg")?.let { frame ->
+            val rec = recognizer.recognizeFrames(listOf(frame), autoBaseGeom(frame.width, frame.height))
+            assertEquals("Real Traffic Light must detect 1 start", 1, rec.trafficLightStartCount)
+            assertEquals("Real Traffic Light must detect 1 end", 1, rec.trafficLightEndCount)
+            assertTrue("Real Traffic Light start must be (1,5)", (rec.board.tileFlags[1 * 6 + 5] and TileFlagBits.START_ALLOWED) != 0)
+            assertTrue("Real Traffic Light end must be (3,2)", (rec.board.tileFlags[3 * 6 + 2] and TileFlagBits.END_REQUIRED) != 0)
+            assertEquals("Real Traffic Light (1,5) must be LIGHT", Element.LIGHT, rec.board.cellAt(1, 5).element)
+            assertEquals("Real Traffic Light (3,2) must be LIGHT", Element.LIGHT, rec.board.cellAt(3, 2).element)
+            assertEquals("Real Traffic Light must have 0 false question orbs", 0, rec.questionOrbsDetected)
+            assertEquals("Real Traffic Light must have 0 false puzzle cells", 0, rec.puzzleCellsDetected)
         }
     }
 }

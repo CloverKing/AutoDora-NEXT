@@ -25,5 +25,7 @@ interface ScreenCapturer {
         return BandBitmap(full, full.width, full.height, 0)
     }
     suspend fun captureMultiFrames(count: Int = 3, intervalMs: Long = 55L): List<Bitmap>
+    /** Discards any previously buffered frame so the next capture waits for a fresh post-hide compositor frame. */
+    fun clearCachedFrame() {}
     fun release()
 }

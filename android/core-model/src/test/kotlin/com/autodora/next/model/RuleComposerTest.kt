@@ -205,4 +205,33 @@ class RuleComposerTest {
         assertEquals(reqMask, compMulti.requiredFirstWaveElementsMask)
         assertEquals(enchMask, compMulti.requiredEnchantedElementsMask)
     }
+
+    @Test
+    fun `compose handles traffic_light chip and auto-detected start end markers without enabling diagonal move`() {
+        val base = TeamBasePreset(
+            id = "bl_ortho",
+            name = "BottomLeft Ortho",
+            baseConfig = RuleConfig(
+                allowDiagonalMove = false,
+                startPreset = StartPointPreset.BOTTOM_LEFT,
+                beamWidth = 140
+            )
+        )
+        // Case 1: explicit traffic_light wave chip
+        val chip = WaveShieldChip("traffic_light", "红绿灯(起终点)", ShieldCategory.HAZARD_AND_PATH)
+        val composedChip = RuleComposer.compose(base, listOf(chip))
+        assertEquals(StartPointPreset.ANY, composedChip.startPreset)
+        assertFalse(composedChip.allowDiagonalMove)
+        assertTrue(composedChip.beamWidth >= 260)
+
+        // Case 2: auto-detected START_ALLOWED + END_REQUIRED on board even without explicit chip
+        val flags = MutableList(30) { TileFlagBits.NONE }
+        flags[1 * 6 + 5] = TileFlagBits.START_ALLOWED
+        flags[3 * 6 + 2] = TileFlagBits.END_REQUIRED
+        val board = BoardState(cols = 6, rows = 5, cells = List(30) { CellState(Element.LIGHT) }, tileFlags = flags)
+        val composedAuto = RuleComposer.compose(base, emptyList(), board)
+        assertEquals(StartPointPreset.ANY, composedAuto.startPreset)
+        assertFalse(composedAuto.allowDiagonalMove)
+        assertTrue(composedAuto.beamWidth >= 260)
+    }
 }

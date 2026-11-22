@@ -91,6 +91,7 @@ struct SearchNode {
     uint8_t trailCount = 0;
 
     double beamScore = -1e18;
+    double frontierScore = -1e18;
     bool allHardMet = false;
 
     void pushTrail(uint8_t idx) noexcept {
@@ -129,7 +130,9 @@ inline bool canStartAtCell(const BoardState& board, uint8_t idx, const RuleConfi
     if (!canEnterCell(board, idx, rules)) return false;
     if ((board.stickyTileMask & bitOf(idx)) != 0) return false;
     if ((board.cells[idx].hazards & (HazardBits::StickyOrb | HazardBits::Corroded)) != 0) return false;
-    if (board.startMask != 0 && (board.startMask & bitOf(idx)) == 0) return false;
+    if (board.startMask != 0) {
+        return (board.startMask & bitOf(idx)) != 0;
+    }
     if (rules.startPreset == StartPointPreset::BottomLeft) {
         return idx == board.index(static_cast<uint8_t>(board.rows - 1), 0);
     }
@@ -318,8 +321,22 @@ SolveOutput PuzzleSolver::solve(
     };
 
     // Build initial frontier (Step 0)
+    auto minStepsToMask = [&](uint8_t idx, uint64_t mask, bool diag) noexcept -> int {
+        const int r1 = idx / cols;
+        const int c1 = idx % cols;
+        int best = 100;
+        for (uint8_t i = 0; i < totalCells; ++i) {
+            if ((mask & bitOf(i)) == 0) continue;
+            const int dr = std::abs(r1 - static_cast<int>(i / cols));
+            const int dc = std::abs(c1 - static_cast<int>(i % cols));
+            const int d = diag ? std::max(dr, dc) : (dr + dc);
+            if (d < best) best = d;
+        }
+        return best;
+    };
+
     std::vector<SearchNode> frontier;
-    if (rules.useCharacterOrb && rules.fixedStartCell < 0) {
+    if (rules.useCharacterOrb && rules.fixedStartCell < 0 && baseBoard.startMask == 0) {
         const uint8_t cCol = std::min<uint8_t>(rules.characterOrbCol, static_cast<uint8_t>(cols - 1));
         const uint8_t idx = baseBoard.index(0, cCol);
         if ((baseBoard.validMask & bitOf(idx)) != 0 &&
@@ -415,11 +432,21 @@ SolveOutput PuzzleSolver::solve(
     // In Tower of Saviors, a 0-step move does NOT trigger rune matching or pass a turn!
     // Only record depth-0 as a terminal solution if exactSteps == 0 or pulling a Character Orb itself moved a rune.
     const bool allowZeroStepSolution = (rules.exactSteps == 0) || rules.useCharacterOrb;
+    bool canPruneEndUnreachable = false;
+    if (baseBoard.endMask != 0) {
+        for (const auto& n : frontier) {
+            if (minStepsToMask(n.curIdx, baseBoard.endMask, rules.allowDiagonalMove) <= static_cast<int>(maxSteps)) {
+                canPruneEndUnreachable = true;
+                break;
+            }
+        }
+    }
     bool foundGoalEarly = false;
     for (SearchNode& node : frontier) {
         const SimulationResult sim = simulateBoard(node.board, rules);
         const EvalResult ev = evaluateCandidate(node.board, sim, makeMetrics(node), rules);
         node.beamScore = ev.totalScore;
+        node.frontierScore = ev.totalScore;
         node.allHardMet = ev.allHardConstraintsMet;
         out.statesEvaluated++;
         if (allowZeroStepSolution) {
@@ -499,6 +526,13 @@ SolveOutput PuzzleSolver::solve(
 
                     const uint8_t nextIdx = cellIndex(static_cast<uint8_t>(nr), static_cast<uint8_t>(nc), cols);
                     if (!canEnterCell(parent.board, nextIdx, rules)) continue;
+
+                    // Traffic Light exact reachability pruning: discard branches that cannot possibly reach endMask in remaining steps
+                    const int remSteps = static_cast<int>(maxSteps) - static_cast<int>(parent.stepCount + 1);
+                    if (canPruneEndUnreachable) {
+                        const int minStepsToEnd = minStepsToMask(nextIdx, baseBoard.endMask, rules.allowDiagonalMove);
+                        if (minStepsToEnd > remSteps) continue;
+                    }
 
                     // Trail Corrosion self-avoiding path check (轨迹腐蚀: 不可回头重访!)
                     if ((rules.trailCorrosionEnabled || (parent.board.trailCorrosionMask & bitOf(nextIdx)) != 0) &&
@@ -588,6 +622,17 @@ SolveOutput PuzzleSolver::solve(
                     const SimulationResult sim = simulateBoard(child.board, rules);
                     const EvalResult ev = evaluateCandidate(child.board, sim, makeMetrics(child), rules);
                     child.beamScore = ev.totalScore;
+                    child.frontierScore = ev.totalScore;
+                    if (baseBoard.endMask != 0 && (baseBoard.endMask & bitOf(nextIdx)) == 0) {
+                        // Neutralize premature -150,000 TrafficLight cliff during intermediate beam exploration
+                        // so paths can freely build high combos/shields across the board, then funnel cleanly into endMask!
+                        const int manhToEnd = minStepsToMask(nextIdx, baseBoard.endMask, false);
+                        const int stepToEnd = rules.allowDiagonalMove
+                            ? minStepsToMask(nextIdx, baseBoard.endMask, true)
+                            : manhToEnd;
+                        const double pull = (remSteps <= stepToEnd + 6) ? 180.0 : 42.0;
+                        child.frontierScore = ev.totalScore + 150000.0 + static_cast<double>(manhToEnd) * 200.0 - static_cast<double>(stepToEnd) * pull;
+                    }
                     child.allHardMet = ev.allHardConstraintsMet;
                     threadEvaluated[tid]++;
 
@@ -624,7 +669,7 @@ SolveOutput PuzzleSolver::solve(
         for (uint32_t t = 0; t < workers; ++t) {
             const auto& v = threadCandidates[t];
             for (uint32_t i = 0; i < v.size(); ++i) {
-                refs.push_back(CandRef{t, i, v[i].beamScore});
+                refs.push_back(CandRef{t, i, v[i].frontierScore});
             }
         }
         std::sort(refs.begin(), refs.end(), [](const CandRef& a, const CandRef& b) {

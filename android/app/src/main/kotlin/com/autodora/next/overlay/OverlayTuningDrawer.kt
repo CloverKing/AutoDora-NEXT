@@ -413,7 +413,7 @@ class OverlayTuningDrawerController(
         }.joinToString(" · ").ifEmpty { s(R.string.ov_card_none_set) }
         val card2Highlight = activeShapeLabels.isNotEmpty() || colEnabledCnt > 0
 
-        val pathChipIds = setOf("zero_trail_burning", "trail_corrosion", "step_hurt_minimize", "char_orb_terrain", "weijian_burst")
+        val pathChipIds = setOf("traffic_light", "zero_trail_burning", "trail_corrosion", "step_hurt_minimize", "char_orb_terrain", "weijian_burst")
         val activePathLabels = activeChips.filter { it.id in pathChipIds }.map { LocaleHelper.formatWaveChipLabel(lctx, it) }
         val card3Summary = buildList {
             addAll(activePathLabels.take(2))
@@ -428,9 +428,10 @@ class OverlayTuningDrawerController(
             if (stepLimitChip != null) add(s(R.string.ov_step_limit_short, stepLimitChip.paramInt))
             else add("$effSteps${s(R.string.unit_steps)}")
             add("${s(R.string.tag_beam_fmt, effBeam)}")
+            if ("traffic_light" in activeIds) add(s(R.string.shield_traffic_light))
             if (cfg.useCharacterOrb) add(s(R.string.tag_char_orb_fmt, cfg.characterOrbCol + 1))
         }.joinToString(" · ")
-        val card4Highlight = stepLimitChip != null || !cfg.useSystemSteps || !cfg.useSystemBeam || cfg.useCharacterOrb || cfg.startPreset != StartPointPreset.ANY
+        val card4Highlight = stepLimitChip != null || "traffic_light" in activeIds || !cfg.useSystemSteps || !cfg.useSystemBeam || cfg.useCharacterOrb || cfg.startPreset != StartPointPreset.ANY
 
         val isHeartAll = (cfg.compatibleLinkMask.getOrElse(5) { 1 shl 5 } and 0x3F) == 0x3F
         val isLightDark = ((cfg.compatibleLinkMask.getOrElse(3) { 1 shl 3 } and (1 shl 4)) != 0) && !isHeartAll
@@ -1072,6 +1073,11 @@ class OverlayTuningDrawerController(
         body.addView(ptRow1)
 
         body.addView(makeSubDivider(p))
+        val ptRowTl = hRow(bottomMarginDp = 4)
+        ptRowTl.addView(makeToggle(s(R.string.shield_traffic_light), "traffic_light" in activeIds, p, weight = 1f, marginEndDp = 0) {
+            onToggleWaveChip(WaveShieldChip("traffic_light", s(R.string.shield_traffic_light), ShieldCategory.HAZARD_AND_PATH))
+        })
+        body.addView(ptRowTl)
         val ptRow2 = hRow(bottomMarginDp = 4)
         ptRow2.addView(makeToggle(s(R.string.shield_trail_corrosion), "trail_corrosion" in activeIds, p, weight = 1f) {
             onToggleWaveChip(WaveShieldChip("trail_corrosion", s(R.string.shield_trail_corrosion), ShieldCategory.HAZARD_AND_PATH, paramInt = 15))
@@ -1159,11 +1165,17 @@ class OverlayTuningDrawerController(
         val stRow = hRow(bottomMarginDp = 4)
         listOf(StartPointPreset.ANY to s(R.string.start_any), StartPointPreset.BOTTOM_LEFT to s(R.string.start_bl), StartPointPreset.BOTTOM_RIGHT to s(R.string.start_br))
             .forEachIndexed { idx, (sp, lbl) ->
-                stRow.addView(makeToggle(lbl, cfg.startPreset == sp, p, weight = 1f, marginEndDp = if (idx == 2) 0 else 4) {
+                stRow.addView(makeToggle(lbl, cfg.startPreset == sp && "traffic_light" !in activeIds, p, weight = 1f, marginEndDp = if (idx == 2) 0 else 4) {
+                    ActiveStrategyStore.removeChip("traffic_light")
                     onUpdateActivePresetConfig { it.copy(startPreset = sp) }
                 })
             }
         body.addView(stRow)
+        val tlRow = hRow(bottomMarginDp = 4)
+        tlRow.addView(makeToggle(s(R.string.shield_traffic_light), "traffic_light" in activeIds, p, weight = 1f, marginEndDp = 0) {
+            onToggleWaveChip(WaveShieldChip("traffic_light", s(R.string.shield_traffic_light), ShieldCategory.HAZARD_AND_PATH))
+        })
+        body.addView(tlRow)
         val chRow = hRow(bottomMarginDp = 0)
         chRow.addView(makeToggle(s(R.string.char_off), !cfg.useCharacterOrb, p, weight = 1f) {
             onUpdateActivePresetConfig { it.copy(useCharacterOrb = false) }

@@ -1349,6 +1349,53 @@ void testRealStrictInvertedLPuzzle4WayOrtho() {
     require((best.evaluation.satisfiedFlags & ShieldStatusBits::Puzzle1) != 0, "Puzzle1 flag must be set");
 }
 
+// -----------------------------------------------------------------------------
+// 36. Real Traffic Light Stage (GO Start (1,5) -> Red Burst End (3,2) + Anti-First-Wave Dark + >=6C, 4-Way Ortho)
+// -----------------------------------------------------------------------------
+void testRealTrafficLightStageWithCompositeShields() {
+    // Exact 6x5 board from user's real ToS Traffic Light screenshot (media_1795321079536_b0156749.jpg)
+    BoardState b = BoardState::fromString(
+        "DHWLWG"
+        "GFDGGL"
+        "LDGWDD"
+        "FWLHLW"
+        "GWGGLD",
+        6, 5
+    );
+    b.setTileFlag(1, 5, TileFlagBits::StartAllowed);
+    b.setTileFlag(3, 2, TileFlagBits::EndRequired);
+
+    RuleConfig r;
+    r.allowDiagonalMove = false;
+    r.allowDiagonalMatch = false;
+    // Deliberately set conflicting BottomLeft preset to verify stage GO startMask cleanly overrides it!
+    r.startPreset = StartPointPreset::BottomLeft;
+    r.maxSteps = 100;
+    r.beamWidth = 380;
+    r.maxTimeMs = 800;
+    r.minTotalCombo = 6;
+    r.elementRules[static_cast<uint8_t>(Element::Dark)].timing = MatchTiming::ForbidFirstWaveAllowCascade;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "real traffic light stage must find a solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    std::cout << "       Real Traffic Light (1,5)->(3,2) + Anti1stDark + >=6C: met=" << best.evaluation.allHardConstraintsMet
+              << ", start=(" << int(best.start.row) << "," << int(best.start.col)
+              << ")->end=(" << int(best.waypoints.back().row) << "," << int(best.waypoints.back().col)
+              << "), 1st=" << int(best.simulation.firstWaveCombo)
+              << "C, total=" << int(best.simulation.totalCombo)
+              << "C, steps=" << best.metrics.stepCount
+              << ", time=" << out.elapsedMs << "ms\n";
+    require(best.start == (CellCoord{1, 5}), "path must start at GO cell (1,5)");
+    require(best.waypoints.back() == (CellCoord{3, 2}), "path must end at Red-Burst cell (3,2)");
+    require(best.simulation.totalCombo >= 6, "path must reach >= 6 Combo");
+    require((best.simulation.firstWaveElementsMask & elementBit(Element::Dark)) == 0, "must NOT match Dark in wave 1");
+    require(best.evaluation.allHardConstraintsMet, "all composite Traffic Light + Anti1stDark + >=6C hard constraints must be met");
+    require((best.evaluation.satisfiedFlags & ShieldStatusBits::TrafficLight) != 0, "TrafficLight flag must be satisfied");
+}
+
 } // namespace
 
 int main() {
@@ -1389,6 +1436,7 @@ int main() {
     runTest("33. Hold-and-Replan Fast Fixed-Start & In-Worker Hard Timeout", testHoldAndReplanFastBudgetAndHardTimeout);
     runTest("34. Ordinary Puzzle Shield Semantics & Real 5-Cell Cross (4-Way Ortho)", testOrdinaryPuzzleShieldSingleColorAndRealCross);
     runTest("35. Real Strict 5-Cell Inverted-L Puzzle (4-Way Ortho, Strict No External Touch)", testRealStrictInvertedLPuzzle4WayOrtho);
+    runTest("36. Real Traffic Light Stage (1,5)->(3,2) + Anti-1st-Wave Dark + >=6C (4-Way Ortho)", testRealTrafficLightStageWithCompositeShields);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;

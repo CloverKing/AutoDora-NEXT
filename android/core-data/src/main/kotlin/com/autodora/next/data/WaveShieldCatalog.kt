@@ -47,6 +47,7 @@ object WaveShieldCatalog {
         WaveShieldChip("all_columns_ameliorate", "全直排 ≥ 4 消", ShieldCategory.SHAPE_AND_PUZZLE),
 
         // D. Hazard, Terrain & Path (障碍、地形与路径)
+        WaveShieldChip("traffic_light", "红绿灯(起终点)", ShieldCategory.HAZARD_AND_PATH),
         WaveShieldChip("zero_trail_burning", "轨迹燃烧 0 伤", ShieldCategory.HAZARD_AND_PATH, paramInt = 0),
         WaveShieldChip("trail_corrosion", "轨迹腐蚀自避", ShieldCategory.HAZARD_AND_PATH, paramInt = 15),
         WaveShieldChip("char_orb_terrain", "角色珠通行/停放", ShieldCategory.HAZARD_AND_PATH),

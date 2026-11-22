@@ -455,11 +455,31 @@ internal fun UnifiedStrategyTab(
                     ).forEach { (sp, lbl) ->
                         CompactChoicePill(
                             label = lbl,
-                            selected = cfg.startPreset == sp,
-                            onClick = { updateCfg { it.copy(startPreset = sp) } },
+                            selected = cfg.startPreset == sp && "traffic_light" !in activeIds,
+                            onClick = {
+                                ActiveStrategyStore.removeChip("traffic_light")
+                                updateCfg { it.copy(startPreset = sp) }
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
+                }
+                val tlLabel = stringResource(R.string.shield_traffic_light)
+                val tlActive = "traffic_light" in activeIds
+                CompactChoicePill(
+                    label = tlLabel,
+                    selected = tlActive,
+                    onClick = {
+                        onToggleWaveChip(WaveShieldChip("traffic_light", tlLabel, ShieldCategory.HAZARD_AND_PATH))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                AnimatedVisibility(visible = tlActive) {
+                    Text(
+                        text = stringResource(R.string.traffic_light_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1452,6 +1472,7 @@ internal fun UnifiedStrategyTab(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
+                        WaveShieldChip("traffic_light", stringResource(R.string.shield_traffic_light), ShieldCategory.HAZARD_AND_PATH),
                         WaveShieldChip("trail_corrosion", stringResource(R.string.shield_trail_corrosion), ShieldCategory.HAZARD_AND_PATH, paramInt = 15),
                         WaveShieldChip("step_hurt_minimize", stringResource(R.string.shield_step_hurt), ShieldCategory.HAZARD_AND_PATH),
                         WaveShieldChip("char_orb_terrain", stringResource(R.string.shield_char_terrain), ShieldCategory.HAZARD_AND_PATH),

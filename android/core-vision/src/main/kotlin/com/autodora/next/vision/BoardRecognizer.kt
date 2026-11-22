@@ -17,7 +17,9 @@ data class RecognitionResult(
         it.element == Element.HIDDEN || (it.hazards and HazardBits.QUESTION) != 0
     },
     val raceBadgesDetected: Int = 0,
-    val stormCellsDetected: Int = 0
+    val stormCellsDetected: Int = 0,
+    val trafficLightStartCount: Int = 0,
+    val trafficLightEndCount: Int = 0
 )
 
 /**

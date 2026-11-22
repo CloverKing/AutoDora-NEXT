@@ -262,6 +262,8 @@
     <string name="burn_len_6">Trail Length: 6 Cells</string>
     <string name="shield_step_limit_fmt">Max %1$d Steps</string>
     <string name="shield_step_limit_step">Wave Step Limit</string>
+    <string name="shield_traffic_light">Traffic Light (Start→End)</string>
+    <string name="traffic_light_hint">Auto-detects green GO start &amp; red-burst end orbs; mark custom markers in Board Editor if needed</string>
     <string name="shield_trail_corrosion">Trail Corrosion</string>
     <string name="shield_step_hurt">Minimize Steps</string>
     <string name="shield_char_terrain">Char-Orb Terrain</string>
@@ -463,6 +465,7 @@
     <string name="ov_toast_no_board">No battle board detected. Enter a battle and retry.</string>
     <string name="ov_toast_need_a11y">Enable Accessibility Service to run auto-swipe.</string>
     <string name="ov_toast_puzzle_not_detected">No puzzle frame detected on board; pick a preset shape or mark tiles in Board Editor</string>
+    <string name="ov_toast_traffic_light_not_detected">No Traffic Light start/end detected; mark Start/End tiles in Board Editor</string>
     <string name="section_about">About &amp; Version</string>
     <string name="about_version_fmt">Version v%1$s (Build %2$d)</string>
 </resources>

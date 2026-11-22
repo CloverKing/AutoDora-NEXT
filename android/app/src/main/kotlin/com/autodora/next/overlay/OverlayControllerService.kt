@@ -144,6 +144,7 @@ class OverlayControllerService : Service() {
     private var editedBoard: BoardState? = null
     private var lastSolveOutput: SolveOutput? = null
     private var lastPuzzleMaskMissing = false
+    private var lastTrafficLightMissing = false
     private var usedMemorizedSnapshot = false
     private var selectedSolutionIdx = 0
     private var activeJob: Job? = null
@@ -783,11 +784,21 @@ class OverlayControllerService : Service() {
 
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.CALCULATING)
+            // Completely hide PathOverlayView & flush any stale MediaProjection cached frame BEFORE capture
+            // so previously rendered yellow puzzle outlines or path arrows NEVER pollute Frame 0 seam scoring!
+            val hadVisibleOverlay = pathOverlayView.visibility == View.VISIBLE && pathOverlayView.hasVisibleDrawing()
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
-            delay(45)
+            pathOverlayView.visibility = View.INVISIBLE
+            if (hadVisibleOverlay) {
+                capturer.clearCachedFrame()
+                delay(95)
+            } else {
+                delay(40)
+            }
 
             val frames = capturer.captureMultiFrames(count = settings.multiFrameCount, intervalMs = 50L)
             if (frames.isEmpty()) {
+                pathOverlayView.visibility = View.VISIBLE
                 setPhase(OverlayPhase.IDLE)
                 refreshPathCanvas()
                 toast(lctx.getString(R.string.toast_capture_denied))
@@ -861,6 +872,12 @@ class OverlayControllerService : Service() {
                 if (puzzleMaskMissing) {
                     toast(lctx.getString(R.string.ov_toast_puzzle_not_detected))
                 }
+                val trafficLightMissing = activeWaveChips.any { it.id == "traffic_light" } &&
+                    effectiveBoard.tileFlags.none { (it and (TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED)) != 0 }
+                lastTrafficLightMissing = trafficLightMissing
+                if (trafficLightMissing && !puzzleMaskMissing) {
+                    toast(lctx.getString(R.string.ov_toast_traffic_light_not_detected))
+                }
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
                 val solveOut = try {
@@ -880,6 +897,7 @@ class OverlayControllerService : Service() {
                 lastSolveOutput = solveOut
                 selectedSolutionIdx = 0
                 showPath = true
+                pathOverlayView.visibility = View.VISIBLE
                 refreshMainToggleChips()
                 updateSummaryStrip()
                 refreshPathCanvas()
@@ -894,6 +912,7 @@ class OverlayControllerService : Service() {
                 Log.e(TAG, "Capture/Solve failed", e)
                 setPhase(OverlayPhase.IDLE)
             } finally {
+                pathOverlayView.visibility = View.VISIBLE
                 frames.forEach { if (!it.isRecycled) it.recycle() }
             }
         }
@@ -918,6 +937,12 @@ class OverlayControllerService : Service() {
                 lastPuzzleMaskMissing = puzzleMaskMissing
                 if (puzzleMaskMissing) {
                     toast(lctx.getString(R.string.ov_toast_puzzle_not_detected))
+                }
+                val trafficLightMissing = activeWaveChips.any { it.id == "traffic_light" } &&
+                    effectiveBoard.tileFlags.none { (it and (TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED)) != 0 }
+                lastTrafficLightMissing = trafficLightMissing
+                if (trafficLightMissing && !puzzleMaskMissing) {
+                    toast(lctx.getString(R.string.ov_toast_traffic_light_not_detected))
                 }
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
@@ -969,7 +994,8 @@ class OverlayControllerService : Service() {
             usedMemorizedSnapshot = false
             pathOverlayView.visibility = View.INVISIBLE
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false, null, null, false)
-            delay(75)
+            capturer.clearCachedFrame()
+            delay(85)
 
             // Pre-touch geometry & baseline board scan (costs 0ms on the game's turn timer!)
             val preBmp = capturer.captureSingleFrame()
@@ -1259,6 +1285,7 @@ class OverlayControllerService : Service() {
     private fun invalidateLastSolution() {
         lastSolveOutput = null
         lastPuzzleMaskMissing = false
+        lastTrafficLightMissing = false
         selectedSolutionIdx = 0
         showPath = false
         if (::summaryStrip.isInitialized) {
@@ -1397,8 +1424,11 @@ class OverlayControllerService : Service() {
         }
         serviceScope.launch {
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
-            delay(40)
+            pathOverlayView.visibility = View.INVISIBLE
+            capturer.clearCachedFrame()
+            delay(80)
             val bmp = capturer.captureSingleFrame() ?: run {
+                pathOverlayView.visibility = View.VISIBLE
                 refreshPathCanvas()
                 return@launch
             }
@@ -1420,13 +1450,16 @@ class OverlayControllerService : Service() {
                             )
                         )
                     }
+                    pathOverlayView.visibility = View.VISIBLE
                     refreshPathCanvas()
                     toast("血条锚定成功：${detected.cols}×${detected.rows} 棋盘")
                 } else {
+                    pathOverlayView.visibility = View.VISIBLE
                     refreshPathCanvas()
                     toast("未识别到战斗盘面，请进入战斗后重试或直接拖拽四角校准")
                 }
             } finally {
+                pathOverlayView.visibility = View.VISIBLE
                 if (!bmp.isRecycled) bmp.recycle()
             }
         }
@@ -1697,7 +1730,7 @@ class OverlayControllerService : Service() {
         pagerText.text = "${selectedSolutionIdx + 1}/${out.solutions.size}"
         solutionSwitcherBox.visibility = if (out.solutions.size > 1) View.VISIBLE else View.GONE
 
-        val shieldBadge = if (sol.allHardConstraintsMet && !lastPuzzleMaskMissing) "✓" else "!"
+        val shieldBadge = if (sol.allHardConstraintsMet && !lastPuzzleMaskMissing && !lastTrafficLightMissing) "✓" else "!"
         val coreSummary = lctx.getString(
             R.string.ov_summary_fmt,
             geom.cols,
@@ -1710,10 +1743,15 @@ class OverlayControllerService : Service() {
         val extra = buildString {
             append(" ").append(shieldBadge)
             if (usedMemorizedSnapshot) append(" · ★")
-            val puzzleCnt = (editedBoard ?: lastRecognition?.board)?.tileFlags?.count {
+            val activeBoard = editedBoard ?: lastRecognition?.board
+            val puzzleCnt = activeBoard?.tileFlags?.count {
                 (it and (TileFlagBits.PUZZLE_1 or TileFlagBits.PUZZLE_2)) != 0
             } ?: 0
             if (puzzleCnt > 0) append(" · 🧩").append(puzzleCnt)
+            val hasTl = activeBoard?.tileFlags?.any {
+                (it and (TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED)) != 0
+            } == true
+            if (hasTl) append(" · 🚦")
             val stormCnt = lastRecognition?.stormCellsDetected ?: 0
             if (stormCnt > 0) append(" · 🌀").append(stormCnt)
         }

@@ -97,6 +97,10 @@ class CvBoardRecognizer : BoardRecognizer {
         var questionCount = 0
         var raceBadgeCount = 0
 
+        // Pre-scan Traffic Light markers (GO green start + red 8-ray burst end) so white 'GO' lettering
+        // is known before orb classification and never triggers false '?' or Enchanted flags.
+        detectTrafficLightMarkers(frames, geometry, tileFlags)
+
         val stormWeakFlags = BooleanArray(total)
         val stormStrongFlags = BooleanArray(total)
 
@@ -106,14 +110,15 @@ class CvBoardRecognizer : BoardRecognizer {
                 val cx = geometry.cellCenterX(c)
                 val cy = geometry.cellCenterY(r)
 
-                val cellState = classifyCellMultiFrame(frames, cx, cy, radius)
+                val isTlStart = (tileFlags[idx] and TileFlagBits.START_ALLOWED) != 0
+                val cellState = classifyCellMultiFrame(frames, cx, cy, radius, isTrafficLightStart = isTlStart)
                 val (isStormStrong, isStormWeak) = detectStormMultiFrame(frames, cx, cy, cellW, cellH)
                 stormStrongFlags[idx] = isStormStrong
                 stormWeakFlags[idx] = isStormWeak
 
                 cells.add(cellState)
                 if (isStormStrong) {
-                    tileFlags[idx] = tileFlags[idx] or TileFlagBits.STORM
+                    tileFlags[idx] = (tileFlags[idx] and (TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED).inv()) or TileFlagBits.STORM
                 }
             }
         }
@@ -163,6 +168,8 @@ class CvBoardRecognizer : BoardRecognizer {
             }
         }
         val stormCount = tileFlags.count { (it and TileFlagBits.STORM) != 0 }
+        val tlStartCount = tileFlags.count { (it and TileFlagBits.START_ALLOWED) != 0 }
+        val tlEndCount = tileFlags.count { (it and TileFlagBits.END_REQUIRED) != 0 }
 
         // Detect Puzzle Shield shapes (supports both classic per-cell golden boxes AND modern ToS
         // metallic silver-ivory / golden perimeter-polygon filigree frames including interior cells!)
@@ -178,7 +185,9 @@ class CvBoardRecognizer : BoardRecognizer {
             elapsedMs = elapsedMs,
             questionOrbsDetected = questionCount,
             raceBadgesDetected = raceBadgeCount,
-            stormCellsDetected = stormCount
+            stormCellsDetected = stormCount,
+            trafficLightStartCount = tlStartCount,
+            trafficLightEndCount = tlEndCount
         )
     }
 
@@ -243,11 +252,120 @@ class CvBoardRecognizer : BoardRecognizer {
         return strong to weak
     }
 
+    /**
+     * Real-screenshot calibrated Traffic Light (红绿灯 / 固定起终点) detector:
+     * Samples an extreme-corner tip ring (hypot ∈ [0.56, 0.72] * cell) strictly OUTSIDE circular Fire/Wood orb bodies:
+     *  - Green 'GO' Start (TileFlagBits.START_ALLOWED): neon-green rays (H∈[88°,155°], S≥0.55, V≥0.48) in ≥2 corner
+     *    quadrants (≥3 hits) AND bold pure-white 'GO' center band (V≥0.90, S≤0.18, density ≥ 25%).
+     *  - Red 8-Ray Burst End (TileFlagBits.END_REQUIRED): vivid crimson rays (H≤14° or ≥350°, S≥0.70, V≥0.46)
+     *    shooting into ≥3 extreme corner quadrants (≥4 hits).
+     * Verified 100% exact on real ToS Traffic Light stage with 0/15 false positives on ordinary battle boards.
+     */
+    private fun detectTrafficLightMarkers(
+        frames: List<VisionFrame>,
+        geometry: BoardGeometry,
+        tileFlags: MutableList<Int>
+    ) {
+        val cols = geometry.cols
+        val rows = geometry.rows
+        val cw = geometry.cellWidth
+        val ch = geometry.cellHeight
+        val extOffsets = arrayOf(
+            0.41f to 0.41f, 0.45f to 0.38f, 0.38f to 0.45f, 0.46f to 0.46f,
+            0.50f to 0.34f, 0.34f to 0.50f, 0.50f to 0.44f, 0.44f to 0.50f,
+            0.53f to 0.28f, 0.28f to 0.53f, 0.54f to 0.42f, 0.42f to 0.54f
+        )
+
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val idx = r * cols + c
+                val cx = geometry.cellCenterX(c)
+                val cy = geometry.cellCenterY(r)
+
+                var maxGreenQuads = 0
+                var maxGreenHits = 0
+                var maxWhiteGoRatio = 0f
+                var maxRedQuads = 0
+                var maxRedHits = 0
+
+                for (f in frames) {
+                    val fw = f.width
+                    val fh = f.height
+                    var gHits = 0
+                    var gQuadMask = 0
+                    var rHits = 0
+                    var rQuadMask = 0
+
+                    for (qx in 0..1) {
+                        val sx = if (qx == 0) -1f else 1f
+                        for (qy in 0..1) {
+                            val sy = if (qy == 0) -1f else 1f
+                            val qBit = 1 shl (qx * 2 + qy)
+                            for ((ox, oy) in extOffsets) {
+                                val x = (cx + sx * ox * cw).roundToInt()
+                                val y = (cy + sy * oy * ch).roundToInt()
+                                if (x < 0 || x >= fw || y < 0 || y >= fh) continue
+                                val (h, s, v) = rgbToHsv(f.getArgb(x, y))
+                                if (h in 88f..155f && s >= 0.55f && v >= 0.48f) {
+                                    gHits++
+                                    gQuadMask = gQuadMask or qBit
+                                }
+                                if ((h <= 14f || h >= 350f) && s >= 0.70f && v >= 0.46f) {
+                                    rHits++
+                                    rQuadMask = rQuadMask or qBit
+                                }
+                            }
+                        }
+                    }
+
+                    val gQuads = Integer.bitCount(gQuadMask)
+                    val rQuads = Integer.bitCount(rQuadMask)
+                    if (gQuads > maxGreenQuads || (gQuads == maxGreenQuads && gHits > maxGreenHits)) {
+                        maxGreenQuads = gQuads
+                        maxGreenHits = gHits
+                    }
+                    if (rQuads > maxRedQuads || (rQuads == maxRedQuads && rHits > maxRedHits)) {
+                        maxRedQuads = rQuads
+                        maxRedHits = rHits
+                    }
+
+                    // Only sample center 'GO' white text band when green outer corner rays are present
+                    if (gQuads >= 2 && gHits >= 3) {
+                        var wHits = 0
+                        var wTot = 0
+                        for (ix in 0 until 9) {
+                            val dx = -0.30f + 0.60f * (ix / 8f)
+                            val x = (cx + dx * cw).roundToInt().coerceIn(0, fw - 1)
+                            for (iy in 0 until 5) {
+                                val dy = -0.14f + 0.28f * (iy / 4f)
+                                val y = (cy + dy * ch).roundToInt().coerceIn(0, fh - 1)
+                                val (_, s, v) = rgbToHsv(f.getArgb(x, y))
+                                wTot++
+                                if (v >= 0.90f && s <= 0.18f) wHits++
+                            }
+                        }
+                        val wRatio = wHits.toFloat() / max(1, wTot)
+                        if (wRatio > maxWhiteGoRatio) maxWhiteGoRatio = wRatio
+                    }
+                }
+
+                val isStart = maxGreenQuads >= 2 && maxGreenHits >= 3 && maxWhiteGoRatio >= 0.25f
+                val isEnd = !isStart && maxRedQuads >= 3 && maxRedHits >= 4
+                if (isStart) {
+                    tileFlags[idx] = tileFlags[idx] or TileFlagBits.START_ALLOWED
+                } else if (isEnd) {
+                    tileFlags[idx] = tileFlags[idx] or TileFlagBits.END_REQUIRED
+                }
+            }
+        }
+    }
+
     private fun classifyCellMultiFrame(
         frames: List<VisionFrame>,
         cx: Float,
         cy: Float,
-        radius: Float
+        radius: Float,
+        isTrafficLightStart: Boolean = false
     ): CellState {
         // Votes per element across all frames and circular ring sample points
         val votes = FloatArray(6)
@@ -373,10 +491,12 @@ class CvBoardRecognizer : BoardRecognizer {
         // Shield/Enchanted orbs with outerAvgV >= 0.78).
         // Modern ToS '?' Question Orbs (slate-blue, steel-grey, dark-indigo, muted-bronze) have BOTH muted
         // saturation AND dimmer outer ring with pale '?' stroke pixels raising lowSatRatio.
-        val isSlateQuestionOrb = (bestIdx == Element.WATER.code &&
-            ((outerAvgV < 0.66f && outerAvgS < 0.46f) || (outerAvgV < 0.70f && lowSatRatio > 0.36f))) ||
+        val isSlateQuestionOrb = !isTrafficLightStart && (
+            (bestIdx == Element.WATER.code &&
+                ((outerAvgV < 0.66f && outerAvgS < 0.46f) || (outerAvgV < 0.70f && lowSatRatio > 0.36f))) ||
             (outerAvgV < 0.64f && outerAvgS < 0.36f && lowSatRatio >= 0.42f) ||
             (outerAvgV < 0.70f && outerAvgS < 0.30f && lowSatRatio >= 0.52f)
+        )
         if (isSlateQuestionOrb) {
             return CellState(
                 element = Element.HIDDEN,
@@ -392,7 +512,8 @@ class CvBoardRecognizer : BoardRecognizer {
 
         // Enchanted orb heuristic: strong pure-white star gleam beyond ordinary ToS center rune emblem
         // (ordinary Fire/Dark/Water orbs have small white center glyphs; genuine Enchanted orbs sparkle intensely).
-        val starThreshold = if (bestIdx == Element.LIGHT.code) 8 else 7
+        val baseStarThreshold = if (bestIdx == Element.LIGHT.code) 8 else 7
+        val starThreshold = if (isTrafficLightStart) baseStarThreshold + 4 else baseStarThreshold
         val isEnchanted = maxBrightStarCount >= starThreshold && confidence >= 0.58f
         val variant = when {
             isEnchanted -> Variant.ENCHANTED
@@ -576,27 +697,18 @@ class CvBoardRecognizer : BoardRecognizer {
         }
 
         val interiorOffs = floatArrayOf(-0.045f, -0.0225f, 0f, 0.0225f, 0.045f)
-        val topOuterOffs = floatArrayOf(0.008f, 0.022f, 0.037f, 0.052f)
-        val botOuterOffs = floatArrayOf(-0.052f, -0.038f, -0.025f, -0.012f)
-        val leftOuterOffs = floatArrayOf(0.005f, 0.020f, 0.036f, 0.052f)
-        val rightOuterOffs = floatArrayOf(-0.052f, -0.036f, -0.020f, -0.005f)
 
         var strongIntSeams = 0
         var darkIntSeams = 0
         var totalIntSeams = 0
 
-        // Horizontal grid seams H[r][c]
-        for (r in 0..rows) {
-            val isOuter = (r == 0 || r == rows)
-            val offs = when (r) {
-                0 -> topOuterOffs
-                rows -> botOuterOffs
-                else -> interiorOffs
-            }
+        // Sample ONLY internal grid seams — outer board edges (r=0, r=rows, c=0, c=cols) are polluted by
+        // bright white HP text (e.g. "66732/70694") and metallic bottom UI rims!
+        for (r in 1 until rows) {
             for (c in 0 until cols) {
-                if (!isOuter) totalIntSeams++
+                totalIntSeams++
                 if (isStorm(r - 1, c) || isStorm(r, c)) {
-                    if (!isOuter) darkIntSeams++
+                    darkIntSeams++
                     continue
                 }
                 var hits = 0
@@ -604,7 +716,7 @@ class CvBoardRecognizer : BoardRecognizer {
                     val t = 0.20f + 0.60f * (si.toFloat() / (seamSamples - 1))
                     val x = (left + (c + t) * cw).roundToInt()
                     var hit = false
-                    for (off in offs) {
+                    for (off in interiorOffs) {
                         val y = (top + (r + off) * ch).roundToInt()
                         if (sampleSeamPixel(x, y)) {
                             hit = true
@@ -615,33 +727,25 @@ class CvBoardRecognizer : BoardRecognizer {
                 }
                 val score = hits.toFloat() / seamSamples
                 hScores[r * cols + c] = score
-                if (!isOuter) {
-                    if (score >= 0.62f) strongIntSeams++
-                    if (score <= 0.30f) darkIntSeams++
-                }
+                if (score >= 0.62f) strongIntSeams++
+                if (score <= 0.30f) darkIntSeams++
             }
         }
 
-        // Vertical grid seams V[r][c]
+        // Internal vertical grid seams V[r][c] (c in 1 until cols)
         for (r in 0 until rows) {
-            for (c in 0..cols) {
-                val isOuter = (c == 0 || c == cols)
-                if (!isOuter) totalIntSeams++
+            for (c in 1 until cols) {
+                totalIntSeams++
                 if (isStorm(r, c - 1) || isStorm(r, c)) {
-                    if (!isOuter) darkIntSeams++
+                    darkIntSeams++
                     continue
-                }
-                val offs = when (c) {
-                    0 -> leftOuterOffs
-                    cols -> rightOuterOffs
-                    else -> interiorOffs
                 }
                 var hits = 0
                 for (si in 0 until seamSamples) {
                     val t = 0.20f + 0.60f * (si.toFloat() / (seamSamples - 1))
                     val y = (top + (r + t) * ch).roundToInt()
                     var hit = false
-                    for (off in offs) {
+                    for (off in interiorOffs) {
                         val x = (left + (c + off) * cw).roundToInt()
                         if (sampleSeamPixel(x, y)) {
                             hit = true
@@ -652,10 +756,8 @@ class CvBoardRecognizer : BoardRecognizer {
                 }
                 val score = hits.toFloat() / seamSamples
                 vScores[r * (cols + 1) + c] = score
-                if (!isOuter) {
-                    if (score >= 0.62f) strongIntSeams++
-                    if (score <= 0.30f) darkIntSeams++
-                }
+                if (score >= 0.62f) strongIntSeams++
+                if (score <= 0.30f) darkIntSeams++
             }
         }
 
@@ -674,7 +776,8 @@ class CvBoardRecognizer : BoardRecognizer {
             val energy: Float,
             val intMeanWall: Float,
             val intStrongRatio: Float,
-            val intCount: Int
+            val intCount: Int,
+            val outerCount: Int
         )
 
         fun evalBoundary(mask: BooleanArray): BoundaryStats {
@@ -682,17 +785,19 @@ class CvBoardRecognizer : BoardRecognizer {
             var intWallSum = 0f
             var intStrongWalls = 0
             var intCnt = 0
+            var outerCnt = 0
             for (r in 0..rows) {
                 val isOuter = (r == 0 || r == rows)
                 for (c in 0 until cols) {
                     val a = if (r > 0) mask[(r - 1) * cols + c] else false
                     val b = if (r < rows) mask[r * cols + c] else false
                     if (a != b) {
-                        val s = hScore(r, c)
                         if (isOuter) {
-                            // Outer screen edges may clip the filigree bar: reward if visible, tiny penalty if clipped!
-                            energy += if (s >= tau) (s - tau) else -0.06f
+                            // Never reward outer screen edges (HP text / metallic bottom rim); apply a small fixed cost
+                            energy -= 0.12f
+                            outerCnt++
                         } else {
+                            val s = hScore(r, c)
                             energy += (s - tau)
                             intWallSum += s
                             intCnt++
@@ -707,10 +812,11 @@ class CvBoardRecognizer : BoardRecognizer {
                     val a = if (c > 0) mask[r * cols + (c - 1)] else false
                     val b = if (c < cols) mask[r * cols + c] else false
                     if (a != b) {
-                        val s = vScore(r, c)
                         if (isOuter) {
-                            energy += if (s >= tau) (s - tau) else -0.06f
+                            energy -= 0.12f
+                            outerCnt++
                         } else {
+                            val s = vScore(r, c)
                             energy += (s - tau)
                             intWallSum += s
                             intCnt++
@@ -720,7 +826,7 @@ class CvBoardRecognizer : BoardRecognizer {
                 }
             }
             val denom = max(1, intCnt).toFloat()
-            return BoundaryStats(energy, intWallSum / denom, intStrongWalls.toFloat() / denom, intCnt)
+            return BoundaryStats(energy, intWallSum / denom, intStrongWalls.toFloat() / denom, intCnt, outerCnt)
         }
 
         fun refineMask(seed: BooleanArray): BooleanArray {
@@ -743,11 +849,26 @@ class CvBoardRecognizer : BoardRecognizer {
             return cur
         }
 
-        val maxPuzzleCells = min(16, total - 8).coerceAtLeast(3)
-        val candidateMasks = ArrayList<BooleanArray>(8)
+        fun areComponentsAdjacent(cA: List<Int>, cB: List<Int>): Boolean {
+            val setB = BooleanArray(total)
+            for (u in cB) setB[u] = true
+            for (u in cA) {
+                val r = u / cols
+                val c = u % cols
+                if (r > 0 && setB[u - cols]) return true
+                if (r + 1 < rows && setB[u + cols]) return true
+                if (c > 0 && setB[u - 1]) return true
+                if (c + 1 < cols && setB[u + 1]) return true
+            }
+            return false
+        }
 
-        // Candidate 1..3: Internal Cut-Set Connected Components (100% immune to screen-clipped outer board edges!)
-        for (thresh in floatArrayOf(0.66f, 0.58f, 0.50f)) {
+        val maxPuzzleCells = min(14, total - 8).coerceAtLeast(3)
+        val candidateMasks = ArrayList<BooleanArray>(16)
+
+        // Candidate Group 1: Independent Internal Cut-Set Connected Components
+        // NEVER glue two adjacent cut components (e.g., 1x5 col 3 + cols 4..5) into one mask!
+        for (thresh in floatArrayOf(0.68f, 0.58f, 0.50f, 0.42f)) {
             val visited = BooleanArray(total)
             val comps = ArrayList<List<Int>>()
             for (s in 0 until total) {
@@ -782,98 +903,48 @@ class CvBoardRecognizer : BoardRecognizer {
             }
             if (comps.size >= 2) {
                 val maxSz = comps.maxOf { it.size }
-                val cutMask = BooleanArray(total)
-                var anyMarked = false
-                for (comp in comps) {
-                    if (comp.size in 3..maxPuzzleCells && comp.size < maxSz) {
-                        for (u in comp) cutMask[u] = true
-                        anyMarked = true
-                    }
+                val smallComps = comps.filter { it.size in 3..maxPuzzleCells && it.size < maxSz }
+                for (comp in smallComps) {
+                    val rawMask = BooleanArray(total)
+                    for (u in comp) rawMask[u] = true
+                    candidateMasks.add(rawMask)
+                    candidateMasks.add(refineMask(rawMask))
                 }
-                if (anyMarked) {
-                    candidateMasks.add(refineMask(cutMask))
-                }
-            }
-        }
-
-        // Candidate 4..5: 0-1 BFS Jordan Curve Parity from virtual outside node OUT
-        for (thresh in floatArrayOf(0.62f, 0.54f)) {
-            val dist = IntArray(total + 1) { 999 }
-            dist[total] = 0
-            val dq = ArrayDeque<Int>(total + 1)
-            dq.addLast(total)
-            while (dq.isNotEmpty()) {
-                val u = dq.removeFirst()
-                val du = dist[u]
-                if (u == total) {
-                    for (c in 0 until cols) {
-                        val wTop = if (hScore(0, c) >= thresh) 1 else 0
-                        if (du + wTop < dist[c]) {
-                            dist[c] = du + wTop
-                            if (wTop == 0) dq.addFirst(c) else dq.addLast(c)
-                        }
-                        val botCell = (rows - 1) * cols + c
-                        val wBot = if (hScore(rows, c) >= thresh) 1 else 0
-                        if (du + wBot < dist[botCell]) {
-                            dist[botCell] = du + wBot
-                            if (wBot == 0) dq.addFirst(botCell) else dq.addLast(botCell)
-                        }
-                    }
-                    for (r in 0 until rows) {
-                        val leftCell = r * cols
-                        val wLeft = if (vScore(r, 0) >= thresh) 1 else 0
-                        if (du + wLeft < dist[leftCell]) {
-                            dist[leftCell] = du + wLeft
-                            if (wLeft == 0) dq.addFirst(leftCell) else dq.addLast(leftCell)
-                        }
-                        val rightCell = r * cols + cols - 1
-                        val wRight = if (vScore(r, cols) >= thresh) 1 else 0
-                        if (du + wRight < dist[rightCell]) {
-                            dist[rightCell] = du + wRight
-                            if (wRight == 0) dq.addFirst(rightCell) else dq.addLast(rightCell)
-                        }
-                    }
-                } else {
-                    val r = u / cols
-                    val c = u % cols
-                    val nbrV = intArrayOf(
-                        if (r > 0) (r - 1) * cols + c else total,
-                        if (r + 1 < rows) (r + 1) * cols + c else total,
-                        if (c > 0) r * cols + (c - 1) else total,
-                        if (c + 1 < cols) r * cols + (c + 1) else total
-                    )
-                    val nbrW = intArrayOf(
-                        if (hScore(r, c) >= thresh) 1 else 0,
-                        if (hScore(r + 1, c) >= thresh) 1 else 0,
-                        if (vScore(r, c) >= thresh) 1 else 0,
-                        if (vScore(r, c + 1) >= thresh) 1 else 0
-                    )
-                    for (k in 0 until 4) {
-                        val v = nbrV[k]
-                        val w = nbrW[k]
-                        if (du + w < dist[v]) {
-                            dist[v] = du + w
-                            if (w == 0) dq.addFirst(v) else dq.addLast(v)
+                // Support genuine Dual Puzzles: combine two non-max components ONLY if they are strictly non-adjacent
+                if (smallComps.size >= 2) {
+                    for (i in 0 until smallComps.size) {
+                        for (j in i + 1 until smallComps.size) {
+                            if (!areComponentsAdjacent(smallComps[i], smallComps[j])) {
+                                val dualMask = BooleanArray(total)
+                                for (u in smallComps[i]) dualMask[u] = true
+                                for (u in smallComps[j]) dualMask[u] = true
+                                candidateMasks.add(dualMask)
+                            }
                         }
                     }
                 }
             }
-            candidateMasks.add(refineMask(BooleanArray(total) { (dist[it] and 1) == 1 }))
         }
 
-        // Candidate 6: Corner/2-wall local seed (recovers cleanly if 1 internal wall is occluded)
+        // Candidate Group 2: Corner/2-internal-wall local seed (recovers cleanly if 1 internal wall dips briefly)
         val seed2 = BooleanArray(total)
+        var anySeed2 = false
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 var walls = 0
-                if (hScore(r, c) >= 0.62f) walls++
-                if (hScore(r + 1, c) >= 0.62f) walls++
-                if (vScore(r, c) >= 0.62f) walls++
-                if (vScore(r, c + 1) >= 0.62f) walls++
-                if (walls >= 2) seed2[r * cols + c] = true
+                if (r > 0 && hScore(r, c) >= 0.62f) walls++
+                if (r + 1 < rows && hScore(r + 1, c) >= 0.62f) walls++
+                if (c > 0 && vScore(r, c) >= 0.62f) walls++
+                if (c + 1 < cols && vScore(r, c + 1) >= 0.62f) walls++
+                if (walls >= 2) {
+                    seed2[r * cols + c] = true
+                    anySeed2 = true
+                }
             }
         }
-        candidateMasks.add(refineMask(seed2))
+        if (anySeed2) {
+            candidateMasks.add(refineMask(seed2))
+        }
 
         // Pick highest-energy mask after independently validating every connected component
         var bestComponents: List<List<Int>> = emptyList()
@@ -926,7 +997,13 @@ class CvBoardRecognizer : BoardRecognizer {
                         }
                     }
                     val meanInt = if (intCnt > 0) intSum / intCnt else 0f
-                    if (st.energy > 1.2f && st.intCount >= 4 && st.intMeanWall >= 0.72f && st.intStrongRatio >= 0.75f && meanInt <= 0.48f) {
+                    if (st.energy > 1.15f &&
+                        st.intCount >= 4 &&
+                        st.outerCount <= st.intCount + 2 &&
+                        st.intMeanWall >= 0.72f &&
+                        st.intStrongRatio >= 0.75f &&
+                        meanInt <= 0.45f
+                    ) {
                         validComps.add(comp)
                         for (u in comp) cleanMask[u] = true
                     }

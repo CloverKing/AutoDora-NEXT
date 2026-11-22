@@ -262,6 +262,8 @@
     <string name="burn_len_6">軌跡長度：6 格</string>
     <string name="shield_step_limit_fmt">限 %1$d 步內</string>
     <string name="shield_step_limit_step">本波步數限制</string>
+    <string name="shield_traffic_light">紅綠燈(起終點)</string>
+    <string name="traffic_light_hint">自動辨識盤面綠色 GO 起點與紅光終點；特殊樣式可在懸浮「改盤」手動標起手綠/停手紅</string>
     <string name="shield_trail_corrosion">軌跡腐蝕自避</string>
     <string name="shield_step_hurt">一步一傷省步</string>
     <string name="shield_char_terrain">角色珠通行與停放</string>
@@ -463,6 +465,7 @@
     <string name="ov_toast_no_board">未偵測到戰鬥盤面，請進入戰鬥後重試</string>
     <string name="ov_toast_need_a11y">請先開啟無障礙服務以執行自動轉珠</string>
     <string name="ov_toast_puzzle_not_detected">未在盤面辨識到拼圖框，可在拼圖設定選預設形狀或點「改盤」手動標框</string>
+    <string name="ov_toast_traffic_light_not_detected">未在盤面辨識到紅綠燈起終點，可點「改盤」手動標起手綠/停手紅</string>
     <string name="section_about">關於與版本</string>
     <string name="about_version_fmt">版本號 v%1$s (Build %2$d)</string>
 </resources>

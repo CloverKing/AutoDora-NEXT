@@ -102,6 +102,15 @@ class PathOverlayView(context: Context) : View(context) {
         setShadowLayer(12f, 0f, 4f, Color.BLACK)
     }
 
+    fun hasVisibleDrawing(): Boolean {
+        if (geometry == null) return false
+        return calibrationMode ||
+            boardEditorMode ||
+            memorizedOverlayBoard != null ||
+            countdownText != null ||
+            (showPath && (solution != null || boardState != null))
+    }
+
     fun updateState(
         geometry: BoardGeometry?,
         board: BoardState?,
@@ -399,6 +408,20 @@ class PathOverlayView(context: Context) : View(context) {
         val badgeR = (g.cellWidth * 0.12f).coerceIn(8f, 18f)
         textPaint.textSize = badgeR * 1.45f
 
+        fun hasTileFlag(rr: Int, cc: Int, bit: Int): Boolean =
+            rr in 0 until b.rows && cc in 0 until b.cols && (b.tileFlags[rr * b.cols + cc] and bit) != 0
+
+        fun drawOuterPerimeterEdges(r: Int, c: Int, left: Float, top: Float, right: Float, bottom: Float, bit: Int, paint: Paint) {
+            val inset = 4f
+            if (!hasTileFlag(r - 1, c, bit)) canvas.drawLine(left + inset, top + inset, right - inset, top + inset, paint)
+            if (!hasTileFlag(r + 1, c, bit)) canvas.drawLine(left + inset, bottom - inset, right - inset, bottom - inset, paint)
+            if (!hasTileFlag(r, c - 1, bit)) canvas.drawLine(left + inset, top + inset, left + inset, bottom - inset, paint)
+            if (!hasTileFlag(r, c + 1, bit)) canvas.drawLine(right - inset, top + inset, right - inset, bottom - inset, paint)
+        }
+
+        puzzlePaint.strokeCap = Paint.Cap.ROUND
+        puzzle2Paint.strokeCap = Paint.Cap.ROUND
+
         for (r in 0 until b.rows) {
             for (c in 0 until b.cols) {
                 val idx = r * b.cols + c
@@ -410,14 +433,42 @@ class PathOverlayView(context: Context) : View(context) {
                 val bottom = top + g.cellHeight
 
                 if ((flags and TileFlagBits.PUZZLE_1) != 0) {
-                    fillPaint.color = Color.argb(42, 255, 215, 40)
-                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, fillPaint)
-                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, puzzlePaint)
+                    fillPaint.color = Color.argb(38, 255, 215, 40)
+                    canvas.drawRect(left + 3f, top + 3f, right - 3f, bottom - 3f, fillPaint)
+                    drawOuterPerimeterEdges(r, c, left, top, right, bottom, TileFlagBits.PUZZLE_1, puzzlePaint)
                 }
                 if ((flags and TileFlagBits.PUZZLE_2) != 0) {
-                    fillPaint.color = Color.argb(40, 64, 224, 255)
-                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, fillPaint)
-                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, puzzle2Paint)
+                    fillPaint.color = Color.argb(36, 64, 224, 255)
+                    canvas.drawRect(left + 3f, top + 3f, right - 3f, bottom - 3f, fillPaint)
+                    drawOuterPerimeterEdges(r, c, left, top, right, bottom, TileFlagBits.PUZZLE_2, puzzle2Paint)
+                }
+                if ((flags and TileFlagBits.START_ALLOWED) != 0) {
+                    fillPaint.color = Color.argb(42, 0, 230, 118)
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, fillPaint)
+                    gridBorderPaint.color = Color.argb(240, 0, 230, 118)
+                    gridBorderPaint.strokeWidth = 6f
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
+                    val tagH = (g.cellWidth * 0.22f).coerceIn(16f, 28f)
+                    val tagW = tagH * 1.45f
+                    fillPaint.color = Color.argb(230, 0, 180, 85)
+                    canvas.drawRoundRect(right - tagW - 6f, top + 6f, right - 6f, top + tagH + 6f, 6f, 6f, fillPaint)
+                    textPaint.color = Color.WHITE
+                    textPaint.textSize = tagH * 0.68f
+                    canvas.drawText("GO", right - tagW * 0.5f - 6f, top + tagH * 0.78f + 6f, textPaint)
+                }
+                if ((flags and TileFlagBits.END_REQUIRED) != 0) {
+                    fillPaint.color = Color.argb(44, 255, 82, 82)
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, fillPaint)
+                    gridBorderPaint.color = Color.argb(240, 255, 82, 82)
+                    gridBorderPaint.strokeWidth = 6f
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
+                    val tagH = (g.cellWidth * 0.22f).coerceIn(16f, 28f)
+                    val tagW = tagH * 1.15f
+                    fillPaint.color = Color.argb(230, 229, 57, 53)
+                    canvas.drawRoundRect(right - tagW - 6f, top + 6f, right - 6f, top + tagH + 6f, 6f, 6f, fillPaint)
+                    textPaint.color = Color.WHITE
+                    textPaint.textSize = tagH * 0.68f
+                    canvas.drawText("终", right - tagW * 0.5f - 6f, top + tagH * 0.78f + 6f, textPaint)
                 }
                 if ((flags and TileFlagBits.STORM) != 0) {
                     fillPaint.color = Color.argb(82, 120, 144, 156)
