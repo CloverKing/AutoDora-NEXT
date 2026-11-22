@@ -284,7 +284,9 @@
     <string name="speed_desc">秒数 = 适配转珠时间；ms = 单格划动耗时</string>
     <string name="speed_turbo">极速 2秒</string>
     <string name="speed_fast">快转 3秒</string>
+    <string name="speed_brisk">敏捷 4秒</string>
     <string name="speed_standard">标准 5秒</string>
+    <string name="speed_smooth">舒缓 6秒</string>
     <string name="speed_steady">稳健 7秒</string>
     <string name="section_engine_steps">解盘引擎与步数</string>
     <string name="field_max_steps">最大步数上限（8 ～ 300）</string>
@@ -358,7 +360,7 @@
     <string name="ov_hold">按住转</string>
     <string name="ov_invert">颠倒</string>
     <string name="ov_tuning">调参解盾</string>
-    <string name="ov_editor">盘面编绘</string>
+    <string name="ov_editor">盘面编排</string>
     <string name="ov_tab_shield">解盾</string>
     <string name="ov_tab_elem">属性</string>
     <string name="ov_tab_special">专属</string>
@@ -490,4 +492,30 @@
     <string name="shield_step_range_fmt">步数盾 %1$d–%2$d</string>
     <string name="step_range_min_label">最少步数</string>
     <string name="step_range_max_label">最多步数</string>
+
+    <!-- v3.5 Grouped Board Editor, 6-Tier Speed & About/Update Checker -->
+    <string name="editor_title">盘面编排</string>
+    <string name="editor_badge_editing">编辑中</string>
+    <string name="editor_badge_saved">已保存</string>
+    <string name="editor_hint_unsaved">点划盘面格子涂抹 · 完成后点「保存版面」，再用主栏计算/执行</string>
+    <string name="editor_hint_saved">编排版面已保存 · 关闭后直接点击主悬浮栏计算/执行图标</string>
+    <string name="editor_btn_save">保存版面</string>
+    <string name="editor_btn_clear">清除标记</string>
+    <string name="editor_grp_orb">珠色与珠型</string>
+    <string name="editor_grp_shape">拼图与起终点</string>
+    <string name="editor_grp_status">符石状态</string>
+    <string name="editor_grp_terrain">盘面地形</string>
+    <string name="ov_saved_board_pill">已编排版面</string>
+    <string name="ov_toast_board_saved">编排版面已保存，请点击主悬浮栏计算或执行图标</string>
+    <string name="ov_toast_board_cleared">已清除全部标记并恢复实盘识别</string>
+    <string name="ov_toast_edited_no_solution">已保存版面未找到可行解，请检查冲突规则或标记</string>
+    <string name="about_github_btn">GitHub 仓库</string>
+    <string name="about_check_update_btn">检查更新</string>
+    <string name="about_checking_update">正在检查更新…</string>
+    <string name="about_up_to_date_fmt">当前已是最新版本 (v%1$s)</string>
+    <string name="about_update_avail_fmt">发现新版本 v%1$s</string>
+    <string name="about_update_prerelease_tag">预览版</string>
+    <string name="about_update_download_btn">前往下载</string>
+    <string name="about_update_error_fmt">检查更新失败：%1$s</string>
+    <string name="about_open_link_failed">无法打开浏览器链接</string>
 </resources>

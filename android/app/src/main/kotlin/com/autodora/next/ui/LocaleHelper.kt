@@ -63,7 +63,9 @@ object LocaleHelper {
     fun speedLabel(ctx: Context, preset: SwipeSpeedPreset): String = when (preset) {
         SwipeSpeedPreset.TURBO_2S -> ctx.getString(R.string.speed_turbo)
         SwipeSpeedPreset.FAST_3S -> ctx.getString(R.string.speed_fast)
+        SwipeSpeedPreset.BRISK_4S -> ctx.getString(R.string.speed_brisk)
         SwipeSpeedPreset.STANDARD -> ctx.getString(R.string.speed_standard)
+        SwipeSpeedPreset.SMOOTH_6S -> ctx.getString(R.string.speed_smooth)
         SwipeSpeedPreset.STEADY -> ctx.getString(R.string.speed_steady)
     }
 

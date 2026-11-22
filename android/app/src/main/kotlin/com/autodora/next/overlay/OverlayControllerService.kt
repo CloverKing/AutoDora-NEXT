@@ -148,6 +148,7 @@ class OverlayControllerService : Service() {
     private var currentGeometry: BoardGeometry? = null
     private var lastRecognition: RecognitionResult? = null
     private var editedBoard: BoardState? = null
+    private var savedEditedBoard: BoardState? = null
     private var lastSolveOutput: SolveOutput? = null
     private var lastPuzzleMaskMissing = false
     private var lastTrafficLightMissing = false
@@ -375,6 +376,7 @@ class OverlayControllerService : Service() {
             val current = editedBoard
             if (current != null) {
                 editedBoard = boardEditor.applyActiveBrush(current, row, col)
+                boardEditor.markDirty()
                 refreshPathCanvas()
             }
         }
@@ -662,17 +664,37 @@ class OverlayControllerService : Service() {
         calibrationBar.addView(calibResetBtn)
         controlRoot.addView(calibrationBar)
 
-        // Interactive Board Editor Brush Bar
+        // Interactive Board Editor Brush Bar (Grouped & Wrapped; Save Board -> Solve via Main Floating Bar)
         boardEditor = OverlayBoardEditorController(
             context = this,
-            onSolveEditedBoard = { solveEditedBoardNow() },
-            onClearAllMarkers = {
+            onSaveEditedBoard = {
                 val cur = editedBoard ?: return@OverlayBoardEditorController
-                editedBoard = cur.copy(
-                    cells = cur.cells.map { it.copy(variant = Variant.NORMAL, hazards = HazardBits.NONE) },
-                    tileFlags = List(cur.cols * cur.rows) { TileFlagBits.NONE }
-                )
+                savedEditedBoard = cur
+                boardEditor.setSavedState(true)
+                setBoardEditorMode(false)
+                invalidateLastSolution()
+                showPath = true
+                refreshMainToggleChips()
+                refreshActiveShieldStrip()
+                syncDrawerData()
                 refreshPathCanvas()
+                toast(lctx.getString(R.string.ov_toast_board_saved))
+            },
+            onClearAllMarkers = {
+                val cur = editedBoard
+                if (cur != null) {
+                    editedBoard = cur.copy(
+                        cells = cur.cells.map { it.copy(variant = Variant.NORMAL, hazards = HazardBits.NONE) },
+                        tileFlags = List(cur.cols * cur.rows) { TileFlagBits.NONE }
+                    )
+                }
+                savedEditedBoard = null
+                boardEditor.setSavedState(false)
+                invalidateLastSolution()
+                refreshActiveShieldStrip()
+                syncDrawerData()
+                refreshPathCanvas()
+                toast(lctx.getString(R.string.ov_toast_board_cleared))
             },
             onCloseEditor = { setBoardEditorMode(false) }
         )
@@ -822,15 +844,24 @@ class OverlayControllerService : Service() {
             toast(lctx.getString(R.string.ov_toast_stopped))
             return
         }
+
+        if (calibrationMode) setCalibrationMode(false)
+        if (boardEditorMode) setBoardEditorMode(false)
+        if (tuningDrawerOpen) setTuningDrawerOpen(false)
+
+        // When the user saved a manually edited board via 「保存版面」, route the main floating toolbar's
+        // Calculate / Play buttons directly to solve (and optionally execute) that saved board!
+        val customBoard = savedEditedBoard
+        if (customBoard != null) {
+            solveSavedEditedBoard(customBoard, autoExecuteAfterSolve)
+            return
+        }
+
         val capturer = ScreenCaptureSession.capturer.value
         if (capturer == null || !capturer.isReady.value) {
             toast(lctx.getString(R.string.toast_capture_denied))
             return
         }
-
-        if (calibrationMode) setCalibrationMode(false)
-        if (boardEditorMode) setBoardEditorMode(false)
-        if (tuningDrawerOpen) setTuningDrawerOpen(false)
 
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.CALCULATING)
@@ -992,18 +1023,15 @@ class OverlayControllerService : Service() {
         }
     }
 
-    // ==================== Solve Manually Painted Board ('算此盘') ====================
-    private fun solveEditedBoardNow() {
-        val board = editedBoard ?: run {
-            toast("当前无盘面数据，请先点击计算图标或进入战斗")
-            return
-        }
+    // ==================== Solve Saved Edited Board via Main Toolbar ('算' / '行') ====================
+    private fun solveSavedEditedBoard(board: BoardState, autoExecuteAfterSolve: Boolean) {
         val geom = currentGeometry ?: settings.calibration.toBase6x5Geometry(screenW, screenH)
-        setBoardEditorMode(false)
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.CALCULATING)
+            var solvedReady = false
             try {
                 val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(board)
+                savedEditedBoard = effectiveBoard
                 editedBoard = effectiveBoard
                 val ruleConfig = composeEffectiveRuleConfig(effectiveBoard)
                 val puzzleMaskMissing = ruleConfig.puzzle1.enabled &&
@@ -1032,20 +1060,32 @@ class OverlayControllerService : Service() {
                     activeCancelToken = null
                     token.close()
                 }
-                if (solveOut.solutions.isEmpty()) {
-                    hidePathOverlay()
-                    toast("编绘盘面未找到可行解，请检查冲突规则或标记")
+                val bestSol = solveOut.solutions.firstOrNull()
+                if (bestSol == null || (bestSol.totalCombo == 0 && bestSol.stepCount == 0)) {
+                    invalidateLastSolution()
+                    showPath = true
+                    refreshPathCanvas()
+                    toast(lctx.getString(R.string.ov_toast_edited_no_solution))
                 } else {
                     currentGeometry = geom
                     lastSolveOutput = solveOut
                     selectedSolutionIdx = 0
                     showPath = true
+                    pathOverlayView.visibility = View.VISIBLE
                     refreshMainToggleChips()
                     updateSummaryStrip()
                     refreshPathCanvas()
+                    solvedReady = true
                 }
+            } catch (e: CancellationException) {
+                // Handled by finally
+            } catch (e: Exception) {
+                Log.e(TAG, "Solve saved board failed", e)
             } finally {
                 setPhase(OverlayPhase.IDLE)
+            }
+            if (solvedReady && (autoExecuteAfterSolve || !settings.testModeOnlyDraw)) {
+                executeSelectedSolution()
             }
         }
     }
@@ -1294,6 +1334,10 @@ class OverlayControllerService : Service() {
                     is TouchExecutionResult.Success -> {
                         flashMemoryTracker.clearLock()
                         usedMemorizedSnapshot = false
+                        savedEditedBoard = null
+                        boardEditor.setSavedState(false)
+                        refreshActiveShieldStrip()
+                        syncDrawerData()
                         invalidateLastSolution()
                         Log.i(TAG, "Hold-and-Replan completed in ${result.elapsedMs}ms (${result.segmentsDispatched} segs)")
                     }
@@ -1345,6 +1389,10 @@ class OverlayControllerService : Service() {
                     is TouchExecutionResult.Success -> {
                         flashMemoryTracker.clearLock()
                         usedMemorizedSnapshot = false
+                        savedEditedBoard = null
+                        boardEditor.setSavedState(false)
+                        refreshActiveShieldStrip()
+                        syncDrawerData()
                         invalidateLastSolution()
                         Log.i(TAG, "Auto-swipe completed in ${result.elapsedMs}ms (${result.segmentsDispatched} segs)")
                     }
@@ -1430,12 +1478,21 @@ class OverlayControllerService : Service() {
         if (boardEditorMode) {
             val geom = currentGeometry ?: settings.calibration.toBase6x5Geometry(screenW, screenH)
             currentGeometry = geom
-            if (editedBoard == null || editedBoard!!.cols != geom.cols || editedBoard!!.rows != geom.rows) {
-                editedBoard = lastRecognition?.board ?: BoardState(
-                    cols = geom.cols,
-                    rows = geom.rows,
-                    cells = List(geom.cols * geom.rows) { i -> CellState(Element.MATCHABLE[i % 6]) }
-                )
+            val saved = savedEditedBoard
+            if (saved != null && saved.cols == geom.cols && saved.rows == geom.rows) {
+                editedBoard = saved
+                boardEditor.setSavedState(true)
+            } else {
+                if (editedBoard == null || editedBoard!!.cols != geom.cols || editedBoard!!.rows != geom.rows) {
+                    editedBoard = lastRecognition?.board
+                        ?: flashMemoryTracker.currentLockedSnapshot()
+                        ?: BoardState(
+                            cols = geom.cols,
+                            rows = geom.rows,
+                            cells = List(geom.cols * geom.rows) { i -> CellState(Element.MATCHABLE[i % 6]) }
+                        )
+                }
+                boardEditor.setSavedState(false)
             }
         }
         updatePathOverlayTouchability()
@@ -1605,18 +1662,27 @@ class OverlayControllerService : Service() {
                                 refreshPathCanvas()
                             }
                             // After 2 consecutive non-battle/transition ticks (~330ms), wipe memory & sweep overlays clean!
+                            // Preserve an explicitly saved edited board outside battle unless a battle VICTORY/wave transition occurs.
                             if (consecutiveNonBattleTicks >= 2) {
+                                if (watchStatus == 3 && savedEditedBoard != null) {
+                                    savedEditedBoard = null
+                                    boardEditor.setSavedState(false)
+                                    refreshActiveShieldStrip()
+                                    syncDrawerData()
+                                }
                                 val hadOverlay = flashMemoryTracker.currentLockedSnapshot() != null ||
                                     usedMemorizedSnapshot ||
-                                    lastSolveOutput != null ||
-                                    showPath ||
-                                    lastRecognition != null
+                                    (savedEditedBoard == null && (lastSolveOutput != null || showPath || lastRecognition != null))
                                 flashMemoryTracker.resetAll()
                                 usedMemorizedSnapshot = false
                                 enemyPopupCoveringBoard = false
                                 if (hadOverlay) {
-                                    lastRecognition = null
-                                    invalidateLastSolution()
+                                    if (savedEditedBoard == null) {
+                                        lastRecognition = null
+                                        invalidateLastSolution()
+                                    } else {
+                                        refreshPathCanvas()
+                                    }
                                 }
                             }
                         }
@@ -1702,7 +1768,7 @@ class OverlayControllerService : Service() {
         styleChip(calibAutoBtn, p.primary, p.onPrimary, null)
         styleChip(calibResetBtn, p.errorContainer, p.onErrorContainer, null)
 
-        boardEditor.applyTheme(p)
+        boardEditor.applyTheme(p, lctx)
         setPhase(currentPhase)
         refreshMainToggleChips()
         refreshActiveShieldStrip()
@@ -1774,11 +1840,40 @@ class OverlayControllerService : Service() {
     private fun refreshActiveShieldStrip() {
         if (!::activeShieldRow.isInitialized || !::palette.isInitialized) return
         activeShieldRow.removeAllViews()
-        if (activeWaveChips.isEmpty() || !toolbarExpanded) {
+        val hasSaved = savedEditedBoard != null
+        if ((activeWaveChips.isEmpty() && !hasSaved) || !toolbarExpanded) {
             activeShieldScroll.visibility = View.GONE
             return
         }
         val p = palette
+        if (hasSaved) {
+            val savedBg = if (p.isDark) Color.rgb(72, 46, 12) else Color.rgb(255, 243, 224)
+            val savedFg = if (p.isDark) Color.rgb(255, 213, 79) else Color.rgb(191, 54, 12)
+            val savedStroke = Color.rgb(230, 118, 0)
+            val savedPill = TextView(this).apply {
+                text = "✎ ${lctx.getString(R.string.ov_saved_board_pill)} ×"
+                textSize = 9f
+                typeface = Typeface.DEFAULT_BOLD
+                setSingleLine(true)
+                setTextColor(savedFg)
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                background = roundedBg(savedBg, dp(6).toFloat(), savedStroke)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(3) }
+                setOnClickListener {
+                    savedEditedBoard = null
+                    boardEditor.setSavedState(false)
+                    invalidateLastSolution()
+                    refreshActiveShieldStrip()
+                    syncDrawerData()
+                    refreshPathCanvas()
+                    toast(lctx.getString(R.string.ov_toast_board_cleared))
+                }
+            }
+            activeShieldRow.addView(savedPill)
+        }
         for (chip in activeWaveChips) {
             val pill = TextView(this).apply {
                 text = "${LocaleHelper.formatWaveChipLabel(lctx, chip)} ×"
@@ -1796,17 +1891,19 @@ class OverlayControllerService : Service() {
             }
             activeShieldRow.addView(pill)
         }
-        val clearAll = TextView(this).apply {
-            text = lctx.getString(R.string.btn_clear)
-            textSize = 9f
-            typeface = Typeface.DEFAULT_BOLD
-            setSingleLine(true)
-            setTextColor(p.onErrorContainer)
-            setPadding(dp(5), dp(2), dp(5), dp(2))
-            background = roundedBg(p.errorContainer, dp(6).toFloat(), null)
-            setOnClickListener { ActiveStrategyStore.clearAll() }
+        if (activeWaveChips.isNotEmpty()) {
+            val clearAll = TextView(this).apply {
+                text = lctx.getString(R.string.btn_clear)
+                textSize = 9f
+                typeface = Typeface.DEFAULT_BOLD
+                setSingleLine(true)
+                setTextColor(p.onErrorContainer)
+                setPadding(dp(5), dp(2), dp(5), dp(2))
+                background = roundedBg(p.errorContainer, dp(6).toFloat(), null)
+                setOnClickListener { ActiveStrategyStore.clearAll() }
+            }
+            activeShieldRow.addView(clearAll)
         }
-        activeShieldRow.addView(clearAll)
         activeShieldScroll.visibility = View.VISIBLE
         clampControlWindowToScreen()
     }
@@ -1819,7 +1916,8 @@ class OverlayControllerService : Service() {
             presets = presetRecords,
             activePreset = activeTeamPreset(),
             activeChips = activeWaveChips,
-            boardEditorOpen = boardEditorMode
+            boardEditorOpen = boardEditorMode,
+            hasSavedBoard = savedEditedBoard != null
         )
     }
 
@@ -1840,7 +1938,7 @@ class OverlayControllerService : Service() {
         pagerText.text = "${selectedSolutionIdx + 1}/${out.solutions.size}"
         solutionSwitcherBox.visibility = if (out.solutions.size > 1) View.VISIBLE else View.GONE
 
-        val activeBoard = editedBoard ?: lastRecognition?.board
+        val activeBoard = savedEditedBoard ?: editedBoard ?: lastRecognition?.board
         val verdicts = if (activeBoard != null) {
             ShieldVerdictEvaluator.evaluate(activeWaveChips, activeBoard, sol)
         } else {
@@ -1957,14 +2055,15 @@ class OverlayControllerService : Service() {
         }
         val memBoard = if (currentPhase == OverlayPhase.MOVING) null else flashMemoryTracker.currentLockedSnapshot()
         val displayBoard = when {
-            boardEditorMode -> editedBoard ?: lastRecognition?.board
+            boardEditorMode -> editedBoard ?: savedEditedBoard ?: lastRecognition?.board
+            savedEditedBoard != null -> savedEditedBoard
             usedMemorizedSnapshot && memBoard != null -> memBoard
             else -> lastRecognition?.board
         }
         pathOverlayView.updateState(
             geometry = currentGeometry,
             board = displayBoard,
-            lowConfidence = if (usedMemorizedSnapshot || boardEditorMode) emptyList() else (lastRecognition?.lowConfidenceIndices ?: emptyList()),
+            lowConfidence = if (usedMemorizedSnapshot || boardEditorMode || savedEditedBoard != null) emptyList() else (lastRecognition?.lowConfidenceIndices ?: emptyList()),
             solution = currentSolution(),
             showPath = showPath,
             showOrbBadges = settings.showOrbBadgesOnPath,

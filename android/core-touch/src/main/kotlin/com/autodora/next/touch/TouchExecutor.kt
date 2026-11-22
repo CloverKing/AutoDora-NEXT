@@ -11,13 +11,15 @@ enum class HoldReplanTrigger {
 }
 
 /**
- * Single source of truth for swipe speed presets shared 1-to-1 between DashboardScreen and OverlayControllerService.
- * Ordered from fastest (Crimson) to steadiest (Emerald).
+ * Single source of truth for swipe speed presets shared 1-to-1 between DashboardScreen and OverlayTuningDrawer.
+ * 6 tiers corresponding to 2s / 3s / 4s / 5s / 6s / 7s target turn-time budgets (fastest Crimson -> steadiest Emerald).
  */
 enum class SwipeSpeedPreset(val label: String, val compactLabel: String, val stepDurationMs: Long) {
     TURBO_2S("极速 2s", "极速2s", 24L),
     FAST_3S("快转 3s", "快转3s", 38L),
+    BRISK_4S("敏捷 4s", "敏捷4s", 52L),
     STANDARD("标准 5s", "标准5s", 68L),
+    SMOOTH_6S("舒缓 6s", "舒缓6s", 82L),
     STEADY("稳健 7s", "稳健7s", 95L);
 
     fun next(): SwipeSpeedPreset = entries[(ordinal + 1) % entries.size]

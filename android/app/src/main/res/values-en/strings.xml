@@ -284,7 +284,9 @@
     <string name="speed_desc">Seconds = target turn time; ms = time per grid step</string>
     <string name="speed_turbo">Turbo 2s</string>
     <string name="speed_fast">Fast 3s</string>
+    <string name="speed_brisk">Brisk 4s</string>
     <string name="speed_standard">Std 5s</string>
+    <string name="speed_smooth">Smooth 6s</string>
     <string name="speed_steady">Safe 7s</string>
     <string name="section_engine_steps">Solver Engine &amp; Step Budget</string>
     <string name="field_max_steps">Global Max Steps (8 – 300)</string>
@@ -358,7 +360,7 @@
     <string name="ov_hold">Hold</string>
     <string name="ov_invert">Invert</string>
     <string name="ov_tuning">Tune</string>
-    <string name="ov_editor">Paint</string>
+    <string name="ov_editor">Board Edit</string>
     <string name="ov_tab_shield">Shield</string>
     <string name="ov_tab_elem">Attr</string>
     <string name="ov_tab_special">ToS</string>
@@ -490,4 +492,30 @@
     <string name="shield_step_range_fmt">Steps %1$d–%2$d</string>
     <string name="step_range_min_label">Min Steps</string>
     <string name="step_range_max_label">Max Steps</string>
+
+    <!-- v3.5 Grouped Board Editor, 6-Tier Speed & About/Update Checker -->
+    <string name="editor_title">Board Editor</string>
+    <string name="editor_badge_editing">Editing</string>
+    <string name="editor_badge_saved">Saved</string>
+    <string name="editor_hint_unsaved">Tap/drag cells to paint · Save Board, then use main Solve / Play</string>
+    <string name="editor_hint_saved">Board saved · Close and tap main floating bar Solve / Play</string>
+    <string name="editor_btn_save">Save Board</string>
+    <string name="editor_btn_clear">Clear Marks</string>
+    <string name="editor_grp_orb">Orbs &amp; Variants</string>
+    <string name="editor_grp_shape">Puzzle &amp; Markers</string>
+    <string name="editor_grp_status">Runestone States</string>
+    <string name="editor_grp_terrain">Board Terrain</string>
+    <string name="ov_saved_board_pill">Edited Board</string>
+    <string name="ov_toast_board_saved">Board saved. Tap Solve or Play on the main floating bar.</string>
+    <string name="ov_toast_board_cleared">Markers cleared; restored live board capture.</string>
+    <string name="ov_toast_edited_no_solution">No valid solution for edited board; check conflicting rules or markers.</string>
+    <string name="about_github_btn">GitHub Repo</string>
+    <string name="about_check_update_btn">Check Updates</string>
+    <string name="about_checking_update">Checking for updates…</string>
+    <string name="about_up_to_date_fmt">Up to date (v%1$s)</string>
+    <string name="about_update_avail_fmt">Update available: v%1$s</string>
+    <string name="about_update_prerelease_tag">Pre-release</string>
+    <string name="about_update_download_btn">Download</string>
+    <string name="about_update_error_fmt">Update check failed: %1$s</string>
+    <string name="about_open_link_failed">Unable to open link in browser</string>
 </resources>

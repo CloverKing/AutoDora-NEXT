@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,6 +63,7 @@ fun DashboardScreen(
     activeWaveChips: List<WaveShieldChip>,
     benchmarkReport: String?,
     isBenchmarking: Boolean,
+    updateCheckState: UpdateCheckState = UpdateCheckState.Idle,
     onRequestOverlay: () -> Unit,
     onOpenAccessibility: () -> Unit,
     onOpenAppDetails: () -> Unit,
@@ -69,6 +71,9 @@ fun DashboardScreen(
     onRequestNotifications: () -> Unit,
     onToggleOverlayService: () -> Unit,
     onRunNativeBenchmark: () -> Unit,
+    onOpenGitHub: () -> Unit = {},
+    onCheckForUpdates: () -> Unit = {},
+    onOpenUpdateUrl: (String) -> Unit = {},
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onSelectPreset: (String) -> Unit,
     onSavePreset: (TeamBasePreset, Boolean) -> Unit,
@@ -220,8 +225,12 @@ fun DashboardScreen(
                     settings = settings,
                     benchmarkReport = benchmarkReport,
                     isBenchmarking = isBenchmarking,
+                    updateCheckState = updateCheckState,
                     onUpdateSettings = onUpdateSettings,
                     onRunNativeBenchmark = onRunNativeBenchmark,
+                    onOpenGitHub = onOpenGitHub,
+                    onCheckForUpdates = onCheckForUpdates,
+                    onOpenUpdateUrl = onOpenUpdateUrl,
                     onShowHelp = { title, body -> helpPopup = title to body }
                 )
             }
@@ -554,8 +563,12 @@ private fun SettingsTab(
     settings: AppSettings,
     benchmarkReport: String?,
     isBenchmarking: Boolean,
+    updateCheckState: UpdateCheckState,
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onRunNativeBenchmark: () -> Unit,
+    onOpenGitHub: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onOpenUpdateUrl: (String) -> Unit,
     onShowHelp: (String, String) -> Unit
 ) {
     val context = LocalContext.current
@@ -668,39 +681,46 @@ private fun SettingsTab(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                for (preset in SwipeSpeedPreset.entries) {
-                    val selected = activeSpeed == preset
-                    val style = overlayPalette.speedStyle(preset)
-                    Surface(
-                        onClick = { onUpdateSettings { it.copy(stepDurationMs = preset.stepDurationMs) } },
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (selected) Color(style.bg) else MaterialTheme.colorScheme.surfaceContainerLow,
-                        border = BorderStroke(
-                            width = if (selected) 1.5.dp else 1.dp,
-                            color = if (selected) Color(style.stroke) else MaterialTheme.colorScheme.outlineVariant
-                        ),
-                        modifier = Modifier.weight(1f)
+                for (rowPresets in SwipeSpeedPreset.entries.chunked(3)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = LocaleHelper.speedLabel(context, preset),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (selected) Color(style.fg) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = "${preset.stepDurationMs} $msUnit",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (selected) Color(style.fg) else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        for (preset in rowPresets) {
+                            val selected = activeSpeed == preset
+                            val style = overlayPalette.speedStyle(preset)
+                            Surface(
+                                onClick = { onUpdateSettings { it.copy(stepDurationMs = preset.stepDurationMs) } },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (selected) Color(style.bg) else MaterialTheme.colorScheme.surfaceContainerLow,
+                                border = BorderStroke(
+                                    width = if (selected) 1.5.dp else 1.dp,
+                                    color = if (selected) Color(style.stroke) else MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = LocaleHelper.speedLabel(context, preset),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (selected) Color(style.fg) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = "${preset.stepDurationMs} $msUnit",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (selected) Color(style.fg) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -971,7 +991,7 @@ private fun SettingsTab(
             }
         }
 
-        // 6. Crimson Drawer: About & Version
+        // 6. Crimson Drawer: About & Version (with GitHub link & Check for Updates)
         ColoredCollapsibleDrawerCard(
             title = stringResource(R.string.section_about),
             accentColor = DrawerAccentColors.Crimson,
@@ -1011,6 +1031,193 @@ private fun SettingsTab(
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onOpenGitHub,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.about_github_btn),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                FilledTonalButton(
+                    onClick = onCheckForUpdates,
+                    enabled = updateCheckState !is UpdateCheckState.Checking,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    if (updateCheckState is UpdateCheckState.Checking) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(15.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.SystemUpdate,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(
+                            if (updateCheckState is UpdateCheckState.Checking) {
+                                R.string.about_checking_update
+                            } else {
+                                R.string.about_check_update_btn
+                            }
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            when (val st = updateCheckState) {
+                UpdateCheckState.Idle -> Unit
+                UpdateCheckState.Checking -> {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Text(
+                                text = stringResource(R.string.about_checking_update),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                is UpdateCheckState.UpToDate -> {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.about_up_to_date_fmt, st.currentVersion),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+                is UpdateCheckState.UpdateAvailable -> {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.about_update_avail_fmt, st.latestVersion),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    if (st.isPrerelease) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.tertiaryContainer
+                                        ) {
+                                            Text(
+                                                text = stringResource(R.string.about_update_prerelease_tag),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Button(
+                                    onClick = { onOpenUpdateUrl(st.apkDownloadUrl ?: st.releaseUrl) },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.about_update_download_btn),
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                            if (st.releaseNotes.isNotBlank()) {
+                                Text(
+                                    text = st.releaseNotes.lines().filter { it.isNotBlank() }.take(3).joinToString("\n"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.88f),
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+                is UpdateCheckState.Error -> {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.about_update_error_fmt, st.detail),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        )
+                    }
                 }
             }
         }

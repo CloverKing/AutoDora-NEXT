@@ -55,6 +55,7 @@ class OverlayTuningDrawerController(
     private var activePreset: TeamBasePreset = TeamPresetRepository.defaultBuiltInPresets().first()
     private var activeChips: List<WaveShieldChip> = emptyList()
     private var boardEditorOpen: Boolean = false
+    private var hasSavedBoard: Boolean = false
 
     // Exclusive single-open accordion expansion per tab (expanding one auto-collapses the others in that tab!)
     private var presetPickerExpanded = false
@@ -170,7 +171,8 @@ class OverlayTuningDrawerController(
         presets: List<TeamPresetRecord>,
         activePreset: TeamBasePreset,
         activeChips: List<WaveShieldChip>,
-        boardEditorOpen: Boolean = false
+        boardEditorOpen: Boolean = false,
+        hasSavedBoard: Boolean = false
     ) {
         this.lctx = LocaleHelper.localizedContext(context, settings.language)
         this.palette = palette
@@ -179,6 +181,7 @@ class OverlayTuningDrawerController(
         this.activePreset = activePreset
         this.activeChips = activeChips
         this.boardEditorOpen = boardEditorOpen
+        this.hasSavedBoard = hasSavedBoard
 
         val byId = activeChips.associateBy { it.id }
         byId["min_combo"]?.paramInt?.let { if (it in 1..15) minTotalComboVal = it }
@@ -270,11 +273,17 @@ class OverlayTuningDrawerController(
         // Card 0 (Indigo): Board Paint & Active Wave Shields
         val q0Summary = buildList {
             if (boardEditorOpen) add(s(R.string.ov_editor))
+            else if (hasSavedBoard) add(s(R.string.ov_saved_board_pill))
             if (activeChips.isNotEmpty()) add(s(R.string.ov_clear_enemy_short, activeChips.size))
         }.joinToString(" · ").ifEmpty { s(R.string.ov_card_none_set) }
-        addAccordionGroupCard(0, s(R.string.ov_tab_quick), q0Summary, boardEditorOpen || activeChips.isNotEmpty(), ACCENT_INDIGO, p)?.let { quickBody ->
+        addAccordionGroupCard(0, s(R.string.ov_tab_quick), q0Summary, boardEditorOpen || hasSavedBoard || activeChips.isNotEmpty(), ACCENT_INDIGO, p)?.let { quickBody ->
+            val editorBtnLabel = if (hasSavedBoard && !boardEditorOpen) {
+                "${s(R.string.ov_editor)} (${s(R.string.editor_badge_saved)})"
+            } else {
+                s(R.string.ov_editor)
+            }
             val actRow = hRow(bottomMarginDp = 0)
-            actRow.addView(makeToggle(s(R.string.ov_editor), boardEditorOpen, p, weight = 1f) {
+            actRow.addView(makeToggle(editorBtnLabel, boardEditorOpen || hasSavedBoard, p, weight = 1f) {
                 onToggleBoardEditor()
             })
             actRow.addView(makeChip(s(R.string.ov_clear_enemy_short, activeChips.size), weight = 1f, marginEndDp = 0) {
@@ -309,28 +318,11 @@ class OverlayTuningDrawerController(
             modeBody.addView(modeRow)
         }
 
-        // Card 2 (Amber): Swipe Speed 4-Tier
+        // Card 2 (Amber): Unified 6-Tier Swipe Speed Presets (2s..7s)
         val activeSpeed = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
         val q2Summary = "${LocaleHelper.speedLabel(lctx, activeSpeed)} · ${settings.stepDurationMs}${s(R.string.unit_ms)}"
         addAccordionGroupCard(2, s(R.string.section_speed), q2Summary, true, ACCENT_AMBER, p)?.let { spdBody ->
-            val spdRow = hRow(bottomMarginDp = 0)
-            SwipeSpeedPreset.entries.forEachIndexed { idx, preset ->
-                val sel = activeSpeed == preset
-                val st = p.speedStyle(preset)
-                spdRow.addView(
-                    makeChip(
-                        LocaleHelper.speedLabel(lctx, preset),
-                        weight = 1f,
-                        marginEndDp = if (idx == SwipeSpeedPreset.entries.lastIndex) 0 else 4
-                    ) {
-                        onUpdateSettings { it.copy(stepDurationMs = preset.stepDurationMs) }
-                    }.also {
-                        if (sel) styleChip(it, st.bg, st.fg, st.stroke)
-                        else styleChip(it, p.chipOffBg, p.chipOffText, p.chipOffStroke)
-                    }
-                )
-            }
-            spdBody.addView(spdRow)
+            populateSpeedPresetSection(spdBody, p)
         }
     }
 
@@ -1337,7 +1329,7 @@ class OverlayTuningDrawerController(
         body.addView(swRow2)
     }
 
-    // ==================== TAB 2: 系统设置 (3 Single-Open Colored Accordions) ====================
+    // ==================== TAB 2: 系统设置 (4 Single-Open Colored Accordions matching Launch App!) ====================
     private fun buildSettingsTab(p: OverlayPalette) {
         addInfoBanner(s(R.string.priority_tier_hint_settings), p)
 
@@ -1363,13 +1355,20 @@ class OverlayTuningDrawerController(
             })
         }
 
-        // Card 1 (Teal): Interaction & Core Switches (matches Launch App Settings Teal card!)
+        // Card 1 (Amber): Unified 6-Tier Swipe Speed Presets (2s..7s, matches Launch App Settings Amber card!)
+        val activeSpeed = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
+        val sSpeedSummary = "${LocaleHelper.speedLabel(lctx, activeSpeed)} · ${settings.stepDurationMs}${s(R.string.unit_ms)}"
+        addAccordionGroupCard(1, s(R.string.section_speed), sSpeedSummary, true, ACCENT_AMBER, p)?.let { spdBody ->
+            populateSpeedPresetSection(spdBody, p)
+        }
+
+        // Card 2 (Teal): Interaction & Core Switches (matches Launch App Settings Teal card!)
         val s1Summary = buildList {
             if (settings.testModeOnlyDraw) add(s(R.string.ov_preview_confirm))
             if (settings.allowDiagonalMove) add(s(R.string.ov_diag_move))
             if (settings.humanMode) add(s(R.string.mode_human_title).take(4))
         }.joinToString(" · ").ifEmpty { s(R.string.ov_card_none_set) }
-        addAccordionGroupCard(1, s(R.string.section_modes), s1Summary, settings.testModeOnlyDraw || settings.allowDiagonalMove, ACCENT_TEAL, p)?.let { swBody ->
+        addAccordionGroupCard(2, s(R.string.section_modes), s1Summary, settings.testModeOnlyDraw || settings.allowDiagonalMove, ACCENT_TEAL, p)?.let { swBody ->
             val swRow1 = hRow(bottomMarginDp = 4)
             swRow1.addView(makeToggle(s(R.string.ov_preview_confirm), settings.testModeOnlyDraw, p, weight = 1f) {
                 onUpdateSettings { it.copy(testModeOnlyDraw = !it.testModeOnlyDraw) }
@@ -1392,9 +1391,9 @@ class OverlayTuningDrawerController(
             swBody.addView(swRow2)
         }
 
-        // Card 2 (Purple): Appearance, Theme & Language (matches Launch App Settings Purple card!)
+        // Card 3 (Purple): Appearance, Theme & Language (matches Launch App Settings Purple card!)
         val s2Summary = "${LocaleHelper.themeLabel(lctx, settings.themeMode)} · ${LocaleHelper.languageLabel(lctx, settings.language)}"
-        addAccordionGroupCard(2, s(R.string.section_appearance), s2Summary, true, ACCENT_PURPLE, p)?.let { appBody ->
+        addAccordionGroupCard(3, s(R.string.section_appearance), s2Summary, true, ACCENT_PURPLE, p)?.let { appBody ->
             val themeRow = hRow(bottomMarginDp = 4)
             ThemeMode.entries.forEachIndexed { idx, tm ->
                 themeRow.addView(makeToggle(LocaleHelper.themeLabel(lctx, tm), settings.themeMode == tm, p, weight = 1f, marginEndDp = if (idx == ThemeMode.entries.lastIndex) 0 else 4) {
@@ -1411,6 +1410,67 @@ class OverlayTuningDrawerController(
             }
             appBody.addView(langRow)
         }
+    }
+
+    /**
+     * Unified 6-Tier Swipe Speed Grid (2 rows × 3 columns: 2s, 3s, 4s / 5s, 6s, 7s) + fine-tune SeekBar,
+     * shared verbatim across Tab 0 (Quick) and Tab 2 (Settings) to match Launch App Settings 1:1.
+     */
+    private fun populateSpeedPresetSection(body: LinearLayout, p: OverlayPalette) {
+        val activeSpeed = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
+        val msUnit = s(R.string.unit_ms)
+        body.addView(makeSubLabel(s(R.string.speed_desc), p))
+
+        val rows = SwipeSpeedPreset.entries.chunked(3)
+        rows.forEachIndexed { rIdx, rowPresets ->
+            val spdRow = hRow(bottomMarginDp = if (rIdx == rows.lastIndex) 4 else 4)
+            rowPresets.forEachIndexed { idx, preset ->
+                val sel = activeSpeed == preset
+                val st = p.speedStyle(preset)
+                val chip = TextView(context).apply {
+                    text = "${LocaleHelper.speedLabel(lctx, preset)}\n${preset.stepDurationMs} $msUnit"
+                    textSize = 9.5f
+                    maxLines = 2
+                    gravity = Gravity.CENTER
+                    typeface = if (sel) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    setLineSpacing(0f, 1.05f)
+                    setPadding(dp(3), dp(4), dp(3), dp(4))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginEnd = if (idx == rowPresets.lastIndex) 0 else dp(4)
+                    }
+                    setOnClickListener {
+                        onUpdateSettings { it.copy(stepDurationMs = preset.stepDurationMs) }
+                    }
+                }
+                if (sel) styleChip(chip, st.bg, st.fg, st.stroke)
+                else styleChip(chip, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+                spdRow.addView(chip)
+            }
+            body.addView(spdRow)
+        }
+
+        val fineLbl = TextView(context).apply {
+            text = "${settings.stepDurationMs} $msUnit"
+            textSize = 9.5f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(ACCENT_AMBER)
+        }
+        body.addView(fineLbl)
+        body.addView(SeekBar(context).apply {
+            max = 100 // 20ms..120ms
+            progress = (settings.stepDurationMs.toInt() - 20).coerceIn(0, 100)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(22))
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, prog: Int, fromUser: Boolean) {
+                    fineLbl.text = "${20 + prog} $msUnit"
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) = Unit
+                override fun onStopTrackingTouch(sb: SeekBar?) {
+                    val v = (20 + (sb?.progress ?: 0)).toLong().coerceIn(20L, 120L)
+                    onUpdateSettings { it.copy(stepDurationMs = v) }
+                }
+            })
+        })
     }
 
     // ==================== Visually Distinct Bordered Group Card Builders ====================
