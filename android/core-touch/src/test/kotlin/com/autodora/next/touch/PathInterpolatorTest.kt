@@ -190,4 +190,55 @@ class PathInterpolatorTest {
         assertEquals(geom.cellCenterX(2), segs.first().points[1].x, 0.5f)
         assertFalse(segs.last().willContinue)
     }
+
+    @Test
+    fun `brisk Hold-and-Replan speed packs orthogonal and diagonal steps into minimal chained segments`() {
+        val geom = BoardGeometry(leftPx = 0f, topPx = 1268f, rightPx = 1080f, bottomPx = 2168f, cols = 6, rows = 5)
+        val moves = List(26) { i ->
+            when (i % 4) {
+                0 -> Direction.RIGHT
+                1 -> Direction.DOWN_LEFT
+                2 -> Direction.UP_RIGHT
+                else -> Direction.LEFT
+            }
+        }
+        val waypoints = buildList {
+            var r = 2
+            var c = 2
+            add(CellCoord(r, c))
+            for (m in moves) {
+                r = (r + m.dr).coerceIn(0, 4)
+                c = (c + m.dc).coerceIn(0, 5)
+                add(CellCoord(r, c))
+            }
+        }
+        val sol = SolutionPath(
+            start = CellCoord(2, 2),
+            usedCharacterOrb = false,
+            characterOrbCol = 0,
+            moves = moves,
+            waypoints = waypoints,
+            stepCount = moves.size,
+            firstWaveCombo = 7,
+            totalCombo = 8,
+            firstWaveOrbs = 21,
+            totalOrbs = 24,
+            allHardConstraintsMet = true,
+            satisfiedFlags = 0,
+            failedFlags = 0,
+            score = 1000.0,
+            tag = "FastHold",
+            groups = emptyList()
+        )
+        val heldPt = ScreenPoint(geom.cellCenterX(2) + 0.5f, geom.cellCenterY(2))
+        val fastCfg = SwipeConfig(stepDurationMs = 38L, endHoldMs = 28L, maxStepsPerSegment = 18)
+        val segs = PathInterpolator.buildContinuationSegments(sol, geom, fastCfg, heldPt)
+        // 26 mixed ortho+diag steps at maxStepsPerSegment=18 => only 2 motion segments + 1 endHold = 3 segments total!
+        assertEquals("Brisk continuation must pack into 3 segments (2 motion + 1 settle)", 3, segs.size)
+        for (i in 0 until segs.lastIndex) {
+            assertTrue(segs[i].willContinue)
+            assertEquals(segs[i].points.last(), segs[i + 1].points.first())
+        }
+        assertFalse(segs.last().willContinue)
+    }
 }

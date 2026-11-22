@@ -22,6 +22,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.litert)
-    implementation(libs.mlkit.text.chinese)
     testImplementation(libs.junit)
 }

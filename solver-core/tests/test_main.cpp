@@ -1156,6 +1156,156 @@ void testCompositeMultiShieldStack() {
     require(best.simulation.firstWaveEnchantedElementsMask != 0, "must match enchanted orb");
 }
 
+// ============================================================================
+// 33. Hold-and-Replan Ultra-Fast Fixed-Start Budget & In-Worker Hard Timeout
+// ============================================================================
+void testHoldAndReplanFastBudgetAndHardTimeout() {
+    // Realistic 8C-capable 6x5 board (same distribution as Test #1)
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLWFG"
+        "LWDFGL"
+        "GWFLHW"
+        "FLDGWH",
+        6, 5
+    );
+    // Case A: Standard Hold-and-Replan real-time config (fixedStartCell, topK=1, beam=180, maxTimeMs=135)
+    RuleConfig rFast;
+    rFast.fixedStartCell = 14; // Row 2, Col 2
+    rFast.maxSteps = 28;
+    rFast.beamWidth = 180;
+    rFast.maxTimeMs = 135;
+    rFast.topK = 1;
+    rFast.allowDiagonalMove = true;
+
+    PuzzleSolver solver;
+    SolveOutput outFast = solver.solve(b, rFast);
+    require(outFast.solutions.size() == 1, "topK=1 fast mode must return exactly 1 best solution");
+    const auto& sol = outFast.solutions[0];
+    verifyPathReplay(b, rFast, sol);
+    std::cout << "       Hold-Replan Fast (2,2): " << int(sol.simulation.totalCombo)
+              << "C, steps=" << sol.metrics.stepCount
+              << ", time=" << outFast.elapsedMs << "ms, evals=" << outFast.statesEvaluated << "\n";
+    require(sol.start.row == 2 && sol.start.col == 2, "must start at exact held cell (2,2)");
+    require(sol.simulation.totalCombo >= 7, "fast fixed-start Hold-and-Replan should still find >= 7C");
+    require(outFast.elapsedMs <= 160.0, "fast Hold-and-Replan must finish promptly well inside deadline");
+
+    // Case B: Hard in-worker timeout check even under massive beamWidth=600 & maxSteps=60 with maxTimeMs=35
+    RuleConfig rTight;
+    rTight.fixedStartCell = 14;
+    rTight.maxSteps = 60;
+    rTight.beamWidth = 600;
+    rTight.maxTimeMs = 35;
+    rTight.topK = 1;
+    rTight.allowDiagonalMove = true;
+
+    SolveOutput outTight = solver.solve(b, rTight);
+    std::cout << "       Hold-Replan HardTimeout(35ms): " << int(outTight.solutions[0].simulation.totalCombo)
+              << "C, time=" << outTight.elapsedMs << "ms, timedOut=" << outTight.timedOut << "\n";
+    require(!outTight.solutions.empty(), "hard-timed-out solve must still return best solution found so far");
+    require(outTight.elapsedMs <= 90.0, "in-worker deadline check must stop promptly near 35ms budget");
+}
+
+// -----------------------------------------------------------------------------
+// 34. Ordinary Puzzle Shield Semantics & Real 5-Cell Cross Board (4-Way Orthogonal Only)
+// -----------------------------------------------------------------------------
+void testOrdinaryPuzzleShieldSingleColorAndRealCross() {
+    // Part A: Semantic check — Ordinary Puzzle Shield (strictNoExternalTouch = false)
+    // MUST REJECT clearing puzzleMask with two different colors, and MUST ACCEPT one
+    // single same-color connected Wave-1 group covering puzzleMask even with external orbs!
+    BoardState multiColor = BoardState::fromString(
+        "WWWFFF"
+        "GGLGGL"
+        "DDLDDL"
+        "HHLHHL"
+        "WWLWWL",
+        6, 5
+    );
+    // Mark a 6-cell horizontal puzzle across row 0 (3 Water + 3 Fire)
+    for (uint8_t c = 0; c < 6; ++c) multiColor.setTileFlag(0, c, TileFlagBits::Puzzle1);
+    multiColor.rebuildMasks();
+    RuleConfig rOrd;
+    rOrd.puzzle1.enabled = true;
+    rOrd.puzzle1.strictNoExternalTouch = false;
+    SimulationResult simMulti = simulateBoard(multiColor, rOrd);
+    PathMetrics dummyM{};
+    dummyM.stepCount = 1;
+    const auto evalMulti = evaluateCandidate(multiColor, simMulti, dummyM, rOrd);
+    require(!evalMulti.allHardConstraintsMet, "ordinary puzzle shield must REJECT multi-color clear across puzzleMask");
+    require((evalMulti.satisfiedFlags & ShieldStatusBits::Puzzle1) == 0, "Puzzle1 flag must NOT be set for multi-color clear");
+
+    // Same-color connected group covering a 5-cell Cross PLUS extra external same-color orbs -> MUST ACCEPT!
+    BoardState singleColorPlusExt = BoardState::fromString(
+        "FDGHFF"
+        "WLLGGG"
+        "DDGGGG"
+        "DLHHGF"
+        "GDDGGD",
+        6, 5
+    );
+    singleColorPlusExt.setTileFlag(1, 4, TileFlagBits::Puzzle1);
+    singleColorPlusExt.setTileFlag(2, 3, TileFlagBits::Puzzle1);
+    singleColorPlusExt.setTileFlag(2, 4, TileFlagBits::Puzzle1);
+    singleColorPlusExt.setTileFlag(2, 5, TileFlagBits::Puzzle1);
+    singleColorPlusExt.setTileFlag(3, 4, TileFlagBits::Puzzle1);
+    singleColorPlusExt.rebuildMasks();
+    SimulationResult simSingle = simulateBoard(singleColorPlusExt, rOrd);
+    const auto evalSingle = evaluateCandidate(singleColorPlusExt, simSingle, dummyM, rOrd);
+    require(evalSingle.allHardConstraintsMet, "ordinary puzzle shield must ACCEPT single same-color group with extra external orbs");
+    require((evalSingle.satisfiedFlags & ShieldStatusBits::Puzzle1) != 0, "Puzzle1 flag must be set");
+
+    // Part B: Exact user real-game board from screen recording with 5-cell Cross at {(1,4),(2,3),(2,4),(2,5),(3,4)}
+    // solved with allowDiagonalMove = false (strictly 4-way orthogonal moves!)
+    BoardState realBoard = BoardState::fromString(
+        "FDGHFF"
+        "WLLGWG"
+        "DDGHFG"
+        "DLHHDF"
+        "GDDGGD",
+        6, 5
+    );
+    realBoard.setTileFlag(1, 4, TileFlagBits::Puzzle1);
+    realBoard.setTileFlag(2, 3, TileFlagBits::Puzzle1);
+    realBoard.setTileFlag(2, 4, TileFlagBits::Puzzle1);
+    realBoard.setTileFlag(2, 5, TileFlagBits::Puzzle1);
+    realBoard.setTileFlag(3, 4, TileFlagBits::Puzzle1);
+
+    RuleConfig rReal;
+    rReal.allowDiagonalMove = false;
+    rReal.allowDiagonalMatch = false;
+    rReal.maxSteps = 55;
+    rReal.beamWidth = 260;
+    rReal.maxTimeMs = 800;
+    rReal.puzzle1.enabled = true;
+    rReal.puzzle1.strictNoExternalTouch = false;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(realBoard, rReal);
+    require(!out.solutions.empty(), "real cross puzzle board must produce a solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(realBoard, rReal, best);
+    std::cout << "       Real 5-Cell Cross (4-Way Ortho): met=" << best.evaluation.allHardConstraintsMet
+              << ", 1st=" << int(best.simulation.firstWaveCombo)
+              << "C, total=" << int(best.simulation.totalCombo)
+              << "C, steps=" << best.metrics.stepCount
+              << ", time=" << out.elapsedMs << "ms\n";
+    require(best.evaluation.allHardConstraintsMet, "real 5-cell cross puzzle must be satisfied in 4-way orthogonal mode");
+    require((best.evaluation.satisfiedFlags & ShieldStatusBits::Puzzle1) != 0, "Puzzle1 must be satisfied");
+    // Double-verify that Wave 1 really has ONE single same-color group covering all 5 puzzle cells!
+    const uint64_t crossMask =
+        bitOf(cellIndex(1, 4, 6)) | bitOf(cellIndex(2, 3, 6)) | bitOf(cellIndex(2, 4, 6)) |
+        bitOf(cellIndex(2, 5, 6)) | bitOf(cellIndex(3, 4, 6));
+    bool foundSingleGroup = false;
+    for (uint8_t gi = 0; gi < best.simulation.groupCount; ++gi) {
+        const auto& g = best.simulation.groups[gi];
+        if (g.wave == 1 && (g.cellMask & crossMask) == crossMask) {
+            foundSingleGroup = true;
+            break;
+        }
+    }
+    require(foundSingleGroup, "solution must contain a single same-color Wave-1 group covering the entire 5-cell Cross");
+}
+
 } // namespace
 
 int main() {
@@ -1193,6 +1343,8 @@ int main() {
     runTest("30. Special Orb Shields (Enchanted/Weakened/Char1st)", testSpecialOrbShields);
     runTest("31. Dual-Cross Specific Colors Shield (Water+Fire)", testDualCrossSpecificColors);
     runTest("32. Composite Multi-Shield Stack", testCompositeMultiShieldStack);
+    runTest("33. Hold-and-Replan Fast Fixed-Start & In-Worker Hard Timeout", testHoldAndReplanFastBudgetAndHardTimeout);
+    runTest("34. Ordinary Puzzle Shield Semantics & Real 5-Cell Cross (4-Way Ortho)", testOrdinaryPuzzleShieldSingleColorAndRealCross);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;

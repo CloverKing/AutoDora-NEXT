@@ -12,7 +12,6 @@ composeBom = "2025.01.01"
 room = "2.6.1"
 datastore = "1.1.2"
 litert = "1.0.1"
-mlkitTextChinese = "16.0.1"
 junit = "4.13.2"
 
 [libraries]
@@ -41,7 +40,6 @@ room-compiler = { group = "androidx.room", name = "room-compiler", version.ref =
 datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
-mlkit-text-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkitTextChinese" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 

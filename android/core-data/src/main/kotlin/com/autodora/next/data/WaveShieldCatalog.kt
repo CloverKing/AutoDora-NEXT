@@ -104,9 +104,6 @@ object ActiveStrategyStore {
     private val _activeChips = MutableStateFlow<List<WaveShieldChip>>(emptyList())
     val activeChips: StateFlow<List<WaveShieldChip>> = _activeChips.asStateFlow()
 
-    private val _lastOcrSummary = MutableStateFlow<String?>(null)
-    val lastOcrSummary: StateFlow<String?> = _lastOcrSummary.asStateFlow()
-
     fun toggleChip(chip: WaveShieldChip) {
         val current = _activeChips.value.toMutableList()
         val existingIdx = current.indexOfFirst { it.id == chip.id }
@@ -149,23 +146,11 @@ object ActiveStrategyStore {
         _activeChips.value = current
     }
 
-    fun applyOcrChips(chips: List<WaveShieldChip>, summary: String) {
-        // Replace prior autoDetected chips while preserving user's manual chips
-        val manual = _activeChips.value.filterNot { it.autoDetected }.toMutableList()
-        for (c in chips) {
-            manual.removeAll { it.id == c.id }
-            manual.add(c.copy(autoDetected = true))
-        }
-        _activeChips.value = manual
-        _lastOcrSummary.value = summary
-    }
-
     fun removeChip(id: String) {
         _activeChips.value = _activeChips.value.filterNot { it.id == id }
     }
 
     fun clearAll() {
         _activeChips.value = emptyList()
-        _lastOcrSummary.value = null
     }
 }

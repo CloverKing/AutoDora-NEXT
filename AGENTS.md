@@ -18,3 +18,16 @@ When asked to start or reopen the Android emulator so the user can see and inter
      ```
    - Wait until `adb wait-for-device` returns and `adb -s emulator-5554 shell getprop sys.boot_completed` equals `1`, then ensure overlay & accessibility permissions are active and launch `com.autodora.next/.MainActivity`.
 3. **Surface the sidecar pane pill** `[Android Device Hub](sidecar://android-cli-plugin/device-hub/)` so the user can also mirror/control the emulator inside Antigravity.
+
+## Versioning, Git Commit, Push & GitHub Release Workflow
+
+1. **Semantic Versioning 2.0.0 (`MAJOR.MINOR.PATCH`)** in `android/app/build.gradle.kts`:
+   - `versionName = "$appVersionMajor.$appVersionMinor.$appVersionPatch"` (e.g. `0.3.0`, `0.3.1`, `0.4.0`, `1.0.0`)
+   - `versionCode = appVersionMajor * 10000 + appVersionMinor * 100 + appVersionPatch` (e.g. `300`, `301`, `400`, `10000`)
+   - Increment `PATCH` on every bugfix release, `MINOR` on new feature milestones, `MAJOR` on breaking/GA milestones.
+2. **Commit after every verified bug fix or feature**:
+   - Run all C++20 solver tests and Android unit tests before committing.
+   - Stage only clean project files (never commit `backups/`, personal paths, or copyrighted game assets) using Conventional Commits (`fix(...):`, `feat(...):`, `chore(...):`).
+3. **Push to GitHub and publish a new GitHub Release**:
+   - Push the active branch (`dev`) and annotated tag `v<versionName>` to `origin`.
+   - Build the signed installable APK (`.\android\build-android.ps1 :app:assembleRelease`) and publish a GitHub Release via `gh release create v<versionName> <apk> --title "AutoDora-NEXT v<versionName>" --notes "..."` (use `--prerelease` while `MAJOR == 0`).

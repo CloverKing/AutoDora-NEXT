@@ -4,6 +4,7 @@ import com.autodora.next.model.BoardState
 import com.autodora.next.model.Element
 import com.autodora.next.model.HazardBits
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Flash-Reveal Memory Snapshot Tracker (先露后藏全版问号珠 / 隐藏珠记忆快照引擎).
@@ -201,9 +202,52 @@ class FlashRevealMemoryTracker(
             }
             if (unknownCount > 2) return false
             if (result.averageConfidence < minConf) return false
-            // Require >= 2 distinct matchable colors OR very high confidence single-color solid board (>= 0.85)
+            // Require >= 2 distinct matchable colors so uniform single-color enemy attack/skill flashes
+            // (e.g., bright golden hit flash) NEVER overwrite memorized question-orb snapshots with 30 fake Light orbs!
             val distinctColors = board.cells.mapNotNull { if (it.element.isMatchable) it.element else null }.toSet().size
-            return distinctColors >= 2 || result.averageConfidence >= 0.85f
+            return distinctColors >= 2
+        }
+
+        /**
+         * Lightweight check for dark full-screen/popup modals (e.g., player manually long-pressing an enemy
+         * or opening the Stage Info modal) so memorized translucent question-orb overlays never paint on top of them.
+         */
+        fun isDarkModalCoveringBoard(frame: VisionFrame): Boolean {
+            val w = frame.width
+            val h = frame.height
+            if (w < 120 || h < 200) return false
+            val x0 = (w * 0.18f).toInt()
+            val x1 = (w * 0.82f).toInt()
+            val y0 = (h * 0.41f).toInt()
+            val y1 = (h * 0.53f).toInt()
+            val stepX = max(2, (x1 - x0) / 18)
+            val stepY = max(2, (y1 - y0) / 10)
+
+            var darkNeutral = 0
+            var vividColored = 0
+            var total = 0
+            var y = y0
+            while (y <= y1) {
+                var x = x0
+                while (x <= x1) {
+                    val argb = frame.getArgb(x, y)
+                    val r = (argb ushr 16) and 0xFF
+                    val g = (argb ushr 8) and 0xFF
+                    val b = argb and 0xFF
+                    val maxC = max(r, max(g, b))
+                    val minC = min(r, min(g, b))
+                    if (maxC <= 62 && (maxC - minC) <= 24) {
+                        darkNeutral++
+                    } else if (maxC >= 120 && (maxC - minC) >= 55) {
+                        vividColored++
+                    }
+                    total++
+                    x += stepX
+                }
+                y += stepY
+            }
+            if (total == 0) return false
+            return (darkNeutral.toFloat() / total) >= 0.58f && (vividColored.toFloat() / total) <= 0.08f
         }
     }
 }

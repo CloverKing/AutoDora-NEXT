@@ -6,6 +6,17 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// Semantic Versioning 2.0.0 (MAJOR.MINOR.PATCH)
+//  - MAJOR: architectural milestone (0 = pre-1.0 active development, 1+ = stable GA)
+//  - MINOR: new feature phase / significant capability addition
+//  - PATCH: bug fixes, vision/solver calibration, and stability improvements
+// Android versionCode formula: MAJOR * 10000 + MINOR * 100 + PATCH (e.g. 0.3.0 -> 300, 0.3.1 -> 301, 1.0.0 -> 10000)
+val appVersionMajor = 0
+val appVersionMinor = 3
+val appVersionPatch = 0
+val appVersionCode = appVersionMajor * 10000 + appVersionMinor * 100 + appVersionPatch
+val appVersionName = "$appVersionMajor.$appVersionMinor.$appVersionPatch"
+
 android {
     namespace = "com.autodora.next"
     compileSdk = 35
@@ -16,8 +27,18 @@ android {
         applicationId = "com.autodora.next"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-alpha"
+        versionCode = appVersionCode
+        versionName = appVersionName
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            // Sign with debug key by default so GitHub Release APKs install & upgrade seamlessly on test devices
+            // until a dedicated release keystore is supplied via AUTODORA_KEYSTORE_PATH.
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 
     buildFeatures {
@@ -33,6 +54,10 @@ android {
     kotlinOptions {
         jvmTarget = "21"
     }
+}
+
+base {
+    archivesName.set("AutoDora-NEXT-v$appVersionName")
 }
 
 dependencies {

@@ -5,7 +5,10 @@
 #include <bit>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
+#include <functional>
+#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -194,6 +197,89 @@ bool isDistinctSolution(const SolutionPath& a, const SolutionPath& b) {
     return diffs >= 3;
 }
 
+// Reusable per-solve worker pool: spawns OS threads at most ONCE per solve() instead of per depth!
+struct SolveThreadPool {
+    uint32_t maxWorkers = 1;
+    std::vector<std::thread> threads;
+    std::mutex mtx;
+    std::condition_variable cvStart;
+    std::condition_variable cvDone;
+    std::function<void(uint32_t)> task;
+    uint32_t activeWorkers = 0;
+    uint32_t remaining = 0;
+    uint64_t generation = 0;
+    bool stop = false;
+    bool started = false;
+
+    explicit SolveThreadPool(uint32_t count) : maxWorkers(count) {}
+
+    void ensureStarted() {
+        if (started || maxWorkers <= 1) return;
+        started = true;
+        threads.reserve(maxWorkers - 1);
+        for (uint32_t tid = 1; tid < maxWorkers; ++tid) {
+            threads.emplace_back([this, tid]() {
+                uint64_t seenGen = 0;
+                while (true) {
+                    std::function<void(uint32_t)> fn;
+                    {
+                        std::unique_lock<std::mutex> lock(mtx);
+                        cvStart.wait(lock, [&]() { return stop || generation != seenGen; });
+                        if (stop) return;
+                        seenGen = generation;
+                        if (tid >= activeWorkers) continue;
+                        fn = task;
+                    }
+                    fn(tid);
+                    {
+                        std::lock_guard<std::mutex> lock(mtx);
+                        if (--remaining == 0) {
+                            cvDone.notify_one();
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    ~SolveThreadPool() {
+        if (threads.empty()) return;
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            stop = true;
+            generation++;
+        }
+        cvStart.notify_all();
+        for (auto& th : threads) {
+            if (th.joinable()) th.join();
+        }
+    }
+
+    template <typename Fn>
+    void run(uint32_t workers, Fn&& fn) {
+        if (workers <= 1 || maxWorkers <= 1) {
+            fn(0);
+            return;
+        }
+        ensureStarted();
+        const uint32_t clamped = std::min<uint32_t>(workers, maxWorkers);
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            task = std::ref(fn);
+            activeWorkers = clamped;
+            remaining = clamped - 1;
+            generation++;
+        }
+        cvStart.notify_all();
+        fn(0);
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            cvDone.wait(lock, [&]() { return remaining == 0; });
+            task = nullptr;
+        }
+    }
+};
+
 } // namespace
 
 SolveOutput PuzzleSolver::solve(
@@ -214,18 +300,21 @@ SolveOutput PuzzleSolver::solve(
     const uint8_t totalCells = baseBoard.cellCount();
     const uint8_t dirCount = rules.allowDiagonalMove ? 8 : 4;
     const uint16_t maxSteps = std::min<uint16_t>(rules.maxSteps, kMaxMoveSteps);
-    // Scale effective beam width safely while staying well inside maxTimeMs budget
-    const uint32_t beamWidth = std::clamp<uint32_t>(rules.beamWidth * 2, 32, 2400);
+    // For single fixed-start solves (Hold-and-Replan), keep exact beamWidth (no 2x bloat for 30-cell diversity)
+    // so the solver reaches deep high-combo solutions within a tight ~100-175ms real-time budget!
+    const uint32_t beamWidth = (rules.fixedStartCell >= 0)
+        ? std::clamp<uint32_t>(rules.beamWidth, 24, 800)
+        : std::clamp<uint32_t>(rules.beamWidth * 2, 32, 2400);
     const auto& zt = zobrist();
+    const bool hasTimeBudget = (rules.maxTimeMs > 0);
+    const auto deadline = tStart + std::chrono::milliseconds(rules.maxTimeMs);
 
     auto isCancelled = [&]() -> bool {
         return cancelFlag != nullptr && cancelFlag->load(std::memory_order_relaxed);
     };
     auto isTimedOut = [&]() -> bool {
-        if (rules.maxTimeMs == 0) return false;
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - tStart).count();
-        return elapsed >= static_cast<long long>(rules.maxTimeMs);
+        if (!hasTimeBudget) return false;
+        return std::chrono::steady_clock::now() >= deadline;
     };
 
     // Build initial frontier (Step 0)
@@ -308,7 +397,7 @@ SolveOutput PuzzleSolver::solve(
     }
 
     std::vector<SearchNode> bestPool;
-    const size_t poolLimit = std::max<size_t>(rules.topK * 8, 32);
+    const size_t poolLimit = (rules.topK <= 1) ? 4 : std::max<size_t>(rules.topK * 8, 32);
     auto recordCandidate = [&](const SearchNode& node) {
         if (bestPool.size() < poolLimit) {
             bestPool.push_back(node);
@@ -345,6 +434,7 @@ SolveOutput PuzzleSolver::solve(
     uint32_t hwThreads = std::thread::hardware_concurrency();
     if (hwThreads == 0) hwThreads = 4;
     const uint32_t threadCount = (rules.numThreads > 0) ? rules.numThreads : std::min<uint32_t>(hwThreads, 6);
+    SolveThreadPool workerPool(threadCount);
 
     std::unordered_set<uint64_t> globalVisited;
     globalVisited.reserve(static_cast<size_t>(beamWidth) * std::min<uint16_t>(maxSteps, 36));
@@ -352,19 +442,21 @@ SolveOutput PuzzleSolver::solve(
         globalVisited.insert(n.stateHash);
     }
 
+    std::atomic<bool> timedOutFlag{false};
+
     for (uint16_t depth = 1; depth <= maxSteps && !frontier.empty() && !foundGoalEarly; ++depth) {
         if (isCancelled()) {
             out.interrupted = true;
             break;
         }
-        if (isTimedOut()) {
+        if (timedOutFlag.load(std::memory_order_relaxed) || isTimedOut()) {
             out.timedOut = true;
             break;
         }
 
         const size_t fSize = frontier.size();
-        const uint32_t workers = (fSize >= 16 && threadCount > 1)
-            ? std::min<uint32_t>(threadCount, static_cast<uint32_t>(fSize / 8))
+        const uint32_t workers = (fSize >= 24 && threadCount > 1)
+            ? std::min<uint32_t>(threadCount, static_cast<uint32_t>(fSize / 12))
             : 1;
 
         std::vector<std::vector<SearchNode>> threadCandidates(workers);
@@ -379,7 +471,16 @@ SolveOutput PuzzleSolver::solve(
             localOut.reserve((endIdx - beginIdx) * 5);
 
             for (size_t fi = beginIdx; fi < endIdx; ++fi) {
-                if (isCancelled() || earlyGoalFlag.load(std::memory_order_relaxed)) break;
+                if (isCancelled() ||
+                    earlyGoalFlag.load(std::memory_order_relaxed) ||
+                    timedOutFlag.load(std::memory_order_relaxed)) {
+                    break;
+                }
+                // Check hard deadline inside worker loop every 8 frontier parents (~2-5ms precision!)
+                if (hasTimeBudget && ((fi - beginIdx) & 7u) == 7u && isTimedOut()) {
+                    timedOutFlag.store(true, std::memory_order_relaxed);
+                    break;
+                }
                 const SearchNode& parent = frontier[fi];
                 if (parent.endedOnSticky) continue;
 
@@ -499,16 +600,7 @@ SolveOutput PuzzleSolver::solve(
             }
         };
 
-        if (workers == 1) {
-            workerFn(0);
-        } else {
-            std::vector<std::thread> pool;
-            pool.reserve(workers);
-            for (uint32_t t = 0; t < workers; ++t) {
-                pool.emplace_back(workerFn, t);
-            }
-            for (auto& th : pool) th.join();
-        }
+        workerPool.run(workers, workerFn);
 
         size_t totalCand = 0;
         for (uint32_t t = 0; t < workers; ++t) {
@@ -516,7 +608,10 @@ SolveOutput PuzzleSolver::solve(
             out.statesEvaluated += threadEvaluated[t];
             totalCand += threadCandidates[t].size();
         }
-        if (totalCand == 0) break;
+        if (totalCand == 0) {
+            if (timedOutFlag.load(std::memory_order_relaxed)) out.timedOut = true;
+            break;
+        }
 
         // Index sort instead of copying full SearchNode structs during std::sort!
         struct CandRef {
@@ -594,9 +689,32 @@ SolveOutput PuzzleSolver::solve(
         }
 
         frontier = std::move(nextFrontier);
+        if (timedOutFlag.load(std::memory_order_relaxed)) {
+            out.timedOut = true;
+            break;
+        }
     }
 
-    // Build diverse Top-K solutions
+    // Build diverse Top-K solutions (fast 1-candidate path when topK == 1 during Hold-and-Replan!)
+    const uint32_t targetK = std::max<uint32_t>(1, rules.topK);
+    if (targetK == 1 && !bestPool.empty()) {
+        const SearchNode* bestNode = &bestPool[0];
+        for (size_t i = 1; i < bestPool.size(); ++i) {
+            const auto& cand = bestPool[i];
+            if (cand.allHardMet != bestNode->allHardMet) {
+                if (cand.allHardMet) bestNode = &cand;
+            } else if (cand.beamScore > bestNode->beamScore) {
+                bestNode = &cand;
+            }
+        }
+        SolutionPath sp = buildSolutionPath(*bestNode, rules, "");
+        sp.tag = sp.evaluation.allHardConstraintsMet ? "最佳解 (全盾达成)" : "当前最优解";
+        out.solutions.push_back(std::move(sp));
+        out.elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - tStart).count();
+        return out;
+    }
+
     std::vector<SolutionPath> fullCandidates;
     fullCandidates.reserve(bestPool.size());
     for (const auto& n : bestPool) {
@@ -610,7 +728,6 @@ SolveOutput PuzzleSolver::solve(
         return a.evaluation.totalScore > b.evaluation.totalScore;
     });
 
-    const uint32_t targetK = std::max<uint32_t>(1, rules.topK);
     if (!fullCandidates.empty()) {
         fullCandidates[0].tag = fullCandidates[0].evaluation.allHardConstraintsMet ? "最佳解 (全盾达成)" : "当前最优解";
         out.solutions.push_back(fullCandidates[0]);

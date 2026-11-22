@@ -34,3 +34,6 @@ ml/checkpoints/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Local backups (archived OCR datasets, extracted game icons, raw screenshots)
+backups/

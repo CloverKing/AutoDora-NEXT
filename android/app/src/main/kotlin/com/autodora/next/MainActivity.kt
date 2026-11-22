@@ -33,7 +33,6 @@ import com.autodora.next.ui.AutoDoraTheme
 import com.autodora.next.ui.DashboardScreen
 import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.PermissionHealthState
-import com.autodora.next.vision.EnemySkillOcrEngine
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -44,7 +43,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var teamPresetRepository: TeamPresetRepository
-    @Inject lateinit var enemySkillOcrEngine: EnemySkillOcrEngine
 
     private val overlayGrantedState = MutableStateFlow(false)
     private val notificationsGrantedState = MutableStateFlow(true)
@@ -97,7 +95,6 @@ class MainActivity : ComponentActivity() {
                     val overlayRunning by OverlayServiceState.isRunning.collectAsState()
                     val presets by teamPresetRepository.observePresets().collectAsState(initial = emptyList())
                     val activeWaveChips by ActiveStrategyStore.activeChips.collectAsState()
-                    val ocrSummary by ActiveStrategyStore.lastOcrSummary.collectAsState()
                     val benchReport by benchmarkReportState.collectAsState()
                     val isBench by isBenchmarkingState.collectAsState()
 
@@ -112,7 +109,6 @@ class MainActivity : ComponentActivity() {
                         settings = settings,
                         presets = presets,
                         activeWaveChips = activeWaveChips,
-                        lastOcrSummary = ocrSummary,
                         benchmarkReport = benchReport,
                         isBenchmarking = isBench,
                         onRequestOverlay = { requestOverlayPermission() },
@@ -165,26 +161,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
-                        onClearWaveChips = { ActiveStrategyStore.clearAll() },
-                        onParseSkillText = { text ->
-                            val parsed = enemySkillOcrEngine.parseText(text)
-                            val ctx = lctx()
-                            if (parsed.chips.isEmpty()) {
-                                Toast.makeText(this@MainActivity, ctx.getString(R.string.toast_ocr_none), Toast.LENGTH_SHORT).show()
-                            } else {
-                                val labels = parsed.chips.joinToString(" · ") { it.label }
-                                ActiveStrategyStore.applyOcrChips(
-                                    parsed.chips,
-                                    ctx.getString(R.string.ocr_text_applied_fmt, labels)
-                                )
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    ctx.getString(R.string.toast_ocr_imported, parsed.chips.size),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                            parsed.chips
-                        }
+                        onClearWaveChips = { ActiveStrategyStore.clearAll() }
                     )
                 }
             }

@@ -43,8 +43,27 @@ class RuleComposerTest {
         assertEquals(MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE, composed.elementRules[Element.DARK.code].timing)
         assertEquals(2, composed.crossShield.requiredCount)
 
-        // Cooperative high-difficulty auto-boost activated
-        assertTrue(composed.allowDiagonalMove)
+        // Cooperative high-difficulty auto-boost activated WITHOUT silently overriding allowDiagonalMove=false!
+        assertFalse("Must strictly preserve user allowDiagonalMove=false even on high-difficulty shields", composed.allowDiagonalMove)
+        assertTrue(composed.beamWidth >= 260)
+        assertTrue(composed.maxTimeMs >= 800)
+    }
+
+    @Test
+    fun `compose strictly preserves allowDiagonalMove false for puzzle shields`() {
+        val base = TeamBasePreset(
+            id = "no_diag",
+            name = "Orthogonal Only",
+            baseConfig = RuleConfig(allowDiagonalMove = false, allowDiagonalMatch = false)
+        )
+        val chips = listOf(
+            WaveShieldChip("puzzle_shield", "普通拼图", ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 0)
+        )
+        val composed = RuleComposer.compose(base, chips)
+        assertTrue(composed.puzzle1.enabled)
+        assertFalse(composed.puzzle1.strictNoExternalTouch)
+        assertFalse("Puzzle shield must never silently enable 8-way diagonal moves", composed.allowDiagonalMove)
+        assertFalse("Puzzle shield must never silently enable diagonal matching", composed.allowDiagonalMatch)
         assertTrue(composed.beamWidth >= 260)
     }
 

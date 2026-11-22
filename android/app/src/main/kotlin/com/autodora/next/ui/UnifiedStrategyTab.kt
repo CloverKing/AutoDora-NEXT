@@ -34,8 +34,7 @@ import java.util.UUID
  * Unified Strategy & Enemy-Shield Workbench (统一策略面板):
  *  - Replaces the separate Strategy List tab & Shields tab with ONE cohesive, deduplicated configuration page.
  *  - Top compact Preset Bar supports Load / Manage, Save, and Save As (named presets).
- *  - Enemy skill recognition (187 official battle icons + auto long-press enemy cards) automatically lights up
- *    and activates matching options & parameters right inside the 7 grouped cards below.
+ *  - Organizes all team & shield parameters cleanly into 6 grouped cards below.
  */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -43,7 +42,6 @@ internal fun UnifiedStrategyTab(
     settings: AppSettings,
     presets: List<TeamPresetRecord>,
     activeWaveChips: List<WaveShieldChip>,
-    lastOcrSummary: String?,
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onSelectPreset: (String) -> Unit,
     onSavePreset: (TeamBasePreset, Boolean) -> Unit,
@@ -52,7 +50,6 @@ internal fun UnifiedStrategyTab(
     onDeletePreset: (String) -> Unit,
     onToggleWaveChip: (WaveShieldChip) -> Unit,
     onClearWaveChips: () -> Unit,
-    onParseSkillText: (String) -> List<WaveShieldChip>,
     onShowHelp: (String, String) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -71,8 +68,6 @@ internal fun UnifiedStrategyTab(
 
     var showPresetManager by remember { mutableStateOf(false) }
     var showSaveAsDialog by remember { mutableStateOf(false) }
-    var showRuleTester by remember { mutableStateOf(false) }
-    var testSkillText by remember { mutableStateOf("") }
 
     var stepsText by remember(activePreset.id) { mutableStateOf(cfg.maxSteps.toString()) }
     LaunchedEffect(cfg.maxSteps) {
@@ -267,8 +262,8 @@ internal fun UnifiedStrategyTab(
             }
         }
 
-        // ==================== Active Enemy Auto-Match Banner ====================
-        if (activeWaveChips.isNotEmpty() || !lastOcrSummary.isNullOrBlank()) {
+        // ==================== Active Wave Shields Banner ====================
+        if (activeWaveChips.isNotEmpty()) {
             ElevatedCard(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.elevatedCardColors(
@@ -290,48 +285,37 @@ internal fun UnifiedStrategyTab(
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        if (activeWaveChips.isNotEmpty()) {
-                            TextButton(
-                                onClick = onClearWaveChips,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Text(
-                                    stringResource(R.string.unified_enemy_banner_clear),
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
-                        }
-                    }
-                    if (activeWaveChips.isNotEmpty()) {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        TextButton(
+                            onClick = onClearWaveChips,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp)
                         ) {
-                            for (chip in activeWaveChips) {
-                                InputChip(
-                                    selected = true,
-                                    onClick = { onToggleWaveChip(chip) },
-                                    label = {
-                                        Text(
-                                            LocaleHelper.formatWaveChipLabel(ctx, chip),
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    },
-                                    trailingIcon = {
-                                        Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    }
-                                )
-                            }
+                            Text(
+                                stringResource(R.string.unified_enemy_banner_clear),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelMedium
+                            )
                         }
                     }
-                    if (!lastOcrSummary.isNullOrBlank()) {
-                        Text(
-                            text = lastOcrSummary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        for (chip in activeWaveChips) {
+                            InputChip(
+                                selected = true,
+                                onClick = { onToggleWaveChip(chip) },
+                                label = {
+                                    Text(
+                                        LocaleHelper.formatWaveChipLabel(ctx, chip),
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                },
+                                trailingIcon = {
+                                    Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -1525,90 +1509,6 @@ internal fun UnifiedStrategyTab(
                 CompactSwitchLine(stringResource(R.string.switch_diag_match), cfg.allowDiagonalMatch) { v -> updateCfg { it.copy(allowDiagonalMatch = v) } }
                 CompactSwitchLine(stringResource(R.string.switch_prefer_ench), cfg.preferEnchanted) { v -> updateCfg { it.copy(preferEnchanted = v) } }
                 CompactSwitchLine(stringResource(R.string.switch_prefer_race), cfg.preferRace) { v -> updateCfg { it.copy(preferRace = v) } }
-            }
-        }
-
-        // ==================== Group 7: Auto Enemy Skill Detection & Skill Text Tester ====================
-        SectionHeaderWithHelp(
-            text = stringResource(R.string.unified_group_auto_skill),
-            onHelp = {
-                onShowHelp(
-                    ctx.getString(R.string.help_auto_skill_title),
-                    ctx.getString(R.string.help_auto_skill_body)
-                )
-            }
-        )
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                SwitchSettingRow(
-                    title = stringResource(R.string.auto_skill_title),
-                    subtitle = stringResource(R.string.auto_skill_sub),
-                    checked = settings.autoEnemySkillEnabled,
-                    onCheckedChange = { v -> onUpdateSettings { it.copy(autoEnemySkillEnabled = v) } }
-                )
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    EnemySkillScanMode.entries.forEachIndexed { idx, mode ->
-                        SegmentedButton(
-                            selected = settings.enemySkillScanMode == mode,
-                            onClick = { onUpdateSettings { it.copy(enemySkillScanMode = mode) } },
-                            shape = SegmentedButtonDefaults.itemShape(idx, EnemySkillScanMode.entries.size)
-                        ) {
-                            Text(LocaleHelper.scanModeLabel(ctx, mode), style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                        }
-                    }
-                }
-                Text(
-                    text = LocaleHelper.scanModeDesc(ctx, settings.enemySkillScanMode),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.section_rule_tester),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    TextButton(onClick = { showRuleTester = !showRuleTester }) {
-                        Text(stringResource(if (showRuleTester) R.string.action_collapse else R.string.action_expand))
-                    }
-                }
-                AnimatedVisibility(visible = showRuleTester) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = testSkillText,
-                            onValueChange = { testSkillText = it },
-                            label = { Text(stringResource(R.string.rule_tester_hint)) },
-                            minLines = 2,
-                            maxLines = 4,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedButton(
-                                onClick = { testSkillText = ctx.getString(R.string.rule_tester_sample_text) },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(stringResource(R.string.btn_sample), style = MaterialTheme.typography.labelMedium)
-                            }
-                            Spacer(Modifier.weight(1f))
-                            Button(
-                                onClick = { if (testSkillText.isNotBlank()) onParseSkillText(testSkillText) },
-                                enabled = testSkillText.isNotBlank()
-                            ) {
-                                Text(stringResource(R.string.btn_parse_import))
-                            }
-                        }
-                    }
-                }
             }
         }
 

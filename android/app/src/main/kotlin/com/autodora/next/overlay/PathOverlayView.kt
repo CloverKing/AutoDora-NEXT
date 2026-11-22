@@ -61,7 +61,12 @@ class PathOverlayView(context: Context) : View(context) {
     private val puzzlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 7f
-        color = Color.argb(220, 255, 215, 40)
+        color = Color.argb(235, 255, 215, 40)
+    }
+    private val puzzle2Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 7f
+        color = Color.argb(235, 64, 224, 255)
     }
     private val lowConfPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -405,7 +410,14 @@ class PathOverlayView(context: Context) : View(context) {
                 val bottom = top + g.cellHeight
 
                 if ((flags and TileFlagBits.PUZZLE_1) != 0) {
+                    fillPaint.color = Color.argb(42, 255, 215, 40)
+                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, fillPaint)
                     canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, puzzlePaint)
+                }
+                if ((flags and TileFlagBits.PUZZLE_2) != 0) {
+                    fillPaint.color = Color.argb(40, 64, 224, 255)
+                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, fillPaint)
+                    canvas.drawRect(left + 4f, top + 4f, right - 4f, bottom - 4f, puzzle2Paint)
                 }
                 if ((flags and TileFlagBits.STORM) != 0) {
                     fillPaint.color = Color.argb(82, 120, 144, 156)

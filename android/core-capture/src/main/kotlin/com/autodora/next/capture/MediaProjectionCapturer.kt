@@ -143,6 +143,73 @@ class MediaProjectionCapturer(
         }
     }
 
+    override suspend fun captureBandBitmap(yStart: Int, yEnd: Int): BandBitmap? = withContext(Dispatchers.Default) {
+        if (!_isReady.value) return@withContext null
+
+        var retries = 0
+        while (retries < 10 && _isReady.value) {
+            val hasFrame = synchronized(imageLock) { latestImage != null }
+            if (hasFrame) break
+            delay(16)
+            retries++
+        }
+
+        synchronized(imageLock) {
+            try {
+                val fresher = imageReader?.acquireLatestImage()
+                if (fresher != null) {
+                    latestImage?.close()
+                    latestImage = fresher
+                }
+            } catch (_: Exception) {
+            }
+
+            val img = latestImage ?: return@synchronized null
+            return@synchronized imageToBandBitmap(img, yStart, yEnd)
+        }
+    }
+
+    private fun imageToBandBitmap(image: Image, yStart: Int, yEnd: Int): BandBitmap? {
+        return try {
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * screenWidth
+            val paddedWidth = screenWidth + rowPadding / pixelStride
+
+            val safeY0 = yStart.coerceIn(0, (screenHeight - 1).coerceAtLeast(0))
+            var safeY1 = yEnd.coerceIn(safeY0 + 1, screenHeight)
+            var cropH = safeY1 - safeY0
+            var neededBytes = cropH * rowStride
+
+            // On some Qualcomm GPU buffers the final row omits trailing rowStride padding; trim 1px if needed
+            if (safeY0 * rowStride + neededBytes > buffer.capacity() && cropH > 2) {
+                safeY1 -= 1
+                cropH = safeY1 - safeY0
+                neededBytes = cropH * rowStride
+            }
+
+            if (cropH <= 0 || safeY0 * rowStride + neededBytes > buffer.capacity()) {
+                val full = imageToBitmap(image) ?: return null
+                return BandBitmap(full, screenWidth, screenHeight, 0)
+            }
+
+            val dup = buffer.duplicate()
+            dup.position(safeY0 * rowStride)
+            dup.limit(safeY0 * rowStride + neededBytes)
+            val slice = dup.slice()
+
+            val bandBmp = Bitmap.createBitmap(paddedWidth, cropH, Bitmap.Config.ARGB_8888)
+            bandBmp.copyPixelsFromBuffer(slice)
+            BandBitmap(bandBmp, screenWidth, screenHeight, safeY0)
+        } catch (e: Exception) {
+            Log.e(TAG, "imageToBandBitmap error, falling back to full frame", e)
+            val full = imageToBitmap(image) ?: return null
+            BandBitmap(full, screenWidth, screenHeight, 0)
+        }
+    }
+
     private fun imageToBitmap(image: Image): Bitmap? {
         return try {
             val plane = image.planes[0]

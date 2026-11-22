@@ -28,4 +28,11 @@ data class RecognitionResult(
 interface BoardRecognizer {
     val name: String
     suspend fun recognize(frames: List<Bitmap>, geometry: BoardGeometry): RecognitionResult
+    suspend fun recognizeBand(
+        bandBitmap: Bitmap,
+        fullWidth: Int,
+        fullHeight: Int,
+        yOffset: Int,
+        geometry: BoardGeometry
+    ): RecognitionResult = recognize(listOf(bandBitmap), geometry)
 }

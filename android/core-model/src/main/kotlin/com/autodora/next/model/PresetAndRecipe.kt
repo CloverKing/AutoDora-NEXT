@@ -399,10 +399,10 @@ object RuleComposer {
             }
         }
 
-        // Cooperative auto-tuning for hard composite shields
+        // Cooperative auto-tuning for hard composite shields:
+        // Strictly preserve user's allowDiagonalMove choice (never force 8-way diagonals when disabled!).
         if (highDifficultyShield) {
             cfg = cfg.copy(
-                allowDiagonalMove = true,
                 beamWidth = maxOf(cfg.beamWidth, 260),
                 maxTimeMs = maxOf(cfg.maxTimeMs, 800)
             )

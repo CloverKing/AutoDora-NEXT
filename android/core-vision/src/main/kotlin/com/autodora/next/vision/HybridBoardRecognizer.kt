@@ -37,4 +37,14 @@ class HybridBoardRecognizer(
         // Phase 4 wires CompiledModel / Interpreter batch=[cols*rows, 64, 64, 3] inference here.
         return cvFallback.recognize(frames, geometry)
     }
+
+    override suspend fun recognizeBand(
+        bandBitmap: Bitmap,
+        fullWidth: Int,
+        fullHeight: Int,
+        yOffset: Int,
+        geometry: BoardGeometry
+    ): RecognitionResult {
+        return cvFallback.recognizeBand(bandBitmap, fullWidth, fullHeight, yOffset, geometry)
+    }
 }

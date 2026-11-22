@@ -387,4 +387,186 @@ class CvBoardRecognizerTest {
         }
         assertEquals("Storm board must have zero false question orbs", 0, rec.questionOrbsDetected)
     }
+
+    @Test
+    fun `always-on memory tracker returns NeedHoldAndNudgeReveal when entering directly onto full-question board`() {
+        val tracker = FlashRevealMemoryTracker()
+        val fullQuestion = BoardState(
+            cols = 6,
+            rows = 5,
+            cells = List(30) { CellState(Element.HIDDEN, hazards = HazardBits.QUESTION, confidence = 0.25f) }
+        )
+        val liveRec = RecognitionResult(
+            board = fullQuestion,
+            averageConfidence = 0.25f,
+            lowConfidenceIndices = (0 until 30).toList(),
+            puzzleCellsDetected = 0,
+            engineName = "test",
+            elapsedMs = 1.0,
+            questionOrbsDetected = 30
+        )
+        val res = tracker.resolveForSolve(liveRec, nowMs = 10_000L)
+        assertTrue(
+            "Direct full-question board with no prior snapshot must request NeedHoldAndNudgeReveal",
+            res is FlashRevealMemoryTracker.MemoryResolution.NeedHoldAndNudgeReveal
+        )
+    }
+
+    @Test
+    fun `dark modal check detects dark enemy popup and rejects bright battle frame`() {
+        val darkModal = object : VisionFrame {
+            override val width = 360
+            override val height = 800
+            override fun getArgb(x: Int, y: Int): Int = 0xFF141416.toInt()
+        }
+        assertTrue(
+            "Dark charcoal modal must be detected by isDarkModalCoveringBoard",
+            FlashRevealMemoryTracker.isDarkModalCoveringBoard(darkModal)
+        )
+
+        val brightBattle = object : VisionFrame {
+            override val width = 360
+            override val height = 800
+            override fun getArgb(x: Int, y: Int): Int = 0xFF33AA44.toInt()
+        }
+        assertFalse(
+            "Vivid battle frame must NOT trigger isDarkModalCoveringBoard",
+            FlashRevealMemoryTracker.isDarkModalCoveringBoard(brightBattle)
+        )
+    }
+
+    private fun drawPerimeterSilverFiligree(
+        frame: SyntheticBoardFrame,
+        cols: Int,
+        rows: Int,
+        cell: Int,
+        puzzleSet: Set<Pair<Int, Int>>,
+        barArgb: Int = 0xFFD2CEC4.toInt() // Real ToS pale metallic silver-ivory filigree
+    ) {
+        val halfThick = 2
+        // Draw ONLY exterior boundary seams of puzzleSet (interior seams stay open & dark, exactly like real ToS!)
+        for (r in 0..rows) {
+            for (c in 0 until cols) {
+                val up = (r - 1 to c) in puzzleSet
+                val dn = (r to c) in puzzleSet
+                if (up != dn) {
+                    val yBase = (r * cell).coerceIn(halfThick, frame.height - 1 - halfThick)
+                    val yStart = if (r == 0) 1 else if (r == rows) frame.height - 4 else yBase - halfThick
+                    val yEnd = if (r == 0) 4 else if (r == rows) frame.height - 2 else yBase + halfThick
+                    for (y in yStart..yEnd) {
+                        for (x in (c * cell + 3) until ((c + 1) * cell - 3)) {
+                            frame.pixels[y.coerceIn(0, frame.height - 1) * frame.width + x.coerceIn(0, frame.width - 1)] = barArgb
+                        }
+                    }
+                }
+            }
+        }
+        for (r in 0 until rows) {
+            for (c in 0..cols) {
+                val lt = (r to c - 1) in puzzleSet
+                val rt = (r to c) in puzzleSet
+                if (lt != rt) {
+                    val xBase = (c * cell).coerceIn(halfThick, frame.width - 1 - halfThick)
+                    val xStart = if (c == 0) 1 else if (c == cols) frame.width - 4 else xBase - halfThick
+                    val xEnd = if (c == 0) 4 else if (c == cols) frame.width - 2 else xBase + halfThick
+                    for (x in xStart..xEnd) {
+                        for (y in (r * cell + 3) until ((r + 1) * cell - 3)) {
+                            frame.pixels[y.coerceIn(0, frame.height - 1) * frame.width + x.coerceIn(0, frame.width - 1)] = barArgb
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `detects modern silver-ivory perimeter-polygon puzzles including interior cells and hollow rings`() {
+        val cell = 84
+        val cols = 6
+        val rows = 5
+        val palette = mapOf(
+            Element.WATER to 0xFF1E9CFF.toInt(),
+            Element.FIRE to 0xFFFF3020.toInt(),
+            Element.WOOD to 0xFF2EC840.toInt(),
+            Element.LIGHT to 0xFFFFDF20.toInt(),
+            Element.DARK to 0xFF8C32E6.toInt(),
+            Element.HEART to 0xFFFF5CA8.toInt()
+        )
+        val geom = BoardGeometry(0f, 0f, (cols * cell).toFloat(), (rows * cell).toFloat(), cols, rows)
+        val recognizer = CvBoardRecognizer()
+
+        val testShapes = listOf(
+            "5-Cell Cross touching right edge" to setOf(1 to 4, 2 to 3, 2 to 4, 2 to 5, 3 to 4),
+            "3x3 Solid Square with open center" to (1..3).flatMap { r -> (2..4).map { c -> r to c } }.toSet(),
+            "3x3 Hollow O-Ring (center must stay excluded)" to ((1..3).flatMap { r -> (2..4).map { c -> r to c } }.toSet() - (2 to 3))
+        )
+
+        for ((label, expectedSet) in testShapes) {
+            val frame = SyntheticBoardFrame(cols * cell, rows * cell)
+            for (r in 0 until rows) {
+                for (c in 0 until cols) {
+                    val el = Element.MATCHABLE[(r * cols + c) % 6]
+                    frame.drawCell(c * cell, r * cell, cell, palette.getValue(el))
+                }
+            }
+            drawPerimeterSilverFiligree(frame, cols, rows, cell, expectedSet)
+
+            val rec = recognizer.recognizeFrames(listOf(frame), geom)
+            val detectedSet = (0 until cols * rows)
+                .filter { (rec.board.tileFlags[it] and TileFlagBits.PUZZLE_1) != 0 }
+                .map { (it / cols) to (it % cols) }
+                .toSet()
+            assertEquals("$label exact cells mismatch", expectedSet, detectedSet)
+            assertEquals("$label count mismatch", expectedSet.size, rec.puzzleCellsDetected)
+        }
+
+        // Solid bright-white app UI screen must produce ZERO false-positive puzzle flags
+        val whiteUi = object : VisionFrame {
+            override val width = cols * cell
+            override val height = rows * cell
+            override fun getArgb(x: Int, y: Int): Int = 0xFFF7F7F7.toInt()
+        }
+        val uiRec = recognizer.recognizeFrames(listOf(whiteUi), geom)
+        assertEquals("White UI screen must never produce false puzzle cells", 0, uiRec.puzzleCellsDetected)
+    }
+
+    @Test
+    fun `real ToS silver-filigree cross puzzle frames detect exact 5 cells with zero false positives on clean boards`() {
+        val recognizer = CvBoardRecognizer()
+        val expectedCross = setOf(1 to 4, 2 to 3, 2 to 4, 2 to 5, 3 to 4)
+
+        fun autoBaseGeom(w: Int, h: Int): BoardGeometry {
+            val gameH = w * (16f / 9f)
+            val letterbox = ((h - gameH) * 0.5f).coerceAtLeast(0f)
+            val bottomPx = (h - letterbox + gameH * 0.004f).coerceAtMost(h.toFloat())
+            val cell = w / 6f
+            val bottom = bottomPx.coerceIn(cell * 5f, h.toFloat())
+            val top = (bottom - cell * 5f).coerceAtLeast(0f)
+            return BoardGeometry(0f, top, w.toFloat(), bottom, 6, 5)
+        }
+
+        for (name in listOf("t_100ms.png", "t_3500ms.png", "t_4200ms.png", "t_6200ms.png")) {
+            val frame = loadRealVisionFrame("puzzle_vid_frames/$name") ?: continue
+            val rec = recognizer.recognizeFrames(listOf(frame), autoBaseGeom(frame.width, frame.height))
+            val detected = (0 until 30)
+                .filter { (rec.board.tileFlags[it] and TileFlagBits.PUZZLE_1) != 0 }
+                .map { (it / 6) to (it % 6) }
+                .toSet()
+            assertEquals("Real puzzle frame $name must detect exact 5-cell Cross", expectedCross, detected)
+            assertEquals("Real puzzle frame $name count", 5, rec.puzzleCellsDetected)
+        }
+
+        for (neg in listOf(
+            "mi15_now.png",
+            "real_tos_samples/emu_battle_01.png",
+            "real_tos_samples/emu_mech_check.png",
+            "real_tos_samples/user_fire5_battle.jpg",
+            "real_tos_samples/user_wood5_battle.jpg",
+            "real_tos_samples/user_light_dark5_battle.jpg"
+        )) {
+            val frame = loadRealVisionFrame(neg) ?: continue
+            val rec = recognizer.recognizeFrames(listOf(frame), autoBaseGeom(frame.width, frame.height))
+            assertEquals("Non-puzzle real battle $neg must detect 0 puzzle cells", 0, rec.puzzleCellsDetected)
+        }
+    }
 }

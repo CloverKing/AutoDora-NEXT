@@ -5,7 +5,6 @@ import android.content.res.Configuration
 import android.os.LocaleList
 import com.autodora.next.R
 import com.autodora.next.data.AppLanguage
-import com.autodora.next.data.EnemySkillScanMode
 import com.autodora.next.data.ThemeMode
 import com.autodora.next.model.ElementPriority
 import com.autodora.next.model.MatchTiming
@@ -64,18 +63,6 @@ object LocaleHelper {
         SwipeSpeedPreset.FAST_3S -> ctx.getString(R.string.speed_fast)
         SwipeSpeedPreset.STANDARD -> ctx.getString(R.string.speed_standard)
         SwipeSpeedPreset.STEADY -> ctx.getString(R.string.speed_steady)
-    }
-
-    fun scanModeLabel(ctx: Context, mode: EnemySkillScanMode): String = when (mode) {
-        EnemySkillScanMode.HYBRID -> ctx.getString(R.string.scan_mode_hybrid)
-        EnemySkillScanMode.AUTO_GEAR_OCR -> ctx.getString(R.string.scan_mode_gear)
-        EnemySkillScanMode.BATTLE_ICONS -> ctx.getString(R.string.scan_mode_icons)
-    }
-
-    fun scanModeDesc(ctx: Context, mode: EnemySkillScanMode): String = when (mode) {
-        EnemySkillScanMode.HYBRID -> ctx.getString(R.string.scan_mode_hybrid_desc)
-        EnemySkillScanMode.AUTO_GEAR_OCR -> ctx.getString(R.string.scan_mode_gear_desc)
-        EnemySkillScanMode.BATTLE_ICONS -> ctx.getString(R.string.scan_mode_icons_desc)
     }
 
     fun goalModeLabel(ctx: Context, mode: StrategyGoalMode): String = when (mode) {

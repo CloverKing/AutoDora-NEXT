@@ -44,13 +44,10 @@ import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.OverlayPalette
 import com.autodora.next.ui.OverlayThemeResolver
-import com.autodora.next.vision.BitmapVisionFrame
 import com.autodora.next.vision.BoardRecognizer
-import com.autodora.next.vision.EnemySkillOcrEngine
-import com.autodora.next.vision.EnemyStatusIconMatcher
+import com.autodora.next.vision.DirectBitmapVisionFrame
 import com.autodora.next.vision.FlashRevealMemoryTracker
 import com.autodora.next.vision.RecognitionResult
-import com.autodora.next.vision.StageInfoUiAnalyzer
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,7 +73,6 @@ class OverlayControllerService : Service() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var teamPresetRepository: TeamPresetRepository
     @Inject lateinit var boardRecognizer: BoardRecognizer
-    @Inject lateinit var enemySkillOcrEngine: EnemySkillOcrEngine
     @Inject lateinit var touchExecutor: TouchExecutor
 
     private lateinit var windowManager: WindowManager
@@ -88,7 +84,6 @@ class OverlayControllerService : Service() {
     private var lctx: Context = this
     private var presetRecords: List<TeamPresetRecord> = emptyList()
     private var activeWaveChips: List<WaveShieldChip> = emptyList()
-    private var lastOcrSummary: String? = null
     private lateinit var palette: OverlayPalette
 
     // Overlay views
@@ -105,7 +100,6 @@ class OverlayControllerService : Service() {
     private lateinit var stopIconBtn: ImageView
     private lateinit var pathIconBtn: ImageView
     private lateinit var resultIconBtn: ImageView
-    private lateinit var scanIconBtn: ImageView
     private lateinit var calibIconBtn: ImageView
     private lateinit var tuneIconBtn: ImageView
     private lateinit var closeIconBtn: ImageView
@@ -149,19 +143,13 @@ class OverlayControllerService : Service() {
     private var lastRecognition: RecognitionResult? = null
     private var editedBoard: BoardState? = null
     private var lastSolveOutput: SolveOutput? = null
+    private var lastPuzzleMaskMissing = false
     private var usedMemorizedSnapshot = false
     private var selectedSolutionIdx = 0
     private var activeJob: Job? = null
     private var backgroundWatchJob: Job? = null
     private var activeCancelToken: NativeCancelToken? = null
     private val flashMemoryTracker = FlashRevealMemoryTracker()
-
-    // Automatic per-wave enemy skill recognition state (active whenever settings.autoEnemySkillEnabled == true)
-    private var lastScannedEnemyHash: Long = 0L
-    private var hasScannedWaveOnce: Boolean = false
-    private var pendingEnemyHash: Long = 0L
-    private var pendingWaveStableCount: Int = 0
-    private var lastAutoSkillScanMs: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -178,21 +166,18 @@ class OverlayControllerService : Service() {
 
         serviceScope.launch {
             settingsRepository.settingsFlow.collectLatest { latest ->
-                val wasAutoSkill = settings.autoEnemySkillEnabled
                 val presetSwitched = settings.activePresetId != latest.activePresetId
                 val previewModeChanged = settings.testModeOnlyDraw != latest.testModeOnlyDraw
+                val solverSettingChanged = settings.allowDiagonalMove != latest.allowDiagonalMove ||
+                    settings.maxSteps != latest.maxSteps ||
+                    settings.beamWidth != latest.beamWidth
                 settings = latest
-                if (presetSwitched || previewModeChanged) {
+                if (presetSwitched || previewModeChanged || solverSettingChanged) {
                     invalidateLastSolution()
                 }
                 stopIconBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
                 applyOverlayTheme()
                 ensureAlwaysOnBackgroundWatcher()
-                if (!wasAutoSkill && latest.autoEnemySkillEnabled) {
-                    // Reset wave signature so turning Auto-Skill ON scans the current wave immediately!
-                    hasScannedWaveOnce = false
-                    pendingWaveStableCount = 0
-                }
                 if (calibrationMode) {
                     currentGeometry = latest.calibration.toBase6x5Geometry(screenW, screenH)
                     refreshPathCanvas()
@@ -218,12 +203,6 @@ class OverlayControllerService : Service() {
                     invalidateLastSolution()
                 }
                 refreshActiveShieldStrip()
-                syncDrawerData()
-            }
-        }
-        serviceScope.launch {
-            ActiveStrategyStore.lastOcrSummary.collectLatest { summary ->
-                lastOcrSummary = summary
                 syncDrawerData()
             }
         }
@@ -269,7 +248,7 @@ class OverlayControllerService : Service() {
 
     private fun startForegroundCompat() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setSmallIcon(R.drawable.ic_stat_autodora)
             .setContentTitle("AutoDora-NEXT 悬浮助手运行中")
             .setContentText("点击悬浮胶囊即可识盘解盾或自动转珠")
             .setOngoing(true)
@@ -308,7 +287,8 @@ class OverlayControllerService : Service() {
     private fun composeEffectiveRuleConfig(
         board: BoardState,
         fixedStartCell: Int = -1,
-        fastMode: Boolean = false
+        fastMode: Boolean = false,
+        fastMaxStepsCap: Int = 30
     ): RuleConfig {
         val preset = activeTeamPreset()
         val global = settings.toRuleConfig()
@@ -326,16 +306,36 @@ class OverlayControllerService : Service() {
         val mergedBase = preset.baseConfig.copy(
             allowDiagonalMove = settings.allowDiagonalMove,
             maxSteps = effectiveSteps,
-            beamWidth = if (fastMode) minOf(effectiveBeam, 140) else effectiveBeam,
-            maxTimeMs = if (fastMode) 170 else maxOf(global.maxTimeMs, preset.baseConfig.maxTimeMs),
-            topK = if (fastMode) 2 else 5,
+            beamWidth = effectiveBeam,
+            maxTimeMs = maxOf(global.maxTimeMs, preset.baseConfig.maxTimeMs),
+            topK = 5,
             fixedStartCell = fixedStartCell
         )
         val canonicalChips = activeWaveChips.map { WaveShieldCatalog.canonicalizeForComposer(it) }
-        return RuleComposer.compose(
+        val composed = RuleComposer.compose(
             base = preset.copy(baseConfig = mergedBase),
             activeChips = canonicalChips,
             board = board
+        )
+        if (!fastMode) return composed
+
+        // Hold-and-Replan real-time hard budget: MUST apply AFTER RuleComposer.compose so highDifficultyShield
+        // never inflates maxTimeMs back to 800ms or beamWidth to 260+ while the game's turn timer is ticking!
+        val hasHardShield = activeWaveChips.isNotEmpty() ||
+            composed.puzzle1.enabled || composed.puzzle2.enabled ||
+            composed.crossShield.requiredCount > 0 ||
+            composed.exactTotalCombo >= 0 || composed.exactFirstWaveCombo >= 0
+        val cappedSteps = if (composed.exactSteps > 0) {
+            composed.maxSteps
+        } else {
+            minOf(composed.maxSteps, fastMaxStepsCap.coerceIn(16, 36))
+        }
+        return composed.copy(
+            maxSteps = cappedSteps,
+            beamWidth = minOf(composed.beamWidth, if (hasHardShield) 200 else 180),
+            maxTimeMs = if (hasHardShield) 180 else 135,
+            topK = 1,
+            fixedStartCell = fixedStartCell
         )
     }
 
@@ -459,12 +459,6 @@ class OverlayControllerService : Service() {
             updateSummaryStrip()
         }
         toolbarContainer.addView(resultIconBtn)
-
-        // 1-tap Enemy Skill Recognition trigger
-        scanIconBtn = makeIconBtn(R.drawable.ic_ov_scan) {
-            runSmartEnemySkillScan(autoTriggered = false)
-        }
-        toolbarContainer.addView(scanIconBtn)
 
         // Board alignment calibration grid toggle ('校')
         calibIconBtn = makeIconBtn(R.drawable.ic_ov_grid) { toggleCalibrationMode() }
@@ -636,7 +630,6 @@ class OverlayControllerService : Service() {
         // Full-Feature 3-Tab Unified Floating Drawer (快捷 | 策略 | 设置)
         tuningDrawer = OverlayTuningDrawerController(
             context = this,
-            onRunAutoSkillScan = { runSmartEnemySkillScan(autoTriggered = false) },
             onToggleBoardEditor = { toggleBoardEditorMode() },
             onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
             onUpsertWaveChip = { chip -> ActiveStrategyStore.upsertChip(chip) },
@@ -837,7 +830,7 @@ class OverlayControllerService : Service() {
                 if (notInBattleBoard) {
                     invalidateLastSolution()
                     setPhase(OverlayPhase.IDLE)
-                    toast(lctx.getString(R.string.ov_toast_icon_none))
+                    toast(lctx.getString(R.string.ov_toast_no_board))
                     return@launch
                 }
 
@@ -848,6 +841,12 @@ class OverlayControllerService : Service() {
                 usedMemorizedSnapshot = resolvedFromMemory
 
                 val ruleConfig = composeEffectiveRuleConfig(effectiveBoard)
+                val puzzleMaskMissing = ruleConfig.puzzle1.enabled &&
+                    effectiveBoard.tileFlags.none { (it and TileFlagBits.PUZZLE_1) != 0 }
+                lastPuzzleMaskMissing = puzzleMaskMissing
+                if (puzzleMaskMissing) {
+                    toast(lctx.getString(R.string.ov_toast_puzzle_not_detected))
+                }
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
                 val solveOut = try {
@@ -900,6 +899,12 @@ class OverlayControllerService : Service() {
                 val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(board)
                 editedBoard = effectiveBoard
                 val ruleConfig = composeEffectiveRuleConfig(effectiveBoard)
+                val puzzleMaskMissing = ruleConfig.puzzle1.enabled &&
+                    effectiveBoard.tileFlags.none { (it and TileFlagBits.PUZZLE_1) != 0 }
+                lastPuzzleMaskMissing = puzzleMaskMissing
+                if (puzzleMaskMissing) {
+                    toast(lctx.getString(R.string.ov_toast_puzzle_not_detected))
+                }
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
                 val solveOut = try {
@@ -926,323 +931,7 @@ class OverlayControllerService : Service() {
         }
     }
 
-    // ==================== Smart Automatic Enemy Skill Recognition (187 Official Icons + Auto Long-Press Each Enemy) ====================
-    private fun runSmartEnemySkillScan(autoTriggered: Boolean) {
-        if (currentPhase != OverlayPhase.IDLE) return
-        val capturer = ScreenCaptureSession.capturer.value
-        if (capturer == null || !capturer.isReady.value) {
-            if (!autoTriggered) toast(lctx.getString(R.string.toast_capture_denied))
-            return
-        }
-        val scanMode = settings.enemySkillScanMode
-        val canTouch = touchExecutor.isAvailable.value
-
-        activeJob = serviceScope.launch {
-            setPhase(OverlayPhase.CALCULATING)
-            lastAutoSkillScanMs = System.currentTimeMillis()
-            val prevDrawer = tuningDrawerOpen
-            if (prevDrawer) setTuningDrawerOpen(false)
-
-            // Keep the compact floating top bar visible unless dragged down over the enemy/modal zone!
-            val barOverlapsScanZone = controlParams.y > (screenH * 0.13f).toInt()
-            if (barOverlapsScanZone) {
-                controlRoot.visibility = View.INVISIBLE
-            } else {
-                summaryStrip.visibility = View.GONE
-                activeShieldScroll.visibility = View.GONE
-            }
-            pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
-            delay(50)
-
-            var popupOpenedByAuto = false
-            try {
-                val initBmp = capturer.captureSingleFrame() ?: return@launch
-                val initFrame = BitmapVisionFrame(initBmp)
-                val alreadyInEnemyPopup = withContext(Dispatchers.Default) {
-                    StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(initFrame)
-                }
-
-                // Stage 1: Zero-tap official 187-icon 12x12 badge + board CV scan (in HYBRID & BATTLE_ICONS modes)
-                val battleIconChips = ArrayList<WaveShieldChip>()
-                val iconNotes = ArrayList<String>()
-                if (scanMode != EnemySkillScanMode.AUTO_GEAR_OCR) {
-                    val iconScan = withContext(Dispatchers.Default) {
-                        val g = AutoGridDetector.detect(initBmp, settings.calibration)
-                        val rec = if (alreadyInEnemyPopup) null else boardRecognizer.recognize(listOf(initBmp), g)
-                        EnemyStatusIconMatcher.scanBattleScreen(initFrame, rec)
-                    }
-                    battleIconChips.addAll(iconScan.detectedChips)
-                    iconNotes.addAll(iconScan.detectedBadgesSummary)
-                    if (!alreadyInEnemyPopup) {
-                        lastScannedEnemyHash = iconScan.enemyZoneHash
-                        hasScannedWaveOnce = true
-                    }
-                } else if (!alreadyInEnemyPopup) {
-                    lastScannedEnemyHash = withContext(Dispatchers.Default) {
-                        EnemyStatusIconMatcher.computeBattleEnemyZoneHash(initFrame)
-                    }
-                    hasScannedWaveOnce = true
-                }
-
-                // Helper to expand ▶ arrows, read active skill lines, and scroll inside an open enemy detail card
-                suspend fun readOpenEnemyPopup(startBmp: android.graphics.Bitmap): Pair<List<String>, Int> {
-                    var workingBmp = startBmp
-                    val linesOut = LinkedHashSet<String>()
-                    var skippedTotal = 0
-                    try {
-                        var scrollSteps = 0
-                        while (isActive && scrollSteps <= 2) {
-                            var expandClicks = 0
-                            while (isActive && canTouch && expandClicks < 5) {
-                                val collapsed = withContext(Dispatchers.Default) {
-                                    StageInfoUiAnalyzer.findCollapsedSkillArrows(BitmapVisionFrame(workingBmp))
-                                }
-                                if (collapsed.isEmpty()) break
-                                val arrow = collapsed.first()
-                                touchExecutor.performTap(arrow.x, arrow.y, holdMs = 34L)
-                                delay(220)
-                                val nextBmp = capturer.captureSingleFrame() ?: break
-                                if (!workingBmp.isRecycled) workingBmp.recycle()
-                                workingBmp = nextBmp
-                                expandClicks++
-                            }
-
-                            val (lines, skipped) = withContext(Dispatchers.Default) {
-                                enemySkillOcrEngine.recognizeActiveLines(workingBmp)
-                            }
-                            linesOut.addAll(lines)
-                            skippedTotal += skipped
-
-                            val hasNoSkill = lines.any { it.contains("沒有技能") || it.contains("没有技能") }
-                            if (hasNoSkill || !canTouch || scrollSteps >= 2) break
-
-                            val beforeHash = withContext(Dispatchers.Default) {
-                                StageInfoUiAnalyzer.computeRegionHash(
-                                    BitmapVisionFrame(workingBmp),
-                                    yTopRatio = 0.42f,
-                                    yBotRatio = 0.84f
-                                )
-                            }
-                            touchExecutor.performSwipe(
-                                x1 = screenW * 0.50f,
-                                y1 = screenH * 0.76f,
-                                x2 = screenW * 0.50f,
-                                y2 = screenH * 0.48f,
-                                durationMs = 240L
-                            )
-                            delay(240)
-                            val nextScrollBmp = capturer.captureSingleFrame() ?: break
-                            if (!workingBmp.isRecycled) workingBmp.recycle()
-                            workingBmp = nextScrollBmp
-                            val stillOpen = withContext(Dispatchers.Default) {
-                                StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(BitmapVisionFrame(workingBmp))
-                            }
-                            if (!stillOpen) break
-                            val afterHash = withContext(Dispatchers.Default) {
-                                StageInfoUiAnalyzer.computeRegionHash(
-                                    BitmapVisionFrame(workingBmp),
-                                    yTopRatio = 0.42f,
-                                    yBotRatio = 0.84f
-                                )
-                            }
-                            if (StageInfoUiAnalyzer.hammingDistance(beforeHash, afterHash) <= 3) break
-                            scrollSteps++
-                        }
-                    } finally {
-                        if (!workingBmp.isRecycled) workingBmp.recycle()
-                    }
-                    return linesOut.toList() to skippedTotal
-                }
-
-                // If user already opened an enemy long-press card manually, read it directly without closing it!
-                if (alreadyInEnemyPopup) {
-                    val (lines, skipped) = readOpenEnemyPopup(initBmp)
-                    val parsed = withContext(Dispatchers.Default) {
-                        enemySkillOcrEngine.parseText(lines.joinToString("\n"), skippedGreyLines = skipped)
-                    }
-                    applyParsedEnemySkills(parsed, battleIconChips, autoTriggered)
-                    return@launch
-                }
-
-                // If user selected Battle-Icons-Only mode, finish immediately with zero taps!
-                if (scanMode == EnemySkillScanMode.BATTLE_ICONS) {
-                    if (!initBmp.isRecycled) initBmp.recycle()
-                    val summary = if (battleIconChips.isNotEmpty()) {
-                        val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
-                        lctx.getString(R.string.ov_toast_icon_found_fmt, labels)
-                    } else if (iconNotes.isNotEmpty()) {
-                        lctx.getString(R.string.ov_toast_icon_found_fmt, iconNotes.joinToString(" · "))
-                    } else {
-                        lctx.getString(R.string.ov_toast_icon_none)
-                    }
-                    ActiveStrategyStore.applyOcrChips(battleIconChips, summary)
-                    if (!autoTriggered || battleIconChips.isNotEmpty()) toast(summary)
-                    return@launch
-                }
-
-                // Stage 2: Authoritative Auto Long-Press Each Live Enemy (replaces old Gear -> Stage Info!)
-                val enemyTargets = withContext(Dispatchers.Default) {
-                    StageInfoUiAnalyzer.findBattleEnemyTapPoints(initFrame)
-                }
-                if (!initBmp.isRecycled) initBmp.recycle()
-
-                if (!canTouch) {
-                    if (battleIconChips.isNotEmpty()) {
-                        val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
-                        val msg = lctx.getString(R.string.ov_toast_icon_found_fmt, labels)
-                        ActiveStrategyStore.applyOcrChips(battleIconChips, msg)
-                        toast(msg)
-                    } else if (!autoTriggered) {
-                        toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
-                    }
-                    return@launch
-                }
-
-                if (enemyTargets.isEmpty()) {
-                    if (battleIconChips.isNotEmpty()) {
-                        val labels = battleIconChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
-                        val msg = lctx.getString(R.string.ov_toast_icon_found_fmt, labels)
-                        ActiveStrategyStore.applyOcrChips(battleIconChips, msg)
-                        toast(msg)
-                    } else if (!autoTriggered) {
-                        toast(lctx.getString(R.string.ov_toast_long_press_none))
-                    }
-                    return@launch
-                }
-
-                if (!autoTriggered) {
-                    toast(lctx.getString(R.string.ov_toast_long_press_enemies, enemyTargets.size))
-                }
-
-                val collectedLines = LinkedHashSet<String>()
-                var totalSkippedGrey = 0
-                val dismissPt = StageInfoUiAnalyzer.findEnemyPopupDismissPoint(screenW, screenH)
-
-                for (target in enemyTargets) {
-                    if (!isActive) break
-                    // Attempt 1: Standard 580ms long-press (persists modal card on lift in modern ToS!)
-                    val pressed = touchExecutor.performTap(target.x, target.y, holdMs = 580L)
-                    if (!pressed) continue
-                    delay(260)
-
-                    val afterLongPressBmp = capturer.captureSingleFrame() ?: continue
-                    val modalStayedOpen = withContext(Dispatchers.Default) {
-                        StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(BitmapVisionFrame(afterLongPressBmp))
-                    }
-
-                    if (modalStayedOpen) {
-                        popupOpenedByAuto = true
-                        val (lines, skipped) = readOpenEnemyPopup(afterLongPressBmp)
-                        collectedLines.addAll(lines)
-                        totalSkippedGrey += skipped
-
-                        // Dismiss enemy card cleanly before moving to the next enemy
-                        touchExecutor.performTap(dismissPt.x, dismissPt.y, holdMs = 34L)
-                        delay(240)
-                        val verifyBmp = capturer.captureSingleFrame()
-                        if (verifyBmp != null) {
-                            val stillOpen = withContext(Dispatchers.Default) {
-                                StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(BitmapVisionFrame(verifyBmp))
-                            }
-                            if (!verifyBmp.isRecycled) verifyBmp.recycle()
-                            if (stillOpen) {
-                                touchExecutor.performTap(screenW * 0.50f, screenH * 0.94f, holdMs = 34L)
-                                delay(220)
-                            }
-                        }
-                        popupOpenedByAuto = false
-                    } else {
-                        if (!afterLongPressBmp.isRecycled) afterLongPressBmp.recycle()
-                        // Attempt 2: Fallback mid-hold capture (for versions where enemy popup only displays while finger is held!)
-                        val holdJob = async { touchExecutor.performTap(target.x, target.y, holdMs = 1400L) }
-                        delay(680)
-                        val midHoldBmp = capturer.captureSingleFrame()
-                        if (midHoldBmp != null) {
-                            val midOpen = withContext(Dispatchers.Default) {
-                                StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(BitmapVisionFrame(midHoldBmp))
-                            }
-                            if (midOpen) {
-                                val (lines, skipped) = withContext(Dispatchers.Default) {
-                                    enemySkillOcrEngine.recognizeActiveLines(midHoldBmp)
-                                }
-                                collectedLines.addAll(lines)
-                                totalSkippedGrey += skipped
-                            }
-                            if (!midHoldBmp.isRecycled) midHoldBmp.recycle()
-                        }
-                        holdJob.await()
-                        delay(180)
-                    }
-                }
-
-                val parsed = withContext(Dispatchers.Default) {
-                    enemySkillOcrEngine.parseText(
-                        collectedLines.joinToString("\n"),
-                        skippedGreyLines = totalSkippedGrey
-                    )
-                }
-                applyParsedEnemySkills(parsed, battleIconChips, autoTriggered)
-            } catch (e: CancellationException) {
-                // Emergency stop cancelled scan
-            } catch (e: Exception) {
-                Log.e(TAG, "Smart enemy skill scan failed", e)
-            } finally {
-                if (popupOpenedByAuto && touchExecutor.isAvailable.value) {
-                    val dismissPt = StageInfoUiAnalyzer.findEnemyPopupDismissPoint(screenW, screenH)
-                    runCatching {
-                        touchExecutor.performTap(dismissPt.x, dismissPt.y, holdMs = 34L)
-                        delay(200)
-                    }
-                }
-                controlRoot.visibility = View.VISIBLE
-                refreshActiveShieldStrip()
-                updateSummaryStrip()
-                refreshPathCanvas()
-                setPhase(OverlayPhase.IDLE)
-            }
-        }
-    }
-
-    private fun applyParsedEnemySkills(
-        parsed: com.autodora.next.vision.ParsedEnemySkillResult,
-        extraIconChips: List<WaveShieldChip>,
-        autoTriggered: Boolean
-    ) {
-        val merged = LinkedHashMap<String, WaveShieldChip>()
-        val maskMergeIds = setOf("require_elements", "elem_burst_shield", "anti_first_wave", "forbid_all", "clear_all_element", "cross_shield")
-        for (c in extraIconChips) merged[c.id] = c
-        for (c in parsed.chips) {
-            val prev = merged[c.id]
-            if (prev != null && c.id in maskMergeIds && c.paramElementMask != 0) {
-                merged[c.id] = c.copy(
-                    paramElementMask = prev.paramElementMask or c.paramElementMask,
-                    paramInt = maxOf(prev.paramInt, c.paramInt)
-                )
-            } else {
-                merged[c.id] = c
-            }
-        }
-        val finalChips = merged.values.toList()
-
-        if (finalChips.isEmpty()) {
-            if (parsed.hasNoSkillBanner) {
-                val msg = lctx.getString(R.string.ov_toast_no_skill)
-                ActiveStrategyStore.applyOcrChips(emptyList(), msg)
-                if (!autoTriggered) toast(msg)
-            } else {
-                val msg = lctx.getString(R.string.toast_ocr_none)
-                ActiveStrategyStore.applyOcrChips(emptyList(), msg)
-                if (!autoTriggered) toast(msg)
-            }
-        } else {
-            val names = finalChips.joinToString(" · ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
-            val msg = lctx.getString(R.string.ov_toast_applied_fmt, finalChips.size, names)
-            ActiveStrategyStore.applyOcrChips(finalChips, msg)
-            toast(msg)
-        }
-    }
-
-    // ==================== No-Root Hold-and-Replan Execution (按住重算 / Legacy 问号‧转) ====================
+    // ==================== Ultra-Fast No-Root Hold-and-Replan Execution (按住重算 / 全屏问号珠) ====================
     private fun startHoldAndReplanExecution(forceNudge: Boolean = false) {
         if (currentPhase != OverlayPhase.IDLE) return
         val capturer = ScreenCaptureSession.capturer.value
@@ -1251,7 +940,7 @@ class OverlayControllerService : Service() {
             return
         }
         if (!touchExecutor.isAvailable.value) {
-            toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
+            toast(lctx.getString(R.string.ov_toast_need_a11y))
             return
         }
         if (calibrationMode) setCalibrationMode(false)
@@ -1260,14 +949,26 @@ class OverlayControllerService : Service() {
 
         activeJob = serviceScope.launch {
             setPhase(OverlayPhase.MOVING)
-            pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
-            delay(35)
+            // Completely hide PathOverlayView & clear memorized overlay BEFORE pre-touch capture
+            // so translucent memorized orb badges NEVER pollute preBmp or reveal polling frames!
+            flashMemoryTracker.clearLock()
+            usedMemorizedSnapshot = false
+            pathOverlayView.visibility = View.INVISIBLE
+            pathOverlayView.updateState(null, null, emptyList(), null, false, false, false, null, null, false)
+            delay(75)
 
+            // Pre-touch geometry & baseline board scan (costs 0ms on the game's turn timer!)
             val preBmp = capturer.captureSingleFrame()
+            var preQuestionCount = 0
+            var preElements: List<Element> = emptyList()
             val geom = if (preBmp != null) {
                 try {
                     withContext(Dispatchers.Default) {
-                        AutoGridDetector.detect(preBmp, settings.calibration)
+                        val g = AutoGridDetector.detect(preBmp, settings.calibration)
+                        val preRec = boardRecognizer.recognize(listOf(preBmp), g)
+                        preQuestionCount = preRec.questionOrbsDetected
+                        preElements = preRec.board.cells.map { it.element }
+                        g
                     }
                 } finally {
                     if (!preBmp.isRecycled) preBmp.recycle()
@@ -1277,23 +978,26 @@ class OverlayControllerService : Service() {
             }
             currentGeometry = geom
 
+            // Empirically verified on real ToS full-board '?' stages: holding in place without crossing a cell
+            // boundary does NOT flip '?' orbs open, so auto-enable 1-cell nudge whenever >= 6 '?' orbs are detected!
+            val shouldNudge = forceNudge || settings.holdReplanNudge || preQuestionCount >= 6
             val startPreset = activeTeamPreset().baseConfig.startPreset
             val (startRow, startCol, nudgeCell) = when (startPreset) {
                 StartPointPreset.BOTTOM_LEFT -> {
                     val r = (geom.rows - 1).coerceAtLeast(0)
-                    val target = if ((forceNudge || settings.holdReplanNudge) && r > 0) CellCoord(r - 1, 0) else null
+                    val target = if (shouldNudge && r > 0) CellCoord(r - 1, 0) else null
                     Triple(r, 0, target)
                 }
                 StartPointPreset.BOTTOM_RIGHT -> {
                     val r = (geom.rows - 1).coerceAtLeast(0)
                     val c = (geom.cols - 1).coerceAtLeast(0)
-                    val target = if ((forceNudge || settings.holdReplanNudge) && r > 0) CellCoord(r - 1, c) else null
+                    val target = if (shouldNudge && r > 0) CellCoord(r - 1, c) else null
                     Triple(r, c, target)
                 }
                 StartPointPreset.ANY -> {
                     val r = (geom.rows / 2).coerceIn(0, geom.rows - 1)
                     val c = (geom.cols / 2).coerceIn(0, geom.cols - 1)
-                    val target = if ((forceNudge || settings.holdReplanNudge) && c > 0) CellCoord(r, c - 1) else null
+                    val target = if (shouldNudge && c > 0) CellCoord(r, c - 1) else null
                     Triple(r, c, target)
                 }
             }
@@ -1304,6 +1008,23 @@ class OverlayControllerService : Service() {
                 HoldReplanTrigger.HOLD_IN_PLACE
             }
 
+            // Turn-time-safe continuation speed & step cap:
+            // Clamp Hold-and-Replan stepDurationMs <= 38ms (Fast 3s tier, where PathInterpolator packs orthogonal +
+            // diagonal moves into just 2..3 continuous segments, saving ~1.2-1.5s of Android Binder IPC pauses!).
+            val baseSwipe = settings.toSwipeConfig()
+            val holdSwipeConfig = baseSwipe.copy(
+                stepDurationMs = minOf(baseSwipe.stepDurationMs, 38L),
+                endHoldMs = 28L,
+                maxStepsPerSegment = 18
+            )
+            val maxSwipeStepsForBudget = (1800L / holdSwipeConfig.stepDurationMs.coerceAtLeast(24L))
+                .toInt()
+                .coerceIn(24, 30)
+            val maxRevealWaitMs = settings.holdReplanDelayMs.coerceIn(240L, 900L)
+            val bandTop = (geom.topPx - geom.cellHeight * 0.15f).toInt().coerceAtLeast(0)
+            val bandBot = (geom.bottomPx + geom.cellHeight * 0.15f).toInt().coerceAtMost(screenH)
+            val startIdx = startCell.row * geom.cols + startCell.col
+
             setControlBarTouchable(!overlapsBoard(geom))
             try {
                 val result = touchExecutor.executeHoldAndReplan(
@@ -1311,38 +1032,131 @@ class OverlayControllerService : Service() {
                     geometry = geom,
                     trigger = trigger,
                     nudgeTarget = nudgeCell,
-                    revealDelayMs = settings.holdReplanDelayMs,
-                    config = settings.toSwipeConfig()
+                    revealDelayMs = 0L, // Smart early-ready poller below replaces blind sleep!
+                    config = holdSwipeConfig
                 ) { heldCell ->
-                    val revealedBmp = capturer.captureSingleFrame() ?: return@executeHoldAndReplan null
-                    try {
-                        val rec = boardRecognizer.recognize(listOf(revealedBmp), geom)
-                        lastRecognition = rec
-                        editedBoard = rec.board
-                        usedMemorizedSnapshot = false
+                    val tReplanStart = System.currentTimeMillis()
+                    val heldIdx = heldCell.row * geom.cols + heldCell.col
 
-                        val heldIdx = heldCell.row * geom.cols + heldCell.col
-                        val composed = composeEffectiveRuleConfig(rec.board, fixedStartCell = heldIdx, fastMode = true)
-                        val token = NativeSolver.createCancelToken()
-                        activeCancelToken = token
-                        val solveOut = try {
-                            NativeSolver.solve(rec.board, composed, token)
-                        } finally {
-                            activeCancelToken = null
-                            token.close()
+                    // Phase 1: Ultra-fast board-band smart early-ready polling (exits the instant '?' flips open!)
+                    delay(45L)
+                    var bestRec: RecognitionResult? = null
+                    var settledCleanPolls = 0
+                    var sawQuestionOrbs = preQuestionCount >= 4
+
+                    while (true) {
+                        val band = capturer.captureBandBitmap(bandTop, bandBot)
+                        if (band != null) {
+                            val rec = try {
+                                boardRecognizer.recognizeBand(
+                                    bandBitmap = band.bitmap,
+                                    fullWidth = band.fullWidth,
+                                    fullHeight = band.fullHeight,
+                                    yOffset = band.yOffset,
+                                    geometry = geom
+                                )
+                            } finally {
+                                if (!band.bitmap.isRecycled) band.bitmap.recycle()
+                            }
+
+                            if (rec.questionOrbsDetected >= 4) {
+                                sawQuestionOrbs = true
+                            }
+
+                            val prevBest = bestRec
+                            if (prevBest == null ||
+                                rec.questionOrbsDetected < prevBest.questionOrbsDetected ||
+                                (rec.questionOrbsDetected == prevBest.questionOrbsDetected &&
+                                    rec.averageConfidence > prevBest.averageConfidence)
+                            ) {
+                                bestRec = rec
+                            }
+
+                            val elapsed = System.currentTimeMillis() - tReplanStart
+                            Log.d(TAG, "Hold-Replan poll t=${elapsed}ms q=${rec.questionOrbsDetected} conf=${"%.2f".format(rec.averageConfidence)}")
+                            if (sawQuestionOrbs) {
+                                // Instant exit on crystal-clear full reveal; 1 extra 22ms settle poll if 1-2 cells dim under finger
+                                if (rec.questionOrbsDetected == 0 && rec.averageConfidence >= 0.70f) {
+                                    bestRec = rec
+                                    break
+                                }
+                                if (rec.questionOrbsDetected <= 2 && rec.averageConfidence >= 0.62f) {
+                                    settledCleanPolls++
+                                    if (settledCleanPolls >= 2 || elapsed >= 220L) {
+                                        bestRec = rec
+                                        break
+                                    }
+                                } else {
+                                    settledCleanPolls = 0
+                                }
+                            } else {
+                                // Non-question hold-replan (e.g., weathered/smoke transform): exit as soon as non-swap cells change
+                                var changedNonSwap = 0
+                                if (preElements.size == rec.board.cells.size) {
+                                    for (i in preElements.indices) {
+                                        if (i != startIdx && i != heldIdx && rec.board.cells[i].element != preElements[i]) {
+                                            changedNonSwap++
+                                        }
+                                    }
+                                }
+                                if (changedNonSwap >= 2 && rec.averageConfidence >= 0.65f) {
+                                    bestRec = rec
+                                    break
+                                }
+                            }
                         }
-                        lastSolveOutput = solveOut
-                        selectedSolutionIdx = 0
-                        withContext(Dispatchers.Main) {
+
+                        val effectiveCeilingMs = if (sawQuestionOrbs) maxOf(maxRevealWaitMs, 560L) else minOf(maxRevealWaitMs, 220L)
+                        if (System.currentTimeMillis() - tReplanStart >= effectiveCeilingMs) break
+                        delay(22L)
+                    }
+
+                    val finalRec = bestRec ?: return@executeHoldAndReplan null
+                    val revealMs = System.currentTimeMillis() - tReplanStart
+                    val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(finalRec.board)
+                    lastRecognition = finalRec.copy(board = effectiveBoard)
+                    editedBoard = effectiveBoard
+                    usedMemorizedSnapshot = false
+
+                    // Phase 2: Tight real-time C++20 single-start solve (strictly <= 135..180ms!)
+                    val tSolveStart = System.currentTimeMillis()
+                    val composed = composeEffectiveRuleConfig(
+                        board = effectiveBoard,
+                        fixedStartCell = heldIdx,
+                        fastMode = true,
+                        fastMaxStepsCap = maxSwipeStepsForBudget
+                    )
+                    val token = NativeSolver.createCancelToken()
+                    activeCancelToken = token
+                    val solveOut = try {
+                        NativeSolver.solve(effectiveBoard, composed, token)
+                    } finally {
+                        activeCancelToken = null
+                        token.close()
+                    }
+                    val solveMs = System.currentTimeMillis() - tSolveStart
+                    lastSolveOutput = solveOut
+                    selectedSolutionIdx = 0
+
+                    val bestSol = solveOut.solutions.firstOrNull()
+                    Log.i(
+                        TAG,
+                        "Hold-Replan ready: reveal=${revealMs}ms (q:${preQuestionCount}->${finalRec.questionOrbsDetected}), " +
+                            "solve=${solveMs}ms (native=${solveOut.elapsedMs.toInt()}ms, steps=${bestSol?.stepCount ?: 0}, " +
+                            "combo=${bestSol?.totalCombo ?: 0}, stepDur=${holdSwipeConfig.stepDurationMs}ms)"
+                    )
+
+                    // Update path preview & result card asynchronously so continuation swipe begins with 0ms UI wait!
+                    serviceScope.launch(Dispatchers.Main) {
+                        pathOverlayView.visibility = View.VISIBLE
+                        if (currentPhase == OverlayPhase.MOVING) {
                             showPath = true
                             refreshMainToggleChips()
                             updateSummaryStrip()
                             refreshPathCanvas()
                         }
-                        solveOut.solutions.firstOrNull()
-                    } finally {
-                        if (!revealedBmp.isRecycled) revealedBmp.recycle()
                     }
+                    bestSol
                 }
                 when (result) {
                     is TouchExecutionResult.Success -> {
@@ -1358,6 +1172,7 @@ class OverlayControllerService : Service() {
                     is TouchExecutionResult.Failed -> Log.w(TAG, "Hold-and-Replan failed: ${result.reason}")
                 }
             } finally {
+                pathOverlayView.visibility = View.VISIBLE
                 setControlBarTouchable(true)
                 setPhase(OverlayPhase.IDLE)
                 refreshMainToggleChips()
@@ -1375,7 +1190,7 @@ class OverlayControllerService : Service() {
             return
         }
         if (!touchExecutor.isAvailable.value) {
-            toast(lctx.getString(R.string.ov_toast_need_a11y_gear))
+            toast(lctx.getString(R.string.ov_toast_need_a11y))
             return
         }
 
@@ -1417,6 +1232,7 @@ class OverlayControllerService : Service() {
 
     private fun invalidateLastSolution() {
         lastSolveOutput = null
+        lastPuzzleMaskMissing = false
         selectedSolutionIdx = 0
         showPath = false
         if (::summaryStrip.isInitialized) {
@@ -1597,7 +1413,7 @@ class OverlayControllerService : Service() {
         }
     }
 
-    // ==================== Always-On 6Hz Background Watcher (Question Memory + Auto Wave Enemy Skill Scan) ====================
+    // ==================== Always-On 6Hz Background Watcher (Full-Board Question Orb Memory) ====================
     private fun ensureAlwaysOnBackgroundWatcher() {
         if (backgroundWatchJob?.isActive == true) return
         backgroundWatchJob = serviceScope.launch {
@@ -1609,24 +1425,18 @@ class OverlayControllerService : Service() {
 
                 val bmp = capturer.captureSingleFrame() ?: continue
                 try {
-                    val frame = BitmapVisionFrame(bmp)
-                    val (geom, rec, isModal, enemyHash) = withContext(Dispatchers.Default) {
-                        val modal = StageInfoUiAnalyzer.isStageInfoModalOpen(frame) ||
-                            StageInfoUiAnalyzer.isEnemyLongPressPopupOpen(frame)
-                        if (modal) {
-                            Quadruple(null, null, true, 0L)
+                    val (geom, rec, isModal) = withContext(Dispatchers.Default) {
+                        val frame = DirectBitmapVisionFrame(bmp)
+                        if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(frame)) {
+                            Triple(null, null, true)
                         } else {
                             val g = AutoGridDetector.detect(bmp, settings.calibration)
                             val r = boardRecognizer.recognize(listOf(bmp), g)
-                            val h = if (settings.autoEnemySkillEnabled) {
-                                EnemyStatusIconMatcher.computeBattleEnemyZoneHash(frame)
-                            } else 0L
-                            Quadruple(g, r, false, h)
+                            Triple(g, r, false)
                         }
                     }
 
                     if (isModal) {
-                        pendingWaveStableCount = 0
                         if (!enemyPopupCoveringBoard) {
                             enemyPopupCoveringBoard = true
                             refreshPathCanvas()
@@ -1637,38 +1447,11 @@ class OverlayControllerService : Service() {
                             refreshPathCanvas()
                         }
 
-                        // 1. Always-On Full-Screen Question Orb Memory (no toggle required; flat dark modals already excluded!)
+                        // Always-On Full-Screen Question Orb Memory (no toggle required; flat dark modals already excluded!)
                         val lockedNow = flashMemoryTracker.onWatchFrame(rec)
                         if (lockedNow) {
                             currentGeometry = geom
                             refreshPathCanvas()
-                        }
-
-                        // 2. Non-Blocking Automatic Per-Wave Enemy Skill Recognition (active whenever autoEnemySkillEnabled == true!)
-                        if (settings.autoEnemySkillEnabled &&
-                            FlashRevealMemoryTracker.isCleanVividBattleBoard(rec, 0.65f)
-                        ) {
-                            val now = System.currentTimeMillis()
-                            val waveDiff = if (!hasScannedWaveOnce) 64 else StageInfoUiAnalyzer.hammingDistance(enemyHash, lastScannedEnemyHash)
-                            if (waveDiff >= 10 && (now - lastAutoSkillScanMs) >= 4_500L) {
-                                val stableDiff = StageInfoUiAnalyzer.hammingDistance(enemyHash, pendingEnemyHash)
-                                if (pendingWaveStableCount == 0 || stableDiff <= 4) {
-                                    pendingEnemyHash = enemyHash
-                                    pendingWaveStableCount++
-                                } else {
-                                    pendingEnemyHash = enemyHash
-                                    pendingWaveStableCount = 1
-                                }
-                                if (pendingWaveStableCount >= 3) {
-                                    pendingWaveStableCount = 0
-                                    if (lastSolveOutput != null) {
-                                        invalidateLastSolution()
-                                    }
-                                    runSmartEnemySkillScan(autoTriggered = true)
-                                }
-                            } else {
-                                pendingWaveStableCount = 0
-                            }
                         }
                     }
                 } catch (_: Exception) {
@@ -1678,8 +1461,6 @@ class OverlayControllerService : Service() {
             }
         }
     }
-
-    private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     // ==================== System Material 3 Theme & Unified Icon Styling ====================
     private fun applyOverlayTheme() {
@@ -1704,7 +1485,6 @@ class OverlayControllerService : Service() {
         stopIconBtn.contentDescription = lctx.getString(R.string.ov_stop)
         pathIconBtn.contentDescription = lctx.getString(R.string.ov_line)
         resultIconBtn.contentDescription = lctx.getString(R.string.ov_result_btn)
-        scanIconBtn.contentDescription = lctx.getString(R.string.ov_scan_now)
         calibIconBtn.contentDescription = lctx.getString(R.string.ov_calib)
         tuneIconBtn.contentDescription = lctx.getString(R.string.ov_tuning)
         closeIconBtn.contentDescription = lctx.getString(R.string.btn_close)
@@ -1774,13 +1554,6 @@ class OverlayControllerService : Service() {
             styleIconBtn(resultIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
         }
 
-        // Enemy Skill Scan button (highlight subtle ring when auto-skill is ON)
-        if (settings.autoEnemySkillEnabled) {
-            styleIconBtn(scanIconBtn, bgColor = p.secondaryContainer, iconTint = p.onSecondaryContainer, strokeColor = p.primary)
-        } else {
-            styleIconBtn(scanIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
-        }
-
         // Alignment Grid Calibration toggle ('校')
         if (calibrationMode) {
             styleIconBtn(calibIconBtn, bgColor = p.tertiary, iconTint = p.onTertiary, strokeColor = null)
@@ -1846,7 +1619,6 @@ class OverlayControllerService : Service() {
             presets = presetRecords,
             activePreset = activeTeamPreset(),
             activeChips = activeWaveChips,
-            ocrSummary = lastOcrSummary,
             boardEditorOpen = boardEditorMode
         )
     }
@@ -1868,7 +1640,7 @@ class OverlayControllerService : Service() {
         pagerText.text = "${selectedSolutionIdx + 1}/${out.solutions.size}"
         solutionSwitcherBox.visibility = if (out.solutions.size > 1) View.VISIBLE else View.GONE
 
-        val shieldBadge = if (sol.allHardConstraintsMet) "✓" else "!"
+        val shieldBadge = if (sol.allHardConstraintsMet && !lastPuzzleMaskMissing) "✓" else "!"
         val coreSummary = lctx.getString(
             R.string.ov_summary_fmt,
             geom.cols,
@@ -1881,6 +1653,10 @@ class OverlayControllerService : Service() {
         val extra = buildString {
             append(" ").append(shieldBadge)
             if (usedMemorizedSnapshot) append(" · ★")
+            val puzzleCnt = (editedBoard ?: lastRecognition?.board)?.tileFlags?.count {
+                (it and (TileFlagBits.PUZZLE_1 or TileFlagBits.PUZZLE_2)) != 0
+            } ?: 0
+            if (puzzleCnt > 0) append(" · 🧩").append(puzzleCnt)
             val stormCnt = lastRecognition?.stormCellsDetected ?: 0
             if (stormCnt > 0) append(" · 🌀").append(stormCnt)
         }
@@ -1918,7 +1694,7 @@ class OverlayControllerService : Service() {
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false, null, null, false)
             return
         }
-        val memBoard = flashMemoryTracker.currentLockedSnapshot()
+        val memBoard = if (currentPhase == OverlayPhase.MOVING) null else flashMemoryTracker.currentLockedSnapshot()
         val displayBoard = when {
             boardEditorMode -> editedBoard ?: lastRecognition?.board
             usedMemorizedSnapshot && memBoard != null -> memBoard

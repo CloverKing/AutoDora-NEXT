@@ -6,7 +6,6 @@ import com.autodora.next.data.TeamPresetRepository
 import com.autodora.next.touch.AccessibilityTouchExecutor
 import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.vision.BoardRecognizer
-import com.autodora.next.vision.EnemySkillOcrEngine
 import com.autodora.next.vision.HybridBoardRecognizer
 import dagger.Module
 import dagger.Provides
@@ -35,12 +34,6 @@ object AppModule {
     @Singleton
     fun provideBoardRecognizer(@ApplicationContext context: Context): BoardRecognizer {
         return HybridBoardRecognizer(context)
-    }
-
-    @Provides
-    @Singleton
-    fun provideEnemySkillOcrEngine(@ApplicationContext context: Context): EnemySkillOcrEngine {
-        return EnemySkillOcrEngine(context)
     }
 
     @Provides

@@ -24,7 +24,7 @@
     <string name="perm_overlay_title">1. 懸浮視窗權限</string>
     <string name="perm_overlay_sub">顯示懸浮控制列、路徑預覽與遊戲內調參抽屜</string>
     <string name="perm_a11y_title">2. 無障礙自動轉珠</string>
-    <string name="perm_a11y_sub">支援連續斜轉、角色珠下拉、按住重算與自動展開敵技</string>
+    <string name="perm_a11y_sub">支援連續斜轉、角色珠下拉與全版問號珠按住重算</string>
     <string name="perm_capture_title">3. 螢幕擷取權限</string>
     <string name="perm_capture_sub">系統彈窗請保持選擇「整個螢幕」</string>
     <string name="perm_notif_title">4. 前景服務通知</string>
@@ -35,7 +35,7 @@
     <string name="guide_title">懸浮膠囊操作說明</string>
     <string name="guide_line_1">• 頂部圖示欄：計算、執行、路徑、結果卡片、校準網格、急停與三分頁完整調參抽屜，常駐更緊湊。</string>
     <string name="guide_line_2">• 試跑確認開啟時，須先點計算生成路徑後才啟用執行；關閉試跑確認時，計算圖示隱藏，點執行即自動算路並轉珠。</string>
-    <string name="guide_line_3">• 敵技自動匹配：開啟自動識技後，系統會先辨識 187 種官方狀態圖示，並自動逐一長按場上敵人讀取技能，將命中的規則直接勾選到策略面板。</string>
+    <string name="guide_line_3">• 全版問號珠增強：自動靜默記憶先露後藏盤面；按住重算模式顯形即算，全鏈路極速續滑不逾時。</string>
     <string name="hyperos_title">無障礙受限設定指引</string>
     <string name="hyperos_app_details">應用程式詳情</string>
     <string name="action_expand">展開</string>
@@ -170,23 +170,10 @@
     <string name="tag_diag_match">隊長斜消</string>
 
     <!-- Shields Tab: Auto Skill Recognition Hub -->
-    <string name="section_auto_skill">自動敵技辨識</string>
-    <string name="auto_skill_title">自動辨識敵技</string>
-    <string name="auto_skill_sub">切換新波次時自動辨識並掛載對應解盾</string>
-    <string name="scan_mode_hybrid">雙模自動</string>
-    <string name="scan_mode_gear">自動長按</string>
-    <string name="scan_mode_icons">僅圖示</string>
-    <string name="scan_mode_hybrid_desc">戰鬥中先零點擊比對 187 種官方狀態圖示與盤面金框/暴風視覺；隨後自動逐一長按場上存活敵人彈出技能卡片，展開全部摺疊項並辨識完整敵技說明，自動匹配對應策略選項。</string>
-    <string name="scan_mode_gear_desc">每波自動定位並逐一長按場上每個敵人彈出技能卡片，展開全部技能說明、自動下滑並過濾灰字已無視項，以長按技能說明為準自動配置對應策略參數。</string>
-    <string name="scan_mode_icons_desc">不點擊遊戲畫面，僅依 187 種官方狀態圖示特徵庫與盤面金框拼圖 / 暴風視覺直接匹配對應策略選項。</string>
     <string name="section_active_shields">本波已掛載解盾</string>
     <string name="active_shields_fmt">已生效 %1$d 項</string>
     <string name="btn_clear">清空</string>
     <string name="active_shields_empty">目前未掛載臨時波次盾。可點擊下方模組手動配置，或開啟自動辨識敵技。</string>
-    <string name="section_rule_tester">詞條解析測試</string>
-    <string name="rule_tester_hint">輸入或貼上敵技描述（如：首批消除 4 連擊、五屬強化盾、拼圖盾-限）</string>
-    <string name="btn_sample">填入範例</string>
-    <string name="btn_parse_import">解析並掛載</string>
 
     <!-- Shields Tab: 1. Combo Shield -->
     <string name="section_combo_shield">連擊盾</string>
@@ -302,11 +289,10 @@
     <string name="error_max_steps">請輸入 8 ～ 300 之間的整數</string>
     <string name="support_max_steps">目前生效：%1$d 步（超過 60 步自動放寬算路預算，隨時可點「停」中止）</string>
     <string name="slider_beam">解盤算力</string>
-    <string name="slider_hold_delay">按住重算顯形延時</string>
+    <string name="slider_hold_delay">按住重算顯形等待上限</string>
     <string name="slider_countdown">執行前倒數</string>
     <string name="unit_seconds">%1$d 秒</string>
     <string name="countdown_none">無倒數（立即執行）</string>
-    <string name="rule_tester_sample_text">【固定 4 連擊盾】\n首批消除 4 連擊\n五屬強化盾\n拼圖盾-限</string>
     <string name="bench_error_fmt">效能測試異常：%1$s</string>
     <string name="section_modes">互動與輔助模式</string>
     <string name="mode_test_title">試跑確認模式</string>
@@ -350,8 +336,6 @@
     <string name="help_start_char_body">【起手位置】\n預設任意起手；若關卡限定左下/右下固定起點，可鎖定起手格。\n\n【角色符石下拉起手】\n開啟並選擇 1～6 號位後，轉珠將從對應隊員頭像下拉角色珠進場（首步拉出不計入常規步數），適用於角色珠通行/停放地形及角色珠增傷隊伍。</string>
     <string name="help_strategy_switches_title">進階策略開關說明</string>
     <string name="help_strategy_switches_body">• 強制切珠：盡量把同色珠拆成多組 3 消以衝高連擊。\n• 只計首批連擊：評分時忽略天降疊珠連擊，適合禁天降或穩健求首消連擊的副本。\n• 允許斜消：開啟八向相連即可消除（僅限擁有斜消隊長技的隊伍，常規隊請保持關閉）。\n• 強化/種族優先：同等條件下優先將強化珠或種族珠納入消除。\n• 允許撞擊風化珠：預設嚴避風化珠；僅在需要故意撞掉風化珠解狀態時開啟。</string>
-    <string name="help_auto_skill_title">自動敵技辨識說明</string>
-    <string name="help_auto_skill_body">【三種辨識模式】\n• 雙模自動（推薦）：先在戰鬥畫面零點擊比對 187 種官方狀態圖示與盤面金框/暴風特效；再自動逐一長按場上存活敵人彈出技能卡，展開全部摺疊說明並辨識，將命中的規則直接匹配到策略選項中。\n• 自動長按：每波自動定位並逐一長按場上每個敵人，展開其技能卡片並過濾灰字已無視項，以長按顯示的真實敵技說明為準。\n• 僅圖示：完全不點擊遊戲畫面，僅透過 187 種官方狀態圖示特徵與盤面視覺快速辨識。</string>
     <string name="help_active_shields_title">本波已掛載解盾說明</string>
     <string name="help_active_shields_body">集中顯示目前波次生效的全部臨時解盾規則（含手動勾選與自動辨識掛載項）。\n點擊任意標籤可單獨移除；點擊右上角「清空」可一鍵復位至無臨時盾狀態。</string>
     <string name="help_combo_shield_title">連擊盾規則與組合說明</string>
@@ -362,8 +346,6 @@
     <string name="help_puzzle_shape_body">【拼圖盾（官方金框區域）】\n• 普通拼圖：拼圖金框內全部填滿同色消除即可，允許外部有同色符石黏連。\n• 嚴格拼圖（限）：金框內必須同色消除，且嚴禁金框外相鄰格存在同色黏連。\n• 強化與屬性：可獨立勾選「包含強化符石」及指定拼圖顏色。\n• 拼圖形狀來源：預設自動偵測畫面金框；若畫面特效遮擋或需離線試算，可直接選用預設形狀模板。\n\n【獨立形狀盾（非拼圖區域）】\n• 十字盾：支援單/雙/三十字；多十字可開啟「要求不同屬性」，並可直接指定 1～3 種十字屬性顏色（例如水+火雙十字）。減少十字數量時會自動清空超出數量的顏色選擇。\n• L形盾 / T形盾 / 田字 2×2 盾 / 全直排 ≥ 4 消：在首批消除中構築對應幾何形狀。</string>
     <string name="help_path_hazard_title">路徑、地形與步數盾說明</string>
     <string name="help_path_hazard_body">• 軌跡燃燒保護：用於燃燒路徑敵技，可設定軌跡尾跡長度（全程或 6 格）與最大允許碰撞次數。\n• 限 N 步內：硬性限制本波轉珠步數上限。\n• 軌跡腐蝕自避：嚴禁路徑重複踩踏已經走過的格子。\n• 一步一傷省步：大幅提高步數懲罰權重，在破盾前提下用最少步數完成。\n• 角色珠通行與停放：優先規劃經過通行格並停放在終點的路線。\n• 違建長步爆發：為 6×8 擴版臨時放寬步數與算力預算。</string>
-    <string name="help_rule_tester_title">詞條解析測試說明</string>
-    <string name="help_rule_tester_body">可貼上或手動輸入關卡敵技描述文字，用於離線驗證規則解析器的辨識效果，並一鍵將解析出的盾牌掛載到「本波已掛載解盾」中。</string>
 
     <!-- Floating Overlay Compact Labels -->
     <string name="ov_solve">算</string>
@@ -372,18 +354,15 @@
     <string name="ov_line">線</string>
     <string name="ov_calib">校</string>
     <string name="ov_hold">按住轉</string>
-    <string name="ov_auto_skill">自動識技</string>
     <string name="ov_invert">顛倒</string>
     <string name="ov_tuning">調參解盾</string>
     <string name="ov_editor">盤面編繪</string>
-    <string name="ov_scan_now">識敵技</string>
     <string name="ov_tab_shield">解盾</string>
     <string name="ov_tab_elem">屬性</string>
     <string name="ov_tab_special">專屬</string>
     <string name="ov_tab_strategy">策略</string>
     <string name="ov_collapse">收合</string>
     <string name="ov_clear_fmt">清空(%1$d)</string>
-    <string name="ov_scan_trigger">立即識技</string>
     <string name="ov_puzzle_off">拼圖:關</string>
     <string name="ov_puzzle_normal">普通拼圖</string>
     <string name="ov_puzzle_strict">嚴格拼圖</string>
@@ -417,9 +396,6 @@
     <string name="toast_preset_duplicated">已複製並啟用新策略</string>
     <string name="toast_overlay_perm_needed">請先授予「懸浮視窗權限」</string>
     <string name="toast_overlay_started">懸浮助手已啟動，請切換至《神魔之塔》</string>
-    <string name="toast_ocr_none">未比對到已知敵技詞條</string>
-    <string name="toast_ocr_imported">已匯入 %1$d 項敵技盾</string>
-    <string name="ocr_text_applied_fmt">文字解析已啟用：%1$s</string>
     <string name="bench_line_65">✓ 6×5 盤面：%1$d 連擊 (%2$d 步) · 耗時 %3$d 毫秒 · 評估 %4$d 局面</string>
     <string name="bench_line_68">✓ 6×8 違建：%1$d 連擊 (%2$d 步) · 耗時 %3$d 毫秒 · 評估 %4$d 局面</string>
 
@@ -449,11 +425,6 @@
     <string name="ov_tab_settings">設定</string>
     <string name="ov_result_btn">結果</string>
     <string name="ov_toast_need_solve">試跑確認已開啟，請先點擊計算生成路線</string>
-    <string name="ov_toast_icon_none">圖示辨識：未偵測到已知狀態盾</string>
-    <string name="ov_toast_icon_found_fmt">圖示辨識：%1$s</string>
-    <string name="ov_toast_need_a11y_gear">需開啟無障礙服務才能自動長按敵人查看技能</string>
-    <string name="ov_toast_no_skill">敵技辨識：目前敵人沒有技能</string>
-    <string name="ov_toast_applied_fmt">已掛載 %1$d 項敵技盾：%2$s</string>
     <string name="ov_toast_stopped">已急停中止</string>
     <string name="ov_summary_fmt">%1$d×%2$d · 首%3$d/總%4$d連 · %5$d步 · %6$d毫秒</string>
 
@@ -466,15 +437,14 @@
     <string name="toast_preset_saved">目前策略已儲存</string>
     <string name="toast_preset_saved_as">已另存並啟用新策略</string>
     <string name="toast_preset_loaded">已載入策略：%1$s</string>
-    <string name="unified_enemy_banner_title">本波敵技自動匹配（%1$d 項）</string>
-    <string name="unified_enemy_banner_clear">清除敵技匹配</string>
+    <string name="unified_enemy_banner_title">本波已啟用解盾（%1$d 項）</string>
+    <string name="unified_enemy_banner_clear">清空解盾</string>
     <string name="unified_group_budget">步數、算力與起手</string>
     <string name="unified_group_goal_combo">消珠目標與連擊規則</string>
     <string name="unified_group_elem_count">屬性、珠數與單屬性規則</string>
     <string name="unified_group_puzzle_shape">拼圖、形狀與直排昇華</string>
     <string name="unified_group_path_safety">路徑、地形與安全保護</string>
     <string name="unified_group_leader_traits">隊長技與求解特性</string>
-    <string name="unified_group_auto_skill">自動敵技辨識與詞條驗證</string>
     <string name="elem_burst_label">單色多消 / 累積消珠盾</string>
     <string name="elem_burst_fmt">多消%1$s ≥%2$d粒</string>
     <string name="elem_burst_step">目標最少消除粒數</string>
@@ -488,8 +458,11 @@
     <string name="ov_preset_save_short">存</string>
     <string name="ov_preset_save_as_short">另存</string>
     <string name="ov_clear_enemy_short">清敵技(%1$d)</string>
-    <string name="ov_toast_long_press_none">敵技辨識：未偵測到可長按的敵人或已知狀態盾</string>
-    <string name="ov_toast_long_press_enemies">正在長按辨識 %1$d 名敵人…</string>
     <string name="help_unified_strategy_title">統一策略面板說明</string>
-    <string name="help_unified_strategy_body">【一站式策略與解盾】\n原「策略」與「解盾」已全面整合至本頁：頂部支援快速切換、儲存、另存與管理多套預設方案；下方依 7 大功能分區集中顯示全部選項並即時生效。\n\n【自動敵技連動】\n戰鬥中透過 187 種官方狀態圖示與自動長按敵人識技後，命中的條件會自動高亮並勾選至下方對應的連擊、屬性、多消、拼圖或路徑分組中；點擊「清除敵技匹配」可一鍵復位本波敵技覆蓋。</string>
+    <string name="help_unified_strategy_body">【一站式策略與解盾】\n原「策略」與「解盾」已全面整合至本頁：頂部支援快速切換、儲存、另存與管理多套預設方案；下方依 6 大功能分區集中顯示全部選項並即時生效。\n\n【本波生效解盾】\n勾選下方任意連擊、屬性、多消、拼圖或路徑規則後，頂部會自動彙整目前生效項；點擊「清空解盾」可一鍵復位本波臨時覆蓋。</string>
+    <string name="ov_toast_no_board">未偵測到戰鬥盤面，請進入戰鬥後重試</string>
+    <string name="ov_toast_need_a11y">請先開啟無障礙服務以執行自動轉珠</string>
+    <string name="ov_toast_puzzle_not_detected">未在盤面辨識到拼圖框，可在拼圖設定選預設形狀或點「改盤」手動標框</string>
+    <string name="section_about">關於與版本</string>
+    <string name="about_version_fmt">版本號 v%1$s (Build %2$d)</string>
 </resources>

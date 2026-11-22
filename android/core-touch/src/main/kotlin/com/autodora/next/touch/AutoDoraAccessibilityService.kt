@@ -10,6 +10,7 @@ import com.autodora.next.model.BoardGeometry
 import com.autodora.next.model.CellCoord
 import com.autodora.next.model.SolutionPath
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -185,7 +186,7 @@ class AutoDoraAccessibilityService : AccessibilityService() {
             geometry.cellCenterY(effectiveNudgeCell.row)
         )
 
-        // 1. Initial press-down (and optional 1-cell nudge) with willContinue=true
+        // 1. Snappy press-down (and optional 1-cell nudge) with willContinue=true
         val initPath = Path().apply {
             moveTo(startPt.x, startPt.y)
             if (effectiveNudgeCell != startCell) {
@@ -195,9 +196,9 @@ class AutoDoraAccessibilityService : AccessibilityService() {
             }
         }
         val initDuration = if (effectiveNudgeCell != startCell) {
-            config.stepDurationMs.coerceIn(45L, 120L)
+            config.stepDurationMs.coerceIn(32L, 48L)
         } else {
-            80L
+            45L
         }
         var activeStroke = GestureDescription.StrokeDescription(initPath, 0L, initDuration, true)
         var curFingerPt = if (effectiveNudgeCell != startCell) heldPt else ScreenPoint(startPt.x + 0.5f, startPt.y + 0.5f)
@@ -207,31 +208,46 @@ class AutoDoraAccessibilityService : AccessibilityService() {
         }
         dispatched++
 
-        // 2. Launch parallel delayed capture + recognize + fixedStartCell C++20 solve!
-        val replanDeferred = async {
-            delay(revealDelayMs.coerceIn(120L, 1200L))
+        // 2. Launch parallel capture + early-ready reveal poll + fixedStartCell C++20 solve off Main thread!
+        val replanDeferred = async(Dispatchers.Default) {
+            if (revealDelayMs > 0L) {
+                delay(revealDelayMs.coerceIn(20L, 1200L))
+            }
             onBoardRevealed(effectiveNudgeCell)
         }
 
-        // 3. Keep finger pressed seamlessly via 110ms micro-heartbeat strokes until replan completes!
+        // 3. Keep finger pressed seamlessly via calm micro-heartbeat strokes (avoids Binder spam while staying responsive!)
         var toggle = false
-        val maxWaitDeadline = System.currentTimeMillis() + revealDelayMs + 2200L
+        var heartbeatIdx = 0
+        val maxWaitDeadline = System.currentTimeMillis() + revealDelayMs.coerceAtLeast(0L) + 1800L
         while (!replanDeferred.isCompleted && !cancelRequested.get() && System.currentTimeMillis() < maxWaitDeadline) {
             val nextPt = if (toggle) {
-                ScreenPoint(heldPt.x + 0.5f, heldPt.y)
+                ScreenPoint(heldPt.x + 2.0f, heldPt.y)
             } else {
-                ScreenPoint(heldPt.x - 0.5f, heldPt.y)
+                ScreenPoint(heldPt.x - 2.0f, heldPt.y)
             }
             toggle = !toggle
             val holdPath = Path().apply {
                 moveTo(curFingerPt.x, curFingerPt.y)
                 lineTo(nextPt.x, nextPt.y)
             }
-            val nextStroke = activeStroke.continueStroke(holdPath, 0L, 110L, true)
+            // First hold covers initial flip latency in 1 IPC call (140ms); subsequent heartbeats 75ms for snappy handoff
+            val hbMs = if (heartbeatIdx == 0) 140L else 75L
+            heartbeatIdx++
+            val nextStroke = activeStroke.continueStroke(holdPath, 0L, hbMs, true)
             if (!dispatchSingleStroke(nextStroke, true, nextPt)) {
+                Log.w(TAG, "Hold heartbeat #$heartbeatIdx failed at ${System.currentTimeMillis() - tStart}ms")
                 replanDeferred.cancel()
+                // Dispatch a quick synthetic lift at current finger position so Unity never leaves the orb stuck down!
+                runCatching {
+                    val safeLift = Path().apply {
+                        moveTo(curFingerPt.x, curFingerPt.y)
+                        lineTo(curFingerPt.x + 1.0f, curFingerPt.y)
+                    }
+                    dispatchSingleStroke(GestureDescription.StrokeDescription(safeLift, 0L, 14L, false), false, curFingerPt)
+                }
                 return@coroutineScope if (cancelRequested.get()) TouchExecutionResult.Cancelled
-                else TouchExecutionResult.Failed("按住保活中断")
+                else TouchExecutionResult.Failed("按住保活中断 (hb=$heartbeatIdx)")
             }
             activeStroke = nextStroke
             curFingerPt = nextPt
@@ -330,12 +346,14 @@ class AutoDoraAccessibilityService : AccessibilityService() {
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
+                    Log.w(TAG, "dispatchGesture onCancelled (willContinue=$willContinue, cancelReq=${cancelRequested.get()})")
                     deferred.complete(false)
                 }
             },
             null
         )
         if (!submitted) {
+            Log.w(TAG, "dispatchGesture returned submitted=false (willContinue=$willContinue)")
             deferred.complete(false)
         }
         return deferred.await()

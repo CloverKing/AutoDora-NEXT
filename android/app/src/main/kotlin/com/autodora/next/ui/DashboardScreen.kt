@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.autodora.next.BuildConfig
 import com.autodora.next.R
 import com.autodora.next.data.*
 import com.autodora.next.model.*
@@ -56,7 +57,6 @@ fun DashboardScreen(
     settings: AppSettings,
     presets: List<TeamPresetRecord>,
     activeWaveChips: List<WaveShieldChip>,
-    lastOcrSummary: String?,
     benchmarkReport: String?,
     isBenchmarking: Boolean,
     onRequestOverlay: () -> Unit,
@@ -73,8 +73,7 @@ fun DashboardScreen(
     onDuplicatePreset: (TeamBasePreset) -> Unit,
     onDeletePreset: (String) -> Unit,
     onToggleWaveChip: (WaveShieldChip) -> Unit,
-    onClearWaveChips: () -> Unit,
-    onParseSkillText: (String) -> List<WaveShieldChip>
+    onClearWaveChips: () -> Unit
 ) {
     val ctx = LocalContext.current
     var activeTab by remember { mutableStateOf(HomeTab.OVERVIEW) }
@@ -203,7 +202,6 @@ fun DashboardScreen(
                     settings = settings,
                     presets = presets,
                     activeWaveChips = activeWaveChips,
-                    lastOcrSummary = lastOcrSummary,
                     onUpdateSettings = onUpdateSettings,
                     onSelectPreset = onSelectPreset,
                     onSavePreset = onSavePreset,
@@ -212,7 +210,6 @@ fun DashboardScreen(
                     onDeletePreset = onDeletePreset,
                     onToggleWaveChip = onToggleWaveChip,
                     onClearWaveChips = onClearWaveChips,
-                    onParseSkillText = onParseSkillText,
                     onShowHelp = { title, body -> helpPopup = title to body }
                 )
 
@@ -810,8 +807,8 @@ private fun SettingsTab(
                 SliderSettingRow(
                     label = stringResource(R.string.slider_hold_delay),
                     valueText = "${settings.holdReplanDelayMs} $msUnit",
-                    value = settings.holdReplanDelayMs.toFloat(),
-                    valueRange = 200f..800f,
+                    value = settings.holdReplanDelayMs.toFloat().coerceIn(160f, 800f),
+                    valueRange = 160f..800f,
                     onValueChange = { v -> onUpdateSettings { it.copy(holdReplanDelayMs = (v / 20f).roundToLong() * 20L) } }
                 )
 
@@ -996,6 +993,47 @@ private fun SettingsTab(
                                 .padding(10.dp)
                         )
                     }
+                }
+            }
+        }
+
+        // 6. About & Version Card
+        SectionHeader(stringResource(R.string.section_about))
+        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "AutoDora-NEXT",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.about_version_fmt,
+                            BuildConfig.VERSION_NAME,
+                            BuildConfig.VERSION_CODE
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = "v${BuildConfig.VERSION_NAME}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
                 }
             }
         }

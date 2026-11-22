@@ -156,13 +156,6 @@ bool evaluatePuzzleMask(
         }
     }
 
-    if (!pRule.strictNoExternalTouch && pRule.requiredElement < 0 && !pRule.requireEnchanted) {
-        if ((sim.firstWaveClearedMask & puzzleMask) == puzzleMask) {
-            shapingOut += static_cast<double>(targetSize) * 1000.0;
-            return true;
-        }
-    }
-
     // Not yet solved: compute laser-guided shaping for the best viable color
     std::array<uint8_t, kNumElements> countsInMask{};
     std::array<uint8_t, kNumElements> enchInMask{};

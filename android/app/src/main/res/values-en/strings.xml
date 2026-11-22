@@ -24,7 +24,7 @@
     <string name="perm_overlay_title">1. Display Over Other Apps</string>
     <string name="perm_overlay_sub">Show floating capsule, path preview &amp; in-game drawer</string>
     <string name="perm_a11y_title">2. Accessibility Auto-Swipe</string>
-    <string name="perm_a11y_sub">Diagonal paths, Character Orb pull, Hold-Replan &amp; skill expansion</string>
+    <string name="perm_a11y_sub">Continuous diagonals, Character Orb pull-down &amp; Hold-and-Replan</string>
     <string name="perm_capture_title">3. Screen Capture</string>
     <string name="perm_capture_sub">Select \"Entire Screen\" in the system dialog</string>
     <string name="perm_notif_title">4. Foreground Notification</string>
@@ -35,7 +35,7 @@
     <string name="guide_title">Floating Capsule Guide</string>
     <string name="guide_line_1">• Top Icon Bar: Solve, Go, Path, Result card, Grid calibration, Stop, and the unified 3-tab drawer.</string>
     <string name="guide_line_2">• Preview ON: Run stays disabled until Solve computes a path. Preview OFF: Solve hides and Run solves + swipes immediately.</string>
-    <string name="guide_line_3">• Auto Skill Matching: recognizes 187 official battle icons and auto long-presses each live enemy to activate matching strategy controls.</string>
+    <string name="guide_line_3">• Full-Board Question Orbs: silently memorizes flash-reveal boards; Hold-and-Replan detects reveal early and solves fast within turn time.</string>
     <string name="hyperos_title">Restricted Accessibility Guide</string>
     <string name="hyperos_app_details">App Info</string>
     <string name="action_expand">Expand</string>
@@ -170,23 +170,10 @@
     <string name="tag_diag_match">Leader Diag-Match</string>
 
     <!-- Shields Tab: Auto Skill Recognition Hub -->
-    <string name="section_auto_skill">Auto Enemy Skill Detection</string>
-    <string name="auto_skill_title">Auto-Detect Enemy Skills</string>
-    <string name="auto_skill_sub">Automatically detects &amp; applies enemy shields on each wave</string>
-    <string name="scan_mode_hybrid">Hybrid Auto</string>
-    <string name="scan_mode_gear">Long-Press</string>
-    <string name="scan_mode_icons">Icons Only</string>
-    <string name="scan_mode_hybrid_desc">Matches 187 official battle icons &amp; board FX first, then auto long-presses each live enemy to read its full skill card and activate matching strategy controls.</string>
-    <string name="scan_mode_gear_desc">Automatically locates and long-presses every live enemy on the battlefield, expands skill entries, filters bypassed grey text, and maps rules directly into Strategy.</string>
-    <string name="scan_mode_icons_desc">Zero-tap mode: matches 187 official enemy status icon fingerprints and board Puzzle/Storm visuals directly on screen.</string>
     <string name="section_active_shields">Active Wave Shields</string>
     <string name="active_shields_fmt">%1$d Active</string>
     <string name="btn_clear">Clear</string>
     <string name="active_shields_empty">No temporary wave shields active. Configure below or enable Auto-Detect.</string>
-    <string name="section_rule_tester">Skill Text Tester</string>
-    <string name="rule_tester_hint">Paste enemy skill description to test offline rule matching</string>
-    <string name="btn_sample">Sample</string>
-    <string name="btn_parse_import">Parse &amp; Apply</string>
 
     <!-- Shields Tab: 1. Combo Shield -->
     <string name="section_combo_shield">Combo Shield</string>
@@ -302,11 +289,10 @@
     <string name="error_max_steps">Enter an integer between 8 and 300</string>
     <string name="support_max_steps">Active: %1$d steps (> 60 auto-extends search budget; tap Stop anytime)</string>
     <string name="slider_beam">Solver Compute</string>
-    <string name="slider_hold_delay">Hold-Replan Reveal Delay</string>
+    <string name="slider_hold_delay">Hold-Replan Max Reveal Wait</string>
     <string name="slider_countdown">Pre-Swipe Countdown</string>
     <string name="unit_seconds">%1$d s</string>
     <string name="countdown_none">None (Immediate)</string>
-    <string name="rule_tester_sample_text">Fixed 4 Combo Shield\n5-Element Enchanted Shield\nStrict Puzzle Shield</string>
     <string name="bench_error_fmt">Benchmark error: %1$s</string>
     <string name="section_modes">Interaction &amp; Assist Modes</string>
     <string name="mode_test_title">Preview Before Swipe</string>
@@ -350,8 +336,6 @@
     <string name="help_start_char_body">[Start Position]\nDefault Any Start, or lock to Bottom-Left / Bottom-Right for fixed-origin stages.\n\n[Character Orb Pull]\nSelect Slot 1–6 to pull that member\'s Character Orb vertically into the board (initial pull does not cost a move), ideal for Character-Orb terrain stages.</string>
     <string name="help_strategy_switches_title">Advanced Strategy Switches</string>
     <string name="help_strategy_switches_body">• Force Split 3-Orb Groups: splits groups into 3-orb combos for higher count.\n• First-Wave Combos Only: scores Wave 1 only without relying on cascades.\n• Allow 8-Direction Diagonal Matches: enables diagonal matching for leaders with that skill.\n• Prioritize Enchanted / Race: prefers clearing Enchanted or Race runestones.\n• Allow Hitting Weathered: disables weathered avoidance when intentionally clearing weathered states.</string>
-    <string name="help_auto_skill_title">Auto Enemy Skill Detection</string>
-    <string name="help_auto_skill_body">[Detection Modes]\n• Hybrid Auto (Recommended): matches 187 official status icons &amp; board FX with zero taps, then automatically long-presses each live enemy to inspect its full skill card and map matching controls directly into Strategy.\n• Long-Press: locates and long-presses every live enemy on the battlefield, expands collapsed entries, filters bypassed grey lines, and configures Strategy directly from the popup.\n• Icons Only: zero-tap mode using 187 official status icon fingerprints and board Puzzle/Storm visuals.</string>
     <string name="help_active_shields_title">Active Wave Shields</string>
     <string name="help_active_shields_body">Displays all temporary wave shields currently active (both manual and auto-detected).\nTap any pill to remove it, or tap Clear to reset all temporary wave shields.</string>
     <string name="help_combo_shield_title">Combo Shield Rules &amp; Modifiers</string>
@@ -362,8 +346,6 @@
     <string name="help_puzzle_shape_body">[Puzzle Shield]\n• Normal Puzzle: fills the golden puzzle frame with same-color matches; external same-color orbs may touch.\n• Strict Puzzle: fills the frame with NO external same-color orbs touching the boundary.\n• Enchanted &amp; Attribute: independently require Enchanted runestones or a specific color inside the puzzle.\n• Shape Source: defaults to Auto-Detect Frame, or pick a preset shape template when effects obscure the frame.\n\n[Standalone Shape Shields]\n• Cross Shield: 1/2/3 crosses; multi-cross supports Distinct Colors and lets you pick 1–3 specific cross colors (e.g. Water + Fire dual cross). Reducing cross count resets excess colors automatically.\n• L-Shape / T-Shape / 2×2 Square / All Cols ≥ 4: builds the target geometric match in Wave 1.</string>
     <string name="help_path_hazard_title">Path, Terrain &amp; Step Shields</string>
     <string name="help_path_hazard_body">• Burning Trail Protection: configures trail length (Full or 6 cells) and max allowed trail hits.\n• Wave Step Limit: hard cap on path length for this wave.\n• Trail Corrosion: forbids revisiting any cell already traversed.\n• Minimize Steps: strongly penalizes step count for step-damage stages.\n• Char-Orb Terrain: prioritizes passing and ending on Character-Orb markers.\n• 6×8 Long-Step: extends step and beam budget for expanded boards.</string>
-    <string name="help_rule_tester_title">Skill Text Tester</string>
-    <string name="help_rule_tester_body">Paste or type enemy skill text to verify offline rule parsing and apply the parsed shields directly to Active Wave Shields.</string>
 
     <!-- Floating Overlay Compact Labels -->
     <string name="ov_solve">Solve</string>
@@ -372,18 +354,15 @@
     <string name="ov_line">Path</string>
     <string name="ov_calib">Grid</string>
     <string name="ov_hold">Hold</string>
-    <string name="ov_auto_skill">AutoSkill</string>
     <string name="ov_invert">Invert</string>
     <string name="ov_tuning">Tune</string>
     <string name="ov_editor">Paint</string>
-    <string name="ov_scan_now">Scan</string>
     <string name="ov_tab_shield">Shield</string>
     <string name="ov_tab_elem">Attr</string>
     <string name="ov_tab_special">ToS</string>
     <string name="ov_tab_strategy">Plan</string>
     <string name="ov_collapse">Hide</string>
     <string name="ov_clear_fmt">Clear(%1$d)</string>
-    <string name="ov_scan_trigger">Scan Now</string>
     <string name="ov_puzzle_off">Puzzle:Off</string>
     <string name="ov_puzzle_normal">Normal Puz</string>
     <string name="ov_puzzle_strict">Strict Puz</string>
@@ -417,9 +396,6 @@
     <string name="toast_preset_duplicated">Strategy duplicated &amp; activated</string>
     <string name="toast_overlay_perm_needed">Please grant \"Display over other apps\" first</string>
     <string name="toast_overlay_started">Floating assistant started. Switch to Tower of Saviors.</string>
-    <string name="toast_ocr_none">No known enemy shield rules matched</string>
-    <string name="toast_ocr_imported">Imported %1$d enemy shield(s)</string>
-    <string name="ocr_text_applied_fmt">Parsed &amp; applied: %1$s</string>
     <string name="bench_line_65">✓ 6×5 Board: %1$d combos (%2$d steps) · %3$d ms · %4$d states</string>
     <string name="bench_line_68">✓ 6×8 Expanded: %1$d combos (%2$d steps) · %3$d ms · %4$d states</string>
 
@@ -449,11 +425,6 @@
     <string name="ov_tab_settings">Settings</string>
     <string name="ov_result_btn">Result</string>
     <string name="ov_toast_need_solve">Preview mode is ON: tap Solve first</string>
-    <string name="ov_toast_icon_none">Icon scan: no known shield badge detected</string>
-    <string name="ov_toast_icon_found_fmt">Icon scan: %1$s</string>
-    <string name="ov_toast_need_a11y_gear">Enable Accessibility to auto long-press enemies &amp; inspect skills</string>
-    <string name="ov_toast_no_skill">Skill scan: enemy has no skills</string>
-    <string name="ov_toast_applied_fmt">Applied %1$d shield(s): %2$s</string>
     <string name="ov_toast_stopped">Stopped</string>
     <string name="ov_summary_fmt">%1$d×%2$d · 1st:%3$d/Tot:%4$dC · %5$d moves · %6$dms</string>
 
@@ -466,15 +437,14 @@
     <string name="toast_preset_saved">Strategy saved</string>
     <string name="toast_preset_saved_as">Saved &amp; activated new strategy</string>
     <string name="toast_preset_loaded">Loaded strategy: %1$s</string>
-    <string name="unified_enemy_banner_title">Auto-Matched Enemy Rules (%1$d)</string>
-    <string name="unified_enemy_banner_clear">Clear Matches</string>
+    <string name="unified_enemy_banner_title">Active Wave Shields (%1$d)</string>
+    <string name="unified_enemy_banner_clear">Clear Shields</string>
     <string name="unified_group_budget">Budget, Compute &amp; Start</string>
     <string name="unified_group_goal_combo">Goals &amp; Combo Rules</string>
     <string name="unified_group_elem_count">Attributes, Counts &amp; Matrix</string>
     <string name="unified_group_puzzle_shape">Puzzle, Shapes &amp; Columns</string>
     <string name="unified_group_path_safety">Path, Terrain &amp; Hazards</string>
     <string name="unified_group_leader_traits">Leader Skills &amp; Solver Traits</string>
-    <string name="unified_group_auto_skill">Auto Enemy Skill &amp; Tester</string>
     <string name="elem_burst_label">Single-Color Burst / Cumulative Shield</string>
     <string name="elem_burst_fmt">Burst %1$s ≥%2$d</string>
     <string name="elem_burst_step">Min Target Orbs</string>
@@ -488,8 +458,11 @@
     <string name="ov_preset_save_short">Save</string>
     <string name="ov_preset_save_as_short">New</string>
     <string name="ov_clear_enemy_short">Clr(%1$d)</string>
-    <string name="ov_toast_long_press_none">Skill scan: no live enemies or known shields detected</string>
-    <string name="ov_toast_long_press_enemies">Inspecting %1$d enemy card(s)…</string>
     <string name="help_unified_strategy_title">Unified Strategy Guide</string>
-    <string name="help_unified_strategy_body">[Unified Strategy &amp; Enemy Shields]\nAll Strategy and Shield controls are merged cleanly into one tab. Use the top bar to Load, Save, Save As, or manage presets; all 7 option groups below update in real time.\n\n[Automatic Enemy Skill Sync]\nWhen battle icons (187 official templates) or auto long-press enemy inspection detects enemy shields, matching options and parameters light up directly inside the sections below. Tap Clear Matches anytime to reset wave overrides.</string>
+    <string name="help_unified_strategy_body">[Unified Strategy &amp; Shields]\nAll Strategy and Shield controls are merged cleanly into one tab. Use the top bar to Load, Save, Save As, or manage presets; all 6 option groups below update in real time.\n\n[Active Wave Shields]\nAny combo, attribute, multi-orb, puzzle, or path shield enabled below is summarized in the top banner. Tap Clear Shields anytime to reset temporary wave overrides.</string>
+    <string name="ov_toast_no_board">No battle board detected. Enter a battle and retry.</string>
+    <string name="ov_toast_need_a11y">Enable Accessibility Service to run auto-swipe.</string>
+    <string name="ov_toast_puzzle_not_detected">No puzzle frame detected on board; pick a preset shape or mark tiles in Board Editor</string>
+    <string name="section_about">About &amp; Version</string>
+    <string name="about_version_fmt">Version v%1$s (Build %2$d)</string>
 </resources>

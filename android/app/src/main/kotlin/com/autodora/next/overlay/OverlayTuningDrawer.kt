@@ -22,14 +22,13 @@ import kotlin.math.roundToInt
 
 /**
  * In-Game 3-Tab Unified Floating Drawer mirroring the Launch App's 3-tab layout (快捷 | 策略 | 设置):
- *  - Tab 0: 快捷 (Quick tools: Scan Skills, Board Paint, Auto-Skill & 3 Long-Press/Icon Modes, Hold-Replan, Invert, Speed)
+ *  - Tab 0: 快捷 (Quick tools: Board Paint, Clear Wave Shields, Hold-Replan, Nudge, Invert, Speed 4-Tier)
  *  - Tab 1: 策略 (100% Unified Strategy & Shields parity organized into a compact Preset Save/Load bar +
  *           6 visually distinct, color-accented, bordered accordion cards with live summary badges & crisp internal dividers!)
  *  - Tab 2: 设置 (System-level defaults: Preview-Confirm, System Steps & Compute slider, Core switches, Theme & Language)
  */
 class OverlayTuningDrawerController(
     private val context: Context,
-    private val onRunAutoSkillScan: () -> Unit,
     private val onToggleBoardEditor: () -> Unit,
     private val onToggleWaveChip: (WaveShieldChip) -> Unit,
     private val onUpsertWaveChip: (WaveShieldChip) -> Unit,
@@ -55,7 +54,6 @@ class OverlayTuningDrawerController(
     private var presets: List<TeamPresetRecord> = emptyList()
     private var activePreset: TeamBasePreset = TeamPresetRepository.defaultBuiltInPresets().first()
     private var activeChips: List<WaveShieldChip> = emptyList()
-    private var ocrSummary: String? = null
     private var boardEditorOpen: Boolean = false
 
     // Persistent card accordion expansion & preset picker state (survives live updates without jumping!)
@@ -165,7 +163,6 @@ class OverlayTuningDrawerController(
         presets: List<TeamPresetRecord>,
         activePreset: TeamBasePreset,
         activeChips: List<WaveShieldChip>,
-        ocrSummary: String?,
         boardEditorOpen: Boolean = false
     ) {
         this.lctx = LocaleHelper.localizedContext(context, settings.language)
@@ -174,7 +171,6 @@ class OverlayTuningDrawerController(
         this.presets = presets
         this.activePreset = activePreset
         this.activeChips = activeChips
-        this.ocrSummary = ocrSummary
         this.boardEditorOpen = boardEditorOpen
 
         val byId = activeChips.associateBy { it.id }
@@ -251,12 +247,9 @@ class OverlayTuningDrawerController(
 
     // ==================== TAB 0: 快捷工具 ====================
     private fun buildQuickTab(p: OverlayPalette) {
-        // Card 1: Enemy Skill Scan & Board Paint
-        val scanBody = addStaticGroupCard(s(R.string.section_auto_skill), ACCENT_INDIGO, p)
-        val actRow = hRow(bottomMarginDp = 6)
-        actRow.addView(makeChip(s(R.string.ov_scan_trigger), weight = 1f) { onRunAutoSkillScan() }.also {
-            styleChip(it, p.primary, p.onPrimary, null)
-        })
+        // Card 1: Board Paint & Active Wave Shields
+        val quickBody = addStaticGroupCard(s(R.string.ov_tab_quick), ACCENT_INDIGO, p)
+        val actRow = hRow(bottomMarginDp = 0)
         actRow.addView(makeToggle(s(R.string.ov_editor), boardEditorOpen, p, weight = 1f) {
             onToggleBoardEditor()
         })
@@ -265,34 +258,7 @@ class OverlayTuningDrawerController(
         }.also {
             styleChip(it, p.errorContainer, p.onErrorContainer, null)
         })
-        scanBody.addView(actRow)
-
-        val autoRow = hRow(bottomMarginDp = 2)
-        autoRow.addView(makeToggle(s(R.string.ov_auto_skill), settings.autoEnemySkillEnabled, p, weight = 1.15f) {
-            onUpdateSettings { it.copy(autoEnemySkillEnabled = !it.autoEnemySkillEnabled) }
-        })
-        EnemySkillScanMode.entries.forEachIndexed { idx, mode ->
-            autoRow.addView(
-                makeToggle(
-                    LocaleHelper.scanModeLabel(lctx, mode),
-                    settings.enemySkillScanMode == mode,
-                    p,
-                    weight = 1f,
-                    marginEndDp = if (idx == EnemySkillScanMode.entries.lastIndex) 0 else 4
-                ) {
-                    onUpdateSettings { it.copy(enemySkillScanMode = mode) }
-                }
-            )
-        }
-        scanBody.addView(autoRow)
-        if (!ocrSummary.isNullOrBlank()) {
-            scanBody.addView(TextView(context).apply {
-                text = ocrSummary
-                textSize = 9.5f
-                setTextColor(p.primary)
-                setPadding(dp(2), dp(4), dp(2), 0)
-            })
-        }
+        quickBody.addView(actRow)
 
         // Card 2: Battle Assist Modes
         val modeBody = addStaticGroupCard(s(R.string.section_modes), ACCENT_TEAL, p)
