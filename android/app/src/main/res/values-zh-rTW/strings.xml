@@ -466,6 +466,14 @@
     <string name="ov_toast_need_a11y">請先開啟無障礙服務以執行自動轉珠</string>
     <string name="ov_toast_puzzle_not_detected">未在盤面辨識到拼圖框，可在拼圖設定選預設形狀或點「改盤」手動標框</string>
     <string name="ov_toast_traffic_light_not_detected">未在盤面辨識到紅綠燈起終點，可點「改盤」手動標起手綠/停手紅</string>
+    <string name="ov_toast_traffic_light_partial">僅辨識到紅綠燈%s，建議點「改盤」補標缺失起終點</string>
+    <string name="ov_tl_badge_both">起終</string>
+    <string name="ov_tl_badge_start_only">僅起</string>
+    <string name="ov_tl_badge_end_only">僅終</string>
+    <string name="ov_verdict_missing_both">未識起終</string>
+    <string name="ov_verdict_missing_end">缺終點</string>
+    <string name="ov_verdict_missing_start">缺起點</string>
+    <string name="ov_verdict_missing_frame">未識框</string>
     <string name="section_about">關於與版本</string>
     <string name="about_version_fmt">版本號 v%1$s (Build %2$d)</string>
 </resources>

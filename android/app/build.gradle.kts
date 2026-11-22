@@ -13,7 +13,7 @@ plugins {
 // Android versionCode formula: MAJOR * 10000 + MINOR * 100 + PATCH (e.g. 0.3.0 -> 300, 0.3.1 -> 301, 1.0.0 -> 10000)
 val appVersionMajor = 0
 val appVersionMinor = 3
-val appVersionPatch = 2
+val appVersionPatch = 3
 val appVersionCode = appVersionMajor * 10000 + appVersionMinor * 100 + appVersionPatch
 val appVersionName = "$appVersionMajor.$appVersionMinor.$appVersionPatch"
 

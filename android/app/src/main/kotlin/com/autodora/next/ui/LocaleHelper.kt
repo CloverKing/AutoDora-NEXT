@@ -9,6 +9,8 @@ import com.autodora.next.data.ThemeMode
 import com.autodora.next.model.ElementPriority
 import com.autodora.next.model.MatchTiming
 import com.autodora.next.model.RuleConfig
+import com.autodora.next.model.ShieldVerdict
+import com.autodora.next.model.ShieldVerdictStatus
 import com.autodora.next.model.StrategyGoalMode
 import com.autodora.next.model.TargetShape
 import com.autodora.next.model.TeamBasePreset
@@ -209,6 +211,31 @@ object LocaleHelper {
             "weijian_burst" -> ctx.getString(R.string.shield_weijian_burst)
             else -> chip.label
         }
+    }
+
+    fun formatShieldVerdictLabel(ctx: Context, verdict: ShieldVerdict): String {
+        val baseLabel = if (verdict.chip != null) {
+            formatWaveChipLabel(ctx, verdict.chip!!)
+        } else {
+            when (verdict.chipId) {
+                "traffic_light" -> ctx.getString(R.string.shield_traffic_light)
+                "puzzle_shield" -> ctx.getString(R.string.puzzle_mode_normal)
+                else -> verdict.chipId
+            }
+        }
+        val prefix = when (verdict.status) {
+            ShieldVerdictStatus.PASSED -> "✓"
+            ShieldVerdictStatus.FAILED -> "✗"
+            ShieldVerdictStatus.UNDETECTED -> "?"
+        }
+        val suffix = when (verdict.detailTag) {
+            "missing_both" -> "(${ctx.getString(R.string.ov_verdict_missing_both)})"
+            "missing_end" -> "(${ctx.getString(R.string.ov_verdict_missing_end)})"
+            "missing_start" -> "(${ctx.getString(R.string.ov_verdict_missing_start)})"
+            "missing_frame" -> "(${ctx.getString(R.string.ov_verdict_missing_frame)})"
+            else -> ""
+        }
+        return "$prefix $baseLabel$suffix"
     }
 
     /**

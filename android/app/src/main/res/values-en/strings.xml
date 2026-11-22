@@ -466,6 +466,14 @@
     <string name="ov_toast_need_a11y">Enable Accessibility Service to run auto-swipe.</string>
     <string name="ov_toast_puzzle_not_detected">No puzzle frame detected on board; pick a preset shape or mark tiles in Board Editor</string>
     <string name="ov_toast_traffic_light_not_detected">No Traffic Light start/end detected; mark Start/End tiles in Board Editor</string>
+    <string name="ov_toast_traffic_light_partial">Only Traffic Light %s detected; mark missing tile in Board Editor if needed</string>
+    <string name="ov_tl_badge_both">S→E</string>
+    <string name="ov_tl_badge_start_only">Start</string>
+    <string name="ov_tl_badge_end_only">End</string>
+    <string name="ov_verdict_missing_both">Not found</string>
+    <string name="ov_verdict_missing_end">No End</string>
+    <string name="ov_verdict_missing_start">No Start</string>
+    <string name="ov_verdict_missing_frame">No Frame</string>
     <string name="section_about">About &amp; Version</string>
     <string name="about_version_fmt">Version v%1$s (Build %2$d)</string>
 </resources>

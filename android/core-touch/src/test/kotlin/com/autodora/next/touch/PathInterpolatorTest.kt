@@ -241,4 +241,40 @@ class PathInterpolatorTest {
         }
         assertFalse(segs.last().willContinue)
     }
+
+    @Test
+    fun `isolates first orthogonal step before immediate 90-degree turn to prevent Unity wake-up diagonal slip`() {
+        val geom = BoardGeometry(leftPx = 0f, topPx = 1268f, rightPx = 1080f, bottomPx = 2168f, cols = 6, rows = 5)
+        // Step 1: (4,0)->(4,1) RIGHT, Step 2: (4,1)->(3,1) UP (immediate 90-degree corner!)
+        val sol = SolutionPath(
+            start = CellCoord(4, 0),
+            usedCharacterOrb = false,
+            characterOrbCol = 0,
+            moves = listOf(Direction.RIGHT, Direction.UP, Direction.LEFT),
+            waypoints = listOf(CellCoord(4, 0), CellCoord(4, 1), CellCoord(3, 1), CellCoord(3, 0)),
+            stepCount = 3,
+            firstWaveCombo = 5,
+            totalCombo = 7,
+            firstWaveOrbs = 15,
+            totalOrbs = 21,
+            allHardConstraintsMet = true,
+            satisfiedFlags = 0,
+            failedFlags = 0,
+            score = 1000.0,
+            tag = "CornerGuard",
+            groups = emptyList()
+        )
+        val segs = PathInterpolator.buildSegments(sol, geom, SwipeConfig(stepDurationMs = SwipeSpeedPreset.STANDARD.stepDurationMs))
+        // Expected: startHold -> isolated Step 1 (4,0)->(4,1) -> remaining ortho (4,1)->(3,1)->(3,0) -> endHold
+        assertEquals(4, segs.size)
+        assertEquals(2, segs[1].points.size)
+        assertTrue("Isolated Step 1 duration must be >= 58ms", segs[1].durationMs >= 58L)
+        assertEquals(geom.cellCenterX(1), segs[1].points.last().x, 0.5f)
+        assertEquals(geom.cellCenterY(4), segs[1].points.last().y, 0.5f)
+        for (i in 0 until segs.lastIndex) {
+            assertTrue(segs[i].willContinue)
+            assertEquals(segs[i].points.last(), segs[i + 1].points.first())
+        }
+        assertFalse(segs.last().willContinue)
+    }
 }

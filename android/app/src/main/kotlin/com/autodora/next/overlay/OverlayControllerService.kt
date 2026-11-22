@@ -115,6 +115,8 @@ class OverlayControllerService : Service() {
     private lateinit var prevBtn: TextView
     private lateinit var pagerText: TextView
     private lateinit var nextBtn: TextView
+    private lateinit var shieldStatusScroll: HorizontalScrollView
+    private lateinit var shieldStatusRow: LinearLayout
     private lateinit var groupsScroll: HorizontalScrollView
     private lateinit var groupsRow: LinearLayout
 
@@ -525,7 +527,8 @@ class OverlayControllerService : Service() {
             maxWidth = (screenW * 0.72f).toInt()
             setOnClickListener {
                 summaryPillsExpanded = !summaryPillsExpanded
-                groupsScroll.visibility = if (summaryPillsExpanded) View.VISIBLE else View.GONE
+                shieldStatusScroll.visibility = if (summaryPillsExpanded && shieldStatusRow.childCount > 0) View.VISIBLE else View.GONE
+                groupsScroll.visibility = if (summaryPillsExpanded && groupsRow.childCount > 0) View.VISIBLE else View.GONE
             }
         }
         summaryHeaderRow.addView(summaryTitle)
@@ -563,6 +566,21 @@ class OverlayControllerService : Service() {
         solutionSwitcherBox.addView(nextBtn)
         summaryHeaderRow.addView(solutionSwitcherBox)
         summaryStrip.addView(summaryHeaderRow)
+
+        shieldStatusScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(3) }
+        }
+        shieldStatusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        shieldStatusScroll.addView(shieldStatusRow)
+        summaryStrip.addView(shieldStatusScroll)
 
         groupsScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -796,7 +814,11 @@ class OverlayControllerService : Service() {
                 delay(40)
             }
 
-            val frames = capturer.captureMultiFrames(count = settings.multiFrameCount, intervalMs = 50L)
+            val trafficLightChipActive = activeWaveChips.any { it.id == "traffic_light" }
+            val puzzleChipActive = activeWaveChips.any { it.id in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS }
+            val burstCount = if (trafficLightChipActive || puzzleChipActive) maxOf(settings.multiFrameCount, 4) else settings.multiFrameCount
+            val burstInterval = if (trafficLightChipActive) 85L else 50L
+            val frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
             if (frames.isEmpty()) {
                 pathOverlayView.visibility = View.VISIBLE
                 setPhase(OverlayPhase.IDLE)
@@ -823,7 +845,21 @@ class OverlayControllerService : Service() {
                     return@launch
                 }
 
-                val liveRec = boardRecognizer.recognize(frames, geom)
+                var liveRec = boardRecognizer.recognize(frames, geom)
+
+                // Pulsing Red-Burst / Corner GO Rescue:
+                // The ToS red 8-ray starburst pulses on a ~0.6s cycle. If only Start (or neither/partial while
+                // traffic_light chip is active) was caught in the initial burst, grab 2 extra frames +105ms apart
+                // and fuse across the wider ~450ms window to guarantee catching a bright pulse peak!
+                val needTlBonusFrames = (liveRec.trafficLightStartCount > 0 && liveRec.trafficLightEndCount == 0) ||
+                    (trafficLightChipActive && (liveRec.trafficLightStartCount == 0 || liveRec.trafficLightEndCount == 0))
+                if (needTlBonusFrames) {
+                    for (bonus in 0 until 2) {
+                        delay(105L)
+                        capturer.captureSingleFrame()?.let { frames.add(it) }
+                    }
+                    liveRec = boardRecognizer.recognize(frames, geom)
+                }
 
                 // Always-On Full-Screen Question Orb Memory + Legacy AutoDora 'FullscreenQuestion' Auto-Fallback!
                 var resolvedFromMemory = false
@@ -872,11 +908,17 @@ class OverlayControllerService : Service() {
                 if (puzzleMaskMissing) {
                     toast(lctx.getString(R.string.ov_toast_puzzle_not_detected))
                 }
-                val trafficLightMissing = activeWaveChips.any { it.id == "traffic_light" } &&
-                    effectiveBoard.tileFlags.none { (it and (TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED)) != 0 }
+                val hasTlStart = effectiveBoard.tileFlags.any { (it and TileFlagBits.START_ALLOWED) != 0 }
+                val hasTlEnd = effectiveBoard.tileFlags.any { (it and TileFlagBits.END_REQUIRED) != 0 }
+                val trafficLightMissing = activeWaveChips.any { it.id == "traffic_light" } && (!hasTlStart || !hasTlEnd)
                 lastTrafficLightMissing = trafficLightMissing
                 if (trafficLightMissing && !puzzleMaskMissing) {
-                    toast(lctx.getString(R.string.ov_toast_traffic_light_not_detected))
+                    if (!hasTlStart && !hasTlEnd) {
+                        toast(lctx.getString(R.string.ov_toast_traffic_light_not_detected))
+                    } else {
+                        val partLabel = lctx.getString(if (hasTlStart) R.string.ov_tl_badge_start_only else R.string.ov_tl_badge_end_only)
+                        toast(lctx.getString(R.string.ov_toast_traffic_light_partial, partLabel))
+                    }
                 }
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
@@ -938,11 +980,17 @@ class OverlayControllerService : Service() {
                 if (puzzleMaskMissing) {
                     toast(lctx.getString(R.string.ov_toast_puzzle_not_detected))
                 }
-                val trafficLightMissing = activeWaveChips.any { it.id == "traffic_light" } &&
-                    effectiveBoard.tileFlags.none { (it and (TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED)) != 0 }
+                val hasTlStart = effectiveBoard.tileFlags.any { (it and TileFlagBits.START_ALLOWED) != 0 }
+                val hasTlEnd = effectiveBoard.tileFlags.any { (it and TileFlagBits.END_REQUIRED) != 0 }
+                val trafficLightMissing = activeWaveChips.any { it.id == "traffic_light" } && (!hasTlStart || !hasTlEnd)
                 lastTrafficLightMissing = trafficLightMissing
                 if (trafficLightMissing && !puzzleMaskMissing) {
-                    toast(lctx.getString(R.string.ov_toast_traffic_light_not_detected))
+                    if (!hasTlStart && !hasTlEnd) {
+                        toast(lctx.getString(R.string.ov_toast_traffic_light_not_detected))
+                    } else {
+                        val partLabel = lctx.getString(if (hasTlStart) R.string.ov_tl_badge_start_only else R.string.ov_tl_badge_end_only)
+                        toast(lctx.getString(R.string.ov_toast_traffic_light_partial, partLabel))
+                    }
                 }
                 val token = NativeSolver.createCancelToken()
                 activeCancelToken = token
@@ -1730,7 +1778,20 @@ class OverlayControllerService : Service() {
         pagerText.text = "${selectedSolutionIdx + 1}/${out.solutions.size}"
         solutionSwitcherBox.visibility = if (out.solutions.size > 1) View.VISIBLE else View.GONE
 
-        val shieldBadge = if (sol.allHardConstraintsMet && !lastPuzzleMaskMissing && !lastTrafficLightMissing) "✓" else "!"
+        val activeBoard = editedBoard ?: lastRecognition?.board
+        val verdicts = if (activeBoard != null) {
+            ShieldVerdictEvaluator.evaluate(activeWaveChips, activeBoard, sol)
+        } else {
+            emptyList()
+        }
+        val passedCnt = verdicts.count { it.status == ShieldVerdictStatus.PASSED }
+        val allVerdictsPassed = verdicts.all { it.status == ShieldVerdictStatus.PASSED }
+        val shieldBadge = when {
+            verdicts.isNotEmpty() && sol.allHardConstraintsMet && allVerdictsPassed -> "✓${verdicts.size}/${verdicts.size}"
+            verdicts.isNotEmpty() -> "⚠$passedCnt/${verdicts.size}"
+            sol.allHardConstraintsMet && !lastPuzzleMaskMissing && !lastTrafficLightMissing -> "✓"
+            else -> "!"
+        }
         val coreSummary = lctx.getString(
             R.string.ov_summary_fmt,
             geom.cols,
@@ -1743,19 +1804,62 @@ class OverlayControllerService : Service() {
         val extra = buildString {
             append(" ").append(shieldBadge)
             if (usedMemorizedSnapshot) append(" · ★")
-            val activeBoard = editedBoard ?: lastRecognition?.board
             val puzzleCnt = activeBoard?.tileFlags?.count {
                 (it and (TileFlagBits.PUZZLE_1 or TileFlagBits.PUZZLE_2)) != 0
             } ?: 0
             if (puzzleCnt > 0) append(" · 🧩").append(puzzleCnt)
-            val hasTl = activeBoard?.tileFlags?.any {
-                (it and (TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED)) != 0
-            } == true
-            if (hasTl) append(" · 🚦")
+            val hasTlStart = activeBoard?.tileFlags?.any { (it and TileFlagBits.START_ALLOWED) != 0 } == true
+            val hasTlEnd = activeBoard?.tileFlags?.any { (it and TileFlagBits.END_REQUIRED) != 0 } == true
+            if (hasTlStart || hasTlEnd) {
+                val tlTag = when {
+                    hasTlStart && hasTlEnd -> lctx.getString(R.string.ov_tl_badge_both)
+                    hasTlStart -> lctx.getString(R.string.ov_tl_badge_start_only)
+                    else -> lctx.getString(R.string.ov_tl_badge_end_only)
+                }
+                append(" · 🚦").append(tlTag)
+            }
             val stormCnt = lastRecognition?.stormCellsDetected ?: 0
             if (stormCnt > 0) append(" · 🌀").append(stormCnt)
         }
         summaryTitle.text = coreSummary + extra
+
+        // Per-Shield Satisfaction Verdict Pills (✓ passed / ✗ failed / ? marker undetected)
+        shieldStatusRow.removeAllViews()
+        val isDark = ::palette.isInitialized && palette.isDark
+        for (v in verdicts) {
+            val (bgCol, fgCol, strokeCol) = when (v.status) {
+                ShieldVerdictStatus.PASSED -> Triple(
+                    if (isDark) Color.rgb(22, 56, 38) else Color.rgb(232, 245, 233),
+                    if (isDark) Color.rgb(129, 236, 172) else Color.rgb(27, 94, 32),
+                    Color.rgb(46, 125, 50)
+                )
+                ShieldVerdictStatus.FAILED -> Triple(
+                    if (isDark) Color.rgb(72, 24, 28) else Color.rgb(255, 235, 238),
+                    if (isDark) Color.rgb(255, 138, 128) else Color.rgb(183, 28, 28),
+                    Color.rgb(211, 47, 47)
+                )
+                ShieldVerdictStatus.UNDETECTED -> Triple(
+                    if (isDark) Color.rgb(66, 48, 16) else Color.rgb(255, 248, 225),
+                    if (isDark) Color.rgb(255, 213, 79) else Color.rgb(230, 81, 0),
+                    Color.rgb(245, 124, 0)
+                )
+            }
+            val pill = TextView(this).apply {
+                text = LocaleHelper.formatShieldVerdictLabel(lctx, v)
+                textSize = 9f
+                setSingleLine(true)
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(fgCol)
+                setPadding(dp(5), dp(1), dp(5), dp(1))
+                background = roundedBg(bgCol, dp(5).toFloat(), strokeCol)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(3) }
+            }
+            shieldStatusRow.addView(pill)
+        }
+        shieldStatusScroll.visibility = if (summaryPillsExpanded && verdicts.isNotEmpty()) View.VISIBLE else View.GONE
 
         groupsRow.removeAllViews()
         for (grp in sol.groups) {

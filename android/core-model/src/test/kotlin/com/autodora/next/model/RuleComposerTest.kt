@@ -234,4 +234,70 @@ class RuleComposerTest {
         assertFalse(composedAuto.allowDiagonalMove)
         assertTrue(composedAuto.beamWidth >= 260)
     }
+
+    @Test
+    fun `ShieldVerdictEvaluator reports exact per-shield pass fail and undetected verdicts across 3 composite shields`() {
+        val chips = listOf(
+            WaveShieldChip("traffic_light", "红绿灯(起终点)", ShieldCategory.HAZARD_AND_PATH),
+            WaveShieldChip("anti_first_wave", "反首消叠珠:暗", ShieldCategory.COUNT_AND_ELEMENT, paramElementMask = Element.DARK.bitMask),
+            WaveShieldChip("min_combo", "总连击 ≥6", ShieldCategory.COMBO, paramInt = 6)
+        )
+        val flagsBoth = MutableList(30) { TileFlagBits.NONE }.apply {
+            this[4 * 6 + 0] = TileFlagBits.START_ALLOWED
+            this[3 * 6 + 5] = TileFlagBits.END_REQUIRED
+        }
+        val boardBoth = BoardState(cols = 6, rows = 5, cells = List(30) { CellState(Element.LIGHT) }, tileFlags = flagsBoth)
+
+        // Case A: All 3 satisfied (Dark only in wave 2 cascade)
+        val solAllMet = SolutionPath(
+            start = CellCoord(4, 0),
+            usedCharacterOrb = false,
+            characterOrbCol = 0,
+            moves = listOf(Direction.RIGHT),
+            waypoints = listOf(CellCoord(4, 0), CellCoord(3, 5)),
+            stepCount = 42,
+            firstWaveCombo = 5,
+            totalCombo = 7,
+            firstWaveOrbs = 15,
+            totalOrbs = 21,
+            allHardConstraintsMet = true,
+            satisfiedFlags = ShieldStatusBits.TRAFFIC_LIGHT or ShieldStatusBits.FORBID_FIRST_WAVE or ShieldStatusBits.COMBO_SHIELD,
+            failedFlags = 0,
+            score = 1001000.0,
+            tag = "Best",
+            groups = listOf(
+                MatchSummary(Element.WATER, 3, 1, false),
+                MatchSummary(Element.WOOD, 3, 1, false),
+                MatchSummary(Element.LIGHT, 3, 1, false),
+                MatchSummary(Element.DARK, 3, 2, false)
+            )
+        )
+        val vAll = ShieldVerdictEvaluator.evaluate(chips, boardBoth, solAllMet)
+        assertEquals(3, vAll.size)
+        assertTrue("All 3 shields must report PASSED", vAll.all { it.status == ShieldVerdictStatus.PASSED })
+
+        // Case B: Anti-first-wave Dark violated (Dark matched in wave 1), while Traffic Light & >=6C passed
+        val solFailDark = solAllMet.copy(
+            allHardConstraintsMet = false,
+            failedFlags = ShieldStatusBits.FORBID_FIRST_WAVE,
+            groups = listOf(
+                MatchSummary(Element.WATER, 3, 1, false),
+                MatchSummary(Element.DARK, 3, 1, false),
+                MatchSummary(Element.LIGHT, 3, 1, false)
+            )
+        )
+        val vFail = ShieldVerdictEvaluator.evaluate(chips, boardBoth, solFailDark).associateBy { it.chipId }
+        assertEquals(ShieldVerdictStatus.PASSED, vFail.getValue("traffic_light").status)
+        assertEquals(ShieldVerdictStatus.FAILED, vFail.getValue("anti_first_wave").status)
+        assertEquals(ShieldVerdictStatus.PASSED, vFail.getValue("min_combo").status)
+
+        // Case C: Only Start detected on board while End was missed -> Traffic Light must report UNDETECTED(missing_end)
+        val flagsStartOnly = MutableList(30) { TileFlagBits.NONE }.apply {
+            this[4 * 6 + 0] = TileFlagBits.START_ALLOWED
+        }
+        val boardStartOnly = BoardState(cols = 6, rows = 5, cells = List(30) { CellState(Element.LIGHT) }, tileFlags = flagsStartOnly)
+        val vPartial = ShieldVerdictEvaluator.evaluate(chips, boardStartOnly, solAllMet).associateBy { it.chipId }
+        assertEquals(ShieldVerdictStatus.UNDETECTED, vPartial.getValue("traffic_light").status)
+        assertEquals("missing_end", vPartial.getValue("traffic_light").detailTag)
+    }
 }

@@ -253,13 +253,16 @@ class CvBoardRecognizer : BoardRecognizer {
     }
 
     /**
-     * Real-screenshot calibrated Traffic Light (红绿灯 / 固定起终点) detector:
-     * Samples an extreme-corner tip ring (hypot ∈ [0.56, 0.72] * cell) strictly OUTSIDE circular Fire/Wood orb bodies:
-     *  - Green 'GO' Start (TileFlagBits.START_ALLOWED): neon-green rays (H∈[88°,155°], S≥0.55, V≥0.48) in ≥2 corner
-     *    quadrants (≥3 hits) AND bold pure-white 'GO' center band (V≥0.90, S≤0.18, density ≥ 25%).
-     *  - Red 8-Ray Burst End (TileFlagBits.END_REQUIRED): vivid crimson rays (H≤14° or ≥350°, S≥0.70, V≥0.46)
-     *    shooting into ≥3 extreme corner quadrants (≥4 hits).
-     * Verified 100% exact on real ToS Traffic Light stage with 0/15 false positives on ordinary battle boards.
+     * Real-screenshot calibrated Traffic Light (红绿灯 / 固定起终点) detector (V3):
+     * Samples the diagonal extreme-corner pocket ring (hypot ∈ [0.56, 0.72] * cell) strictly OUTSIDE circular Fire/Wood
+     * orb bodies (0/17 false positives across all non-TL real battle screenshots):
+     *  - Green 'GO' Start (TileFlagBits.START_ALLOWED): neon-green rays (H∈[84°,158°], S≥0.50, V≥0.44) in ≥2 corner
+     *    quadrants (≥3 hits) AND bold pure-white 'GO' center band (V≥0.88, S≤0.20, density ≥ 25%);
+     *    corner cells with clipped outer quadrants also qualify with strong 'GO' (≥42%) + ≥1 visible green corner (≥2 hits).
+     *  - Red 8-Ray Burst End (TileFlagBits.END_REQUIRED): vivid crimson rays (H≤15° or ≥348°, S≥0.68, V≥0.45)
+     *    shooting into ≥3 corner quadrants (≥4 hits); when a 'GO' start is confirmed on the same board, screen-edge
+     *    red bursts clipped on 1–2 outer quadrants are rescued at ≥2 visible quadrants (≥3 hits).
+     *  - Adjacent non-maximum suppression prevents intense rays from bleeding a false duplicate onto neighboring cells.
      */
     private fun detectTrafficLightMarkers(
         frames: List<VisionFrame>,
@@ -268,6 +271,7 @@ class CvBoardRecognizer : BoardRecognizer {
     ) {
         val cols = geometry.cols
         val rows = geometry.rows
+        val total = cols * rows
         val cw = geometry.cellWidth
         val ch = geometry.cellHeight
         val extOffsets = arrayOf(
@@ -276,17 +280,24 @@ class CvBoardRecognizer : BoardRecognizer {
             0.53f to 0.28f, 0.28f to 0.53f, 0.54f to 0.42f, 0.42f to 0.54f
         )
 
+        val startScores = ArrayList<Pair<Int, Float>>()
+        val redQuadsArr = IntArray(total)
+        val redHitsArr = IntArray(total)
+        val redVividArr = IntArray(total)
+
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 val idx = r * cols + c
                 val cx = geometry.cellCenterX(c)
                 val cy = geometry.cellCenterY(r)
+                val isCorner = (r == 0 || r == rows - 1) && (c == 0 || c == cols - 1)
 
                 var maxGreenQuads = 0
                 var maxGreenHits = 0
                 var maxWhiteGoRatio = 0f
                 var maxRedQuads = 0
                 var maxRedHits = 0
+                var maxRedVivid = 0
 
                 for (f in frames) {
                     val fw = f.width
@@ -295,6 +306,7 @@ class CvBoardRecognizer : BoardRecognizer {
                     var gQuadMask = 0
                     var rHits = 0
                     var rQuadMask = 0
+                    var rVivid = 0
 
                     for (qx in 0..1) {
                         val sx = if (qx == 0) -1f else 1f
@@ -306,13 +318,16 @@ class CvBoardRecognizer : BoardRecognizer {
                                 val y = (cy + sy * oy * ch).roundToInt()
                                 if (x < 0 || x >= fw || y < 0 || y >= fh) continue
                                 val (h, s, v) = rgbToHsv(f.getArgb(x, y))
-                                if (h in 88f..155f && s >= 0.55f && v >= 0.48f) {
+                                if (h in 84f..158f && s >= 0.50f && v >= 0.44f) {
                                     gHits++
                                     gQuadMask = gQuadMask or qBit
                                 }
-                                if ((h <= 14f || h >= 350f) && s >= 0.70f && v >= 0.46f) {
+                                if ((h <= 15f || h >= 348f) && s >= 0.68f && v >= 0.45f) {
                                     rHits++
                                     rQuadMask = rQuadMask or qBit
+                                    if ((h <= 10f || h >= 353f) && s >= 0.80f && v >= 0.56f) {
+                                        rVivid++
+                                    }
                                 }
                             }
                         }
@@ -324,13 +339,17 @@ class CvBoardRecognizer : BoardRecognizer {
                         maxGreenQuads = gQuads
                         maxGreenHits = gHits
                     }
-                    if (rQuads > maxRedQuads || (rQuads == maxRedQuads && rHits > maxRedHits)) {
+                    if (rQuads > maxRedQuads ||
+                        (rQuads == maxRedQuads && rHits > maxRedHits) ||
+                        (rQuads == maxRedQuads && rHits == maxRedHits && rVivid > maxRedVivid)
+                    ) {
                         maxRedQuads = rQuads
                         maxRedHits = rHits
+                        maxRedVivid = rVivid
                     }
 
-                    // Only sample center 'GO' white text band when green outer corner rays are present
-                    if (gQuads >= 2 && gHits >= 3) {
+                    // Sample center 'GO' white text band whenever green outer corner rays are present
+                    if (gHits >= 2) {
                         var wHits = 0
                         var wTot = 0
                         for (ix in 0 until 9) {
@@ -341,7 +360,7 @@ class CvBoardRecognizer : BoardRecognizer {
                                 val y = (cy + dy * ch).roundToInt().coerceIn(0, fh - 1)
                                 val (_, s, v) = rgbToHsv(f.getArgb(x, y))
                                 wTot++
-                                if (v >= 0.90f && s <= 0.18f) wHits++
+                                if (v >= 0.88f && s <= 0.20f) wHits++
                             }
                         }
                         val wRatio = wHits.toFloat() / max(1, wTot)
@@ -349,13 +368,54 @@ class CvBoardRecognizer : BoardRecognizer {
                     }
                 }
 
-                val isStart = maxGreenQuads >= 2 && maxGreenHits >= 3 && maxWhiteGoRatio >= 0.25f
-                val isEnd = !isStart && maxRedQuads >= 3 && maxRedHits >= 4
+                val isStart = (maxWhiteGoRatio >= 0.25f && maxGreenQuads >= 2 && maxGreenHits >= 3) ||
+                    (isCorner && maxWhiteGoRatio >= 0.42f && maxGreenQuads >= 1 && maxGreenHits >= 2)
                 if (isStart) {
-                    tileFlags[idx] = tileFlags[idx] or TileFlagBits.START_ALLOWED
-                } else if (isEnd) {
-                    tileFlags[idx] = tileFlags[idx] or TileFlagBits.END_REQUIRED
+                    startScores.add(idx to (maxGreenQuads * 10f + maxGreenHits + maxWhiteGoRatio * 20f))
+                } else {
+                    redQuadsArr[idx] = maxRedQuads
+                    redHitsArr[idx] = maxRedHits
+                    redVividArr[idx] = maxRedVivid
                 }
+            }
+        }
+
+        // Non-maximum suppression for Start cells (suppress adjacent ray bleed)
+        val chosenStarts = ArrayList<Int>(2)
+        for ((idx, _) in startScores.sortedByDescending { it.second }) {
+            val r = idx / cols
+            val c = idx % cols
+            if (chosenStarts.all { o -> abs(r - o / cols) + abs(c - o % cols) > 1 }) {
+                chosenStarts.add(idx)
+                tileFlags[idx] = tileFlags[idx] or TileFlagBits.START_ALLOWED
+            }
+        }
+
+        // Score & suppress Red-Burst End cells (with contextual edge-trough rescue when GO start is confirmed!)
+        val hasConfirmedStart = chosenStarts.isNotEmpty()
+        val endScores = ArrayList<Pair<Int, Float>>()
+        for (idx in 0 until total) {
+            if ((tileFlags[idx] and TileFlagBits.START_ALLOWED) != 0) continue
+            val r = idx / cols
+            val c = idx % cols
+            val isEdge = r == 0 || r == rows - 1 || c == 0 || c == cols - 1
+            val rq = redQuadsArr[idx]
+            val rh = redHitsArr[idx]
+            val rvh = redVividArr[idx]
+            val isEnd = (rq >= 3 && rh >= 4) ||
+                (hasConfirmedStart && isEdge && rq >= 2 && rh >= 3)
+            if (isEnd) {
+                endScores.add(idx to (rq * 14f + rh * 2f + rvh))
+            }
+        }
+
+        val chosenEnds = ArrayList<Int>(2)
+        for ((idx, _) in endScores.sortedByDescending { it.second }) {
+            val r = idx / cols
+            val c = idx % cols
+            if (chosenEnds.all { o -> abs(r - o / cols) + abs(c - o % cols) > 1 }) {
+                chosenEnds.add(idx)
+                tileFlags[idx] = tileFlags[idx] or TileFlagBits.END_REQUIRED
             }
         }
     }

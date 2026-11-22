@@ -811,5 +811,26 @@ class CvBoardRecognizerTest {
             assertEquals("Real Traffic Light must have 0 false question orbs", 0, rec.questionOrbsDetected)
             assertEquals("Real Traffic Light must have 0 false puzzle cells", 0, rec.puzzleCellsDetected)
         }
+
+        // 3) Real ToS Traffic Light Video (corner GO at (4,0) Fire orb + right-edge Red Burst at (3,5) Heart orb!)
+        val tlVidNames = listOf("t_02600ms.png", "t_02900ms.png", "t_03200ms.png", "t_13200ms.png", "t_13600ms.png")
+        for (name in tlVidNames) {
+            val frame = loadDatasetFrame("extracted_frames/traffic_light_start_end_vid/$name") ?: continue
+            val rec = recognizer.recognizeFrames(listOf(frame), autoBaseGeom(frame.width, frame.height))
+            assertEquals("TL video $name must detect 1 start", 1, rec.trafficLightStartCount)
+            assertEquals("TL video $name must detect 1 end", 1, rec.trafficLightEndCount)
+            assertTrue("TL video $name start must be (4,0)", (rec.board.tileFlags[4 * 6 + 0] and TileFlagBits.START_ALLOWED) != 0)
+            assertTrue("TL video $name end must be (3,5)", (rec.board.tileFlags[3 * 6 + 5] and TileFlagBits.END_REQUIRED) != 0)
+        }
+        // Multi-frame fusion spanning deepest pulse trough + peak must detect exact (4,0) -> (3,5)!
+        val troughFrame = loadDatasetFrame("extracted_frames/traffic_light_start_end_vid/t_02300ms.png")
+        val peakFrame = loadDatasetFrame("extracted_frames/traffic_light_start_end_vid/t_02600ms.png")
+        if (troughFrame != null && peakFrame != null) {
+            val multiRec = recognizer.recognizeFrames(listOf(troughFrame, peakFrame), autoBaseGeom(troughFrame.width, troughFrame.height))
+            assertEquals(1, multiRec.trafficLightStartCount)
+            assertEquals(1, multiRec.trafficLightEndCount)
+            assertTrue((multiRec.board.tileFlags[4 * 6 + 0] and TileFlagBits.START_ALLOWED) != 0)
+            assertTrue((multiRec.board.tileFlags[3 * 6 + 5] and TileFlagBits.END_REQUIRED) != 0)
+        }
     }
 }

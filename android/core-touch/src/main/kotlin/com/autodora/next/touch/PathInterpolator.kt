@@ -171,13 +171,30 @@ object PathInterpolator {
             } else {
                 val arcScale = if (move.isDiagonal) 1.35f else 1.0f
                 val stepMs = (config.stepDurationMs * arcScale * speedVar).roundToLong().coerceAtLeast(16L)
-                if (orthoPts.isEmpty()) {
-                    orthoPts.add(prevPt)
-                }
-                orthoPts.add(targetPt)
-                orthoDurMs += stepMs
-                if (orthoPts.size - 1 >= maxOrthoSteps) {
+                // Guard Step 1 against Unity turn-timer wake-up frame drops:
+                // When Step 1 -> Step 2 makes an immediate 90-degree orthogonal turn on a full-path start,
+                // isolating Step 1 into a crisp lead-in segment ensures the game registers Swap #1 dead-center
+                // before turning (prevents diagonal corner slip that scrambles all remaining swaps!).
+                val isolateFirstCornerStep = continuationOrigin == null &&
+                    !solution.usedCharacterOrb &&
+                    i == 0 &&
+                    !move.isDiagonal &&
+                    config.stepDurationMs > 30L &&
+                    solution.moves.size >= 2 &&
+                    !solution.moves[1].isDiagonal &&
+                    solution.moves[1] != move
+                if (isolateFirstCornerStep) {
                     flushOrtho()
+                    draftSegments.add(listOf(prevPt, targetPt) to maxOf(stepMs, 58L))
+                } else {
+                    if (orthoPts.isEmpty()) {
+                        orthoPts.add(prevPt)
+                    }
+                    orthoPts.add(targetPt)
+                    orthoDurMs += stepMs
+                    if (orthoPts.size - 1 >= maxOrthoSteps) {
+                        flushOrtho()
+                    }
                 }
             }
             prevPt = targetPt
