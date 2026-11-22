@@ -271,6 +271,106 @@ object AutoGridDetector {
     }
 
     /**
+     * Real-screenshot calibrated battle-board presence gate separating genuine Tower of Saviors
+     * battle boards (including 30/30 full-board '?' Question Orbs, Storm columns, and Puzzle shields)
+     * from non-battle screens (ToS Home Map, Victory/Reward screens, Team/Shop menus, Android UI).
+     *
+     * Calibrated across 35+ real screenshots:
+     *  - Every authentic ToS battle board exhibits the horizontal Player HP bar directly above row 0
+     *    coupled with dark checkerboard tile corners (V <= 0.34, ratio >= 0.32) or circular orb contrast;
+     *  - Fallback (for cropped/synthetic/0-HP frames) requires strong periodic circular-orb vs dark-corner
+     *    checkerboard structure across the full grid (darkCornerRatio >= 0.62, posContrast >= 0.72).
+     */
+    fun isBattleBoardPresent(bitmap: Bitmap, geometry: BoardGeometry): Boolean {
+        val frame = object : PixelFrame {
+            override val width: Int = bitmap.width
+            override val height: Int = bitmap.height
+            override fun getArgb(x: Int, y: Int): Int =
+                bitmap.getPixel(x.coerceIn(0, width - 1), y.coerceIn(0, height - 1))
+        }
+        return isBattleBoardPresent(frame, geometry)
+    }
+
+    fun isBattleBoardPresent(frame: PixelFrame, geometry: BoardGeometry): Boolean {
+        val cols = geometry.cols
+        val rows = geometry.rows
+        val total = cols * rows
+        if (total < 9 || geometry.cellWidth < 12f || geometry.cellHeight < 12f) return false
+
+        val cw = geometry.cellWidth
+        val ch = geometry.cellHeight
+        var darkCorners = 0
+        var totalCorners = 0
+        var radialSum = 0f
+        var posContrastCells = 0
+        var vividCenters = 0
+
+        val centerOffsets = arrayOf(
+            0f to 0f,
+            0.24f to 0f,
+            -0.24f to 0f,
+            0f to 0.24f,
+            0f to -0.24f
+        )
+
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val cx = geometry.cellCenterX(c)
+                val cy = geometry.cellCenterY(r)
+
+                var cornerVSum = 0f
+                for (sx in intArrayOf(-1, 1)) {
+                    for (sy in intArrayOf(-1, 1)) {
+                        val px = (cx + sx * cw * 0.43f).roundToInt().coerceIn(0, frame.width - 1)
+                        val py = (cy + sy * ch * 0.43f).roundToInt().coerceIn(0, frame.height - 1)
+                        val argb = frame.getArgb(px, py)
+                        val v = max((argb ushr 16) and 0xFF, max((argb ushr 8) and 0xFF, argb and 0xFF)) / 255f
+                        cornerVSum += v
+                        totalCorners++
+                        if (v <= 0.34f) darkCorners++
+                    }
+                }
+                val cornerMeanV = cornerVSum * 0.25f
+
+                var inVSum = 0f
+                var inSSum = 0f
+                for ((dx, dy) in centerOffsets) {
+                    val px = (cx + dx * cw).roundToInt().coerceIn(0, frame.width - 1)
+                    val py = (cy + dy * ch).roundToInt().coerceIn(0, frame.height - 1)
+                    val argb = frame.getArgb(px, py)
+                    val rr = ((argb ushr 16) and 0xFF) / 255f
+                    val gg = ((argb ushr 8) and 0xFF) / 255f
+                    val bb = (argb and 0xFF) / 255f
+                    val mx = max(rr, max(gg, bb))
+                    val mn = min(rr, min(gg, bb))
+                    inVSum += mx
+                    inSSum += if (mx < 1e-4f) 0f else (mx - mn) / mx
+                }
+                val inMeanV = inVSum * 0.2f
+                val inMeanS = inSSum * 0.2f
+                val contrast = inMeanV - cornerMeanV
+                radialSum += contrast
+                if (contrast >= 0.18f) posContrastCells++
+                if (inMeanV >= 0.48f && (inMeanS >= 0.32f || cornerMeanV <= 0.28f)) vividCenters++
+            }
+        }
+
+        val darkCornerRatio = darkCorners.toFloat() / totalCorners.coerceAtLeast(1)
+        val meanRadial = radialSum / total
+        val posContrastRatio = posContrastCells.toFloat() / total
+        val vividCenterRatio = vividCenters.toFloat() / total
+
+        val hasHp = hasHpBarBarrier(frame, geometry.leftPx, geometry.rightPx, geometry.topPx, ch)
+        if (hasHp && (darkCornerRatio >= 0.32f || posContrastRatio >= 0.45f)) {
+            return true
+        }
+        return darkCornerRatio >= 0.62f &&
+            posContrastRatio >= 0.72f &&
+            meanRadial >= 0.30f &&
+            vividCenterRatio >= 0.65f
+    }
+
+    /**
      * Multi-screenshot calibrated auto-calibrator: collects ALL candidate horizontal HP bars
      * (Coral-Pink/Red, Green full/partial, Cyan) in the middle third of the screen, validates
      * each candidate against the 5-row orb grid directly below it (cleanly distinguishing the

@@ -534,10 +534,14 @@ class CvBoardRecognizer : BoardRecognizer {
     }
 
     private fun isPuzzleSeamBarPixel(h: Float, s: Float, v: Float): Boolean {
-        // 1) Modern ToS silver / pale-ivory / champagne metallic filigree bar on dark grid seams
-        if (v >= 0.44f && s <= 0.30f) return true
-        // 2) Classic ToS golden / amber glowing puzzle perimeter bar
-        if (h in 24f..66f && s >= 0.45f && v >= 0.72f) return true
+        // 1) Modern ToS silver / pale-ivory / champagne metallic filigree bar (Normal Puzzle Shield)
+        if (v >= 0.44f && s <= 0.32f) return true
+        // 2) Modern & Classic ToS antique-gold / warm brass filigree bar (Strict Puzzle Shield)
+        //    H in [34°, 62°] cleanly separates golden filigree from dark-brown seams (H~24..31, V~0.21)
+        //    and red/orange Fire orb rim spill (H < 28).
+        if (h in 34f..62f && s >= 0.24f && v >= 0.46f) return true
+        // 3) Legacy / Classic bright neon amber-gold glowing puzzle perimeter
+        if (h in 26f..66f && s >= 0.45f && v >= 0.72f) return true
         return false
     }
 
@@ -577,20 +581,22 @@ class CvBoardRecognizer : BoardRecognizer {
         val leftOuterOffs = floatArrayOf(0.005f, 0.020f, 0.036f, 0.052f)
         val rightOuterOffs = floatArrayOf(-0.052f, -0.036f, -0.020f, -0.005f)
 
-        var strongSeams = 0
-        var darkSeams = 0
-        val totalSeams = hScores.size + vScores.size
+        var strongIntSeams = 0
+        var darkIntSeams = 0
+        var totalIntSeams = 0
 
         // Horizontal grid seams H[r][c]
         for (r in 0..rows) {
+            val isOuter = (r == 0 || r == rows)
             val offs = when (r) {
                 0 -> topOuterOffs
                 rows -> botOuterOffs
                 else -> interiorOffs
             }
             for (c in 0 until cols) {
+                if (!isOuter) totalIntSeams++
                 if (isStorm(r - 1, c) || isStorm(r, c)) {
-                    darkSeams++
+                    if (!isOuter) darkIntSeams++
                     continue
                 }
                 var hits = 0
@@ -609,16 +615,20 @@ class CvBoardRecognizer : BoardRecognizer {
                 }
                 val score = hits.toFloat() / seamSamples
                 hScores[r * cols + c] = score
-                if (score >= 0.62f) strongSeams++
-                if (score <= 0.25f) darkSeams++
+                if (!isOuter) {
+                    if (score >= 0.62f) strongIntSeams++
+                    if (score <= 0.30f) darkIntSeams++
+                }
             }
         }
 
         // Vertical grid seams V[r][c]
         for (r in 0 until rows) {
             for (c in 0..cols) {
+                val isOuter = (c == 0 || c == cols)
+                if (!isOuter) totalIntSeams++
                 if (isStorm(r, c - 1) || isStorm(r, c)) {
-                    darkSeams++
+                    if (!isOuter) darkIntSeams++
                     continue
                 }
                 val offs = when (c) {
@@ -642,57 +652,75 @@ class CvBoardRecognizer : BoardRecognizer {
                 }
                 val score = hits.toFloat() / seamSamples
                 vScores[r * (cols + 1) + c] = score
-                if (score >= 0.62f) strongSeams++
-                if (score <= 0.25f) darkSeams++
+                if (!isOuter) {
+                    if (score >= 0.62f) strongIntSeams++
+                    if (score <= 0.30f) darkIntSeams++
+                }
             }
         }
 
-        // Global battle-board sanity gate:
-        // Even a 3-cell or 2x2 puzzle with 1 occluded wall has >= 7 strong perimeter walls, while
-        // non-puzzle grid seams stay pitch dark (>= 38% dark, <= 42% bright — rejects white UI screens!).
-        if (strongSeams < 7) return 0
-        if (strongSeams.toFloat() / totalSeams > 0.42f) return 0
-        if (darkSeams.toFloat() / totalSeams < 0.38f) return 0
+        // Global internal-seam sanity gate:
+        // Even a 2x2 corner or 3-cell edge bar has >= 4 internal perimeter walls, while non-puzzle
+        // internal seams stay dark (>= 32% dark, <= 48% bright — rejects white UI screens & bright maps!).
+        if (strongIntSeams < 4 || totalIntSeams <= 0) return 0
+        if (strongIntSeams.toFloat() / totalIntSeams > 0.48f) return 0
+        if (darkIntSeams.toFloat() / totalIntSeams < 0.32f) return 0
 
         fun hScore(r: Int, c: Int): Float = hScores[r * cols + c]
         fun vScore(r: Int, c: Int): Float = vScores[r * (cols + 1) + c]
 
         val tau = 0.54f
-        data class BoundaryStats(val energy: Float, val meanWall: Float, val strongRatio: Float)
+        data class BoundaryStats(
+            val energy: Float,
+            val intMeanWall: Float,
+            val intStrongRatio: Float,
+            val intCount: Int
+        )
 
         fun evalBoundary(mask: BooleanArray): BoundaryStats {
             var energy = 0f
-            var wallSum = 0f
-            var strongWalls = 0
-            var boundaryCnt = 0
+            var intWallSum = 0f
+            var intStrongWalls = 0
+            var intCnt = 0
             for (r in 0..rows) {
+                val isOuter = (r == 0 || r == rows)
                 for (c in 0 until cols) {
                     val a = if (r > 0) mask[(r - 1) * cols + c] else false
                     val b = if (r < rows) mask[r * cols + c] else false
                     if (a != b) {
                         val s = hScore(r, c)
-                        energy += (s - tau)
-                        wallSum += s
-                        boundaryCnt++
-                        if (s >= 0.62f) strongWalls++
+                        if (isOuter) {
+                            // Outer screen edges may clip the filigree bar: reward if visible, tiny penalty if clipped!
+                            energy += if (s >= tau) (s - tau) else -0.06f
+                        } else {
+                            energy += (s - tau)
+                            intWallSum += s
+                            intCnt++
+                            if (s >= 0.62f) intStrongWalls++
+                        }
                     }
                 }
             }
             for (r in 0 until rows) {
                 for (c in 0..cols) {
+                    val isOuter = (c == 0 || c == cols)
                     val a = if (c > 0) mask[r * cols + (c - 1)] else false
                     val b = if (c < cols) mask[r * cols + c] else false
                     if (a != b) {
                         val s = vScore(r, c)
-                        energy += (s - tau)
-                        wallSum += s
-                        boundaryCnt++
-                        if (s >= 0.62f) strongWalls++
+                        if (isOuter) {
+                            energy += if (s >= tau) (s - tau) else -0.06f
+                        } else {
+                            energy += (s - tau)
+                            intWallSum += s
+                            intCnt++
+                            if (s >= 0.62f) intStrongWalls++
+                        }
                     }
                 }
             }
-            val denom = max(1, boundaryCnt).toFloat()
-            return BoundaryStats(energy, wallSum / denom, strongWalls.toFloat() / denom)
+            val denom = max(1, intCnt).toFloat()
+            return BoundaryStats(energy, intWallSum / denom, intStrongWalls.toFloat() / denom, intCnt)
         }
 
         fun refineMask(seed: BooleanArray): BooleanArray {
@@ -715,11 +743,61 @@ class CvBoardRecognizer : BoardRecognizer {
             return cur
         }
 
-        val candidateMasks = ArrayList<BooleanArray>(5)
+        val maxPuzzleCells = min(16, total - 8).coerceAtLeast(3)
+        val candidateMasks = ArrayList<BooleanArray>(8)
 
-        // Candidate 1..3: 0-1 BFS Jordan Curve Parity from virtual outside node OUT
-        val thresholds = floatArrayOf(0.64f, 0.56f, 0.48f)
-        for (thresh in thresholds) {
+        // Candidate 1..3: Internal Cut-Set Connected Components (100% immune to screen-clipped outer board edges!)
+        for (thresh in floatArrayOf(0.66f, 0.58f, 0.50f)) {
+            val visited = BooleanArray(total)
+            val comps = ArrayList<List<Int>>()
+            for (s in 0 until total) {
+                if (visited[s]) continue
+                val comp = ArrayList<Int>()
+                val q = ArrayDeque<Int>()
+                q.addLast(s)
+                visited[s] = true
+                while (q.isNotEmpty()) {
+                    val u = q.removeFirst()
+                    comp.add(u)
+                    val r = u / cols
+                    val c = u % cols
+                    if (r > 0 && hScore(r, c) < thresh) {
+                        val v = (r - 1) * cols + c
+                        if (!visited[v]) { visited[v] = true; q.addLast(v) }
+                    }
+                    if (r + 1 < rows && hScore(r + 1, c) < thresh) {
+                        val v = (r + 1) * cols + c
+                        if (!visited[v]) { visited[v] = true; q.addLast(v) }
+                    }
+                    if (c > 0 && vScore(r, c) < thresh) {
+                        val v = r * cols + (c - 1)
+                        if (!visited[v]) { visited[v] = true; q.addLast(v) }
+                    }
+                    if (c + 1 < cols && vScore(r, c + 1) < thresh) {
+                        val v = r * cols + (c + 1)
+                        if (!visited[v]) { visited[v] = true; q.addLast(v) }
+                    }
+                }
+                comps.add(comp)
+            }
+            if (comps.size >= 2) {
+                val maxSz = comps.maxOf { it.size }
+                val cutMask = BooleanArray(total)
+                var anyMarked = false
+                for (comp in comps) {
+                    if (comp.size in 3..maxPuzzleCells && comp.size < maxSz) {
+                        for (u in comp) cutMask[u] = true
+                        anyMarked = true
+                    }
+                }
+                if (anyMarked) {
+                    candidateMasks.add(refineMask(cutMask))
+                }
+            }
+        }
+
+        // Candidate 4..5: 0-1 BFS Jordan Curve Parity from virtual outside node OUT
+        for (thresh in floatArrayOf(0.62f, 0.54f)) {
             val dist = IntArray(total + 1) { 999 }
             dist[total] = 0
             val dq = ArrayDeque<Int>(total + 1)
@@ -758,17 +836,18 @@ class CvBoardRecognizer : BoardRecognizer {
                 } else {
                     val r = u / cols
                     val c = u % cols
-                    val upV = if (r > 0) (r - 1) * cols + c else total
-                    val upW = if (hScore(r, c) >= thresh) 1 else 0
-                    val dnV = if (r + 1 < rows) (r + 1) * cols + c else total
-                    val dnW = if (hScore(r + 1, c) >= thresh) 1 else 0
-                    val ltV = if (c > 0) r * cols + (c - 1) else total
-                    val ltW = if (vScore(r, c) >= thresh) 1 else 0
-                    val rtV = if (c + 1 < cols) r * cols + (c + 1) else total
-                    val rtW = if (vScore(r, c + 1) >= thresh) 1 else 0
-
-                    val nbrV = intArrayOf(upV, dnV, ltV, rtV)
-                    val nbrW = intArrayOf(upW, dnW, ltW, rtW)
+                    val nbrV = intArrayOf(
+                        if (r > 0) (r - 1) * cols + c else total,
+                        if (r + 1 < rows) (r + 1) * cols + c else total,
+                        if (c > 0) r * cols + (c - 1) else total,
+                        if (c + 1 < cols) r * cols + (c + 1) else total
+                    )
+                    val nbrW = intArrayOf(
+                        if (hScore(r, c) >= thresh) 1 else 0,
+                        if (hScore(r + 1, c) >= thresh) 1 else 0,
+                        if (vScore(r, c) >= thresh) 1 else 0,
+                        if (vScore(r, c + 1) >= thresh) 1 else 0
+                    )
                     for (k in 0 until 4) {
                         val v = nbrV[k]
                         val w = nbrW[k]
@@ -782,7 +861,7 @@ class CvBoardRecognizer : BoardRecognizer {
             candidateMasks.add(refineMask(BooleanArray(total) { (dist[it] and 1) == 1 }))
         }
 
-        // Candidate 4: Corner/2-wall local seed (recovers cleanly if 1 perimeter wall is occluded)
+        // Candidate 6: Corner/2-wall local seed (recovers cleanly if 1 internal wall is occluded)
         val seed2 = BooleanArray(total)
         for (r in 0 until rows) {
             for (c in 0 until cols) {
@@ -795,26 +874,6 @@ class CvBoardRecognizer : BoardRecognizer {
             }
         }
         candidateMasks.add(refineMask(seed2))
-
-        // Candidate 5: Cardinal raycast enclosure seed (recovers solid 3x3 / 2x2 even when 1 outer wall is occluded)
-        val seedRay = BooleanArray(total)
-        for (r in 0 until rows) {
-            for (c in 0 until cols) {
-                var upHit = false
-                for (rr in r downTo 0) if (hScore(rr, c) >= 0.62f) { upHit = true; break }
-                var dnHit = false
-                for (rr in (r + 1)..rows) if (hScore(rr, c) >= 0.62f) { dnHit = true; break }
-                var ltHit = false
-                for (cc in c downTo 0) if (vScore(r, cc) >= 0.62f) { ltHit = true; break }
-                var rtHit = false
-                for (cc in (c + 1)..cols) if (vScore(r, cc) >= 0.62f) { rtHit = true; break }
-                val dirs = (if (upHit) 1 else 0) + (if (dnHit) 1 else 0) + (if (ltHit) 1 else 0) + (if (rtHit) 1 else 0)
-                if (dirs >= 3 && (upHit && dnHit || ltHit && rtHit)) {
-                    seedRay[r * cols + c] = true
-                }
-            }
-        }
-        candidateMasks.add(refineMask(seedRay))
 
         // Pick highest-energy mask after independently validating every connected component
         var bestComponents: List<List<Int>> = emptyList()
@@ -848,7 +907,7 @@ class CvBoardRecognizer : BoardRecognizer {
                         }
                     }
                 }
-                if (comp.size in 3..(total - 6)) {
+                if (comp.size in 3..maxPuzzleCells) {
                     val compMask = BooleanArray(total)
                     for (u in comp) compMask[u] = true
                     val st = evalBoundary(compMask)
@@ -867,7 +926,7 @@ class CvBoardRecognizer : BoardRecognizer {
                         }
                     }
                     val meanInt = if (intCnt > 0) intSum / intCnt else 0f
-                    if (st.energy > 1.2f && st.meanWall >= 0.72f && st.strongRatio >= 0.75f && meanInt <= 0.45f) {
+                    if (st.energy > 1.2f && st.intCount >= 4 && st.intMeanWall >= 0.72f && st.intStrongRatio >= 0.75f && meanInt <= 0.48f) {
                         validComps.add(comp)
                         for (u in comp) cleanMask[u] = true
                     }

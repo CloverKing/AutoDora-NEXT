@@ -528,6 +528,47 @@ class CvBoardRecognizerTest {
         }
         val uiRec = recognizer.recognizeFrames(listOf(whiteUi), geom)
         assertEquals("White UI screen must never produce false puzzle cells", 0, uiRec.puzzleCellsDetected)
+
+        // Strict Antique-Gold Filigree 5-cell inverted-L touching far-left edge (c=0) with CLIPPED left borders!
+        val strictL = setOf(1 to 0, 1 to 1, 1 to 2, 2 to 0, 3 to 0)
+        val strictFrame = SyntheticBoardFrame(cols * cell, rows * cell)
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val el = Element.MATCHABLE[(r * cols + c) % 6]
+                strictFrame.drawCell(c * cell, r * cell, cell, palette.getValue(el))
+            }
+        }
+        // Draw antique-gold filigree ONLY on internal seams (simulating clipped x=0 screen edge!)
+        val antiqueGold = 0xFFB89E4A.toInt() // H≈46°, S≈0.60, V≈0.72 (exact real ToS strict puzzle filigree)
+        for (r in 1 until rows) {
+            for (c in 0 until cols) {
+                if (((r - 1 to c) in strictL) != ((r to c) in strictL)) {
+                    for (y in (r * cell - 2)..(r * cell + 2)) {
+                        for (x in (c * cell + 3) until ((c + 1) * cell - 3)) {
+                            strictFrame.pixels[y * strictFrame.width + x] = antiqueGold
+                        }
+                    }
+                }
+            }
+        }
+        for (r in 0 until rows) {
+            for (c in 1 until cols) {
+                if (((r to c - 1) in strictL) != ((r to c) in strictL)) {
+                    for (x in (c * cell - 2)..(c * cell + 2)) {
+                        for (y in (r * cell + 3) until ((r + 1) * cell - 3)) {
+                            strictFrame.pixels[y * strictFrame.width + x] = antiqueGold
+                        }
+                    }
+                }
+            }
+        }
+        val strictRec = recognizer.recognizeFrames(listOf(strictFrame), geom)
+        val strictDetected = (0 until cols * rows)
+            .filter { (strictRec.board.tileFlags[it] and TileFlagBits.PUZZLE_1) != 0 }
+            .map { (it / cols) to (it % cols) }
+            .toSet()
+        assertEquals("Edge-clipped strict antique-gold L puzzle must detect exact 5 cells", strictL, strictDetected)
+        assertEquals(5, strictRec.puzzleCellsDetected)
     }
 
     @Test
@@ -554,6 +595,19 @@ class CvBoardRecognizerTest {
                 .toSet()
             assertEquals("Real puzzle frame $name must detect exact 5-cell Cross", expectedCross, detected)
             assertEquals("Real puzzle frame $name count", 5, rec.puzzleCellsDetected)
+        }
+
+        // Strict Antique-Gold Filigree 5-cell L puzzle touching left screen edge (x=0 clipped!)
+        val expectedStrictL = setOf(1 to 0, 1 to 1, 1 to 2, 2 to 0, 3 to 0)
+        for (name in listOf("t_200ms.png", "t_1000ms.png", "t_1400ms.png", "t_1800ms.png", "t_2200ms.png", "t_3200ms.png", "t_4200ms.png")) {
+            val frame = loadRealVisionFrame("strict_puzzle_frames/$name") ?: continue
+            val rec = recognizer.recognizeFrames(listOf(frame), autoBaseGeom(frame.width, frame.height))
+            val detected = (0 until 30)
+                .filter { (rec.board.tileFlags[it] and TileFlagBits.PUZZLE_1) != 0 }
+                .map { (it / 6) to (it % 6) }
+                .toSet()
+            assertEquals("Real strict antique-gold puzzle frame $name must detect exact 5-cell L", expectedStrictL, detected)
+            assertEquals("Real strict antique-gold puzzle frame $name count", 5, rec.puzzleCellsDetected)
         }
 
         for (neg in listOf(

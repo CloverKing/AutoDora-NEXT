@@ -1123,9 +1123,21 @@ private fun PermissionItemRow(
             }
         }
         Spacer(Modifier.width(8.dp))
+        val readyBg = MaterialTheme.colorScheme.surfaceContainerHighest
+        val readyFg = MaterialTheme.colorScheme.onSurfaceVariant
         FilledTonalButton(
             onClick = onAction,
             enabled = !granted || allowAlwaysClick,
+            colors = if (granted) {
+                ButtonDefaults.filledTonalButtonColors(
+                    containerColor = readyBg,
+                    contentColor = readyFg,
+                    disabledContainerColor = readyBg,
+                    disabledContentColor = readyFg
+                )
+            } else {
+                ButtonDefaults.filledTonalButtonColors()
+            },
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
         ) {
             Text(

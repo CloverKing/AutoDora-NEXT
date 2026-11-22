@@ -183,12 +183,29 @@ bool evaluatePuzzleMask(
 
         if (pRule.strictNoExternalTouch) {
             uint8_t leakCount = 0;
+            uint8_t minDistCursorToLeak = 255;
+            const uint8_t curR = cursorIdx / boardAfterMoves.cols;
+            const uint8_t curC = cursorIdx % boardAfterMoves.cols;
             for (uint8_t i = 0; i < n; ++i) {
                 if ((extNeighbors & bitOf(i)) != 0 && boardAfterMoves.cells[i].element == static_cast<Element>(e)) {
                     leakCount++;
+                    const uint8_t r = i / boardAfterMoves.cols;
+                    const uint8_t c = i % boardAfterMoves.cols;
+                    const uint8_t d = static_cast<uint8_t>(std::abs(int(r) - int(curR)) + std::abs(int(c) - int(curC)));
+                    if (d < minDistCursorToLeak) minDistCursorToLeak = d;
                 }
             }
-            s -= static_cast<double>(leakCount) * 320.0;
+            if (countsInMask[e] < targetSize) {
+                // While still assembling the puzzle interior, keep leak penalty gentle (< pull reward 140)
+                // so the beam is never blocked from pulling missing orbs across the boundary into the puzzle!
+                s -= static_cast<double>(leakCount) * 35.0;
+            } else {
+                // All puzzle cells filled! Strongly penalize external leaks and attract cursor to push leaks away!
+                s -= static_cast<double>(leakCount) * 520.0;
+                if (leakCount > 0 && minDistCursorToLeak < 255) {
+                    s += 160.0 / static_cast<double>(minDistCursorToLeak + 1);
+                }
+            }
         }
         if (s > bestCandShaping) bestCandShaping = s;
     }

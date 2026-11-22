@@ -230,4 +230,52 @@ class AutoGridDetectorTest {
         assertEquals(1268f, snapped.topPx, 4f)
         assertEquals(2168f, snapped.bottomPx, 4f)
     }
+
+    @Test
+    fun `isBattleBoardPresent distinguishes real battle boards from non-battle maps and UI screens`() {
+        // 1) Pure synthetic non-battle bright UI / map backdrop -> FALSE
+        val brightUi = SyntheticFrame(600, 1200)
+        brightUi.pixels.fill(0xFFD8D6CF.toInt())
+        val baseGeom = BoardCalibration().toBase6x5Geometry(600, 1200)
+        assertFalse(
+            "Bright map/UI backdrop without HP bar or dark grid corners must NOT pass battle gate",
+            AutoGridDetector.isBattleBoardPresent(brightUi, baseGeom)
+        )
+
+        // 2) Pure synthetic battle board with dark grid corners + circular orbs + HP bar -> TRUE
+        val synthBattle = SyntheticFrame(600, 1200)
+        for (y in (baseGeom.topPx - 18f).toInt().coerceAtLeast(0) until (baseGeom.topPx - 4f).toInt()) {
+            for (x in 40 until 560) {
+                synthBattle.pixels[y * 600 + x] = 0xFF2ED458.toInt()
+            }
+        }
+        synthBattle.drawOrbGrid(0, baseGeom.topPx.toInt(), baseGeom.cellWidth.toInt(), 6, 5)
+        assertTrue(
+            "Authentic battle board with HP bar & circular orbs must pass battle gate",
+            AutoGridDetector.isBattleBoardPresent(synthBattle, baseGeom)
+        )
+
+        // 3) Real ToS battle screenshots (normal, storm, silver puzzle, strict gold puzzle) -> TRUE
+        for (rel in listOf(
+            "real_tos_samples/emu_battle_01.png",
+            "real_tos_samples/emu_mech_check.png",
+            "puzzle_vid_frames/t_4200ms.png",
+            "strict_puzzle_frames/t_1400ms.png"
+        )) {
+            val frame = loadRealFrame(rel) ?: continue
+            val g = AutoGridDetector.detect(frame, BoardCalibration())
+            assertTrue("Real battle screen $rel must pass isBattleBoardPresent", AutoGridDetector.isBattleBoardPresent(frame, g))
+        }
+
+        // 4) Real ToS non-battle screens (Home Map, Android app UI) -> FALSE
+        for (rel in listOf(
+            "../.user_uploaded/media_1795317721071_84df87e5.jpg",
+            "../.user_uploaded/media_1795317796519_61ba11e2.jpg",
+            "verify_01_home.png"
+        )) {
+            val frame = loadRealFrame(rel) ?: continue
+            val g = AutoGridDetector.detect(frame, BoardCalibration())
+            assertFalse("Non-battle screen $rel must be REJECTED by isBattleBoardPresent", AutoGridDetector.isBattleBoardPresent(frame, g))
+        }
+    }
 }

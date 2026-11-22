@@ -795,9 +795,23 @@ class OverlayControllerService : Service() {
             }
 
             try {
-                val geom = withContext(Dispatchers.Default) {
-                    AutoGridDetector.detect(frames.first(), settings.calibration)
+                val (geom, isBattleBoard) = withContext(Dispatchers.Default) {
+                    val firstBmp = frames.first()
+                    val g = AutoGridDetector.detect(firstBmp, settings.calibration)
+                    val inBattle = !FlashRevealMemoryTracker.isDarkModalCoveringBoard(DirectBitmapVisionFrame(firstBmp)) &&
+                        AutoGridDetector.isBattleBoardPresent(firstBmp, g)
+                    g to inBattle
                 }
+                if (!isBattleBoard) {
+                    flashMemoryTracker.clearLock()
+                    usedMemorizedSnapshot = false
+                    lastRecognition = null
+                    invalidateLastSolution()
+                    setPhase(OverlayPhase.IDLE)
+                    toast(lctx.getString(R.string.ov_toast_no_board))
+                    return@launch
+                }
+
                 val liveRec = boardRecognizer.recognize(frames, geom)
 
                 // Always-On Full-Screen Question Orb Memory + Legacy AutoDora 'FullscreenQuestion' Auto-Fallback!
@@ -961,13 +975,18 @@ class OverlayControllerService : Service() {
             val preBmp = capturer.captureSingleFrame()
             var preQuestionCount = 0
             var preElements: List<Element> = emptyList()
+            var preInBattle = true
             val geom = if (preBmp != null) {
                 try {
                     withContext(Dispatchers.Default) {
                         val g = AutoGridDetector.detect(preBmp, settings.calibration)
-                        val preRec = boardRecognizer.recognize(listOf(preBmp), g)
-                        preQuestionCount = preRec.questionOrbsDetected
-                        preElements = preRec.board.cells.map { it.element }
+                        preInBattle = !FlashRevealMemoryTracker.isDarkModalCoveringBoard(DirectBitmapVisionFrame(preBmp)) &&
+                            AutoGridDetector.isBattleBoardPresent(preBmp, g)
+                        if (preInBattle) {
+                            val preRec = boardRecognizer.recognize(listOf(preBmp), g)
+                            preQuestionCount = preRec.questionOrbsDetected
+                            preElements = preRec.board.cells.map { it.element }
+                        }
                         g
                     }
                 } finally {
@@ -975,6 +994,13 @@ class OverlayControllerService : Service() {
                 }
             } else {
                 settings.calibration.toBase6x5Geometry(screenW, screenH)
+            }
+            if (!preInBattle) {
+                pathOverlayView.visibility = View.VISIBLE
+                setPhase(OverlayPhase.IDLE)
+                invalidateLastSolution()
+                toast(lctx.getString(R.string.ov_toast_no_board))
+                return@launch
             }
             currentGeometry = geom
 
@@ -1417,6 +1443,7 @@ class OverlayControllerService : Service() {
     private fun ensureAlwaysOnBackgroundWatcher() {
         if (backgroundWatchJob?.isActive == true) return
         backgroundWatchJob = serviceScope.launch {
+            var consecutiveNonBattleTicks = 0
             while (isActive) {
                 delay(165L)
                 if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) continue
@@ -1425,33 +1452,63 @@ class OverlayControllerService : Service() {
 
                 val bmp = capturer.captureSingleFrame() ?: continue
                 try {
-                    val (geom, rec, isModal) = withContext(Dispatchers.Default) {
+                    val (geom, rec, watchStatus) = withContext(Dispatchers.Default) {
                         val frame = DirectBitmapVisionFrame(bmp)
                         if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(frame)) {
-                            Triple(null, null, true)
+                            Triple(null, null, 1) // 1 = dark modal covering battle board
                         } else {
                             val g = AutoGridDetector.detect(bmp, settings.calibration)
-                            val r = boardRecognizer.recognize(listOf(bmp), g)
-                            Triple(g, r, false)
+                            if (!AutoGridDetector.isBattleBoardPresent(bmp, g)) {
+                                Triple(null, null, 2) // 2 = non-battle screen (Home Map, menus, victory, etc.)
+                            } else {
+                                val r = boardRecognizer.recognize(listOf(bmp), g)
+                                Triple(g, r, 0) // 0 = genuine battle board
+                            }
                         }
                     }
 
-                    if (isModal) {
-                        if (!enemyPopupCoveringBoard) {
-                            enemyPopupCoveringBoard = true
-                            refreshPathCanvas()
+                    when (watchStatus) {
+                        1 -> {
+                            consecutiveNonBattleTicks = 0
+                            if (!enemyPopupCoveringBoard) {
+                                enemyPopupCoveringBoard = true
+                                refreshPathCanvas()
+                            }
                         }
-                    } else if (geom != null && rec != null) {
-                        if (enemyPopupCoveringBoard) {
-                            enemyPopupCoveringBoard = false
-                            refreshPathCanvas()
+                        2 -> {
+                            consecutiveNonBattleTicks++
+                            // After 2 consecutive non-battle ticks (~330ms), confirm battle ended / exited to Home Map:
+                            // wipe memorized question-orb snapshots & sweep residual path/orb overlays completely clean!
+                            if (consecutiveNonBattleTicks >= 2) {
+                                val hadOverlay = flashMemoryTracker.currentLockedSnapshot() != null ||
+                                    usedMemorizedSnapshot ||
+                                    lastSolveOutput != null ||
+                                    showPath ||
+                                    lastRecognition != null
+                                flashMemoryTracker.resetAll()
+                                usedMemorizedSnapshot = false
+                                enemyPopupCoveringBoard = false
+                                if (hadOverlay) {
+                                    lastRecognition = null
+                                    invalidateLastSolution()
+                                }
+                            }
                         }
+                        else -> {
+                            consecutiveNonBattleTicks = 0
+                            if (geom != null && rec != null) {
+                                if (enemyPopupCoveringBoard) {
+                                    enemyPopupCoveringBoard = false
+                                    refreshPathCanvas()
+                                }
 
-                        // Always-On Full-Screen Question Orb Memory (no toggle required; flat dark modals already excluded!)
-                        val lockedNow = flashMemoryTracker.onWatchFrame(rec)
-                        if (lockedNow) {
-                            currentGeometry = geom
-                            refreshPathCanvas()
+                                // Always-On Full-Screen Question Orb Memory (strictly gated on genuine battle screens!)
+                                val lockedNow = flashMemoryTracker.onWatchFrame(rec)
+                                if (lockedNow) {
+                                    currentGeometry = geom
+                                    refreshPathCanvas()
+                                }
+                            }
                         }
                     }
                 } catch (_: Exception) {

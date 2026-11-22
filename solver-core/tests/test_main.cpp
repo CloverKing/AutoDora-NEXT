@@ -1306,6 +1306,49 @@ void testOrdinaryPuzzleShieldSingleColorAndRealCross() {
     require(foundSingleGroup, "solution must contain a single same-color Wave-1 group covering the entire 5-cell Cross");
 }
 
+// -----------------------------------------------------------------------------
+// 35. Real Strict 5-Cell Inverted-L Puzzle Board (4-Way Orthogonal, Zero External Touch)
+// -----------------------------------------------------------------------------
+void testRealStrictInvertedLPuzzle4WayOrtho() {
+    // Exact real-game board from user's Strict Puzzle Shield video (t_1400ms.png)
+    // Strict 5-cell inverted-L at {(1,0),(1,1),(1,2),(2,0),(3,0)}
+    BoardState b = BoardState::fromString(
+        "HWLLFW"
+        "FGWDFH"
+        "HGWDDF"
+        "FLHWWL"
+        "DDLLFL",
+        6, 5
+    );
+    b.setTileFlag(1, 0, TileFlagBits::Puzzle1);
+    b.setTileFlag(1, 1, TileFlagBits::Puzzle1);
+    b.setTileFlag(1, 2, TileFlagBits::Puzzle1);
+    b.setTileFlag(2, 0, TileFlagBits::Puzzle1);
+    b.setTileFlag(3, 0, TileFlagBits::Puzzle1);
+
+    RuleConfig r;
+    r.allowDiagonalMove = false;
+    r.allowDiagonalMatch = false;
+    r.maxSteps = 55;
+    r.beamWidth = 260;
+    r.maxTimeMs = 800;
+    r.puzzle1.enabled = true;
+    r.puzzle1.strictNoExternalTouch = true;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "strict L puzzle must find a solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    std::cout << "       Real Strict 5-Cell L (4-Way Ortho): met=" << best.evaluation.allHardConstraintsMet
+              << ", 1st=" << int(best.simulation.firstWaveCombo)
+              << "C, total=" << int(best.simulation.totalCombo)
+              << "C, steps=" << best.metrics.stepCount
+              << ", time=" << out.elapsedMs << "ms\n";
+    require(best.evaluation.allHardConstraintsMet, "real strict 5-cell L puzzle must satisfy strictNoExternalTouch=true");
+    require((best.evaluation.satisfiedFlags & ShieldStatusBits::Puzzle1) != 0, "Puzzle1 flag must be set");
+}
+
 } // namespace
 
 int main() {
@@ -1345,6 +1388,7 @@ int main() {
     runTest("32. Composite Multi-Shield Stack", testCompositeMultiShieldStack);
     runTest("33. Hold-and-Replan Fast Fixed-Start & In-Worker Hard Timeout", testHoldAndReplanFastBudgetAndHardTimeout);
     runTest("34. Ordinary Puzzle Shield Semantics & Real 5-Cell Cross (4-Way Ortho)", testOrdinaryPuzzleShieldSingleColorAndRealCross);
+    runTest("35. Real Strict 5-Cell Inverted-L Puzzle (4-Way Ortho, Strict No External Touch)", testRealStrictInvertedLPuzzle4WayOrtho);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;
