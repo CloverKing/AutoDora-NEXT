@@ -284,6 +284,8 @@ class CvBoardRecognizer : BoardRecognizer {
         val redQuadsArr = IntArray(total)
         val redHitsArr = IntArray(total)
         val redVividArr = IntArray(total)
+        val redUnionMaskArr = IntArray(total)
+        val redTotalHitsArr = IntArray(total)
 
         for (r in 0 until rows) {
             for (c in 0 until cols) {
@@ -298,6 +300,8 @@ class CvBoardRecognizer : BoardRecognizer {
                 var maxRedQuads = 0
                 var maxRedHits = 0
                 var maxRedVivid = 0
+                var unionRedQuadMask = 0
+                var totalRedHits = 0
 
                 for (f in frames) {
                     val fw = f.width
@@ -347,6 +351,8 @@ class CvBoardRecognizer : BoardRecognizer {
                         maxRedHits = rHits
                         maxRedVivid = rVivid
                     }
+                    unionRedQuadMask = unionRedQuadMask or rQuadMask
+                    totalRedHits += rHits
 
                     // Sample center 'GO' white text band whenever green outer corner rays are present
                     if (gHits >= 2) {
@@ -376,6 +382,8 @@ class CvBoardRecognizer : BoardRecognizer {
                     redQuadsArr[idx] = maxRedQuads
                     redHitsArr[idx] = maxRedHits
                     redVividArr[idx] = maxRedVivid
+                    redUnionMaskArr[idx] = unionRedQuadMask
+                    redTotalHitsArr[idx] = totalRedHits
                 }
             }
         }
@@ -391,21 +399,42 @@ class CvBoardRecognizer : BoardRecognizer {
             }
         }
 
-        // Score & suppress Red-Burst End cells (with contextual edge-trough rescue when GO start is confirmed!)
+        // Score & suppress Red-Burst End cells:
+        //  - Multi-frame quadrant union merges rotating red burst rays across burst frames.
+        //  - Edge rescue requires orthogonal span along the unclipped interior edge (vertical span for left/right
+        //    edge cells; horizontal span for top/bottom edge cells), eliminating single-border bleed from neighbors!
         val hasConfirmedStart = chosenStarts.isNotEmpty()
         val endScores = ArrayList<Pair<Int, Float>>()
         for (idx in 0 until total) {
             if ((tileFlags[idx] and TileFlagBits.START_ALLOWED) != 0) continue
             val r = idx / cols
             val c = idx % cols
-            val isEdge = r == 0 || r == rows - 1 || c == 0 || c == cols - 1
+            val isTopBot = r == 0 || r == rows - 1
+            val isLeftRight = c == 0 || c == cols - 1
+            val isEdge = isTopBot || isLeftRight
             val rq = redQuadsArr[idx]
             val rh = redHitsArr[idx]
             val rvh = redVividArr[idx]
+            val uMask = redUnionMaskArr[idx]
+            val uq = Integer.bitCount(uMask)
+            val trh = redTotalHitsArr[idx]
+            val hasLeft = (uMask and 0b0011) != 0
+            val hasRight = (uMask and 0b1100) != 0
+            val hasTop = (uMask and 0b0101) != 0
+            val hasBot = (uMask and 0b1010) != 0
+            val edgeSpanValid = when {
+                isTopBot && isLeftRight -> true
+                isLeftRight -> hasTop && hasBot
+                isTopBot -> hasLeft && hasRight
+                else -> false
+            }
             val isEnd = (rq >= 3 && rh >= 4) ||
-                (hasConfirmedStart && isEdge && rq >= 2 && rh >= 3)
+                (hasConfirmedStart && uq >= 3 && trh >= 5) ||
+                (hasConfirmedStart && isEdge && uq >= 2 && trh >= 3 && edgeSpanValid)
             if (isEnd) {
-                endScores.add(idx to (rq * 14f + rh * 2f + rvh))
+                val effQ = if (uq >= 3 && trh >= 4) uq else rq
+                val effH = if (uq >= 3 && trh >= 4) trh else rh
+                endScores.add(idx to (effQ * 14f + effH * 2f + rvh))
             }
         }
 
@@ -553,7 +582,9 @@ class CvBoardRecognizer : BoardRecognizer {
         // saturation AND dimmer outer ring with pale '?' stroke pixels raising lowSatRatio.
         val isSlateQuestionOrb = !isTrafficLightStart && (
             (bestIdx == Element.WATER.code &&
-                ((outerAvgV < 0.66f && outerAvgS < 0.46f) || (outerAvgV < 0.70f && lowSatRatio > 0.36f))) ||
+                ((outerAvgV < 0.66f && outerAvgS < 0.46f && lowSatRatio >= 0.06f) ||
+                    (outerAvgV < 0.56f && outerAvgS < 0.48f) ||
+                    (outerAvgV < 0.70f && lowSatRatio > 0.36f))) ||
             (outerAvgV < 0.64f && outerAvgS < 0.36f && lowSatRatio >= 0.42f) ||
             (outerAvgV < 0.70f && outerAvgS < 0.30f && lowSatRatio >= 0.52f)
         )

@@ -833,4 +833,156 @@ class CvBoardRecognizerTest {
             assertTrue((multiRec.board.tileFlags[3 * 6 + 5] and TileFlagBits.END_REQUIRED) != 0)
         }
     }
+
+    @Test
+    fun `barrier terrain dimmed water orb stays WATER and FlashReveal rejects partial dimmed transitions`() {
+        // 1) Synthetic Barrier Terrain Water orb (outer HSV: H~210, S~0.43, V~0.62, zero low-sat slate pixels)
+        //    must classify as Element.WATER, NOT Question Orb ('?')!
+        val cell = 60
+        val w = cell * 6
+        val h = cell * 5
+        val pixels = IntArray(w * h) { 0xFF1A1815.toInt() }
+        val baseColors = intArrayOf(
+            0xFF288CF0.toInt(), // Water
+            0xFFE83A28.toInt(), // Fire
+            0xFF34C844.toInt(), // Wood
+            0xFFFFD824.toInt(), // Light
+            0xFF9C3CF0.toInt(), // Dark
+            0xFFFF5CA8.toInt()  // Heart
+        )
+        for (r in 0 until 5) {
+            for (c in 0 until 6) {
+                val cx = c * cell + cell * 0.5f
+                val cy = r * cell + cell * 0.5f
+                val rad = cell * 0.40f
+                val col = if (r == 4 && c == 5) {
+                    // Exact Barrier Terrain dimmed Water orb (RGB ~ 90, 128, 158 => H=206, S=0.43, V=0.62)
+                    0xFF5A809E.toInt()
+                } else {
+                    baseColors[(r * 2 + c) % baseColors.size]
+                }
+                for (y in r * cell until (r + 1) * cell) {
+                    for (x in c * cell until (c + 1) * cell) {
+                        val dx = x - cx
+                        val dy = y - cy
+                        if (dx * dx + dy * dy <= rad * rad) {
+                            pixels[y * w + x] = col
+                        }
+                    }
+                }
+            }
+        }
+        val frame = object : VisionFrame {
+            override val width = w
+            override val height = h
+            override fun getArgb(x: Int, y: Int): Int =
+                pixels[y.coerceIn(0, height - 1) * width + x.coerceIn(0, width - 1)]
+        }
+        val geom = BoardGeometry(0f, 0f, w.toFloat(), h.toFloat(), 6, 5)
+        val recognizer = CvBoardRecognizer()
+        val rec = recognizer.recognizeFrames(listOf(frame), geom)
+        assertEquals("Barrier-dimmed Water orb at (4,5) must stay WATER", Element.WATER, rec.board.cellAt(4, 5).element)
+        assertEquals("Barrier-dimmed Water orb must NOT trigger false '?'", 0, rec.questionOrbsDetected)
+
+        // 2) FlashRevealMemoryTracker must reject partial dimmed transition (9/30 '?') while locking real 25/30 '?'
+        val tracker = FlashRevealMemoryTracker()
+        val cleanCells = List(30) { idx ->
+            CellState(
+                element = Element.MATCHABLE[idx % 6],
+                confidence = 0.96f
+            )
+        }
+        val cleanBoard = BoardState(6, 5, cleanCells, List(30) { 0 })
+        val cleanRes = RecognitionResult(
+            board = cleanBoard,
+            averageConfidence = 0.96f,
+            lowConfidenceIndices = emptyList(),
+            puzzleCellsDetected = 0,
+            engineName = "test",
+            elapsedMs = 4.0
+        )
+        assertFalse(tracker.onWatchFrame(cleanRes, nowMs = 1_000L))
+
+        val partialDimCells = cleanCells.mapIndexed { idx, c ->
+            if (idx < 9) c.copy(hazards = HazardBits.QUESTION) else c
+        }
+        val partialRes = RecognitionResult(
+            board = BoardState(6, 5, partialDimCells, List(30) { 0 }),
+            averageConfidence = 0.85f,
+            lowConfidenceIndices = emptyList(),
+            puzzleCellsDetected = 0,
+            engineName = "test",
+            elapsedMs = 4.0,
+            questionOrbsDetected = 9
+        )
+        assertFalse(
+            "Partial 9/30 '?' (e.g. VICTORY/wave transition dim) must NOT lock flash-reveal overlay",
+            tracker.onWatchFrame(partialRes, nowMs = 1_500L)
+        )
+        assertNull(tracker.currentLockedSnapshot())
+
+        val massQCells = cleanCells.mapIndexed { idx, c ->
+            if (idx < 25) c.copy(hazards = HazardBits.QUESTION) else c
+        }
+        val massQRes = RecognitionResult(
+            board = BoardState(6, 5, massQCells, List(30) { 0 }),
+            averageConfidence = 0.85f,
+            lowConfidenceIndices = emptyList(),
+            puzzleCellsDetected = 0,
+            engineName = "test",
+            elapsedMs = 4.0,
+            questionOrbsDetected = 25
+        )
+        assertTrue(
+            "Genuine mass >=60% '?' (25/30) must lock memorized snapshot",
+            tracker.onWatchFrame(massQRes, nowMs = 2_000L)
+        )
+        assertNotNull(tracker.currentLockedSnapshot())
+
+        // 3) Optional local verification on real Barrier Terrain video frames & Burning Tile screenshot (gitignored)
+        val mediaRoot = java.io.File("../../backups/user_training_media/20261122_barrier_burning_victory")
+        if (mediaRoot.exists()) {
+            fun loadLocal(rel: String): VisionFrame? {
+                val f = java.io.File(mediaRoot, rel)
+                if (!f.exists()) return null
+                val imageIo = Class.forName("javax.imageio.ImageIO")
+                val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, f)
+                val imgCls = img.javaClass
+                val iw = imgCls.getMethod("getWidth").invoke(img) as Int
+                val ih = imgCls.getMethod("getHeight").invoke(img) as Int
+                val getRgb = imgCls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                return object : VisionFrame {
+                    override val width = iw
+                    override val height = ih
+                    override fun getArgb(x: Int, y: Int): Int =
+                        getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+                }
+            }
+            fun autoBase(iw: Int, ih: Int): BoardGeometry {
+                val gameH = iw * (16f / 9f)
+                val letterbox = ((ih - gameH) * 0.5f).coerceAtLeast(0f)
+                val bottomPx = (ih - letterbox + gameH * 0.004f).coerceAtMost(ih.toFloat())
+                val c = iw / 6f
+                val bot = bottomPx.coerceIn(c * 5f, ih.toFloat())
+                return BoardGeometry(0f, (bot - c * 5f).coerceAtLeast(0f), iw.toFloat(), bot, 6, 5)
+            }
+            val bFrames = listOf("barrier_frames/t_08500ms.png", "barrier_frames/t_09500ms.png", "barrier_frames/t_10500ms.png").mapNotNull(::loadLocal)
+            if (bFrames.size == 3) {
+                val brec = recognizer.recognizeFrames(bFrames, autoBase(bFrames[0].width, bFrames[0].height))
+                assertEquals("Real Barrier Terrain (4,5) must be WATER", Element.WATER, brec.board.cellAt(4, 5).element)
+                assertEquals("Real Barrier Terrain must have 0 false question orbs", 0, brec.questionOrbsDetected)
+                assertEquals("Real Barrier Terrain Traffic Light start count", 1, brec.trafficLightStartCount)
+                assertEquals("Real Barrier Terrain Traffic Light end count", 1, brec.trafficLightEndCount)
+                assertTrue("Real Barrier Terrain GO start at (3,2)", (brec.board.tileFlags[3 * 6 + 2] and TileFlagBits.START_ALLOWED) != 0)
+                assertTrue("Real Barrier Terrain Red end at (2,0)", (brec.board.tileFlags[2 * 6 + 0] and TileFlagBits.END_REQUIRED) != 0)
+                assertTrue("Neighbor (3,0) must NOT falsely grab END_REQUIRED via vertical bleed", (brec.board.tileFlags[3 * 6 + 0] and TileFlagBits.END_REQUIRED) == 0)
+            }
+            loadLocal("burning_tile_board.jpg")?.let { bf ->
+                val burnRec = recognizer.recognizeFrames(listOf(bf), autoBase(bf.width, bf.height))
+                assertEquals("Real Burning Tile (1,0) underlying orb must be LIGHT", Element.LIGHT, burnRec.board.cellAt(1, 0).element)
+                assertEquals("Real Burning Tile board must have 0 false question orbs", 0, burnRec.questionOrbsDetected)
+                assertTrue("Real Burning Tile average confidence >= 0.90", burnRec.averageConfidence >= 0.90f)
+            }
+        }
+    }
 }

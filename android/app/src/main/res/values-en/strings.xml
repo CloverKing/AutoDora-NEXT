@@ -43,7 +43,7 @@
     <string name="hyperos_guide_body">On Android 13+, sideloaded apps may have Accessibility locked by default:\n1. Tap \"App Info\" → top-right \"⋮\" or bottom menu → \"Allow restricted settings\";\n2. Go to Accessibility → Downloaded Apps → enable this app;\n3. Set battery policy to \"Unrestricted\" and lock the app in Recents.</string>
 
     <!-- Built-in Strategy Localized Names & Descriptions -->
-    <string name="preset_general_name">General Max Combo</string>
+    <string name="preset_general_name">Default Strategy</string>
     <string name="preset_general_desc">Standard 3-match · 8-dir diagonals · Enchanted priority · Balanced steps</string>
     <string name="preset_two_match_name">Fire/Wood/Heart 2-Match</string>
     <string name="preset_two_match_desc">2-orb match for Fire/Wood/Heart · Split combos for high multiplier</string>
@@ -281,7 +281,7 @@
     <string name="lang_zh_tw">繁體</string>
     <string name="lang_en">English</string>
     <string name="section_speed">Swipe Speed Presets</string>
-    <string name="speed_desc">Fast to steady thermal scale</string>
+    <string name="speed_desc">Seconds = target turn time; ms = time per grid step</string>
     <string name="speed_turbo">Turbo 2s</string>
     <string name="speed_fast">Fast 3s</string>
     <string name="speed_standard">Std 5s</string>
@@ -289,7 +289,7 @@
     <string name="section_engine_steps">Solver Engine &amp; Step Budget</string>
     <string name="field_max_steps">Global Max Steps (8 – 300)</string>
     <string name="error_max_steps">Enter an integer between 8 and 300</string>
-    <string name="support_max_steps">Active: %1$d steps (> 60 auto-extends search budget; tap Stop anytime)</string>
+    <string name="support_max_steps">Active: %1$d steps (> 60 auto-extends search budget; tap Stop icon anytime)</string>
     <string name="slider_beam">Solver Compute</string>
     <string name="slider_hold_delay">Hold-Replan Max Reveal Wait</string>
     <string name="slider_countdown">Pre-Swipe Countdown</string>
@@ -298,9 +298,9 @@
     <string name="bench_error_fmt">Benchmark error: %1$s</string>
     <string name="section_modes">Interaction &amp; Assist Modes</string>
     <string name="mode_test_title">Preview Before Swipe</string>
-    <string name="mode_test_sub">Tap Solve to preview path first, then tap Go to swipe</string>
+    <string name="mode_test_sub">Tap Solve icon to preview path first, then tap Play icon to swipe</string>
     <string name="mode_hold_title">Hold-and-Replan Mode</string>
-    <string name="mode_hold_sub">Tapping Go holds start orb to reveal board and solves seamlessly</string>
+    <string name="mode_hold_sub">Tapping Play icon holds start orb to reveal board and solves seamlessly</string>
     <string name="mode_nudge_title">Hold-Replan 1-Cell Nudge</string>
     <string name="mode_nudge_sub">Nudges 1 cell to reveal full-board Question-Turn stages</string>
     <string name="mode_diag_title">Allow 8-Direction Diagonals</string>
@@ -310,7 +310,7 @@
     <string name="mode_badges_title">Show Recognized Orb Badges on Path</string>
     <string name="mode_badges_sub">Displays recognized colors on preview to verify 1st-wave combos</string>
     <string name="mode_question_mem_title">Full-Board Question Memory</string>
-    <string name="mode_question_mem_sub">Silently remembers clear boards before flip, and auto-triggers Hold-Nudge-Reveal on direct Question-Turn stages.</string>
+    <string name="mode_question_mem_sub">Silently remembers clear boards before flip; tapping Solve icon auto-triggers Hold-Nudge-Reveal on direct Question-Turn stages.</string>
     <string name="mode_human_title">Humanized Micro-Jitter</string>
     <string name="mode_human_sub">Subtle speed &amp; coordinate variance along mid-path</string>
     <string name="mode_stop_title">Inline Emergency Stop Button</string>
@@ -323,7 +323,7 @@
 
     <!-- Detailed Contextual Help Dialogs (?) -->
     <string name="help_strategy_library_title">Strategy Profiles Guide</string>
-    <string name="help_strategy_library_body">[Purpose]\nStrategy profiles define your dungeon-wide matching goals, leader skill traits, and solver budget. Temporary enemy shields configured in the Shields tab stack on top of your active strategy.\n\n[Scenarios]\n• General teams: use General Max Combo.\n• 2-Match or shape-based leaders: duplicate a profile and customize Min-Match and Shape.\n• Column Amelioration, Character Orb starter, or 6×8 expanded boards: activate the matching preset or create your own.</string>
+    <string name="help_strategy_library_body">[Purpose]\nStrategy profiles define your dungeon-wide matching goals, leader skill traits, and solver budget. Temporary enemy shields stack on top of your active strategy.\n\n[Scenarios]\n• General teams: use Default Strategy directly.\n• 2-Match or shape-based leaders: Save As a new profile and customize Min-Match and Shape.\n• Column Amelioration, Character Orb starter, or 6×8 expanded boards: configure inside the drawer and Save As your custom profile; unused profiles can be deleted in Load / Manage.</string>
     <string name="help_basic_steps_title">Step Budget &amp; Solver Compute</string>
     <string name="help_basic_steps_body">[Priority: Wave Shields &gt; Strategy &gt; System]\nSettings values are System defaults. Each Strategy can follow System or override Steps &amp; Compute with its own slider. Active Wave Shields always hold the highest priority.\n\n[Step Budget]\nMaximum moves per path (8–300). 30–60 steps fit 6×5 boards; 80–150 fit 6×8 or complex puzzles/crosses.\n\n[Solver Compute]\nControls the full path-search &amp; solution-calculation width per step (40–600).</string>
     <string name="help_engine_settings_title">Solver Engine &amp; Priority Hierarchy</string>

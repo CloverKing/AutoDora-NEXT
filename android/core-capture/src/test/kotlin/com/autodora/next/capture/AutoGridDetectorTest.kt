@@ -278,4 +278,60 @@ class AutoGridDetectorTest {
             assertFalse("Non-battle screen $rel must be REJECTED by isBattleBoardPresent", AutoGridDetector.isBattleBoardPresent(frame, g))
         }
     }
+
+    @Test
+    fun `isDimmedTransitionBoard catches dimmed VICTORY overlay while allowing active boards and full-board question orbs`() {
+        val baseGeom = BoardCalibration().toBase6x5Geometry(600, 1200)
+
+        // 1) Active bright battle board -> NOT dimmed transition
+        val activeBoard = SyntheticFrame(600, 1200)
+        activeBoard.drawOrbGrid(0, baseGeom.topPx.toInt(), baseGeom.cellWidth.toInt(), 6, 5)
+        assertFalse(
+            "Active battle board must not be flagged as dimmed transition",
+            AutoGridDetector.isDimmedTransitionBoard(activeBoard, baseGeom, questionCount = 0)
+        )
+
+        // 2) Dimmed VICTORY / wave-walk screen (~50% brightness, 9 false '?') -> TRUE
+        val dimmedVictory = SyntheticFrame(600, 1200)
+        dimmedVictory.drawOrbGrid(0, baseGeom.topPx.toInt(), baseGeom.cellWidth.toInt(), 6, 5)
+        for (i in dimmedVictory.pixels.indices) {
+            val p = dimmedVictory.pixels[i]
+            val r = (((p shr 16) and 0xFF) * 0.55f).toInt()
+            val g = (((p shr 8) and 0xFF) * 0.55f).toInt()
+            val b = ((p and 0xFF) * 0.55f).toInt()
+            dimmedVictory.pixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        assertTrue(
+            "Dimmed VICTORY/wave-transition board must be detected to suppress false flash-reveal overlay",
+            AutoGridDetector.isDimmedTransitionBoard(dimmedVictory, baseGeom, questionCount = 9)
+        )
+
+        // 3) Genuine full-board 30/30 '?' flash-reveal screen (dimmed slate look, q=30 >= 18) -> FALSE
+        assertFalse(
+            "Genuine full-board question-orb flash-reveal (30/30) must NOT be suppressed",
+            AutoGridDetector.isDimmedTransitionBoard(dimmedVictory, baseGeom, questionCount = 30)
+        )
+
+        // 4) Optional real local VICTORY screenshot verification (gitignored dataset)
+        val victoryFile = java.io.File("../../backups/user_training_media/20261122_barrier_burning_victory/victory_flash_reveal_bug.jpg")
+        if (victoryFile.exists()) {
+            val imageIo = Class.forName("javax.imageio.ImageIO")
+            val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, victoryFile)
+            val imgCls = img.javaClass
+            val w = imgCls.getMethod("getWidth").invoke(img) as Int
+            val h = imgCls.getMethod("getHeight").invoke(img) as Int
+            val getRgb = imgCls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            val frame = object : PixelFrame {
+                override val width = w
+                override val height = h
+                override fun getArgb(x: Int, y: Int): Int =
+                    getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+            }
+            val g = AutoGridDetector.detect(frame, BoardCalibration())
+            assertTrue(
+                "Real VICTORY screen must be caught by isDimmedTransitionBoard",
+                AutoGridDetector.isDimmedTransitionBoard(frame, g, questionCount = 9)
+            )
+        }
+    }
 }

@@ -963,7 +963,7 @@ class OverlayControllerService : Service() {
     // ==================== Solve Manually Painted Board ('算此盘') ====================
     private fun solveEditedBoardNow() {
         val board = editedBoard ?: run {
-            toast("当前无盘面数据，请先点「算」或进入战斗")
+            toast("当前无盘面数据，请先点击计算图标或进入战斗")
             return
         }
         val geom = currentGeometry ?: settings.calibration.toBase6x5Geometry(screenW, screenH)
@@ -1525,6 +1525,7 @@ class OverlayControllerService : Service() {
         if (backgroundWatchJob?.isActive == true) return
         backgroundWatchJob = serviceScope.launch {
             var consecutiveNonBattleTicks = 0
+            var consecutiveMassQuestionTicks = 0
             while (isActive) {
                 delay(165L)
                 if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) continue
@@ -1540,10 +1541,14 @@ class OverlayControllerService : Service() {
                         } else {
                             val g = AutoGridDetector.detect(bmp, settings.calibration)
                             if (!AutoGridDetector.isBattleBoardPresent(bmp, g)) {
-                                Triple(null, null, 2) // 2 = non-battle screen (Home Map, menus, victory, etc.)
+                                Triple(null, null, 2) // 2 = non-battle screen (Home Map, menus, etc.)
                             } else {
                                 val r = boardRecognizer.recognize(listOf(bmp), g)
-                                Triple(g, r, 0) // 0 = genuine battle board
+                                if (AutoGridDetector.isDimmedTransitionBoard(bmp, g, r.questionOrbsDetected)) {
+                                    Triple(null, null, 3) // 3 = dimmed VICTORY / wave-walk transition veil
+                                } else {
+                                    Triple(g, r, 0) // 0 = genuine active battle board
+                                }
                             }
                         }
                     }
@@ -1551,15 +1556,23 @@ class OverlayControllerService : Service() {
                     when (watchStatus) {
                         1 -> {
                             consecutiveNonBattleTicks = 0
+                            consecutiveMassQuestionTicks = 0
                             if (!enemyPopupCoveringBoard) {
                                 enemyPopupCoveringBoard = true
                                 refreshPathCanvas()
                             }
                         }
-                        2 -> {
+                        2, 3 -> {
+                            consecutiveMassQuestionTicks = 0
                             consecutiveNonBattleTicks++
-                            // After 2 consecutive non-battle ticks (~330ms), confirm battle ended / exited to Home Map:
-                            // wipe memorized question-orb snapshots & sweep residual path/orb overlays completely clean!
+                            // On a dimmed VICTORY / wave transition frame, immediately hide any memorized '?' overlay
+                            // on tick 1 so the translucent orb badges never linger over VICTORY or stage transitions!
+                            if (watchStatus == 3 && flashMemoryTracker.currentLockedSnapshot() != null) {
+                                flashMemoryTracker.clearLock()
+                                usedMemorizedSnapshot = false
+                                refreshPathCanvas()
+                            }
+                            // After 2 consecutive non-battle/transition ticks (~330ms), wipe memory & sweep overlays clean!
                             if (consecutiveNonBattleTicks >= 2) {
                                 val hadOverlay = flashMemoryTracker.currentLockedSnapshot() != null ||
                                     usedMemorizedSnapshot ||
@@ -1583,11 +1596,28 @@ class OverlayControllerService : Service() {
                                     refreshPathCanvas()
                                 }
 
-                                // Always-On Full-Screen Question Orb Memory (strictly gated on genuine battle screens!)
-                                val lockedNow = flashMemoryTracker.onWatchFrame(rec)
-                                if (lockedNow) {
-                                    currentGeometry = geom
-                                    refreshPathCanvas()
+                                // Always-On Full-Screen Question Orb Memory:
+                                // Require >= 2 consecutive sustained mass-'?' ticks (~330ms) before popping the
+                                // translucent orb overlay, eliminating 1-frame wave-change / attack-flash false triggers!
+                                val totalCells = rec.board.cols * rec.board.rows
+                                val hiddenCount = FlashRevealMemoryTracker.countHiddenOrQuestion(rec.board)
+                                val massThreshold = maxOf(18, (totalCells * 0.60f).toInt())
+                                if (hiddenCount >= massThreshold) {
+                                    consecutiveMassQuestionTicks++
+                                    if (consecutiveMassQuestionTicks >= 2) {
+                                        val lockedNow = flashMemoryTracker.onWatchFrame(rec)
+                                        if (lockedNow) {
+                                            currentGeometry = geom
+                                            refreshPathCanvas()
+                                        }
+                                    }
+                                } else {
+                                    consecutiveMassQuestionTicks = 0
+                                    val hadLocked = flashMemoryTracker.currentLockedSnapshot() != null
+                                    flashMemoryTracker.onWatchFrame(rec)
+                                    if (hadLocked && flashMemoryTracker.currentLockedSnapshot() == null) {
+                                        refreshPathCanvas()
+                                    }
                                 }
                             }
                         }

@@ -43,7 +43,7 @@
     <string name="hyperos_guide_body">Android 13 及以上系统安装本地应用时，无障碍开关可能被默认锁定：\n1. 点击「应用详情」→ 右上角「⋮」或底部菜单 →「允许受限设置」；\n2. 返回「无障碍」→「已下载的应用」→ 开启本应用；\n3. 建议将电池策略设为「无限制」并在后台任务卡片锁定，防止系统回收悬浮栏。</string>
 
     <!-- Built-in Strategy Localized Names & Descriptions -->
-    <string name="preset_general_name">通用高连击策略</string>
+    <string name="preset_general_name">默认策略</string>
     <string name="preset_general_desc">标准 3 消 · 八向斜转 · 强化珠优先 · 兼顾高连击与稳健手数</string>
     <string name="preset_two_match_name">火木心二消策略</string>
     <string name="preset_two_match_desc">火 / 木 / 心 2 颗即消 · 拆珠冲高连击 · 适配二消队长</string>
@@ -281,7 +281,7 @@
     <string name="lang_zh_tw">繁體</string>
     <string name="lang_en">English</string>
     <string name="section_speed">划动速度档位</string>
-    <string name="speed_desc">快至慢四档色阶</string>
+    <string name="speed_desc">秒数 = 适配转珠时间；ms = 单格划动耗时</string>
     <string name="speed_turbo">极速 2秒</string>
     <string name="speed_fast">快转 3秒</string>
     <string name="speed_standard">标准 5秒</string>
@@ -289,7 +289,7 @@
     <string name="section_engine_steps">解盘引擎与步数</string>
     <string name="field_max_steps">最大步数上限（8 ～ 300）</string>
     <string name="error_max_steps">请输入 8 ～ 300 之间的整数</string>
-    <string name="support_max_steps">当前生效：%1$d 步（超过 60 步自动放宽算路预算，随时可点「停」中止）</string>
+    <string name="support_max_steps">当前生效：%1$d 步（超过 60 步自动放宽算路预算，随时可点击急停图标中止）</string>
     <string name="slider_beam">解盘算力</string>
     <string name="slider_hold_delay">按住重算显形等待上限</string>
     <string name="slider_countdown">执行前倒数</string>
@@ -298,9 +298,9 @@
     <string name="bench_error_fmt">性能测试异常：%1$s</string>
     <string name="section_modes">交互与辅助模式</string>
     <string name="mode_test_title">试跑确认模式</string>
-    <string name="mode_test_sub">点击「算」后先画线预览，确认后再点「行」执行</string>
+    <string name="mode_test_sub">点击计算图标后先画线预览，确认后再点执行图标转珠</string>
     <string name="mode_hold_title">按住转珠重算模式</string>
-    <string name="mode_hold_sub">开启后点「行」将按住起手珠显形，不松手实时重算续滑</string>
+    <string name="mode_hold_sub">开启后点击执行图标将按住起手珠显形，不松手实时重算续滑</string>
     <string name="mode_nudge_title">按住重算微移 1 格触发</string>
     <string name="mode_nudge_sub">适配需起手轻移才翻开问号珠的关卡</string>
     <string name="mode_diag_title">允许八向斜转</string>
@@ -310,7 +310,7 @@
     <string name="mode_badges_title">路径预览显示识盘珠色角标</string>
     <string name="mode_badges_sub">画线预览时在每格显示识别出的珠色，方便核对首消连击</string>
     <string name="mode_question_mem_title">全屏问号珠记忆</string>
-    <string name="mode_question_mem_sub">后台静默记住翻面前盘面；若进场直接全版问号，点「算」将自动按住微移显形重算。</string>
+    <string name="mode_question_mem_sub">后台静默记住翻面前盘面；若进场直接全版问号，点击计算图标将自动按住微移显形重算。</string>
     <string name="mode_human_title">拟人化微抖动滑动</string>
     <string name="mode_human_sub">滑动轨迹中段加入轻微速度与坐标扰动</string>
     <string name="mode_stop_title">悬浮主栏内嵌急停按钮</string>
@@ -323,7 +323,7 @@
 
     <!-- Detailed Contextual Help Dialogs (?) -->
     <string name="help_strategy_library_title">作战策略库说明</string>
-    <string name="help_strategy_library_body">【功能作用】\n作战策略用于定义整场副本中通用的消珠习惯、队长技特性与解盘算力预算，与“解盾”中针对单个敌人的临时规则相互叠加生效。\n\n【适用场景】\n• 常规队：选择「通用高连击策略」。\n• 二消队 / 特定珠数队长：复制并配置「最低消」与「消珠形态」。\n• 直排升华 / 角色符石起手 / 违建扩版：直接启用对应预设或自定义新策略。</string>
+    <string name="help_strategy_library_body">【功能作用】\n作战策略用于定义整场副本中通用的消珠习惯、队长技特性与解盘算力预算，与“解盾”中针对单个敌人的临时规则相互叠加生效。\n\n【适用场景】\n• 常规队：直接使用「默认策略」。\n• 二消队 / 特定珠数队长：另存为新策略并配置「最低消」与「消珠形态」。\n• 直排升华 / 角色符石起手 / 违建扩版：在对应抽屉中启用后另存为专属策略，不需要的策略可在加载管理中删除。</string>
     <string name="help_basic_steps_title">策略步数与解盘算力说明</string>
     <string name="help_basic_steps_body">【层级优先级：解盾级 &gt; 策略级 &gt; 系统级】\n设置页中的步数上限与解盘算力属于「系统级默认值」；策略内可勾选「跟随系统」或拖动滑块/修改步数切换为「策略级覆盖」；本波解盾（如限 15 步、高难复合盾）拥有最高优先级。\n\n【步数上限】\n限制单次转珠路径的最大步数（8～300 步）。常规 6×5 盘面建议 30～60 步；6×8 违建或高难拼图/多十字建议 80～150 步。\n\n【解盘算力】\n控制整套路径搜索与解法评估的计算宽度（40～600）：每推进 1 步都会对候选路线进行模拟消除、破盾判定与综合评分。</string>
     <string name="help_engine_settings_title">解盘引擎与优先级说明</string>

@@ -371,6 +371,59 @@ object AutoGridDetector {
     }
 
     /**
+     * Detects dimmed wave-transition / VICTORY / enemy-cutscene overlays covering a battle board:
+     * During VICTORY or wave transitions, ToS keeps the HP bar visible while dimming the entire 6x5 board
+     * with a translucent black veil (~45-55% brightness -> 90th-percentile orb center V < 0.72f), while most
+     * orbs remain recognizable colored runes rather than flipping to a genuine full-board '?' screen (>=60% '?').
+     */
+    fun isDimmedTransitionBoard(bitmap: Bitmap, geometry: BoardGeometry, questionCount: Int): Boolean {
+        val frame = object : PixelFrame {
+            override val width: Int = bitmap.width
+            override val height: Int = bitmap.height
+            override fun getArgb(x: Int, y: Int): Int =
+                bitmap.getPixel(x.coerceIn(0, width - 1), y.coerceIn(0, height - 1))
+        }
+        return isDimmedTransitionBoard(frame, geometry, questionCount)
+    }
+
+    fun isDimmedTransitionBoard(frame: PixelFrame, geometry: BoardGeometry, questionCount: Int): Boolean {
+        val cols = geometry.cols
+        val rows = geometry.rows
+        val total = cols * rows
+        if (total < 9) return false
+        // Genuine full-board '?' Question stages (>=60% '?' orbs) are naturally dark slate-blue — never treat as dimmed VICTORY!
+        val massQuestionThreshold = max(18, (total * 0.60f).roundToInt())
+        if (questionCount >= massQuestionThreshold) return false
+
+        val cw = geometry.cellWidth
+        val ch = geometry.cellHeight
+        val centerVs = FloatArray(total)
+        val offs = arrayOf(0f to 0f, 0.24f to 0f, -0.24f to 0f, 0f to 0.24f, 0f to -0.24f)
+        var idx = 0
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val cx = geometry.cellCenterX(c)
+                val cy = geometry.cellCenterY(r)
+                var vSum = 0f
+                for ((dx, dy) in offs) {
+                    val px = (cx + dx * cw).roundToInt().coerceIn(0, frame.width - 1)
+                    val py = (cy + dy * ch).roundToInt().coerceIn(0, frame.height - 1)
+                    val argb = frame.getArgb(px, py)
+                    vSum += max((argb ushr 16) and 0xFF, max((argb ushr 8) and 0xFF, argb and 0xFF)) / 255f
+                }
+                centerVs[idx++] = vSum * 0.2f
+            }
+        }
+        centerVs.sort()
+        val p90Idx = ((total - 1) * 0.90f).roundToInt().coerceIn(0, total - 1)
+        val p90V = centerVs[p90Idx]
+        val maxV = centerVs[total - 1]
+        // Active live battle boards consistently have p90V >= 0.85, maxV >= 0.90;
+        // dimmed VICTORY / wave transitions consistently sit at p90V <= 0.66, maxV <= 0.72!
+        return p90V < 0.72f && maxV < 0.76f
+    }
+
+    /**
      * Multi-screenshot calibrated auto-calibrator: collects ALL candidate horizontal HP bars
      * (Coral-Pink/Red, Green full/partial, Cyan) in the middle third of the screen, validates
      * each candidate against the 5-row orb grid directly below it (cleanly distinguishing the

@@ -31,8 +31,14 @@ interface TeamPresetDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIgnore(entities: List<TeamPresetEntity>)
 
-    @Query("DELETE FROM team_presets WHERE id = :id AND isBuiltIn = 0")
+    @Query("DELETE FROM team_presets WHERE id = :id AND id != 'builtin_general'")
     suspend fun deleteCustom(id: String)
+
+    @Query("DELETE FROM team_presets WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
+    @Query("UPDATE team_presets SET name = :newName WHERE id = :id AND name = :oldName")
+    suspend fun renameIfExact(id: String, oldName: String, newName: String)
 }
 
 @Database(

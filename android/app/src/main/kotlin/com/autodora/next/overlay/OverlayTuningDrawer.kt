@@ -56,9 +56,13 @@ class OverlayTuningDrawerController(
     private var activeChips: List<WaveShieldChip> = emptyList()
     private var boardEditorOpen: Boolean = false
 
-    // Persistent card accordion expansion & preset picker state (survives live updates without jumping!)
+    // Exclusive single-open accordion expansion per tab (expanding one auto-collapses the others in that tab!)
     private var presetPickerExpanded = false
-    private val expandedCards = mutableSetOf(0, 1) // Default open: ① Goals & Combo, ② Attributes & Counts
+    private val expandedCardByTab = mutableMapOf<Int, Int?>(
+        0 to 0, // Tab 0 (Quick): Card 0 open
+        1 to 0, // Tab 1 (Strategy): Card 0 open
+        2 to 0  // Tab 2 (Settings): Card 0 open
+    )
 
     // Working numeric parameters synchronized with ActiveStrategyStore
     private var minTotalComboVal = 6
@@ -244,7 +248,7 @@ class OverlayTuningDrawerController(
         val p = palette ?: return
         val savedScrollY = if (preserveScroll) scrollView.scrollY else 0
         applyChromeTheme()
-        val targetH = if (activeTab == 1) maxScrollH else LinearLayout.LayoutParams.WRAP_CONTENT
+        val targetH = if (activeTab == 1 && expandedCardByTab[1] != null) maxScrollH else LinearLayout.LayoutParams.WRAP_CONTENT
         if (scrollView.layoutParams.height != targetH) {
             scrollView.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, targetH)
         }
@@ -261,60 +265,73 @@ class OverlayTuningDrawerController(
         }
     }
 
-    // ==================== TAB 0: 快捷工具 ====================
+    // ==================== TAB 0: 快捷工具 (3 Single-Open Colored Accordions) ====================
     private fun buildQuickTab(p: OverlayPalette) {
-        // Card 1: Board Paint & Active Wave Shields
-        val quickBody = addStaticGroupCard(s(R.string.ov_tab_quick), ACCENT_INDIGO, p)
-        val actRow = hRow(bottomMarginDp = 0)
-        actRow.addView(makeToggle(s(R.string.ov_editor), boardEditorOpen, p, weight = 1f) {
-            onToggleBoardEditor()
-        })
-        actRow.addView(makeChip(s(R.string.ov_clear_enemy_short, activeChips.size), weight = 1f, marginEndDp = 0) {
-            onClearWaveChips()
-        }.also {
-            styleChip(it, p.errorContainer, p.onErrorContainer, null)
-        })
-        quickBody.addView(actRow)
-
-        // Card 2: Battle Assist Modes
-        val modeBody = addStaticGroupCard(s(R.string.section_modes), ACCENT_TEAL, p)
-        val modeRow = hRow(bottomMarginDp = 0)
-        modeRow.addView(makeToggle(s(R.string.ov_hold), settings.holdReplanEnabled, p, weight = 1f) {
-            onUpdateSettings { it.copy(holdReplanEnabled = !it.holdReplanEnabled) }
-        })
-        modeRow.addView(makeToggle(s(R.string.mode_nudge_title), settings.holdReplanNudge, p, weight = 1.25f) {
-            onUpdateSettings { it.copy(holdReplanNudge = !it.holdReplanNudge) }
-        })
-        val invOn = settings.invertDragX || settings.invertDragY
-        modeRow.addView(makeToggle(s(R.string.ov_invert), invOn, p, weight = 0.85f, marginEndDp = 0) {
-            onUpdateSettings {
-                val next = !(it.invertDragX || it.invertDragY)
-                it.copy(invertDragX = next, invertDragY = next)
-            }
-        })
-        modeBody.addView(modeRow)
-
-        // Card 3: Swipe Speed 4-Tier
-        val spdBody = addStaticGroupCard(s(R.string.section_speed), ACCENT_AMBER, p)
-        val activeSpeed = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
-        val spdRow = hRow(bottomMarginDp = 0)
-        SwipeSpeedPreset.entries.forEachIndexed { idx, preset ->
-            val sel = activeSpeed == preset
-            val st = p.speedStyle(preset)
-            spdRow.addView(
-                makeChip(
-                    LocaleHelper.speedLabel(lctx, preset),
-                    weight = 1f,
-                    marginEndDp = if (idx == SwipeSpeedPreset.entries.lastIndex) 0 else 4
-                ) {
-                    onUpdateSettings { it.copy(stepDurationMs = preset.stepDurationMs) }
-                }.also {
-                    if (sel) styleChip(it, st.bg, st.fg, st.stroke)
-                    else styleChip(it, p.chipOffBg, p.chipOffText, p.chipOffStroke)
-                }
-            )
+        // Card 0 (Indigo): Board Paint & Active Wave Shields
+        val q0Summary = buildList {
+            if (boardEditorOpen) add(s(R.string.ov_editor))
+            if (activeChips.isNotEmpty()) add(s(R.string.ov_clear_enemy_short, activeChips.size))
+        }.joinToString(" · ").ifEmpty { s(R.string.ov_card_none_set) }
+        addAccordionGroupCard(0, s(R.string.ov_tab_quick), q0Summary, boardEditorOpen || activeChips.isNotEmpty(), ACCENT_INDIGO, p)?.let { quickBody ->
+            val actRow = hRow(bottomMarginDp = 0)
+            actRow.addView(makeToggle(s(R.string.ov_editor), boardEditorOpen, p, weight = 1f) {
+                onToggleBoardEditor()
+            })
+            actRow.addView(makeChip(s(R.string.ov_clear_enemy_short, activeChips.size), weight = 1f, marginEndDp = 0) {
+                onClearWaveChips()
+            }.also {
+                styleChip(it, p.errorContainer, p.onErrorContainer, null)
+            })
+            quickBody.addView(actRow)
         }
-        spdBody.addView(spdRow)
+
+        // Card 1 (Teal): Battle Assist Modes
+        val invOn = settings.invertDragX || settings.invertDragY
+        val q1Summary = buildList {
+            if (settings.holdReplanEnabled) add(s(R.string.ov_hold))
+            if (settings.holdReplanNudge) add(s(R.string.mode_nudge_title).take(6))
+            if (invOn) add(s(R.string.ov_invert))
+        }.joinToString(" · ").ifEmpty { s(R.string.ov_card_none_set) }
+        addAccordionGroupCard(1, s(R.string.section_modes), q1Summary, settings.holdReplanEnabled || settings.holdReplanNudge || invOn, ACCENT_TEAL, p)?.let { modeBody ->
+            val modeRow = hRow(bottomMarginDp = 0)
+            modeRow.addView(makeToggle(s(R.string.ov_hold), settings.holdReplanEnabled, p, weight = 1f) {
+                onUpdateSettings { it.copy(holdReplanEnabled = !it.holdReplanEnabled) }
+            })
+            modeRow.addView(makeToggle(s(R.string.mode_nudge_title), settings.holdReplanNudge, p, weight = 1.25f) {
+                onUpdateSettings { it.copy(holdReplanNudge = !it.holdReplanNudge) }
+            })
+            modeRow.addView(makeToggle(s(R.string.ov_invert), invOn, p, weight = 0.85f, marginEndDp = 0) {
+                onUpdateSettings {
+                    val next = !(it.invertDragX || it.invertDragY)
+                    it.copy(invertDragX = next, invertDragY = next)
+                }
+            })
+            modeBody.addView(modeRow)
+        }
+
+        // Card 2 (Amber): Swipe Speed 4-Tier
+        val activeSpeed = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
+        val q2Summary = "${LocaleHelper.speedLabel(lctx, activeSpeed)} · ${settings.stepDurationMs}${s(R.string.unit_ms)}"
+        addAccordionGroupCard(2, s(R.string.section_speed), q2Summary, true, ACCENT_AMBER, p)?.let { spdBody ->
+            val spdRow = hRow(bottomMarginDp = 0)
+            SwipeSpeedPreset.entries.forEachIndexed { idx, preset ->
+                val sel = activeSpeed == preset
+                val st = p.speedStyle(preset)
+                spdRow.addView(
+                    makeChip(
+                        LocaleHelper.speedLabel(lctx, preset),
+                        weight = 1f,
+                        marginEndDp = if (idx == SwipeSpeedPreset.entries.lastIndex) 0 else 4
+                    ) {
+                        onUpdateSettings { it.copy(stepDurationMs = preset.stepDurationMs) }
+                    }.also {
+                        if (sel) styleChip(it, st.bg, st.fg, st.stroke)
+                        else styleChip(it, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+                    }
+                )
+            }
+            spdBody.addView(spdRow)
+        }
     }
 
     // ==================== TAB 1: UNIFIED STRATEGY WORKBENCH (6 Distinct Bordered Group Cards!) ====================
@@ -1320,66 +1337,80 @@ class OverlayTuningDrawerController(
         body.addView(swRow2)
     }
 
-    // ==================== TAB 2: 系统设置 ====================
+    // ==================== TAB 2: 系统设置 (3 Single-Open Colored Accordions) ====================
     private fun buildSettingsTab(p: OverlayPalette) {
         addInfoBanner(s(R.string.priority_tier_hint_settings), p)
 
-        val engBody = addStaticGroupCard(s(R.string.section_engine_steps), ACCENT_BLUE, p)
-        engBody.addView(makeSubLabel(s(R.string.ov_steps_hdr_fmt, settings.maxSteps), p))
-        val stepRow = hRow(bottomMarginDp = 5)
-        listOf(30, 60, 100, 150, 200).forEachIndexed { idx, st ->
-            stepRow.addView(makeToggle("$st", settings.maxSteps == st, p, weight = 1f, marginEndDp = if (idx == 4) 0 else 4) {
-                onUpdateSettings { it.copy(maxSteps = st) }
+        // Card 0 (Blue): Solver Engine & System Steps
+        val s0Summary = "${settings.maxSteps}${s(R.string.unit_steps)} · ${s(R.string.tag_beam_fmt, settings.beamWidth)}"
+        addAccordionGroupCard(0, s(R.string.section_engine_steps), s0Summary, true, ACCENT_BLUE, p)?.let { engBody ->
+            engBody.addView(makeSubLabel(s(R.string.ov_steps_hdr_fmt, settings.maxSteps), p))
+            val stepRow = hRow(bottomMarginDp = 5)
+            listOf(30, 60, 100, 150, 200).forEachIndexed { idx, st ->
+                stepRow.addView(makeToggle("$st", settings.maxSteps == st, p, weight = 1f, marginEndDp = if (idx == 4) 0 else 4) {
+                    onUpdateSettings { it.copy(maxSteps = st) }
+                })
+            }
+            engBody.addView(stepRow)
+
+            val beamLbl = TextView(context).apply {
+                text = "${s(R.string.slider_beam)}: ${settings.beamWidth}"
+                textSize = 10f; typeface = Typeface.DEFAULT_BOLD; setTextColor(p.primary)
+            }
+            engBody.addView(beamLbl)
+            engBody.addView(makeComputeSeekBar(settings.beamWidth, p, beamLbl) { nb ->
+                onUpdateSettings { it.copy(beamWidth = nb) }
             })
         }
-        engBody.addView(stepRow)
 
-        val beamLbl = TextView(context).apply {
-            text = "${s(R.string.slider_beam)}: ${settings.beamWidth}"
-            textSize = 10f; typeface = Typeface.DEFAULT_BOLD; setTextColor(p.primary)
-        }
-        engBody.addView(beamLbl)
-        engBody.addView(makeComputeSeekBar(settings.beamWidth, p, beamLbl) { nb ->
-            onUpdateSettings { it.copy(beamWidth = nb) }
-        })
-
-        val swBody = addStaticGroupCard(s(R.string.ov_core_theme_hdr), ACCENT_PURPLE, p)
-        val swRow1 = hRow(bottomMarginDp = 4)
-        swRow1.addView(makeToggle(s(R.string.ov_preview_confirm), settings.testModeOnlyDraw, p, weight = 1f) {
-            onUpdateSettings { it.copy(testModeOnlyDraw = !it.testModeOnlyDraw) }
-        })
-        swRow1.addView(makeToggle(s(R.string.ov_diag_move), settings.allowDiagonalMove, p, weight = 1f) {
-            onUpdateSettings { it.copy(allowDiagonalMove = !it.allowDiagonalMove) }
-        })
-        swRow1.addView(makeToggle(s(R.string.ov_orb_badges), settings.showOrbBadgesOnPath, p, weight = 1f, marginEndDp = 0) {
-            onUpdateSettings { it.copy(showOrbBadgesOnPath = !it.showOrbBadgesOnPath) }
-        })
-        swBody.addView(swRow1)
-
-        val swRow2 = hRow(bottomMarginDp = 5)
-        swRow2.addView(makeToggle(s(R.string.mode_human_title), settings.humanMode, p, weight = 1f) {
-            onUpdateSettings { it.copy(humanMode = !it.humanMode) }
-        })
-        swRow2.addView(makeToggle(s(R.string.mode_stop_title), settings.showEmergencyStop, p, weight = 1f, marginEndDp = 0) {
-            onUpdateSettings { it.copy(showEmergencyStop = !it.showEmergencyStop) }
-        })
-        swBody.addView(swRow2)
-
-        val themeRow = hRow(bottomMarginDp = 4)
-        ThemeMode.entries.forEachIndexed { idx, tm ->
-            themeRow.addView(makeToggle(LocaleHelper.themeLabel(lctx, tm), settings.themeMode == tm, p, weight = 1f, marginEndDp = if (idx == ThemeMode.entries.lastIndex) 0 else 4) {
-                onUpdateSettings { it.copy(themeMode = tm) }
+        // Card 1 (Teal): Interaction & Core Switches (matches Launch App Settings Teal card!)
+        val s1Summary = buildList {
+            if (settings.testModeOnlyDraw) add(s(R.string.ov_preview_confirm))
+            if (settings.allowDiagonalMove) add(s(R.string.ov_diag_move))
+            if (settings.humanMode) add(s(R.string.mode_human_title).take(4))
+        }.joinToString(" · ").ifEmpty { s(R.string.ov_card_none_set) }
+        addAccordionGroupCard(1, s(R.string.section_modes), s1Summary, settings.testModeOnlyDraw || settings.allowDiagonalMove, ACCENT_TEAL, p)?.let { swBody ->
+            val swRow1 = hRow(bottomMarginDp = 4)
+            swRow1.addView(makeToggle(s(R.string.ov_preview_confirm), settings.testModeOnlyDraw, p, weight = 1f) {
+                onUpdateSettings { it.copy(testModeOnlyDraw = !it.testModeOnlyDraw) }
             })
-        }
-        swBody.addView(themeRow)
-
-        val langRow = hRow(bottomMarginDp = 0)
-        AppLanguage.entries.forEachIndexed { idx, lang ->
-            langRow.addView(makeToggle(LocaleHelper.languageLabel(lctx, lang), settings.language == lang, p, weight = 1f, marginEndDp = if (idx == AppLanguage.entries.lastIndex) 0 else 4) {
-                onUpdateSettings { it.copy(language = lang) }
+            swRow1.addView(makeToggle(s(R.string.ov_diag_move), settings.allowDiagonalMove, p, weight = 1f) {
+                onUpdateSettings { it.copy(allowDiagonalMove = !it.allowDiagonalMove) }
             })
+            swRow1.addView(makeToggle(s(R.string.ov_orb_badges), settings.showOrbBadgesOnPath, p, weight = 1f, marginEndDp = 0) {
+                onUpdateSettings { it.copy(showOrbBadgesOnPath = !it.showOrbBadgesOnPath) }
+            })
+            swBody.addView(swRow1)
+
+            val swRow2 = hRow(bottomMarginDp = 0)
+            swRow2.addView(makeToggle(s(R.string.mode_human_title), settings.humanMode, p, weight = 1f) {
+                onUpdateSettings { it.copy(humanMode = !it.humanMode) }
+            })
+            swRow2.addView(makeToggle(s(R.string.mode_stop_title), settings.showEmergencyStop, p, weight = 1f, marginEndDp = 0) {
+                onUpdateSettings { it.copy(showEmergencyStop = !it.showEmergencyStop) }
+            })
+            swBody.addView(swRow2)
         }
-        swBody.addView(langRow)
+
+        // Card 2 (Purple): Appearance, Theme & Language (matches Launch App Settings Purple card!)
+        val s2Summary = "${LocaleHelper.themeLabel(lctx, settings.themeMode)} · ${LocaleHelper.languageLabel(lctx, settings.language)}"
+        addAccordionGroupCard(2, s(R.string.section_appearance), s2Summary, true, ACCENT_PURPLE, p)?.let { appBody ->
+            val themeRow = hRow(bottomMarginDp = 4)
+            ThemeMode.entries.forEachIndexed { idx, tm ->
+                themeRow.addView(makeToggle(LocaleHelper.themeLabel(lctx, tm), settings.themeMode == tm, p, weight = 1f, marginEndDp = if (idx == ThemeMode.entries.lastIndex) 0 else 4) {
+                    onUpdateSettings { it.copy(themeMode = tm) }
+                })
+            }
+            appBody.addView(themeRow)
+
+            val langRow = hRow(bottomMarginDp = 0)
+            AppLanguage.entries.forEachIndexed { idx, lang ->
+                langRow.addView(makeToggle(LocaleHelper.languageLabel(lctx, lang), settings.language == lang, p, weight = 1f, marginEndDp = if (idx == AppLanguage.entries.lastIndex) 0 else 4) {
+                    onUpdateSettings { it.copy(language = lang) }
+                })
+            }
+            appBody.addView(langRow)
+        }
     }
 
     // ==================== Visually Distinct Bordered Group Card Builders ====================
@@ -1437,7 +1468,7 @@ class OverlayTuningDrawerController(
         accentColor: Int,
         p: OverlayPalette
     ): LinearLayout? {
-        val isOpen = cardId in expandedCards
+        val isOpen = expandedCardByTab[activeTab] == cardId
         val borderColor = if (highlighted || isOpen) {
             Color.argb(if (p.isDark) 170 else 145, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
         } else {
@@ -1459,8 +1490,9 @@ class OverlayTuningDrawerController(
             else roundedBg(cardHeaderTint(accentColor, p), dp(9).toFloat(), null)
             setPadding(dp(8), dp(6), dp(8), dp(6))
             setOnClickListener {
-                if (isOpen) expandedCards.remove(cardId) else expandedCards.add(cardId)
-                rebuildContent(preserveScroll = true)
+                // Exclusive single-open accordion: opening a drawer automatically collapses all other drawers in this tab!
+                expandedCardByTab[activeTab] = if (isOpen) null else cardId
+                rebuildContent(preserveScroll = false)
             }
         }
         // Colored vertical left accent strip

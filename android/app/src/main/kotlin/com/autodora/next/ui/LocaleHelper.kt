@@ -259,9 +259,9 @@ object LocaleHelper {
      * immediately update from old "队" names to "策略" AND translate cleanly across 简体 / 繁體 / English!).
      */
     fun displayPresetName(ctx: Context, preset: TeamBasePreset, isBuiltIn: Boolean): String {
+        if (preset.id == "builtin_general") return ctx.getString(R.string.preset_general_name)
         if (!isBuiltIn) return preset.name
         return when (preset.id) {
-            "builtin_general" -> ctx.getString(R.string.preset_general_name)
             "builtin_two_match" -> ctx.getString(R.string.preset_two_match_name)
             "builtin_column_ameliorate" -> ctx.getString(R.string.preset_col_name)
             "builtin_char_orb" -> ctx.getString(R.string.preset_char_name)
@@ -271,9 +271,9 @@ object LocaleHelper {
     }
 
     fun displayPresetDesc(ctx: Context, preset: TeamBasePreset, isBuiltIn: Boolean): String {
+        if (preset.id == "builtin_general") return ctx.getString(R.string.preset_general_desc)
         if (!isBuiltIn) return preset.description
         return when (preset.id) {
-            "builtin_general" -> ctx.getString(R.string.preset_general_desc)
             "builtin_two_match" -> ctx.getString(R.string.preset_two_match_desc)
             "builtin_column_ameliorate" -> ctx.getString(R.string.preset_col_desc)
             "builtin_char_orb" -> ctx.getString(R.string.preset_char_desc)
