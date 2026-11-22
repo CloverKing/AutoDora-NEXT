@@ -92,7 +92,11 @@ constexpr uint32_t LockedHurt    = 1u << 18; // 受伤锁定 (可移动, 未首�
 constexpr uint32_t LockedAtkDown = 1u << 19; // 减攻锁定 (可移动, 未消减攻)
 constexpr uint32_t WitheredVine  = 1u << 20; // 枯萎藤蔓 (经过额外扣转珠秒数)
 constexpr uint32_t Sleep         = 1u << 21; // 沉睡符石 (未经路径触碰唤醒前不可消除)
-constexpr uint32_t Luminous      = 1u << 22; // 光晕/耀眼符石 (优先消除获得增益)
+constexpr uint32_t Luminous      = 1u << 22; // 流光符石 (#11 時光牌「時晷」, 优先消除/流光盾)
+constexpr uint32_t Coagulated    = 1u << 23; // 凝结符石 (#5 不可移动/直消, 四邻每波解1层, 愈多敌减伤愈多)
+constexpr uint32_t EvilEnergy    = 1u << 24; // 邪恶能量符石 (#12 不可还原/强化, 每消1粒全队减攻)
+constexpr uint32_t MagicOrb      = 1u << 25; // 魔力符石 (#17 每消1粒+3 Combo、2倍攻/回满血)
+constexpr uint32_t BloodThorn    = 1u << 26; // 刺血符石 (#20 每消除扣除召唤师生命力)
 } // namespace HazardBits
 
 // Fixed terrain / shield markers attached to grid coordinate (r, c) (do NOT move with orbs)

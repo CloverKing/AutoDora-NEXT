@@ -217,7 +217,8 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
     uint64_t initialLockedAtkDownMask = 0;
     uint64_t initialLightPrisonMask = 0;
     uint64_t initialPriorityMask = 0;
-    uint64_t petrifiedOrIceMask = 0;
+    uint64_t petrifiedMask = 0;
+    uint64_t coagulatedMask = 0;
 
     for (uint8_t i = 0; i < totalCells; ++i) {
         const uint64_t b = bitOf(i);
@@ -235,7 +236,9 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
         if (c.hazards & HazardBits::LockedAtkDown) initialLockedAtkDownMask |= b;
         if (c.hazards & HazardBits::LightPrison)   initialLightPrisonMask |= b;
         if (c.hazards & HazardBits::Priority)      initialPriorityMask |= b;
-        if (c.hazards & (HazardBits::Petrified | HazardBits::IceSealed)) petrifiedOrIceMask |= b;
+        // Official #3/#4/#5: ONLY Petrified & Coagulated peel via 4-neighbor matches; IceSealed thaws after 3 turns!
+        if (c.hazards & HazardBits::Petrified)     petrifiedMask |= b;
+        if (c.hazards & HazardBits::Coagulated)    coagulatedMask |= b;
     }
 
     uint64_t clearedElectrified = 0;
@@ -385,21 +388,6 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
 
             analyzeGroupGeometry(g, cur);
 
-            // Track petrified / ice-sealed / foam 4-neighbor orthogonal hits per combo
-            if (petrifiedOrIceMask != 0 || initialFoamMask != 0) {
-                const uint64_t adj = orthogonalNeighbors(g.cellMask, cols, rows);
-                if (petrifiedOrIceMask != 0) {
-                    res.petrifiedAdjacentHits += static_cast<uint16_t>(std::popcount(adj & petrifiedOrIceMask));
-                }
-                if (initialFoamMask != 0) {
-                    const uint64_t popped = adj & initialFoamMask;
-                    if (popped != 0) {
-                        clearedFoam |= popped;
-                        res.foamAdjacentHits += static_cast<uint16_t>(std::popcount(popped));
-                    }
-                }
-            }
-
             const uint8_t elIdx = static_cast<uint8_t>(g.element);
             const uint8_t elMask = g.groupElementsMask;
 
@@ -431,23 +419,48 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
             }
         }
 
+        // 2b. Per-wave 4-neighbor orthogonal hazard peels (Official #4 石化 / #5 凝結 / #13 泡沫):
+        //     Computing once per wave strictly enforces "首批消除的符石每次只可解除一重石化/凝結"
+        //     and dynamically tracks post-gravity positions of movable Foam orbs!
+        if (petrifiedMask != 0 || coagulatedMask != 0 || initialFoamMask != 0) {
+            const uint64_t waveAdj = orthogonalNeighbors(matchedMask, cols, rows);
+            if (petrifiedMask != 0) {
+                res.petrifiedAdjacentHits += static_cast<uint16_t>(std::popcount(waveAdj & petrifiedMask));
+            }
+            if (coagulatedMask != 0) {
+                res.coagulatedAdjacentHits += static_cast<uint16_t>(std::popcount(waveAdj & coagulatedMask));
+            }
+            if (initialFoamMask != 0) {
+                for (uint8_t i = 0; i < totalCells; ++i) {
+                    if ((waveAdj & bitOf(i)) != 0 && (cur.cells[i].hazards & HazardBits::Foam) != 0) {
+                        clearedFoam |= bitOf(origSlot[i]);
+                        cur.cells[i].hazards &= ~HazardBits::Foam;
+                        res.foamAdjacentHits++;
+                    }
+                }
+            }
+        }
+
         // 3. Record cleared hazard orbs and clear matched cells
         for (uint8_t i = 0; i < totalCells; ++i) {
             if ((matchedMask & bitOf(i)) == 0) continue;
             const uint64_t origBit = bitOf(origSlot[i]);
             const uint32_t hz = cur.cells[i].hazards;
             if (hz & HazardBits::Electrified)   clearedElectrified |= origBit;
+            if (hz & HazardBits::BloodDrain)    clearedBloodFirst |= origBit; // #8 化血: all-wave clear
+            if (hz & HazardBits::Bomb)          clearedBombFirst |= origBit;  // #9 爆破炸彈: all-wave clear
             if (hz & HazardBits::Frozen)        clearedFrozen |= origBit;
             if (hz & HazardBits::LockedAtkDown) clearedLockedAtkDown |= origBit;
             if (hz & HazardBits::LightPrison)   clearedLightPrison |= origBit;
             if (hz & HazardBits::Luminous)      res.luminousCleared++;
+            if (hz & HazardBits::EvilEnergy)    res.evilEnergyEliminated++;
+            if (hz & HazardBits::BloodThorn)    res.bloodThornEliminated++;
+            if (hz & HazardBits::MagicOrb)      res.magicOrbsCleared++;
             if (hz & HazardBits::Priority)      clearedPriority |= origBit;
             if (hz & HazardBits::Reserve)       brokenReserve |= origBit;
             if (cur.cells[i].variant == Variant::Weakened) res.weakenedEliminated++;
             if ((bitOf(i) & cur.scorchingTileMask) != 0) res.scorchingOrbsCleared++;
             if (wave == 1) {
-                if (hz & HazardBits::BloodDrain) clearedBloodFirst |= origBit;
-                if (hz & HazardBits::Bomb)       clearedBombFirst |= origBit;
                 if (hz & HazardBits::LockedHurt) clearedLockedHurtFirst |= origBit;
             }
             cur.cells[i] = Cell{Element::Empty, Variant::Normal, HazardBits::None};
@@ -505,6 +518,12 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
         if (rules.avoidSkyfallRisk) {
             res.skyfallRiskPairs = countSkyfallRiskPairs(cur, rules);
         }
+    }
+
+    if (res.magicOrbsCleared > 0) {
+        // Official #17 魔力: 每消除 1 粒魔力符石 ⇒ 增加 3 連擊 (Combo)
+        const int boosted = static_cast<int>(res.totalCombo) + static_cast<int>(res.magicOrbsCleared) * 3;
+        res.totalCombo = static_cast<uint8_t>(std::min(boosted, 255));
     }
 
     res.electrifiedRemaining = static_cast<uint8_t>(std::popcount(initialElectrifiedMask & ~clearedElectrified));

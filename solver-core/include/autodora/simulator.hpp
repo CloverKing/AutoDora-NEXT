@@ -73,10 +73,14 @@ struct SimulationResult {
     uint8_t lightPrisonRemaining = 0;
     uint8_t luminousCleared = 0;
     uint8_t weakenedEliminated = 0;
+    uint8_t evilEnergyEliminated = 0;  // #12 邪恶能量符石消除颗数 (每粒全队减攻)
+    uint8_t bloodThornEliminated = 0;  // #20 刺血符石消除颗数 (每粒扣除生命力)
+    uint8_t magicOrbsCleared = 0;      // #17 魔力符石消除颗数 (每粒 +3 Combo)
     uint8_t scorchingOrbsCleared = 0;  // #28/#96 灼热地型内被消除的符石数
     uint8_t priorityOrbsRemaining = 0;
     uint8_t reserveOrbsBroken = 0;
     uint16_t petrifiedAdjacentHits = 0;
+    uint16_t coagulatedAdjacentHits = 0; // #5 凝结符石四邻每波解层命中数
 
     uint16_t skyfallRiskPairs = 0;
     BoardState settledBoard;

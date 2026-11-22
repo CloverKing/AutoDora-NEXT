@@ -21,11 +21,11 @@ struct Cell {
     }
 
     constexpr bool isImmovable() const noexcept {
-        return (hazards & (HazardBits::IceSealed | HazardBits::Locked | HazardBits::Petrified | HazardBits::Foam)) != 0;
+        return (hazards & (HazardBits::IceSealed | HazardBits::Locked | HazardBits::Petrified | HazardBits::Coagulated)) != 0;
     }
 
     constexpr bool isUnmatchableHazard() const noexcept {
-        return (hazards & (HazardBits::IceSealed | HazardBits::Petrified | HazardBits::Foam | HazardBits::Sleep)) != 0;
+        return (hazards & (HazardBits::IceSealed | HazardBits::Petrified | HazardBits::Coagulated | HazardBits::Foam | HazardBits::Sleep)) != 0;
     }
 };
 

@@ -221,8 +221,8 @@
     <string name="shield_any_enchanted_orb">强化符石首消</string>
     <string name="shield_race_orb">种族符石首消</string>
     <string name="shield_char_orb_first">角色符石首消</string>
-    <string name="shield_forbid_weakened">避消弱化符石</string>
-    <string name="shield_luminous_orb">光晕符石首消</string>
+    <string name="shield_forbid_weakened">避消弱化/邪能/刺血</string>
+    <string name="shield_luminous_orb">流光符石首消</string>
 
     <!-- Shields Tab: 3. Puzzle & Shape Shield -->
     <string name="section_puzzle_shape_shield">拼图盾与形状盾</string>

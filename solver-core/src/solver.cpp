@@ -388,7 +388,7 @@ SolveOutput PuzzleSolver::solve(
                 node.board.cells[idx].hazards &= ~HazardBits::Sleep;
             }
             if ((baseBoard.burningTileMask & bitOf(idx)) != 0 ||
-                (baseBoard.cells[idx].hazards & HazardBits::BurningOrb) != 0) {
+                (baseBoard.cells[idx].hazards & (HazardBits::BurningOrb | HazardBits::Bomb)) != 0) {
                 node.burningHits = 1;
                 if (rules.fixedStartCell < 0 && node.burningHits > rules.maxBurningTileHurts) continue;
             }
@@ -547,7 +547,7 @@ SolveOutput PuzzleSolver::solve(
 
                     uint8_t nextBurn = parent.burningHits;
                     if ((parent.board.burningTileMask & bitOf(nextIdx)) != 0 ||
-                        (parent.board.cells[nextIdx].hazards & HazardBits::BurningOrb) != 0) {
+                        (parent.board.cells[nextIdx].hazards & (HazardBits::BurningOrb | HazardBits::Bomb)) != 0) {
                         nextBurn++;
                         if (nextBurn > rules.maxBurningTileHurts) continue;
                     }

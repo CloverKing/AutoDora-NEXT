@@ -221,7 +221,7 @@
     <string name="shield_any_enchanted_orb">Enchanted Rune 1st</string>
     <string name="shield_race_orb">Race Rune 1st</string>
     <string name="shield_char_orb_first">Character Rune 1st</string>
-    <string name="shield_forbid_weakened">Avoid Weakened</string>
+    <string name="shield_forbid_weakened">Avoid Weak/Evil/Thorn</string>
     <string name="shield_luminous_orb">Luminous Rune 1st</string>
 
     <!-- Shields Tab: 3. Puzzle & Shape Shield -->

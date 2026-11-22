@@ -1,0 +1,532 @@
+{
+  "schema_version": "1.0",
+  "source": "Tower of Saviors In-Game Encyclopedia (神魔百科 → 符石狀態)",
+  "total_entries": 20,
+  "coverage_summary": {
+    "FULL": 7,
+    "UPGRADED": 10,
+    "INFO_ONLY": 3
+  },
+  "entries": [
+    {
+      "index": 1,
+      "name_zh_tw": "電擊",
+      "name_zh_cn": "电击",
+      "icon_description": "Cracked dark rock struck by a bright blue-white lightning bolt",
+      "orb_visual_description": "Glowing cyan-white electric aura and crackling lightning arcs enveloping the orb",
+      "cv_hsv_reference": {"outerV": 0.922, "outerS": 0.479, "lowSat": 0.061, "ctrV": 0.994, "ctrS": 0.515},
+      "full_rule_text_zh_tw": "• 電擊符石一經觸碰 ⇒ 即時停止移動符石\n• 如有電擊符石未被消除 ⇒ 全隊攻擊力變 0",
+      "mechanics": {
+        "movable": false,
+        "touch_effect": "STOP_MOVEMENT",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "TEAM_ATK_ZERO",
+        "eliminated_effect": "CLEARS_HAZARD",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.ELECTRIFIED (1 << 1)",
+        "rule_flags": ["mustClearElectrified"],
+        "editor_brush": "haz_2 (电击)"
+      },
+      "coverage": "FULL"
+    },
+    {
+      "index": 2,
+      "name_zh_tw": "風化",
+      "name_zh_cn": "风化",
+      "icon_description": "Cracked amber-gold crystal orb with bright star fractures",
+      "orb_visual_description": "Pale white-cyan X-shaped star fracture / wind-slash mark across orb center",
+      "cv_hsv_reference": {"outerV": 0.696, "outerS": 0.535, "lowSat": 0.333, "ctrV": 0.834, "ctrS": 0.262},
+      "full_rule_text_zh_tw": "• 風化符石一經觸碰 ⇒ 即時停止移動符石",
+      "mechanics": {
+        "movable": false,
+        "touch_effect": "STOP_MOVEMENT",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NONE",
+        "eliminated_effect": "NORMAL",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.WEATHERED (1 << 0)",
+        "rule_flags": ["allowHitWeatheredToClear"],
+        "editor_brush": "haz_1 (风化)"
+      },
+      "coverage": "FULL"
+    },
+    {
+      "index": 3,
+      "name_zh_tw": "凍結",
+      "name_zh_cn": "冻结",
+      "icon_description": "Jagged frosted blue-grey ice boulder",
+      "orb_visual_description": "Two-state animated overlay: pending frost aura -> thick crystalline cracked ice cage (冰封狀態) encasing the entire orb",
+      "cv_hsv_reference": {"outerV": 0.863, "outerS": 0.395, "lowSat": 0.242, "ctrV": 0.955, "ctrS": 0.269},
+      "full_rule_text_zh_tw": "• 回合結束時，將未凍結狀態的凍結符石 ⇒ 添加為冰封狀態\n• 冰封狀態下的符石 3 回合內 ⇒ 不能消除、轉化或引爆",
+      "mechanics": {
+        "movable": false,
+        "touch_effect": "BLOCKED_WHEN_ICE_SEALED",
+        "direct_matchable": false,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "FREEZES_TO_ICE_SEALED_3_TURNS",
+        "eliminated_effect": "PREVENTS_ICE_SEAL_WHEN_PENDING",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.FROZEN (1 << 4, pending) / HazardBits.ICE_SEALED (1 << 5, sealed 3 turns)",
+        "rule_flags": ["prioritizeFrozen"],
+        "editor_brush": "haz_16 (冻结) / haz_32 (冰封)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Fixed simulator.cpp so IceSealed is NOT falsely counted in 4-neighbor orthogonal peel hits (official spec: thaws after 3 turns rather than by adjacent matches); added dedicated 冻结 brush."
+    },
+    {
+      "index": 4,
+      "name_zh_tw": "石化",
+      "name_zh_cn": "石化",
+      "icon_description": "Dark basalt rock with crimson volcanic cracks",
+      "orb_visual_description": "Charred black stone crust split by bright molten orange-yellow lava fissures",
+      "cv_hsv_reference": {"outerV": 0.558, "outerS": 0.776, "lowSat": 0.061, "ctrV": 0.631, "ctrS": 0.696},
+      "full_rule_text_zh_tw": "• 於石化符石四側消除符石 ⇒ 可解除「一重石化」（首批消除的符石每次只可解除「一重石化」）",
+      "mechanics": {
+        "movable": false,
+        "touch_effect": "IMMOVABLE_WALL",
+        "direct_matchable": false,
+        "adjacent_clear": true,
+        "adjacent_clear_max_per_wave": 1,
+        "wave1_only": false,
+        "uneliminated_penalty": "BLOCKS_BOARD",
+        "eliminated_effect": "PEELS_1_LAYER_PER_WAVE",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.PETRIFIED (1 << 7)",
+        "rule_flags": ["prioritizePetrifiedClear"],
+        "editor_brush": "haz_128 (石化)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Fixed simulator.cpp per-wave deduplication: multiple Wave-1 combos touching the same Petrified cell now count as strictly 1 layer ('首批消除的符石每次只可解除一重石化'), while Wave-2+ cascades peel additional layers."
+    },
+    {
+      "index": 5,
+      "name_zh_tw": "凝結",
+      "name_zh_cn": "凝结",
+      "icon_description": "Faceted solid crimson crystal gem",
+      "orb_visual_description": "Translucent jagged solid ice-crystal shell encasing the orb",
+      "cv_hsv_reference": {"outerV": 0.727, "outerS": 0.647, "lowSat": 0.03, "ctrV": 0.839, "ctrS": 0.786},
+      "full_rule_text_zh_tw": "• 於凝結符石四側消除符石 ⇒ 可解除「一重凝結」（首批消除的符石每次只可解除「一重凝結」）\n• 場上凝結符石愈多 ⇒ 敵人所受傷害減少愈多",
+      "mechanics": {
+        "movable": false,
+        "touch_effect": "IMMOVABLE_WALL",
+        "direct_matchable": false,
+        "adjacent_clear": true,
+        "adjacent_clear_max_per_wave": 1,
+        "wave1_only": false,
+        "uneliminated_penalty": "ENEMY_DAMAGE_REDUCTION_SCALES",
+        "eliminated_effect": "PEELS_1_LAYER_PER_WAVE",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.COAGULATED (1 << 23)",
+        "rule_flags": ["prioritizePetrifiedClear"],
+        "editor_brush": "haz_8388608 (凝结)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Added dedicated HazardBits.COAGULATED (1 << 23) with immovable + unmatchable physics, per-wave 1-layer orthogonal peel tracking, higher soft clear bonus than Petrified due to enemy damage-reduction scaling, and Board Editor brush."
+    },
+    {
+      "index": 6,
+      "name_zh_tw": "加護",
+      "name_zh_cn": "加护",
+      "icon_description": "Glowing silver-cyan heater shield with cross emblem",
+      "orb_visual_description": "Metallic silver-white heater shield frame bordering the orb",
+      "cv_hsv_reference": {"outerV": 0.834, "outerS": 0.369, "lowSat": 0.091, "ctrV": 0.853, "ctrS": 0.633},
+      "full_rule_text_zh_tw": "• 適用於擁有「加護符石」敵技的敵人\n• 「加護符石」不能引爆",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "BOSS_SHIELD_DEPENDENT",
+        "eliminated_effect": "SATISFIES_SHIELDED_RUNE_CONDITION",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.PRIORITY (1 << 12, when target boss requires clearing)",
+        "rule_flags": [],
+        "editor_brush": "haz_4096 (印记必消)"
+      },
+      "coverage": "INFO_ONLY",
+      "audit_note": "Movable and matchable normally; skill detonation blocked. Base element classifies cleanly in CvBoardRecognizer."
+    },
+    {
+      "index": 7,
+      "name_zh_tw": "弱化",
+      "name_zh_cn": "弱化",
+      "icon_description": "Pink heart pierced diagonally by a downward red sword",
+      "orb_visual_description": "Washed-out pale bright center tint over the orb",
+      "cv_hsv_reference": {"outerV": 0.812, "outerS": 0.413, "lowSat": 0.091, "ctrV": 0.992, "ctrS": 0.333},
+      "full_rule_text_zh_tw": "• 消除弱化符石 ⇒ 全隊攻擊力減少（發動龍刻脈動視作消除場上的弱化符石）",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NONE",
+        "eliminated_effect": "TEAM_ATK_DOWN",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "Variant.WEAKENED (3)",
+        "rule_flags": ["forbidWeakenedOrbs"],
+        "editor_brush": "var_weak (弱化-)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Added missing BoardBrush.ToggleWeakened ('弱化-') to OverlayBoardEditor so players can paint Weakened orbs directly on the board."
+    },
+    {
+      "index": 8,
+      "name_zh_tw": "化血",
+      "name_zh_cn": "化血",
+      "icon_description": "Cracked brown-grey fossilized skull/stone plate",
+      "orb_visual_description": "Desaturated ash-grey cracked stone crust covering the orb",
+      "cv_hsv_reference": {"outerV": 0.561, "outerS": 0.222, "lowSat": 0.182, "ctrV": 0.573, "ctrS": 0.228},
+      "full_rule_text_zh_tw": "• 如有化血符石未被消除 ① 無法對敵人造成傷害 ② 敵人回復相等於該傷害的血量",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NO_DAMAGE_AND_HEALS_ENEMY",
+        "eliminated_effect": "CLEARS_HAZARD",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.BLOOD_DRAIN (1 << 8)",
+        "rule_flags": ["mustClearBloodDrain"],
+        "editor_brush": "haz_256 (化血)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Fixed simulator.cpp & evaluator.cpp: BloodDrain clears legally across ALL waves (Wave 1 + cascades), not strictly Wave 1, matching official text '如有化血符石未被消除'; added Board Editor brush."
+    },
+    {
+      "index": 9,
+      "name_zh_tw": "爆破炸彈",
+      "name_zh_cn": "爆爆炸弹",
+      "icon_description": "Metallic hexagonal naval mine with glowing crimson center core",
+      "orb_visual_description": "Steel hexagonal mine frame with 6 radial bolts and glowing red core covering the orb",
+      "cv_hsv_reference": {"outerV": 0.476, "outerS": 0.318, "lowSat": 0.606, "ctrV": 0.558, "ctrS": 0.238},
+      "full_rule_text_zh_tw": "• 爆破炸彈一經觸碰 ⇒ 對召喚師造成指定傷害\n※ 【護盾】可抵擋此傷害",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "DEALS_DAMAGE_ON_TOUCH",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NONE_OR_STAGE_EXPLOSION",
+        "eliminated_effect": "CLEARS_WITHOUT_TOUCH_DAMAGE",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.BOMB (1 << 9)",
+        "rule_flags": ["mustClearBomb", "maxBurningTileHurts"],
+        "editor_brush": "haz_512 (炸弹)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Fixed solver.cpp to count touching Bomb orbs as touch-damage hits (respecting maxBurningTileHurts / shield budget) so the path routes around Bomb orbs without touching them while still eliminating them via neighboring swaps; updated clearance to all waves and added Board Editor brush."
+    },
+    {
+      "index": 10,
+      "name_zh_tw": "音樂",
+      "name_zh_cn": "音乐",
+      "icon_description": "Iridescent purple-blue sphere containing a glowing musical eighth note",
+      "orb_visual_description": "Translucent iridescent purple-cyan musical bubble aura over the orb",
+      "cv_hsv_reference": {"outerV": 0.815, "outerS": 0.437, "lowSat": 0.121, "ctrV": 0.814, "ctrS": 0.692},
+      "full_rule_text_zh_tw": "• 適用於擁有「音樂符石」敵技的敵人\n• 「音樂符石」不能轉化",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "BOSS_SHIELD_DEPENDENT",
+        "eliminated_effect": "SATISFIES_MUSIC_RUNE_CONDITION",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.PRIORITY (1 << 12, when target boss requires clearing)",
+        "rule_flags": [],
+        "editor_brush": "haz_4096 (印记必消)"
+      },
+      "coverage": "INFO_ONLY",
+      "audit_note": "Movable and matchable normally; skill conversion blocked. Base element classifies cleanly in CvBoardRecognizer."
+    },
+    {
+      "index": 11,
+      "name_zh_tw": "流光",
+      "name_zh_cn": "流光",
+      "icon_description": "No separate left icon; represented directly by the cyan-black 4-point sundial badge",
+      "orb_visual_description": "Bright cyan-and-black 4-pointed diamond sundial ('時晷') emblem pinned to the top-left corner of the orb",
+      "cv_hsv_reference": {"outerV": 0.733, "outerS": 0.611, "lowSat": 0.152, "ctrV": 0.846, "ctrS": 0.739, "tlCyan": 5},
+      "full_rule_text_zh_tw": "• 隊伍裝備「時光牌」後，進入關卡後附上「時晷」的符石\n• 可被引爆或還原",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NONE",
+        "eliminated_effect": "TRIGGERS_TIME_CARD_OR_LUMINOUS_SHIELD",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.LUMINOUS (1 << 22)",
+        "rule_flags": ["prioritizeLuminous", "requireLuminousOrbClear"],
+        "editor_brush": "haz_4194304 (流光)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Aligned all localized UI labels from non-standard '光晕符石' to official '流光符石' and added Board Editor brush."
+    },
+    {
+      "index": 12,
+      "name_zh_tw": "邪惡能量",
+      "name_zh_cn": "邪恶能量",
+      "icon_description": "Dark smoky obsidian stone cloud",
+      "orb_visual_description": "Pitch-dark shadowy teal-black orb dotted with faint cyan-green floating embers",
+      "cv_hsv_reference": {"outerV": 0.224, "outerS": 0.58, "lowSat": 0.576, "ctrV": 0.221, "ctrS": 0.498},
+      "full_rule_text_zh_tw": "• 「邪惡能量符石」不能還原\n• 「邪惡能量符石」不能轉化為強化符石\n• 每消除 1 粒「邪惡能量符石」⇒ 全隊攻擊力減少",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NONE",
+        "eliminated_effect": "TEAM_ATK_DOWN_PER_ORB",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.EVIL_ENERGY (1 << 24)",
+        "rule_flags": ["forbidWeakenedOrbs"],
+        "editor_brush": "haz_16777216 (邪能)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Added HazardBits.EVIL_ENERGY (1 << 24) with elimination tracking in simulator.cpp, soft ATK-loss avoidance penalty / hard forbid under forbidWeakenedOrbs in evaluator.cpp, and Board Editor brush."
+    },
+    {
+      "index": 13,
+      "name_zh_tw": "泡沫",
+      "name_zh_cn": "泡沫",
+      "icon_description": "Glossy pale-blue translucent soap bubble",
+      "orb_visual_description": "Translucent specular soap-bubble membrane wrapping the orb",
+      "cv_hsv_reference": {"outerV": 0.626, "outerS": 0.558, "lowSat": 0.091, "ctrV": 0.628, "ctrS": 0.746},
+      "full_rule_text_zh_tw": "• 移動符石並消除泡沫符石四側其中 1 個位置的符石可解除泡沫\n• 泡沫符石 ⇒ 不能消除、轉化或引爆\n• 如有泡沫符石未被消除 ⇒ 全隊攻擊力變 0",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": false,
+        "adjacent_clear": true,
+        "wave1_only": false,
+        "uneliminated_penalty": "TEAM_ATK_ZERO",
+        "eliminated_effect": "POPS_ON_ANY_ORTHOGONAL_MATCH",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.FOAM (1 << 14)",
+        "rule_flags": ["mustClearFoam"],
+        "editor_brush": "haz_16384 (泡沫)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Fixed board.hpp & simulator.cpp: Foam orbs ARE movable during orb dragging (only unmatchable directly) and track live post-gravity coordinates when bursting on orthogonal adjacent matches; once popped, the orb clears its Foam bit for subsequent waves. Added Board Editor brush."
+    },
+    {
+      "index": 14,
+      "name_zh_tw": "淡化印記",
+      "name_zh_cn": "淡化印记",
+      "icon_description": "Red-rimmed white circular seal with diagonal sword slash",
+      "orb_visual_description": "Small red-bordered slashed-sword circular badge pinned to the top-right corner of the orb",
+      "cv_hsv_reference": {"outerV": 0.745, "outerS": 0.673, "lowSat": 0.061, "ctrV": 0.756, "ctrS": 0.654},
+      "full_rule_text_zh_tw": "• 消除淡化印記符石 ⇒ 敵人減少陽之氣",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "YANG_QI_REMAINS",
+        "eliminated_effect": "REDUCES_ENEMY_YANG_QI",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.PRIORITY (1 << 12)",
+        "rule_flags": [],
+        "editor_brush": "haz_4096 (印记必消)"
+      },
+      "coverage": "FULL",
+      "audit_note": "Maps cleanly to HazardBits.PRIORITY (high-priority clear); pairs with Enemy Skill #69 (陽之氣)."
+    },
+    {
+      "index": 15,
+      "name_zh_tw": "淨化印記",
+      "name_zh_cn": "净化印记",
+      "icon_description": "Glowing warm golden-white circular medallion",
+      "orb_visual_description": "Small glowing golden-white circle badge pinned to the top-right corner of the orb",
+      "cv_hsv_reference": {"outerV": 0.685, "outerS": 0.707, "lowSat": 0.061, "ctrV": 0.854, "ctrS": 0.749},
+      "full_rule_text_zh_tw": "• 消除淨化印記符石 ⇒ 敵人減少陰之氣",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "YIN_QI_REMAINS",
+        "eliminated_effect": "REDUCES_ENEMY_YIN_QI",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.PRIORITY (1 << 12)",
+        "rule_flags": [],
+        "editor_brush": "haz_4096 (印记必消)"
+      },
+      "coverage": "FULL",
+      "audit_note": "Maps cleanly to HazardBits.PRIORITY (high-priority clear); pairs with Enemy Skill #68 (陰之氣)."
+    },
+    {
+      "index": 16,
+      "name_zh_tw": "虛之印記",
+      "name_zh_cn": "虚之印记",
+      "icon_description": "Glowing magenta-purple floral lotus sigil inside a circle",
+      "orb_visual_description": "Magenta floral crest overlay on marked orbs",
+      "cv_hsv_reference": null,
+      "full_rule_text_zh_tw": "• 每消除 1 粒虛之印記符石 ⇒ 獲得印記力量\n• 疊至最高 10 重印記力量 ⇒ 回合結束時召喚師會死亡\n• 召喚師死亡後，清空虛之印記及印記力量",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NONE",
+        "eliminated_effect": "ADDS_MARK_STACK_LETHAL_AT_10",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.RESERVE (1 << 13, when avoiding lethal 10th stack) / HazardBits.PRIORITY (when building stacks)",
+        "rule_flags": [],
+        "editor_brush": "haz_8192 (保留不消)"
+      },
+      "coverage": "INFO_ONLY",
+      "audit_note": "Stack-budget mechanic: players can mark orbs with '保留不消' (HazardBits.RESERVE) when near 10 stacks to prevent instant death at turn end."
+    },
+    {
+      "index": 17,
+      "name_zh_tw": "魔力",
+      "name_zh_cn": "魔力",
+      "icon_description": "Glowing pale-blue arcane pentagram / magic circle crest",
+      "orb_visual_description": "Translucent pale-blue magic-circle sigil overlay on orbs",
+      "cv_hsv_reference": null,
+      "full_rule_text_zh_tw": "• 「移動及消除符石」期間外 ⇒ 解除魔力符石位置的「連環光牢」及「暴風」\n• 每消除 1 粒魔力符石 ⇒ 增加 3 連擊 (Combo)\n• 消除屬性魔力符石 ⇒ 該屬性成員攻擊力 2 倍\n• 消除心魔力符石 ⇒ 完全回復生命力\n• 魔力符石於召喚師死亡後消失",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NONE",
+        "eliminated_effect": "ADD_3_COMBO_AND_2X_ATK_OR_FULL_HEAL",
+        "combo_bonus_per_orb": 3
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.MAGIC_ORB (1 << 25)",
+        "rule_flags": [],
+        "editor_brush": "haz_33554432 (魔力)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Added HazardBits.MAGIC_ORB (1 << 25): simulator.cpp adds +3 to totalCombo per eliminated Magic orb (accurately interacting with min/exact/parity combo shields!) plus evaluator soft reward and Board Editor brush."
+    },
+    {
+      "index": 18,
+      "name_zh_tw": "消炎印記",
+      "name_zh_cn": "消炎印记",
+      "icon_description": "Red-bordered circular badge with cyan leaf/flame fan",
+      "orb_visual_description": "Red-rimmed circular badge with cyan fan emblem at orb corner",
+      "cv_hsv_reference": null,
+      "full_rule_text_zh_tw": "• 每消除 1 粒消炎印記符石 ⇒ 敵人減少 1 層炎之氣\n• 召喚師死亡後 ⇒ 清空消炎印記",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "FLAME_QI_REMAINS",
+        "eliminated_effect": "REDUCES_ENEMY_FLAME_QI_BY_1",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.PRIORITY (1 << 12)",
+        "rule_flags": [],
+        "editor_brush": "haz_4096 (印记必消)"
+      },
+      "coverage": "FULL",
+      "audit_note": "Maps cleanly to HazardBits.PRIORITY; pairs with Enemy Skill #73 (炎之氣)."
+    },
+    {
+      "index": 19,
+      "name_zh_tw": "除雷印記",
+      "name_zh_cn": "除雷印记",
+      "icon_description": "Golden-brown circular medallion with lightning-rod coil",
+      "orb_visual_description": "Golden-brown circular lightning-rod badge at orb corner",
+      "cv_hsv_reference": null,
+      "full_rule_text_zh_tw": "• 每消除 1 粒除雷印記符石 ⇒ 敵人減少 1 層雷之氣\n• 召喚師死亡後 ⇒ 清空除雷印記",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "THUNDER_QI_REMAINS",
+        "eliminated_effect": "REDUCES_ENEMY_THUNDER_QI_BY_1",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.PRIORITY (1 << 12)",
+        "rule_flags": [],
+        "editor_brush": "haz_4096 (印记必消)"
+      },
+      "coverage": "FULL",
+      "audit_note": "Maps cleanly to HazardBits.PRIORITY; pairs with Enemy Skill #72 (雷之氣)."
+    },
+    {
+      "index": 20,
+      "name_zh_tw": "刺血符石",
+      "name_zh_cn": "刺血符石",
+      "icon_description": "Glowing crimson-framed jagged black fanged maw",
+      "orb_visual_description": "Spiked crimson-black thorny/fanged aura overlaying marked orbs",
+      "cv_hsv_reference": null,
+      "full_rule_text_zh_tw": "• 每消除刺血符石 ⇒ 扣除召喚師生命力",
+      "mechanics": {
+        "movable": true,
+        "touch_effect": "NONE",
+        "direct_matchable": true,
+        "adjacent_clear": false,
+        "wave1_only": false,
+        "uneliminated_penalty": "NONE",
+        "eliminated_effect": "DEDUCTS_SUMMONER_HP",
+        "combo_bonus_per_orb": 0
+      },
+      "autodora_mapping": {
+        "hazard_bit": "HazardBits.BLOOD_THORN (1 << 26)",
+        "rule_flags": ["forbidWeakenedOrbs"],
+        "editor_brush": "haz_67108864 (刺血)"
+      },
+      "coverage": "UPGRADED",
+      "audit_note": "Added HazardBits.BLOOD_THORN (1 << 26) with elimination tracking in simulator.cpp, strong HP-loss avoidance penalty / hard forbid under forbidWeakenedOrbs in evaluator.cpp, and Board Editor brush."
+    }
+  ]
+}

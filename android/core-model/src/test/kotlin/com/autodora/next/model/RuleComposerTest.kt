@@ -370,4 +370,15 @@ class RuleComposerTest {
         assertEquals(ShieldVerdictStatus.UNDETECTED, vPartial.getValue("traffic_light").status)
         assertEquals("missing_end", vPartial.getValue("traffic_light").detailTag)
     }
+
+    @Test
+    fun `runestone status hazard bits match C++20 solver ABI`() {
+        // Verify bit positions for official ToS Runestone Statuses (#5 Coagulated, #12 EvilEnergy, #17 MagicOrb, #20 BloodThorn)
+        assertEquals(1 shl 23, HazardBits.COAGULATED)
+        assertEquals(1 shl 24, HazardBits.EVIL_ENERGY)
+        assertEquals(1 shl 25, HazardBits.MAGIC_ORB)
+        assertEquals(1 shl 26, HazardBits.BLOOD_THORN)
+        val combined = HazardBits.COAGULATED or HazardBits.EVIL_ENERGY or HazardBits.MAGIC_ORB or HazardBits.BLOOD_THORN
+        assertEquals(4, Integer.bitCount(combined))
+    }
 }

@@ -638,7 +638,7 @@ EvalResult evaluateCandidate(
         markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.bloodDrainRemainingFirstWave));
         for (uint8_t i = 0; i < totalCells; ++i) {
             if ((boardAfterMoves.cells[i].hazards & HazardBits::BloodDrain) != 0 &&
-                (sim.firstWaveClearedMask & bitOf(i)) == 0) {
+                (sim.allWavesClearedMask & bitOf(i)) == 0) {
                 shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 120.0);
             }
         }
@@ -648,7 +648,7 @@ EvalResult evaluateCandidate(
         markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.bombRemainingFirstWave) * 1.5);
         for (uint8_t i = 0; i < totalCells; ++i) {
             if ((boardAfterMoves.cells[i].hazards & HazardBits::Bomb) != 0 &&
-                (sim.firstWaveClearedMask & bitOf(i)) == 0) {
+                (sim.allWavesClearedMask & bitOf(i)) == 0) {
                 shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 140.0);
             }
         }
@@ -704,6 +704,29 @@ EvalResult evaluateCandidate(
             soft -= static_cast<double>(sim.weakenedEliminated) * 8.0;
         }
     }
+    if (sim.evilEnergyEliminated > 0) {
+        if (rules.forbidWeakenedOrbs) {
+            hazardFail = true;
+            markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.evilEnergyEliminated) * 1.5);
+            shaping -= static_cast<double>(sim.evilEnergyEliminated) * 420.0;
+        } else {
+            soft -= static_cast<double>(sim.evilEnergyEliminated) * 12.0;
+        }
+    }
+    if (sim.bloodThornEliminated > 0) {
+        if (rules.forbidWeakenedOrbs) {
+            hazardFail = true;
+            markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.bloodThornEliminated) * 1.6);
+            shaping -= static_cast<double>(sim.bloodThornEliminated) * 460.0;
+        } else {
+            // #20 刺血符石: directly deducts Summoner HP on elimination -> strong soft avoidance even by default!
+            soft -= static_cast<double>(sim.bloodThornEliminated) * 85.0;
+        }
+    }
+    if (sim.magicOrbsCleared > 0) {
+        // #17 魔力符石: +3 Combo (already added to totalCombo) + 2x ATK / full heal!
+        soft += static_cast<double>(sim.magicOrbsCleared) * 32.0;
+    }
     if (rules.requireLuminousOrbClear) {
         bool boardHasLuminous = false;
         for (uint8_t i = 0; i < totalCells; ++i) {
@@ -727,8 +750,14 @@ EvalResult evaluateCandidate(
             }
         }
     }
-    if (rules.prioritizePetrifiedClear && sim.petrifiedAdjacentHits > 0) {
-        soft += static_cast<double>(sim.petrifiedAdjacentHits) * 40.0;
+    if (rules.prioritizePetrifiedClear) {
+        if (sim.petrifiedAdjacentHits > 0) {
+            soft += static_cast<double>(sim.petrifiedAdjacentHits) * 40.0;
+        }
+        if (sim.coagulatedAdjacentHits > 0) {
+            // #5 凝結: scales enemy damage reduction -> peel even higher priority than Petrified!
+            soft += static_cast<double>(sim.coagulatedAdjacentHits) * 55.0;
+        }
     }
     if (sim.priorityOrbsRemaining > 0) {
         soft -= static_cast<double>(sim.priorityOrbsRemaining) * 60.0;

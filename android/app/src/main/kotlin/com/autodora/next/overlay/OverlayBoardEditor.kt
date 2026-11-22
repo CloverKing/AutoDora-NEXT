@@ -16,6 +16,7 @@ sealed class BoardBrush(val id: String, val label: String) {
     data class PaintElement(val element: Element) : BoardBrush("el_${element.code}", PathOverlayView.elementShortZh(element))
     data object ToggleEnchanted : BoardBrush("var_ench", "强化+")
     data object ToggleRace : BoardBrush("var_race", "种族")
+    data object ToggleWeakened : BoardBrush("var_weak", "弱化-")
     data class ToggleTileFlag(val flag: Int, val tag: String) : BoardBrush("flag_$flag", tag)
     data class ToggleHazard(val hazard: Int, val tag: String) : BoardBrush("haz_$hazard", tag)
     data object ClearMarkers : BoardBrush("clear_cell", "清标记")
@@ -44,13 +45,25 @@ class OverlayBoardEditorController(
         BoardBrush.PaintElement(Element.HEART),
         BoardBrush.ToggleEnchanted,
         BoardBrush.ToggleRace,
+        BoardBrush.ToggleWeakened,
         BoardBrush.ToggleTileFlag(TileFlagBits.PUZZLE_1, "拼图"),
         BoardBrush.ToggleTileFlag(TileFlagBits.START_ALLOWED, "起手绿"),
         BoardBrush.ToggleTileFlag(TileFlagBits.END_REQUIRED, "停手红"),
         BoardBrush.ToggleHazard(HazardBits.WEATHERED, "风化"),
         BoardBrush.ToggleHazard(HazardBits.ELECTRIFIED, "电击"),
+        BoardBrush.ToggleHazard(HazardBits.FROZEN, "冻结"),
         BoardBrush.ToggleHazard(HazardBits.ICE_SEALED, "冰封"),
         BoardBrush.ToggleHazard(HazardBits.PETRIFIED, "石化"),
+        BoardBrush.ToggleHazard(HazardBits.COAGULATED, "凝结"),
+        BoardBrush.ToggleHazard(HazardBits.BLOOD_DRAIN, "化血"),
+        BoardBrush.ToggleHazard(HazardBits.BOMB, "炸弹"),
+        BoardBrush.ToggleHazard(HazardBits.FOAM, "泡沫"),
+        BoardBrush.ToggleHazard(HazardBits.EVIL_ENERGY, "邪能"),
+        BoardBrush.ToggleHazard(HazardBits.BLOOD_THORN, "刺血"),
+        BoardBrush.ToggleHazard(HazardBits.MAGIC_ORB, "魔力"),
+        BoardBrush.ToggleHazard(HazardBits.LUMINOUS, "流光"),
+        BoardBrush.ToggleHazard(HazardBits.PRIORITY, "印记必消"),
+        BoardBrush.ToggleHazard(HazardBits.RESERVE, "保留不消"),
         BoardBrush.ToggleTileFlag(TileFlagBits.BURNING_TILE, "燃烧"),
         BoardBrush.ToggleTileFlag(TileFlagBits.SCORCHING_TILE, "灼热"),
         BoardBrush.ToggleTileFlag(TileFlagBits.BLACK_HOLE, "黑洞"),
@@ -195,6 +208,10 @@ class OverlayBoardEditorController(
             }
             BoardBrush.ToggleRace -> {
                 val nextVar = if (oldCell.variant == Variant.RACE) Variant.NORMAL else Variant.RACE
+                newCells[idx] = oldCell.copy(variant = nextVar)
+            }
+            BoardBrush.ToggleWeakened -> {
+                val nextVar = if (oldCell.variant == Variant.WEAKENED) Variant.NORMAL else Variant.WEAKENED
                 newCells[idx] = oldCell.copy(variant = nextVar)
             }
             is BoardBrush.ToggleTileFlag -> {
