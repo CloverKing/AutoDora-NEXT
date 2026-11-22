@@ -88,6 +88,10 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
     }
 
     suspend fun seedBuiltInsIfNeeded() {
+        // Prune retired legacy built-in presets so only the single Default Strategy remains pre-seeded
+        dao.deleteByIds(RETIRED_BUILTIN_IDS)
+        dao.renameIfExact(ID_GENERAL, "通用高连击策略", "默认策略")
+
         val now = System.currentTimeMillis()
         val builtIns = defaultBuiltInPresets().mapIndexed { index, preset ->
             TeamPresetEntity(
@@ -104,6 +108,12 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
 
     companion object {
         const val ID_GENERAL = "builtin_general"
+        private val RETIRED_BUILTIN_IDS = listOf(
+            "builtin_two_match",
+            "builtin_column_ameliorate",
+            "builtin_char_orb",
+            "builtin_weijian_burst"
+        )
 
         fun create(context: android.content.Context): TeamPresetRepository =
             TeamPresetRepository(AutoDoraDatabase.getInstance(context).teamPresetDao())
@@ -111,67 +121,12 @@ class TeamPresetRepository(private val dao: TeamPresetDao) {
         fun defaultBuiltInPresets(): List<TeamBasePreset> = listOf(
             TeamBasePreset(
                 id = ID_GENERAL,
-                name = "通用高连击策略",
-                description = "标准 3 消 · 8 向斜转 · 强化珠优先 · 兼顾高 Combo 与稳健手数",
+                name = "默认策略",
+                description = "标准 3 消 · 八向斜转 · 强化珠优先 · 兼顾高连击与稳健手数",
                 baseConfig = RuleConfig(
                     allowDiagonalMove = true,
                     preferEnchanted = true,
                     fourPlusPolicy = FourPlusPolicy.MAX_COMBO
-                )
-            ),
-            TeamBasePreset(
-                id = "builtin_two_match",
-                name = "火木心二消策略",
-                description = "火 / 木 / 心 2 颗即消 · 拆珠冲高 Combo · 适配二消与高倍率队长",
-                baseConfig = RuleConfig(
-                    allowDiagonalMove = true,
-                    preferEnchanted = true,
-                    elementRules = List(6) { idx ->
-                        if (idx == Element.FIRE.code || idx == Element.WOOD.code || idx == Element.HEART.code) {
-                            ElementRule(minMatchCount = 2, priority = ElementPriority.HIGH)
-                        } else {
-                            ElementRule(minMatchCount = 3)
-                        }
-                    }
-                )
-            ),
-            TeamBasePreset(
-                id = "builtin_column_ameliorate",
-                name = "直排昇华爆发策略",
-                description = "1~6 直行 ≥ 4 消昇华加权 · 优先触发直排剑 / 心增益",
-                baseConfig = RuleConfig(
-                    allowDiagonalMove = true,
-                    preferEnchanted = true,
-                    columnRules = List(8) { col ->
-                        if (col < 6) ColumnAmeliorationRule(enabled = true, minOrbs = 4, hardRequired = false)
-                        else ColumnAmeliorationRule()
-                    }
-                )
-            ),
-            TeamBasePreset(
-                id = "builtin_char_orb",
-                name = "角色符石起手策略",
-                description = "1 号位角色珠下拉起手（不计首步）· 适配角色通行 / 停放地形",
-                baseConfig = RuleConfig(
-                    allowDiagonalMove = true,
-                    useCharacterOrb = true,
-                    characterOrbCol = 0,
-                    characterOrbElement = Element.FIRE,
-                    preferEnchanted = true
-                )
-            ),
-            TeamBasePreset(
-                id = "builtin_weijian_burst",
-                name = "违建长步爆发策略",
-                description = "6×8 扩版特化 · 允许更长步数（100 步）与高算力广度搜索",
-                baseConfig = RuleConfig(
-                    allowDiagonalMove = true,
-                    useSystemSteps = false,
-                    useSystemBeam = false,
-                    maxSteps = 100,
-                    beamWidth = 260,
-                    maxTimeMs = 1100,
-                    preferEnchanted = true
                 )
             )
         )

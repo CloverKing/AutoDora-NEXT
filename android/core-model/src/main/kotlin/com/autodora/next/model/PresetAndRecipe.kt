@@ -151,6 +151,25 @@ object RuleComposer {
                 "exact_first_combo" -> cfg = cfg.copy(exactFirstWaveCombo = chip.paramInt, avoidSkyfallRisk = true)
                 "min_combo" -> cfg = cfg.copy(minTotalCombo = maxOf(cfg.minTotalCombo, chip.paramInt))
                 "min_first_combo" -> cfg = cfg.copy(minFirstWaveCombo = maxOf(cfg.minFirstWaveCombo, chip.paramInt))
+                "min_first_elem_combo" -> cfg = cfg.copy(
+                    minFirstWaveElementalCombo = maxOf(cfg.minFirstWaveElementalCombo, chip.paramInt.coerceIn(1, 12))
+                )
+                "wave1_same_kind" -> {
+                    cfg = cfg.copy(
+                        exactFirstWaveCombo = chip.paramInt.coerceIn(1, 10),
+                        wave1KindMode = Wave1KindMode.SAME_KIND_HEART_WILD,
+                        avoidSkyfallRisk = true
+                    )
+                    highDifficultyShield = true
+                }
+                "wave1_distinct_kind" -> {
+                    cfg = cfg.copy(
+                        exactFirstWaveCombo = chip.paramInt.coerceIn(1, 10),
+                        wave1KindMode = Wave1KindMode.DISTINCT_KIND_HEART_WILD,
+                        avoidSkyfallRisk = true
+                    )
+                    highDifficultyShield = true
+                }
                 "zero_combo" -> cfg = cfg.copy(exactTotalCombo = 0, maxSteps = minOf(cfg.maxSteps, 6), earlyStopOnGoal = true)
                 "odd_combo" -> cfg = cfg.copy(
                     comboParity = ComboParity.ODD,
@@ -163,6 +182,7 @@ object RuleComposer {
                     avoidSkyfallRisk = true
                 )
                 "first_wave_only" -> cfg = cfg.copy(firstWaveOnlyScoring = true)
+                "no_cascade" -> cfg = cfg.copy(disableCascades = true, firstWaveOnlyScoring = true)
                 "same_combo_elements" -> cfg = cfg.copy(sameComboAcrossEliminatedElements = true)
 
                 "min_distinct_elements" -> cfg = cfg.copy(minDistinctElements = maxOf(cfg.minDistinctElements, chip.paramInt.coerceIn(1, 6)))
@@ -173,21 +193,26 @@ object RuleComposer {
                 )
                 "three_elements" -> cfg = cfg.copy(requiredTotalElementsMask = cfg.requiredTotalElementsMask or THREE_ELEMENTS_MASK)
                 "require_elements" -> {
-                    // Low 6 bits: required elements mask; bits 8..13: independent per-color enchanted mask!
-                    // Legacy compat: if bits 8..13 are 0 and paramInt == 1, treat all required elements as enchanted.
+                    // Low 6 bits: required elements mask; bits 8..13: independent per-color enchanted mask.
+                    // Official Skills #4-#7 (二/三/四/五屬盾) allow cascade/skyfall elimination by default;
+                    // set paramInt bit 1 (value 2) when explicit Wave-1-only elimination is required.
+                    // Legacy compat: if bits 8..13 are 0 and (paramInt and 1) != 0, treat all required elements as enchanted.
                     val reqMask = chip.paramElementMask and 0x3F
                     val perColorEnch = (chip.paramElementMask ushr 8) and 0x3F
-                    val effEnch = if (perColorEnch != 0) perColorEnch else if (chip.paramInt == 1) reqMask else 0
+                    val effEnch = if (perColorEnch != 0) perColorEnch else if ((chip.paramInt and 1) != 0) reqMask else 0
+                    val firstWaveStrict = (chip.paramInt and 2) != 0
                     cfg = cfg.copy(
-                        requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or reqMask,
+                        requiredFirstWaveElementsMask = if (firstWaveStrict) (cfg.requiredFirstWaveElementsMask or reqMask) else cfg.requiredFirstWaveElementsMask,
                         requiredTotalElementsMask = cfg.requiredTotalElementsMask or reqMask,
                         requiredEnchantedElementsMask = cfg.requiredEnchantedElementsMask or effEnch
                     )
                 }
                 "require_enchanted_elements" -> cfg = cfg.copy(
-                    requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or chip.paramElementMask,
                     requiredTotalElementsMask = cfg.requiredTotalElementsMask or chip.paramElementMask,
                     requiredEnchantedElementsMask = cfg.requiredEnchantedElementsMask or chip.paramElementMask
+                )
+                "unmatchable_elements" -> cfg = cfg.copy(
+                    unmatchableElementsMask = cfg.unmatchableElementsMask or (chip.paramElementMask and 0x3F)
                 )
                 "elem_burst_shield" -> {
                     // Cumulative / First-Wave N-Orb Attribute Shield (e.g. 火5 / 水15 / 心5 累积符石盾):
@@ -291,20 +316,24 @@ object RuleComposer {
                     highDifficultyShield = true
                 }
                 "l_shape" -> {
-                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireLCount = maxOf(cfg.shapeShield.requireLCount, 1)))
+                    // Official Skill #16 (L字限盾): strict exact 5 orbs!
+                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireLCount = maxOf(cfg.shapeShield.requireLCount, 1), strictShape = true))
                     val em = chip.paramElementMask and 0x3F
                     if (em != 0) {
                         cfg = cfg.copy(requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or em)
                         for (e in 0 until 6) if ((em and (1 shl e)) != 0) elemRules[e] = elemRules[e].copy(priority = ElementPriority.HIGH)
                     }
+                    highDifficultyShield = true
                 }
                 "t_shape" -> {
-                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireTCount = maxOf(cfg.shapeShield.requireTCount, 1)))
+                    // Official Skill #15 (T字限盾): strict exact 5 orbs!
+                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireTCount = maxOf(cfg.shapeShield.requireTCount, 1), strictShape = true))
                     val em = chip.paramElementMask and 0x3F
                     if (em != 0) {
                         cfg = cfg.copy(requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or em)
                         for (e in 0 until 6) if ((em and (1 shl e)) != 0) elemRules[e] = elemRules[e].copy(priority = ElementPriority.HIGH)
                     }
+                    highDifficultyShield = true
                 }
                 "square_2x2" -> cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireSquare2x2Count = maxOf(cfg.shapeShield.requireSquare2x2Count, 1)))
                 "all_columns_ameliorate" -> {
@@ -331,14 +360,31 @@ object RuleComposer {
                     highDifficultyShield = true
                 }
                 "equal_pair_light_dark" -> {
-                    val elemA = if (chip.paramElementMask != 0) (chip.paramElementMask and 0x0F).coerceIn(0, 5) else Element.LIGHT.code
-                    val elemB = if (chip.paramElementMask != 0) ((chip.paramElementMask ushr 4) and 0x0F).coerceIn(0, 5) else Element.DARK.code
-                    cfg = cfg.copy(
-                        requireEqualPairCombos = true,
-                        equalPairElemA = elemA,
-                        equalPairElemB = elemB,
-                        equalPairMustBeNonZero = true
-                    )
+                    // Official Skill #9 (連擊相等盾): supports generalized 2..6 colors when bit 8 (0x100) is set,
+                    // while remaining 100% backward-compatible with legacy 2-element nibble packing (a | (b<<4)).
+                    if ((chip.paramElementMask and 0x100) != 0) {
+                        val mask = chip.paramElementMask and 0x3F
+                        val picked = (0..5).filter { (mask and (1 shl it)) != 0 }
+                        val elemA = picked.getOrElse(0) { Element.LIGHT.code }
+                        val elemB = picked.getOrElse(1) { Element.DARK.code }
+                        cfg = cfg.copy(
+                            requireEqualPairCombos = true,
+                            equalPairElemA = elemA,
+                            equalPairElemB = elemB,
+                            equalComboElementsMask = mask,
+                            equalPairMustBeNonZero = true
+                        )
+                    } else {
+                        val elemA = if (chip.paramElementMask != 0) (chip.paramElementMask and 0x0F).coerceIn(0, 5) else Element.LIGHT.code
+                        val elemB = if (chip.paramElementMask != 0) ((chip.paramElementMask ushr 4) and 0x0F).coerceIn(0, 5) else Element.DARK.code
+                        cfg = cfg.copy(
+                            requireEqualPairCombos = true,
+                            equalPairElemA = elemA,
+                            equalPairElemB = elemB,
+                            equalComboElementsMask = (1 shl elemA) or (1 shl elemB),
+                            equalPairMustBeNonZero = true
+                        )
+                    }
                     highDifficultyShield = true
                 }
                 "same_elem_combos" -> {
@@ -382,6 +428,13 @@ object RuleComposer {
                     highDifficultyShield = true
                 }
                 "step_limit" -> cfg = cfg.copy(maxSteps = minOf(cfg.maxSteps, chip.paramInt.coerceAtLeast(1)))
+                "step_range" -> {
+                    // Official Skill #60 (步數盾): low byte = minSteps, high byte = maxSteps (e.g. 25..30)
+                    val lo = (chip.paramInt and 0xFF).coerceIn(1, 200)
+                    val hi = ((chip.paramInt ushr 8) and 0xFF).coerceIn(lo, 200)
+                    cfg = cfg.copy(minSteps = maxOf(cfg.minSteps, lo), maxSteps = hi, useSystemSteps = false)
+                    highDifficultyShield = true
+                }
                 "exact_steps" -> cfg = cfg.copy(exactSteps = chip.paramInt, maxSteps = maxOf(cfg.maxSteps, chip.paramInt))
                 "step_hurt_minimize" -> cfg = cfg.copy(stepPenaltyWeight = 5.0)
                 "fast_first_result" -> cfg = cfg.copy(earlyStopOnGoal = true)

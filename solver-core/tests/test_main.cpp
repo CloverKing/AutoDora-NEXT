@@ -52,8 +52,10 @@ void verifyPathReplay(const BoardState& initial, const RuleConfig& rules, const 
         const uint8_t curIdx = b.index(cur.row, cur.col);
         const uint8_t nextIdx = b.index(static_cast<uint8_t>(nr), static_cast<uint8_t>(nc));
         require((b.stormMask & bitOf(nextIdx)) == 0, "entered storm tile");
-        require((b.blackHoleMask & bitOf(nextIdx)) == 0, "entered black hole");
         require((b.noPassMask & bitOf(nextIdx)) == 0, "entered no-pass tile");
+        if (!sol.usedCharacterOrb) {
+            require((b.charOrbPassMask & bitOf(nextIdx)) == 0, "non-char-orb entered charOrbPass terrain");
+        }
         require(!b.cells[nextIdx].isImmovable(), "swapped immovable cell");
         require((b.cells[nextIdx].hazards & HazardBits::PurgatoryFire) == 0, "touched purgatory fire orb");
         require((b.cells[nextIdx].hazards & HazardBits::Electrified) == 0, "touched electrified orb");
@@ -77,6 +79,10 @@ void verifyPathReplay(const BoardState& initial, const RuleConfig& rules, const 
     }
 
     const SimulationResult sim = simulateBoard(b, rules);
+    if (sol.evaluation.allHardConstraintsMet && b.endForbiddenMask != 0) {
+        const uint8_t endIdx = b.index(cur.row, cur.col);
+        require((b.endForbiddenMask & bitOf(endIdx)) == 0, "hard-met path ended on black hole / bloodbath tile");
+    }
     require(sim.totalCombo == sol.simulation.totalCombo, "replayed totalCombo mismatch");
     require(sim.firstWaveCombo == sol.simulation.firstWaveCombo, "replayed firstWaveCombo mismatch");
     require(sim.firstWaveOrbsTotal == sol.simulation.firstWaveOrbsTotal, "replayed firstWaveOrbsTotal mismatch");
@@ -1396,6 +1402,501 @@ void testRealTrafficLightStageWithCompositeShields() {
     require((best.evaluation.satisfiedFlags & ShieldStatusBits::TrafficLight) != 0, "TrafficLight flag must be satisfied");
 }
 
+// -----------------------------------------------------------------------------
+// 37. Official Encyclopedia #57/#58: Wave-1 Same-Kind & Distinct-Kind (Heart Wildcard)
+// -----------------------------------------------------------------------------
+void testWave1SameAndDistinctKindHeartWildcard() {
+    // Part A: Official #57 Slide 2 semantics (Water + multiple Heart groups = PASS; adding Fire = FAIL)
+    BoardState bSameOk = BoardState::fromString(
+        "WWWGFD"
+        "HHHLGF"
+        "WWWDFG"
+        "HHHGLD"
+        "GLDFGL",
+        6, 5
+    );
+    RuleConfig rSame;
+    rSame.exactFirstWaveCombo = 4;
+    rSame.wave1KindMode = Wave1KindMode::SameKindHeartWild;
+    PathMetrics dm{}; dm.stepCount = 1;
+    auto evSameOk = evaluateCandidate(bSameOk, simulateBoard(bSameOk, rSame), dm, rSame);
+    require(evSameOk.allHardConstraintsMet, "#57 SameKind must ACCEPT 2 Water + 2 Heart wildcard groups");
+
+    BoardState bSameBad = BoardState::fromString(
+        "WWWGFD"
+        "FFFLGF"
+        "WWWDFG"
+        "HHHGLD"
+        "GLDFGL",
+        6, 5
+    );
+    auto evSameBad = evaluateCandidate(bSameBad, simulateBoard(bSameBad, rSame), dm, rSame);
+    require(!evSameBad.allHardConstraintsMet, "#57 SameKind must REJECT mixing Water + Fire");
+
+    // Part B: Official #58 Slide 2 semantics (Water + Wood + Dark + TWO Heart groups = PASS; 2 Light groups = FAIL)
+    BoardState bDistOk = BoardState::fromString(
+        "WWWFDL"
+        "HHHLFG"
+        "GGGFLD"
+        "HHHDGL"
+        "DDDFGF",
+        6, 5
+    );
+    RuleConfig rDist;
+    rDist.exactFirstWaveCombo = 5;
+    rDist.wave1KindMode = Wave1KindMode::DistinctKindHeartWild;
+    auto evDistOk = evaluateCandidate(bDistOk, simulateBoard(bDistOk, rDist), dm, rDist);
+    require(evDistOk.allHardConstraintsMet, "#58 DistinctKind must ACCEPT 3 distinct elements + 2 Heart wildcard groups");
+
+    BoardState bDistBad = BoardState::fromString(
+        "WWWFDL"
+        "LLLGFG"
+        "GGGFLD"
+        "LLLDGL"
+        "DDDFGF",
+        6, 5
+    );
+    auto evDistBad = evaluateCandidate(bDistBad, simulateBoard(bDistBad, rDist), dm, rDist);
+    require(!evDistBad.allHardConstraintsMet, "#58 DistinctKind must REJECT duplicate non-Heart Light groups");
+
+    // Part C: Live solver solves #58 DistinctKind (exact 4 Wave-1 distinct groups) from scrambled board!
+    BoardState bSolve = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig rSolve;
+    rSolve.exactFirstWaveCombo = 4;
+    rSolve.wave1KindMode = Wave1KindMode::DistinctKindHeartWild;
+    rSolve.maxSteps = 22;
+    rSolve.beamWidth = 220;
+    PuzzleSolver solver;
+    auto out = solver.solve(bSolve, rSolve);
+    require(!out.solutions.empty() && out.solutions[0].evaluation.allHardConstraintsMet,
+            "solver must satisfy #58 Wave-1 Distinct-Kind exact 4C");
+    verifyPathReplay(bSolve, rSolve, out.solutions[0]);
+    require(out.solutions[0].simulation.firstWaveCombo == 4, "firstWaveCombo must be exact 4");
+}
+
+// -----------------------------------------------------------------------------
+// 38. Official Encyclopedia #18: First-Wave Elemental Groups >= N (Excludes Heart!)
+// -----------------------------------------------------------------------------
+void testFirstWaveElementalComboExcludesHeart() {
+    // 4 elemental matches + 1 Heart match = 5 total Wave-1 combos, but ONLY 4 elemental combos -> MUST FAIL >=5!
+    BoardState b = BoardState::fromString(
+        "WWWFDL"
+        "FFFLDG"
+        "GGGDFL"
+        "LLLFGD"
+        "HHHDGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.minFirstWaveElementalCombo = 5;
+    PathMetrics dm{}; dm.stepCount = 1;
+    auto sim = simulateBoard(b, r);
+    require(sim.firstWaveCombo == 5, "board has 5 total Wave-1 combos (4 elem + 1 heart)");
+    auto ev = evaluateCandidate(b, sim, dm, r);
+    require(!ev.allHardConstraintsMet, "#18 must REJECT 4 elemental + 1 Heart when >=5 elemental groups required");
+
+    // Solver must find >=5 non-Heart Wave-1 groups!
+    BoardState b2 = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    r.maxSteps = 24;
+    r.beamWidth = 220;
+    PuzzleSolver solver;
+    auto out = solver.solve(b2, r);
+    require(!out.solutions.empty() && out.solutions[0].evaluation.allHardConstraintsMet, "solver must reach >=5 non-Heart Wave-1 combos");
+    verifyPathReplay(b2, r, out.solutions[0]);
+    uint8_t elemCnt = 0;
+    for (uint8_t e = 0; e < 5; ++e) elemCnt += out.solutions[0].simulation.firstWaveElementCombos[e];
+    require(elemCnt >= 5, "non-Heart Wave-1 combos must be >= 5");
+}
+
+// -----------------------------------------------------------------------------
+// 39. Official Encyclopedia #9: 3-Element Equal Wave-1 Combos (水火木連擊相等盾)
+// -----------------------------------------------------------------------------
+void testThreeElementEqualWave1Combos() {
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.equalComboElementsMask = elementBit(Element::Water) | elementBit(Element::Fire) | elementBit(Element::Wood);
+    r.equalPairMustBeNonZero = true;
+    r.maxSteps = 24;
+    r.beamWidth = 220;
+    PuzzleSolver solver;
+    auto out = solver.solve(b, r);
+    require(!out.solutions.empty() && out.solutions[0].evaluation.allHardConstraintsMet, "3-element equal Wave-1 combos must pass");
+    verifyPathReplay(b, r, out.solutions[0]);
+    const auto& c = out.solutions[0].simulation.firstWaveElementCombos;
+    require(c[0] > 0 && c[0] == c[1] && c[1] == c[2], "Water == Fire == Wood > 0 in Wave 1");
+}
+
+// -----------------------------------------------------------------------------
+// 40. Official Encyclopedia #15/#16: Strict Exact 5-Orb L-Shape & T-Shape Shields
+// -----------------------------------------------------------------------------
+void testStrictExact5OrbLTShapes() {
+    // Oversized 7-orb L-shape (4x4 leg) MUST FAIL strictShape=true per Official #16 Slide 2 Red-X!
+    BoardState bOversizedL = BoardState::fromString(
+        "WFLGDH"
+        "WGFDLH"
+        "WLDHFG"
+        "WWWWFD"
+        "GLDHFL",
+        6, 5
+    );
+    RuleConfig rL;
+    rL.shapeShield.requireLCount = 1;
+    rL.shapeShield.strictShape = true;
+    PathMetrics dm{}; dm.stepCount = 1;
+    auto evBad = evaluateCandidate(bOversizedL, simulateBoard(bOversizedL, rL), dm, rL);
+    require(!evBad.allHardConstraintsMet, "#16 strict L-shape must REJECT oversized 7-orb L");
+
+    // Live solver builds exact 5-orb strict T-shape (#15)!
+    BoardState bSolveT = BoardState::fromString(
+        "WFWGLD"
+        "FWWLDH"
+        "GFWLDF"
+        "LDWHFG"
+        "DHWFDL",
+        6, 5
+    );
+    RuleConfig rT;
+    rT.shapeShield.requireTCount = 1;
+    rT.shapeShield.strictShape = true;
+    rT.maxSteps = 22;
+    rT.beamWidth = 240;
+    PuzzleSolver solver;
+    auto outT = solver.solve(bSolveT, rT);
+    require(!outT.solutions.empty() && outT.solutions[0].evaluation.allHardConstraintsMet,
+            "#15 strict exact 5-orb T-shape must be solved");
+    verifyPathReplay(bSolveT, rT, outT.solutions[0]);
+    bool hasStrictT5 = false;
+    for (uint8_t gi = 0; gi < outT.solutions[0].simulation.groupCount; ++gi) {
+        const auto& g = outT.solutions[0].simulation.groups[gi];
+        if (g.wave == 1 && g.isTShape && g.orbCount == 5) hasStrictT5 = true;
+    }
+    require(hasStrictT5, "solution must contain exact 5-orb Wave-1 T-shape");
+}
+
+// -----------------------------------------------------------------------------
+// 41. Official Encyclopedia #60: Step-Count Range Shield (步數盾 [12..16])
+// -----------------------------------------------------------------------------
+void testStepCountRangeShield() {
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.minSteps = 12;
+    r.maxSteps = 16;
+    r.beamWidth = 180;
+    PuzzleSolver solver;
+    auto out = solver.solve(b, r);
+    require(!out.solutions.empty() && out.solutions[0].evaluation.allHardConstraintsMet, "step range [12..16] must succeed");
+    verifyPathReplay(b, r, out.solutions[0]);
+    require(out.solutions[0].metrics.stepCount >= 12 && out.solutions[0].metrics.stepCount <= 16,
+            "step count must lie inside [12..16]");
+}
+
+// -----------------------------------------------------------------------------
+// 42. Official Encyclopedia #31/#32: BlackHole & Bloodbath Passable, Forbidden End!
+// -----------------------------------------------------------------------------
+void testBlackHoleAndBloodbathPassableEndForbidden() {
+    // 1x6 bottleneck: row 1 is all Storm EXCEPT (1,2) which is BlackHole — path MUST pass THROUGH BlackHole
+    // from start (0,2) to end (2,2) and MUST NOT end on BlackHole or EndForbidden!
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    for (uint8_t c = 0; c < 6; ++c) {
+        if (c != 2) b.setTileFlag(1, c, TileFlagBits::Storm);
+    }
+    b.setTileFlag(1, 2, TileFlagBits::BlackHole);    // #32: ONLY bridge from top half to bottom half!
+    b.setTileFlag(2, 3, TileFlagBits::EndForbidden); // #31: Bloodbath forbidden end!
+    b.setTileFlag(0, 2, TileFlagBits::StartAllowed);
+    b.setTileFlag(2, 2, TileFlagBits::EndRequired);
+    b.rebuildMasks();
+
+    RuleConfig r;
+    r.allowDiagonalMove = false;
+    r.maxSteps = 12;
+    r.beamWidth = 160;
+    PuzzleSolver solver;
+    auto out = solver.solve(b, r);
+    require(!out.solutions.empty() && out.solutions[0].evaluation.allHardConstraintsMet,
+            "path must legally traverse through BlackHole (1,2) to reach (2,2)");
+    verifyPathReplay(b, r, out.solutions[0]);
+    require(out.solutions[0].waypoints.back() == (CellCoord{2, 2}), "must end safely at (2,2)");
+}
+
+// -----------------------------------------------------------------------------
+// 43. Official Encyclopedia #28/#96 ScorchingTile + #23 Unmatchable Elements (符石禁咒)
+// -----------------------------------------------------------------------------
+void testScorchingTileAndUnmatchableElement() {
+    // #23 符石禁咒: Water cannot match even with 3-in-a-row!
+    BoardState bBan = BoardState::fromString(
+        "WWWFDL"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    RuleConfig rBan;
+    rBan.unmatchableElementsMask = elementBit(Element::Water);
+    auto simBan = simulateBoard(bBan, rBan);
+    require((simBan.totalElementsMask & elementBit(Element::Water)) == 0,
+            "#23 unmatchableElementsMask must prevent WWW from matching");
+
+    // #28/#96 灼熱地型: clearing inside ScorchingTile triggers scorchingOrbsCleared violation,
+    // while moving through it without matching inside succeeds!
+    BoardState bScorch = BoardState::fromString(
+        "WWWFDL"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    bScorch.setTileFlag(0, 1, TileFlagBits::ScorchingTile);
+    bScorch.rebuildMasks();
+    RuleConfig rS;
+    rS.maxBurningTileHurts = 0;
+    auto simS = simulateBoard(bScorch, rS);
+    require(simS.scorchingOrbsCleared == 1, "clearing orb on ScorchingTile must increment scorchingOrbsCleared");
+    PathMetrics dm{}; dm.stepCount = 1;
+    require(!evaluateCandidate(bScorch, simS, dm, rS).allHardConstraintsMet,
+            "clearing on ScorchingTile with maxBurningTileHurts=0 must fail BurningLimit");
+}
+
+// -----------------------------------------------------------------------------
+// 44. Official Encyclopedia #66/#81 disableCascades + #78 CharOrbPass Terrain
+// -----------------------------------------------------------------------------
+void testDisableCascadesAndCharOrbPassRule() {
+    // Baseline board has a Wave-2 Fire cascade after Wave-1 Water clears
+    BoardState b = BoardState::fromString(
+        "FGLDHW"
+        "FHDWLG"
+        "WWWLDF"
+        "FDLGWH"
+        "GHWFDL",
+        6, 5
+    );
+    RuleConfig rOn;
+    require(simulateBoard(b, rOn).secondWaveCombo >= 1, "baseline must cascade in Wave 2");
+    RuleConfig rOff;
+    rOff.disableCascades = true;
+    auto simNoCas = simulateBoard(b, rOff);
+    require(simNoCas.firstWaveCombo == 1 && simNoCas.secondWaveCombo == 0 && simNoCas.totalCombo == 1,
+            "#66/#81 disableCascades must physically stop all Wave >= 2 cascades");
+
+    // #78 CharOrbPass terrain: orbs inside cannot match!
+    BoardState bCp = BoardState::fromString(
+        "WWWFDL"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    bCp.setTileFlag(0, 1, TileFlagBits::CharOrbPass);
+    bCp.rebuildMasks();
+    require(simulateBoard(bCp, rOn).firstWaveCombo == 0, "#78 CharOrbPass terrain must prevent matching inside tile");
+}
+
+// -----------------------------------------------------------------------------
+// 45. Official Runestone Status #3/#4/#5: IceSealed No-Peel + Per-Wave 1-Layer Cap on Petrified & Coagulated
+// -----------------------------------------------------------------------------
+void testIceSealedAndPerWavePetrifiedCoagulatedCap() {
+    // (1,1) is surrounded on TOP by WWW (row 0) AND on BOTTOM by FFF (row 2) — 2 separate Wave-1 combos!
+    BoardState b = BoardState::fromString(
+        "WWWGDH"
+        "GLDGHW"
+        "FFFHGD"
+        "DLHGWF"
+        "GHFDLW",
+        6, 5
+    );
+    RuleConfig r;
+
+    // 1) IceSealed (#3): thaws after 3 turns, NOT by 4-neighbor matches -> 0 adjacent peel hits!
+    BoardState bIce = b;
+    bIce.at(1, 1).hazards |= HazardBits::IceSealed;
+    auto simIce = simulateBoard(bIce, r);
+    require(simIce.petrifiedAdjacentHits == 0 && simIce.coagulatedAdjacentHits == 0,
+            "#3 IceSealed must NOT receive 4-neighbor peel hits");
+
+    // 2) Petrified (#4) & Coagulated (#5): 2 Wave-1 combos touching the SAME orb peel STRICTLY 1 layer!
+    BoardState bPet = b;
+    bPet.at(1, 1).hazards |= HazardBits::Petrified;
+    auto simPet = simulateBoard(bPet, r);
+    require(simPet.petrifiedAdjacentHits == 1,
+            "#4 Petrified must cap Wave-1 orthogonal peel to strictly 1 layer even with 2 adjacent Wave-1 combos");
+
+    BoardState bCoag = b;
+    bCoag.at(1, 1).hazards |= HazardBits::Coagulated;
+    require(bCoag.at(1, 1).isImmovable() && bCoag.at(1, 1).isUnmatchableHazard(),
+            "#5 Coagulated must be both immovable and unmatchable");
+    auto simCoag = simulateBoard(bCoag, r);
+    require(simCoag.coagulatedAdjacentHits == 1,
+            "#5 Coagulated must cap Wave-1 orthogonal peel to strictly 1 layer");
+
+    // 3) Wave-1 + Wave-2 cascade next to the same Coagulated orb peels 2 layers!
+    BoardState b2Wave = BoardState::fromString(
+        "FGLDHW"
+        "FHDWLG"
+        "WWWLDF"
+        "FDLGWH"
+        "GHWFDL",
+        6, 5
+    );
+    b2Wave.at(2, 1).hazards = HazardBits::None; // ensure row 2 WWW clears in Wave 1
+    // Put Coagulated at (3, 1): adjacent to Wave-1 WWW at (2,1) AND Wave-2 FFF at (3,0)!
+    b2Wave.at(3, 1).hazards |= HazardBits::Coagulated;
+    auto sim2W = simulateBoard(b2Wave, r);
+    require(sim2W.secondWaveCombo >= 1 && sim2W.coagulatedAdjacentHits == 2,
+            "#5 Coagulated touched in Wave-1 and Wave-2 cascade must peel 2 layers");
+}
+
+// -----------------------------------------------------------------------------
+// 46. Official Runestone Status #8 BloodDrain All-Wave Clear + #13 Foam Movable & Live-Position Burst
+// -----------------------------------------------------------------------------
+void testBloodDrainAllWaveAndMovableFoam() {
+    // 1) #8 BloodDrain cleared in Wave-2 cascade must count as cleared!
+    BoardState bBlood = BoardState::fromString(
+        "FGLDHW"
+        "FHDWLG"
+        "WWWLDF"
+        "FDLGWH"
+        "GHWFDL",
+        6, 5
+    );
+    bBlood.at(0, 0).hazards |= HazardBits::BloodDrain; // Fire orb drops & clears in Wave-2 FFF!
+    RuleConfig r;
+    auto simB = simulateBoard(bBlood, r);
+    require(simB.secondWaveCombo >= 1 && simB.bloodDrainRemainingFirstWave == 0,
+            "#8 BloodDrain cleared in Wave-2 cascade must count as 0 remaining");
+
+    // 2) #13 Foam is MOVABLE during dragging, unmatchable directly, and pops on 4-neighbor match!
+    BoardState bFoam = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    bFoam.at(0, 0).hazards |= HazardBits::Foam;
+    require(!bFoam.at(0, 0).isImmovable(), "#13 Foam must be movable during orb dragging");
+    require(bFoam.at(0, 0).isUnmatchableHazard(), "#13 Foam must NOT be directly matchable");
+    RuleConfig rf;
+    rf.mustClearFoam = true;
+    rf.maxSteps = 18;
+    rf.beamWidth = 160;
+    PuzzleSolver solver;
+    auto outF = solver.solve(bFoam, rf);
+    require(!outF.solutions.empty() && outF.solutions[0].evaluation.allHardConstraintsMet,
+            "#13 movable Foam must solve cleanly");
+    verifyPathReplay(bFoam, rf, outF.solutions[0]);
+    require(outF.solutions[0].simulation.foamRemaining == 0, "#13 Foam must burst");
+}
+
+// -----------------------------------------------------------------------------
+// 47. Official Runestone Status #9 Bomb Touch-Damage Avoidance + #17 MagicOrb (+3 Combo/orb)
+// -----------------------------------------------------------------------------
+void testBombTouchAvoidanceAndMagicOrbBonus() {
+    // 1) #17 MagicOrb: 1 physical combo containing 2 MagicOrbs => totalCombo = 1 + 2*3 = 7!
+    BoardState bMagic = BoardState::fromString(
+        "WWWFDL"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    bMagic.at(0, 0).hazards |= HazardBits::MagicOrb;
+    bMagic.at(0, 1).hazards |= HazardBits::MagicOrb;
+    RuleConfig rm;
+    auto simM = simulateBoard(bMagic, rm);
+    require(simM.firstWaveCombo == 1 && simM.magicOrbsCleared == 2 && simM.totalCombo == 7,
+            "#17 MagicOrb must add +3 Combo per cleared MagicOrb (1 + 2*3 = 7C)");
+
+    // 2) #9 Bomb: solver must clear Bomb WITHOUT touching it when maxBurningTileHurts == 0!
+    BoardState bBomb = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    bBomb.at(0, 0).hazards |= HazardBits::Bomb;
+    RuleConfig rb;
+    rb.mustClearBomb = true;
+    rb.maxBurningTileHurts = 0;
+    rb.maxSteps = 20;
+    rb.beamWidth = 180;
+    PuzzleSolver solver;
+    auto outB = solver.solve(bBomb, rb);
+    require(!outB.solutions.empty() && outB.solutions[0].evaluation.allHardConstraintsMet,
+            "#9 Bomb must be cleared without touching when maxBurningTileHurts == 0");
+    verifyPathReplay(bBomb, rb, outB.solutions[0]);
+    require(outB.solutions[0].metrics.burningTileHits == 0, "#9 Bomb path must have 0 touch damage");
+    require(outB.solutions[0].simulation.bombRemainingFirstWave == 0, "#9 Bomb must be cleared");
+}
+
+// -----------------------------------------------------------------------------
+// 48. Official Runestone Status #12 EvilEnergy & #20 BloodThorn Elimination Avoidance
+// -----------------------------------------------------------------------------
+void testEvilEnergyAndBloodThornAvoidance() {
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLDHW"
+        "GLDHWF"
+        "LDHWFG"
+        "DHWFGL",
+        6, 5
+    );
+    b.at(0, 0).hazards |= HazardBits::EvilEnergy;
+    b.at(4, 5).hazards |= HazardBits::BloodThorn;
+    RuleConfig r;
+    r.forbidWeakenedOrbs = true;
+    r.minTotalCombo = 4;
+    r.maxSteps = 20;
+    r.beamWidth = 180;
+    PuzzleSolver solver;
+    auto out = solver.solve(b, r);
+    require(!out.solutions.empty() && out.solutions[0].evaluation.allHardConstraintsMet,
+            "#12/#20 solver must achieve >=4C while avoiding EvilEnergy & BloodThorn");
+    verifyPathReplay(b, r, out.solutions[0]);
+    require(out.solutions[0].simulation.evilEnergyEliminated == 0, "must NOT eliminate EvilEnergy");
+    require(out.solutions[0].simulation.bloodThornEliminated == 0, "must NOT eliminate BloodThorn");
+}
+
 } // namespace
 
 int main() {
@@ -1437,6 +1938,18 @@ int main() {
     runTest("34. Ordinary Puzzle Shield Semantics & Real 5-Cell Cross (4-Way Ortho)", testOrdinaryPuzzleShieldSingleColorAndRealCross);
     runTest("35. Real Strict 5-Cell Inverted-L Puzzle (4-Way Ortho, Strict No External Touch)", testRealStrictInvertedLPuzzle4WayOrtho);
     runTest("36. Real Traffic Light Stage (1,5)->(3,2) + Anti-1st-Wave Dark + >=6C (4-Way Ortho)", testRealTrafficLightStageWithCompositeShields);
+    runTest("37. Official #57/#58 Wave-1 Same-Kind & Distinct-Kind (Heart Wildcard)", testWave1SameAndDistinctKindHeartWildcard);
+    runTest("38. Official #18 First-Wave Elemental Combo >= N (Excludes Heart)", testFirstWaveElementalComboExcludesHeart);
+    runTest("39. Official #9 3-Element Equal Wave-1 Combos (Water=Fire=Wood)", testThreeElementEqualWave1Combos);
+    runTest("40. Official #15/#16 Strict Exact 5-Orb L-Shape & T-Shape Shields", testStrictExact5OrbLTShapes);
+    runTest("41. Official #60 Step-Count Range Shield ([12..16] Steps)", testStepCountRangeShield);
+    runTest("42. Official #31/#32 BlackHole & Bloodbath Passable but Forbidden End", testBlackHoleAndBloodbathPassableEndForbidden);
+    runTest("43. Official #28/#96 ScorchingTile + #23 Unmatchable Elements", testScorchingTileAndUnmatchableElement);
+    runTest("44. Official #66/#81 disableCascades + #78 CharOrbPass Terrain", testDisableCascadesAndCharOrbPassRule);
+    runTest("45. Runestone #3/#4/#5 IceSealed No-Peel + Per-Wave 1-Layer Cap (Petrified/Coagulated)", testIceSealedAndPerWavePetrifiedCoagulatedCap);
+    runTest("46. Runestone #8 BloodDrain All-Wave + #13 Movable Foam Burst", testBloodDrainAllWaveAndMovableFoam);
+    runTest("47. Runestone #9 Bomb Touch Avoidance + #17 MagicOrb (+3C/orb)", testBombTouchAvoidanceAndMagicOrbBonus);
+    runTest("48. Runestone #12 EvilEnergy & #20 BloodThorn Elimination Avoidance", testEvilEnergyAndBloodThornAvoidance);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;

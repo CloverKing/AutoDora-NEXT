@@ -92,7 +92,11 @@ constexpr uint32_t LockedHurt    = 1u << 18; // 受伤锁定 (可移动, 未首�
 constexpr uint32_t LockedAtkDown = 1u << 19; // 减攻锁定 (可移动, 未消减攻)
 constexpr uint32_t WitheredVine  = 1u << 20; // 枯萎藤蔓 (经过额外扣转珠秒数)
 constexpr uint32_t Sleep         = 1u << 21; // 沉睡符石 (未经路径触碰唤醒前不可消除)
-constexpr uint32_t Luminous      = 1u << 22; // 光晕/耀眼符石 (优先消除获得增益)
+constexpr uint32_t Luminous      = 1u << 22; // 流光符石 (#11 時光牌「時晷」, 优先消除/流光盾)
+constexpr uint32_t Coagulated    = 1u << 23; // 凝结符石 (#5 不可移动/直消, 四邻每波解1层, 愈多敌减伤愈多)
+constexpr uint32_t EvilEnergy    = 1u << 24; // 邪恶能量符石 (#12 不可还原/强化, 每消1粒全队减攻)
+constexpr uint32_t MagicOrb      = 1u << 25; // 魔力符石 (#17 每消1粒+3 Combo、2倍攻/回满血)
+constexpr uint32_t BloodThorn    = 1u << 26; // 刺血符石 (#20 每消除扣除召唤师生命力)
 } // namespace HazardBits
 
 // Fixed terrain / shield markers attached to grid coordinate (r, c) (do NOT move with orbs)
@@ -105,18 +109,20 @@ constexpr uint32_t EndRequired          = 1u << 3;  // 红绿灯: 要求停手�
 constexpr uint32_t Checkpoint           = 1u << 4;  // 途经地形格
 constexpr uint32_t Storm                = 1u << 5;  // 暴风区域 (禁碰 + 不可消除)
 constexpr uint32_t Shattered            = 1u << 6;  // 碎裂格 (允许经过, 但该格不可消除!)
-constexpr uint32_t BurningTile          = 1u << 7;  // 灼热/燃烧地形 (经过扣血)
-constexpr uint32_t StickyTile           = 1u << 8;  // 黏腐地形 (触碰即停手)
-constexpr uint32_t BlackHole            = 1u << 9;  // 黑洞 (禁经过)
+constexpr uint32_t BurningTile          = 1u << 7;  // 燃烧地形 (#25: 经过触碰扣血)
+constexpr uint32_t StickyTile           = 1u << 8;  // 黏腐地形 (#26/#41: 触碰即停手)
+constexpr uint32_t BlackHole            = 1u << 9;  // 黑洞 (#32: 可经过, 禁止在此格结束转珠!)
 constexpr uint32_t NoPass               = 1u << 10; // 绝对禁行
 constexpr uint32_t VoidTile             = 1u << 11; // 缩盘/无效格
-constexpr uint32_t BarrierFirstWaveOnly = 1u << 12; // 结界地型 (格内仅首批消除有效, 天降不消)
+constexpr uint32_t BarrierFirstWaveOnly = 1u << 12; // 结界地型 (#44: 格内仅首批消除有效, 天降不消)
 constexpr uint32_t SealedStone          = 1u << 13; // 封界石阵 (格内符石不可被消除, 允许移出)
 constexpr uint32_t Metamorphosis        = 1u << 14; // 幻变空间 (经过地形变化区)
 constexpr uint32_t TrailCorrosion       = 1u << 15; // 轨迹腐蚀区 (走过不可回头)
-constexpr uint32_t Miasma               = 1u << 16; // 瘴气/毒雾地形 (经过扣血)
-constexpr uint32_t CharOrbPass          = 1u << 17; // 角色符石通行地型 (角色符石必须经过)
-constexpr uint32_t CharOrbEnd           = 1u << 18; // 角色符石停放地型 (角色符石必须停放)
+constexpr uint32_t Miasma               = 1u << 16; // 瘴气/毒雾地形 (#27: 经过累积瘴气%)
+constexpr uint32_t CharOrbPass          = 1u << 17; // 角色符石通行地型 (#78: 仅角色符石可通过且格内不可消除)
+constexpr uint32_t CharOrbEnd           = 1u << 18; // 角色符石停放地型 (#54: 结束时角色符石须停放于此)
+constexpr uint32_t ScorchingTile        = 1u << 19; // 灼热地型 (#28/#96: 可安全经过, 格内消除符石扣血)
+constexpr uint32_t EndForbidden         = 1u << 20; // 血浴地型 (#31: 可经过, 禁止在此格结束转珠)
 } // namespace TileFlagBits
 
 enum class Direction : uint8_t {

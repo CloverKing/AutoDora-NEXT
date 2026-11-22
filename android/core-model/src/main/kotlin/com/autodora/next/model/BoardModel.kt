@@ -60,6 +60,10 @@ object HazardBits {
     const val WITHERED_VINE = 1 shl 20
     const val SLEEP = 1 shl 21
     const val LUMINOUS = 1 shl 22
+    const val COAGULATED = 1 shl 23
+    const val EVIL_ENERGY = 1 shl 24
+    const val MAGIC_ORB = 1 shl 25
+    const val BLOOD_THORN = 1 shl 26
 }
 
 object TileFlagBits {
@@ -83,6 +87,8 @@ object TileFlagBits {
     const val MIASMA = 1 shl 16
     const val CHAR_ORB_PASS = 1 shl 17
     const val CHAR_ORB_END = 1 shl 18
+    const val SCORCHING_TILE = 1 shl 19
+    const val END_FORBIDDEN = 1 shl 20
 }
 
 @Serializable

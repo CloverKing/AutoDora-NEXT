@@ -33,6 +33,7 @@ object ShieldStatusBits {
     const val CHAR_ORB_TERRAIN    = 1 shl 24
     const val TRAIL_CELLS_GOAL    = 1 shl 25
     const val MIASMA_LIMIT        = 1 shl 26
+    const val WAVE1_KIND_SHIELD   = 1 shl 27
 }
 
 enum class ShieldVerdictStatus {
@@ -150,6 +151,18 @@ object ShieldVerdictEvaluator {
                     chip.id, chip,
                     if (solution.firstWaveCombo >= chip.paramInt) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
                 )
+                chip.id == "min_first_elem_combo" -> {
+                    val elemW1 = solution.groups.count { it.wave == 1 && it.element.code in 0..4 }
+                    ShieldVerdict(
+                        chip.id, chip,
+                        if (elemW1 >= chip.paramInt) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
+                    )
+                }
+                chip.id == "wave1_same_kind" || chip.id == "wave1_distinct_kind" -> {
+                    val ok = solution.firstWaveCombo == chip.paramInt &&
+                        (solution.failedFlags and ShieldStatusBits.WAVE1_KIND_SHIELD) == 0
+                    ShieldVerdict(chip.id, chip, if (ok) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED)
+                }
                 chip.id == "exact_combo" -> ShieldVerdict(
                     chip.id, chip,
                     if (solution.totalCombo == chip.paramInt) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
@@ -197,14 +210,16 @@ object ShieldVerdictEvaluator {
                 chip.id == "require_elements" || chip.id.startsWith("require_elem_") -> {
                     val reqMask = chip.paramElementMask and 0x3F
                     val perEnch = (chip.paramElementMask ushr 8) and 0x3F
-                    val effEnch = if (perEnch != 0) perEnch else if (chip.paramInt == 1) reqMask else 0
-                    val elemOk = (firstWaveElemMask and reqMask) == reqMask
+                    val effEnch = if (perEnch != 0) perEnch else if ((chip.paramInt and 1) != 0) reqMask else 0
+                    val firstWaveStrict = (chip.paramInt and 2) != 0
+                    val targetElemMask = if (firstWaveStrict) firstWaveElemMask else totalElemMask
+                    val elemOk = (targetElemMask and reqMask) == reqMask
                     val enchOk = (totalEnchMask and effEnch) == effEnch
                     ShieldVerdict(chip.id, chip, if (elemOk && enchOk) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED)
                 }
                 chip.id == "require_enchanted_elements" || chip.id.startsWith("require_ench_") -> {
                     val reqMask = chip.paramElementMask and 0x3F
-                    val ok = (firstWaveElemMask and reqMask) == reqMask && (totalEnchMask and reqMask) == reqMask
+                    val ok = (totalElemMask and reqMask) == reqMask && (totalEnchMask and reqMask) == reqMask
                     ShieldVerdict(chip.id, chip, if (ok) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED)
                 }
                 chip.id == "elem_burst_shield" -> {
@@ -257,12 +272,20 @@ object ShieldVerdictEvaluator {
                     chip.id, chip,
                     if (solution.stepCount <= chip.paramInt.coerceAtLeast(1)) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
                 )
+                chip.id == "step_range" -> {
+                    val lo = (chip.paramInt and 0xFF).coerceIn(1, 200)
+                    val hi = ((chip.paramInt ushr 8) and 0xFF).coerceIn(lo, 200)
+                    ShieldVerdict(
+                        chip.id, chip,
+                        if (solution.stepCount in lo..hi) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
+                    )
+                }
                 chip.id == "exact_steps" -> ShieldVerdict(
                     chip.id, chip,
                     if (solution.stepCount == chip.paramInt) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
                 )
-                // Soft/behavior modifier chips (no pass/fail hard gate)
-                chip.id in setOf("first_wave_only", "step_hurt_minimize", "fast_first_result", "weijian_burst", "maximize_element_orbs") -> null
+                // Soft/behavior/physics modifier chips (no pass/fail hard gate)
+                chip.id in setOf("first_wave_only", "no_cascade", "unmatchable_elements", "step_hurt_minimize", "fast_first_result", "weijian_burst", "maximize_element_orbs") -> null
                 else -> null
             }
             if (verdict != null) out.add(verdict)

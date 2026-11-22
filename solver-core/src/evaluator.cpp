@@ -279,6 +279,77 @@ double computeCrossShaping(
     return total;
 }
 
+// Laser-guided shaping for exact 5-orb L-shape (#16 L字限盾) and T-shape (#15 T字限盾)
+double computeLTShaping(
+    const BoardState& board,
+    const SimulationResult& sim,
+    bool wantL,
+    bool wantT,
+    bool strict5,
+    uint8_t cursorIdx
+) noexcept {
+    const uint8_t cols = board.cols;
+    const uint8_t rows = board.rows;
+    const uint8_t n = board.cellCount();
+
+    // 4 L-orientations and 4 T-orientations inside a 3x3 bounding box (dr, dc in 0..2)
+    static constexpr std::array<std::array<std::pair<uint8_t, uint8_t>, 5>, 4> kLTemplates = {{
+        {{{0,0},{1,0},{2,0},{2,1},{2,2}}}, // standard L
+        {{{0,0},{0,1},{0,2},{1,0},{2,0}}}, // top-left Γ
+        {{{0,0},{0,1},{0,2},{1,2},{2,2}}}, // top-right ┐
+        {{{0,2},{1,2},{2,2},{2,0},{2,1}}}  // bottom-right ┘
+    }};
+    static constexpr std::array<std::array<std::pair<uint8_t, uint8_t>, 5>, 4> kTTemplates = {{
+        {{{0,0},{0,1},{0,2},{1,1},{2,1}}}, // T pointing down
+        {{{2,0},{2,1},{2,2},{1,1},{0,1}}}, // ┴ pointing up
+        {{{0,0},{1,0},{2,0},{1,1},{1,2}}}, // ├ pointing right
+        {{{0,2},{1,2},{2,2},{1,1},{1,0}}}  // ┤ pointing left
+    }};
+
+    auto bestForTemplates = [&](const auto& templates) -> double {
+        double best = -1e9;
+        for (uint8_t r0 = 0; r0 + 2 < rows; ++r0) {
+            for (uint8_t c0 = 0; c0 + 2 < cols; ++c0) {
+                for (const auto& tpl : templates) {
+                    uint64_t mask = 0;
+                    for (const auto& [dr, dc] : tpl) {
+                        mask |= bitOf(cellIndex(static_cast<uint8_t>(r0 + dr), static_cast<uint8_t>(c0 + dc), cols));
+                    }
+                    if ((mask & board.validMask) != mask) continue;
+                    if ((mask & (board.stormMask | board.shatteredMask | board.sealedStoneMask)) != 0) continue;
+                    const uint64_t extMask = orthogonalNeighborsMask(mask, cols, rows) & ~mask;
+
+                    for (uint8_t e = 0; e < kNumElements; ++e) {
+                        if (sim.initialElementCounts[e] < 5) continue;
+                        const Element el = static_cast<Element>(e);
+                        uint8_t filled = 0;
+                        for (uint8_t i = 0; i < n; ++i) {
+                            if ((mask & bitOf(i)) != 0 && board.cells[i].element == el) filled++;
+                        }
+                        if (filled < 2) continue;
+                        double val = static_cast<double>(filled) * 680.0;
+                        val += computePullDistanceShaping(board, mask, el, false, cursorIdx, 125.0, 0.0);
+                        if (strict5) {
+                            uint8_t leaks = 0;
+                            for (uint8_t i = 0; i < n; ++i) {
+                                if ((extMask & bitOf(i)) != 0 && board.cells[i].element == el) leaks++;
+                            }
+                            val -= static_cast<double>(leaks) * (filled == 5 ? 460.0 : 110.0);
+                        }
+                        if (val > best) best = val;
+                    }
+                }
+            }
+        }
+        return (best > -1e8) ? best : 0.0;
+    };
+
+    double total = 0.0;
+    if (wantL) total += bestForTemplates(kLTemplates);
+    if (wantT) total += bestForTemplates(kTTemplates);
+    return total;
+}
+
 double computeAnchorOrbShaping(const BoardState& board, uint8_t anchorIdx, uint8_t cursorIdx, double scale) noexcept {
     const Cell& anchor = board.cells[anchorIdx];
     if (!anchor.isMatchable()) return 0.0;
@@ -438,6 +509,15 @@ EvalResult evaluateCandidate(
         }
     }
 
+    if (boardAfterMoves.endForbiddenMask != 0) {
+        if ((boardAfterMoves.endForbiddenMask & bitOf(path.endIdx)) != 0) {
+            markFail(ShieldStatusBits::TrafficLight, 1.5);
+            shaping -= 600.0;
+        } else {
+            markSat(ShieldStatusBits::TrafficLight);
+        }
+    }
+
     if (rules.exactSteps >= 0) {
         if (path.stepCount == static_cast<uint8_t>(rules.exactSteps)) {
             markSat(ShieldStatusBits::StepLimit);
@@ -446,14 +526,34 @@ EvalResult evaluateCandidate(
             markFail(ShieldStatusBits::StepLimit, 1.0);
             shaping -= static_cast<double>(diff) * 200.0;
         }
-    } else if (path.stepCount > rules.maxSteps) {
-        markFail(ShieldStatusBits::StepLimit, 2.0);
+    } else {
+        bool stepOk = true;
+        if (path.stepCount > rules.maxSteps) {
+            stepOk = false;
+            markFail(ShieldStatusBits::StepLimit, 2.0);
+        }
+        if (rules.minSteps > 0 && path.stepCount < rules.minSteps) {
+            stepOk = false;
+            markFail(ShieldStatusBits::StepLimit, 1.0);
+            shaping -= static_cast<double>(rules.minSteps - path.stepCount) * 180.0;
+        }
+        if (stepOk && rules.minSteps > 0) {
+            markSat(ShieldStatusBits::StepLimit);
+        }
     }
 
     if (path.burningTileHits > rules.maxBurningTileHurts) {
         markFail(ShieldStatusBits::BurningLimit, static_cast<double>(path.burningTileHits - rules.maxBurningTileHurts));
     } else if (boardAfterMoves.burningTileMask != 0) {
         markSat(ShieldStatusBits::BurningLimit);
+    }
+    if (boardAfterMoves.scorchingTileMask != 0) {
+        if (sim.scorchingOrbsCleared > rules.maxBurningTileHurts) {
+            markFail(ShieldStatusBits::BurningLimit, static_cast<double>(sim.scorchingOrbsCleared - rules.maxBurningTileHurts));
+            shaping -= static_cast<double>(sim.scorchingOrbsCleared) * 420.0;
+        } else {
+            markSat(ShieldStatusBits::BurningLimit);
+        }
     }
     if (rules.trailBurningEnabled) {
         if (path.trailBurningHits > rules.maxTrailHurts) {
@@ -538,7 +638,7 @@ EvalResult evaluateCandidate(
         markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.bloodDrainRemainingFirstWave));
         for (uint8_t i = 0; i < totalCells; ++i) {
             if ((boardAfterMoves.cells[i].hazards & HazardBits::BloodDrain) != 0 &&
-                (sim.firstWaveClearedMask & bitOf(i)) == 0) {
+                (sim.allWavesClearedMask & bitOf(i)) == 0) {
                 shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 120.0);
             }
         }
@@ -548,7 +648,7 @@ EvalResult evaluateCandidate(
         markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.bombRemainingFirstWave) * 1.5);
         for (uint8_t i = 0; i < totalCells; ++i) {
             if ((boardAfterMoves.cells[i].hazards & HazardBits::Bomb) != 0 &&
-                (sim.firstWaveClearedMask & bitOf(i)) == 0) {
+                (sim.allWavesClearedMask & bitOf(i)) == 0) {
                 shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 140.0);
             }
         }
@@ -604,6 +704,29 @@ EvalResult evaluateCandidate(
             soft -= static_cast<double>(sim.weakenedEliminated) * 8.0;
         }
     }
+    if (sim.evilEnergyEliminated > 0) {
+        if (rules.forbidWeakenedOrbs) {
+            hazardFail = true;
+            markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.evilEnergyEliminated) * 1.5);
+            shaping -= static_cast<double>(sim.evilEnergyEliminated) * 420.0;
+        } else {
+            soft -= static_cast<double>(sim.evilEnergyEliminated) * 12.0;
+        }
+    }
+    if (sim.bloodThornEliminated > 0) {
+        if (rules.forbidWeakenedOrbs) {
+            hazardFail = true;
+            markFail(ShieldStatusBits::HazardsClear, static_cast<double>(sim.bloodThornEliminated) * 1.6);
+            shaping -= static_cast<double>(sim.bloodThornEliminated) * 460.0;
+        } else {
+            // #20 刺血符石: directly deducts Summoner HP on elimination -> strong soft avoidance even by default!
+            soft -= static_cast<double>(sim.bloodThornEliminated) * 85.0;
+        }
+    }
+    if (sim.magicOrbsCleared > 0) {
+        // #17 魔力符石: +3 Combo (already added to totalCombo) + 2x ATK / full heal!
+        soft += static_cast<double>(sim.magicOrbsCleared) * 32.0;
+    }
     if (rules.requireLuminousOrbClear) {
         bool boardHasLuminous = false;
         for (uint8_t i = 0; i < totalCells; ++i) {
@@ -627,8 +750,14 @@ EvalResult evaluateCandidate(
             }
         }
     }
-    if (rules.prioritizePetrifiedClear && sim.petrifiedAdjacentHits > 0) {
-        soft += static_cast<double>(sim.petrifiedAdjacentHits) * 40.0;
+    if (rules.prioritizePetrifiedClear) {
+        if (sim.petrifiedAdjacentHits > 0) {
+            soft += static_cast<double>(sim.petrifiedAdjacentHits) * 40.0;
+        }
+        if (sim.coagulatedAdjacentHits > 0) {
+            // #5 凝結: scales enemy damage reduction -> peel even higher priority than Petrified!
+            soft += static_cast<double>(sim.coagulatedAdjacentHits) * 55.0;
+        }
     }
     if (sim.priorityOrbsRemaining > 0) {
         soft -= static_cast<double>(sim.priorityOrbsRemaining) * 60.0;
@@ -677,8 +806,22 @@ EvalResult evaluateCandidate(
         markFail(ShieldStatusBits::ComboShield, 1.0);
         shaping -= static_cast<double>(rules.minFirstWaveCombo - sim.firstWaveCombo) * 500.0;
     }
+    if (rules.minFirstWaveElementalCombo > 0) {
+        // Skill #18 首消組數屬性符石盾: strictly count Water/Fire/Wood/Light/Dark ONLY (exclude Heart!)
+        uint8_t elemW1Combos = 0;
+        for (uint8_t e = 0; e < 5; ++e) {
+            elemW1Combos = static_cast<uint8_t>(elemW1Combos + sim.firstWaveElementCombos[e]);
+        }
+        if (elemW1Combos < rules.minFirstWaveElementalCombo) {
+            comboOk = false;
+            markFail(ShieldStatusBits::ComboShield, 1.0);
+            shaping -= static_cast<double>(rules.minFirstWaveElementalCombo - elemW1Combos) * 540.0;
+            shaping += static_cast<double>(elemW1Combos) * 220.0;
+        }
+    }
     if (comboOk && (rules.exactTotalCombo >= 0 || rules.exactFirstWaveCombo >= 0 ||
-                    rules.minTotalCombo > 0 || rules.minFirstWaveCombo > 0 || rules.maxTotalCombo >= 0)) {
+                    rules.minTotalCombo > 0 || rules.minFirstWaveCombo > 0 ||
+                    rules.minFirstWaveElementalCombo > 0 || rules.maxTotalCombo >= 0)) {
         markSat(ShieldStatusBits::ComboShield);
     }
 
@@ -716,6 +859,49 @@ EvalResult evaluateCandidate(
         }
     }
 
+    // Official Skills #57 首消相同種類盾 & #58 首消不同種類盾 (心符石通用 — Heart groups act as universal wildcards!)
+    if (rules.wave1KindMode == Wave1KindMode::SameKindHeartWild) {
+        uint8_t distinctNonHeart = 0;
+        uint8_t maxSingleElem = 0;
+        for (uint8_t e = 0; e < 5; ++e) {
+            const uint8_t cnt = sim.firstWaveElementCombos[e];
+            if (cnt > 0) {
+                distinctNonHeart++;
+                if (cnt > maxSingleElem) maxSingleElem = cnt;
+            }
+        }
+        const uint8_t heartGroups = sim.firstWaveElementCombos[5];
+        if (sim.firstWaveCombo > 0 && distinctNonHeart <= 1) {
+            markSat(ShieldStatusBits::Wave1KindShield);
+            shaping += 1600.0;
+        } else {
+            markFail(ShieldStatusBits::Wave1KindShield, std::max(1.0, static_cast<double>(distinctNonHeart > 1 ? (distinctNonHeart - 1) : 1)));
+            shaping += static_cast<double>(maxSingleElem + heartGroups) * 520.0;
+            if (distinctNonHeart > 1) {
+                shaping -= static_cast<double>(distinctNonHeart - 1) * 750.0;
+            }
+        }
+    } else if (rules.wave1KindMode == Wave1KindMode::DistinctKindHeartWild) {
+        uint8_t duplicateExcess = 0;
+        uint8_t distinctNonHeart = 0;
+        for (uint8_t e = 0; e < 5; ++e) {
+            const uint8_t cnt = sim.firstWaveElementCombos[e];
+            if (cnt > 0) {
+                distinctNonHeart++;
+                if (cnt > 1) duplicateExcess = static_cast<uint8_t>(duplicateExcess + (cnt - 1));
+            }
+        }
+        const uint8_t heartGroups = sim.firstWaveElementCombos[5];
+        if (sim.firstWaveCombo > 0 && duplicateExcess == 0) {
+            markSat(ShieldStatusBits::Wave1KindShield);
+            shaping += 1600.0;
+        } else {
+            markFail(ShieldStatusBits::Wave1KindShield, std::max(1.0, static_cast<double>(duplicateExcess)));
+            shaping += static_cast<double>(distinctNonHeart + heartGroups) * 480.0;
+            shaping -= static_cast<double>(duplicateExcess) * 780.0;
+        }
+    }
+
     // Second-Wave (次批消除) Shield
     if (rules.minSecondWaveCombo > 0 || rules.requiredSecondWaveElementsMask != 0) {
         const uint8_t missingW2 = static_cast<uint8_t>(rules.requiredSecondWaveElementsMask & ~sim.secondWaveElementsMask);
@@ -731,21 +917,33 @@ EvalResult evaluateCandidate(
         }
     }
 
-    // Dual-Element Equal Combos (双属首消 Combo 同等盾，如首消光暗同等盾)
-    if (rules.requireEqualPairCombos && rules.equalPairElemA < kNumElements && rules.equalPairElemB < kNumElements) {
-        const uint8_t cA = sim.firstWaveElementCombos[rules.equalPairElemA];
-        const uint8_t cB = sim.firstWaveElementCombos[rules.equalPairElemB];
-        const bool pairOk = (cA == cB) && (!rules.equalPairMustBeNonZero || cA > 0);
-        if (pairOk) {
+    // N-Element Equal Wave-1 Combos (#9 連擊相等盾: supports ANY 2..6 specified elements, e.g. 水=火=木 or 光=暗!)
+    uint8_t eqMask = static_cast<uint8_t>(rules.equalComboElementsMask & 0x3Fu);
+    if (eqMask == 0 && rules.requireEqualPairCombos &&
+        rules.equalPairElemA < kNumElements && rules.equalPairElemB < kNumElements) {
+        eqMask = static_cast<uint8_t>((1u << rules.equalPairElemA) | (1u << rules.equalPairElemB));
+    }
+    if (std::popcount(eqMask) >= 2) {
+        uint8_t minC = 255;
+        uint8_t maxC = 0;
+        uint8_t zeroCount = 0;
+        for (uint8_t e = 0; e < kNumElements; ++e) {
+            if ((eqMask & (1u << e)) == 0) continue;
+            const uint8_t ce = sim.firstWaveElementCombos[e];
+            if (ce < minC) minC = ce;
+            if (ce > maxC) maxC = ce;
+            if (ce == 0) zeroCount++;
+        }
+        const bool equalOk = (minC == maxC) && (!rules.equalPairMustBeNonZero || minC > 0);
+        if (equalOk) {
             markSat(ShieldStatusBits::EqualPairCombo);
             shaping += 1600.0;
         } else {
             markFail(ShieldStatusBits::EqualPairCombo, 1.0);
-            const int diff = std::abs(static_cast<int>(cA) - static_cast<int>(cB));
-            shaping -= static_cast<double>(diff) * 450.0;
-            shaping += static_cast<double>(std::min(cA, cB)) * 520.0;
-            if (rules.equalPairMustBeNonZero && (cA == 0 || cB == 0)) {
-                shaping -= 350.0;
+            shaping -= static_cast<double>(maxC - minC) * 450.0;
+            shaping += static_cast<double>(minC) * 520.0;
+            if (rules.equalPairMustBeNonZero && zeroCount > 0) {
+                shaping -= static_cast<double>(zeroCount) * 320.0;
             }
         }
     }
@@ -1121,17 +1319,20 @@ EvalResult evaluateCandidate(
         for (uint8_t gi = 0; gi < sim.groupCount; ++gi) {
             const MatchGroup& g = sim.groups[gi];
             if (g.wave != 1) continue;
-            if (g.isLShape) lFound++;
-            if (g.isTShape) tFound++;
+            // Official Skills #15 (T字限盾) & #16 (L字限盾): strictShape enforces exact 5 orbs (no extra attached orbs)!
+            if (g.isLShape && (!rules.shapeShield.strictShape || g.orbCount == 5)) lFound++;
+            if (g.isTShape && (!rules.shapeShield.strictShape || g.orbCount == 5)) tFound++;
             if (g.isSquare2x2 && (!rules.shapeShield.strictShape || g.orbCount == 4)) sqFound++;
         }
         bool shapeOk = true;
         if (lFound < rules.shapeShield.requireLCount) {
             shapeOk = false;
+            unmetFocusShield = true;
             markFail(ShieldStatusBits::ShapeShield, static_cast<double>(rules.shapeShield.requireLCount - lFound));
         }
         if (tFound < rules.shapeShield.requireTCount) {
             shapeOk = false;
+            unmetFocusShield = true;
             markFail(ShieldStatusBits::ShapeShield, static_cast<double>(rules.shapeShield.requireTCount - tFound));
         }
         if (sqFound < rules.shapeShield.requireSquare2x2Count) {
@@ -1140,6 +1341,15 @@ EvalResult evaluateCandidate(
         }
         if (shapeOk) {
             markSat(ShieldStatusBits::ShapeShield);
+            shaping += 2000.0;
+        } else if (lFound < rules.shapeShield.requireLCount || tFound < rules.shapeShield.requireTCount) {
+            shaping += computeLTShaping(
+                boardAfterMoves, sim,
+                lFound < rules.shapeShield.requireLCount,
+                tFound < rules.shapeShield.requireTCount,
+                rules.shapeShield.strictShape,
+                path.endIdx
+            );
         }
     }
 

@@ -80,8 +80,10 @@ internal fun UnifiedStrategyTab(
     // Synchronized working numeric parameters for wave shields
     var minTotalComboVal by remember { mutableStateOf(byId["min_combo"]?.paramInt ?: 6) }
     var minFirstComboVal by remember { mutableStateOf(byId["min_first_combo"]?.paramInt ?: 5) }
+    var minFirstElemVal by remember { mutableStateOf(byId["min_first_elem_combo"]?.paramInt ?: 5) }
     var exactTotalComboVal by remember { mutableStateOf(byId["exact_combo"]?.paramInt ?: 6) }
     var exactFirstComboVal by remember { mutableStateOf(byId["exact_first_combo"]?.paramInt ?: 4) }
+    var wave1KindVal by remember { mutableStateOf(byId["wave1_same_kind"]?.paramInt ?: byId["wave1_distinct_kind"]?.paramInt ?: 5) }
     var parityFirstOnly by remember {
         mutableStateOf((byId["odd_combo"]?.paramInt ?: byId["even_combo"]?.paramInt ?: 0) != 1)
     }
@@ -91,23 +93,45 @@ internal fun UnifiedStrategyTab(
         val m = byId["same_elem_combos"]?.paramElementMask ?: 0
         mutableStateOf((0..5).firstOrNull { (m and (1 shl it)) != 0 } ?: -1)
     }
-    val initialPairPacked = byId["equal_pair_light_dark"]?.paramElementMask ?: ((4 shl 4) or 3)
-    var pairElemA by remember { mutableStateOf((initialPairPacked and 0x0F).coerceIn(0, 5)) }
-    var pairElemB by remember { mutableStateOf(((initialPairPacked ushr 4) and 0x0F).coerceIn(0, 5)) }
+    val initialEqMask = run {
+        val raw = byId["equal_pair_light_dark"]?.paramElementMask ?: 0
+        when {
+            (raw and 0x100) != 0 -> raw and 0x3F
+            raw != 0 -> (1 shl (raw and 0x0F).coerceIn(0, 5)) or (1 shl ((raw ushr 4) and 0x0F).coerceIn(0, 5))
+            else -> (1 shl 3) or (1 shl 4)
+        }
+    }
+    var equalElemsMask by remember { mutableStateOf(initialEqMask) }
     var burstOrbsVal by remember { mutableStateOf(byId["elem_burst_shield"]?.paramInt?.coerceIn(3, 15) ?: 5) }
     var elemLimitMode by remember { mutableStateOf(0) }
     var digitalOrbs by remember { mutableStateOf(byId["digital_orb_count"]?.paramInt ?: 18) }
     var maxBurnHurts by remember { mutableStateOf(((byId["zero_trail_burning"]?.paramInt ?: 0) ushr 8) and 0xFF) }
     var burnTrailLen by remember { mutableStateOf((byId["zero_trail_burning"]?.paramInt ?: 0) and 0xFF) }
     var stepLimitVal by remember { mutableStateOf(byId["step_limit"]?.paramInt ?: 15) }
+    var stepRangeMinVal by remember { mutableStateOf((byId["step_range"]?.paramInt?.and(0xFF))?.takeIf { it in 1..200 } ?: 20) }
+    var stepRangeMaxVal by remember { mutableStateOf(((byId["step_range"]?.paramInt ?: 0) ushr 8 and 0xFF).takeIf { it in 1..200 } ?: 25) }
 
     LaunchedEffect(byId["min_combo"]?.paramInt) { byId["min_combo"]?.paramInt?.let { if (it in 1..15) minTotalComboVal = it } }
     LaunchedEffect(byId["min_first_combo"]?.paramInt) { byId["min_first_combo"]?.paramInt?.let { if (it in 1..15) minFirstComboVal = it } }
+    LaunchedEffect(byId["min_first_elem_combo"]?.paramInt) { byId["min_first_elem_combo"]?.paramInt?.let { if (it in 1..12) minFirstElemVal = it } }
     LaunchedEffect(byId["exact_combo"]?.paramInt) { byId["exact_combo"]?.paramInt?.let { if (it in 1..15) exactTotalComboVal = it } }
     LaunchedEffect(byId["exact_first_combo"]?.paramInt) { byId["exact_first_combo"]?.paramInt?.let { if (it in 1..15) exactFirstComboVal = it } }
+    LaunchedEffect(byId["wave1_same_kind"]?.paramInt, byId["wave1_distinct_kind"]?.paramInt) {
+        (byId["wave1_same_kind"] ?: byId["wave1_distinct_kind"])?.paramInt?.let { if (it in 1..10) wave1KindVal = it }
+    }
     LaunchedEffect(byId["elem_burst_shield"]?.paramInt) { byId["elem_burst_shield"]?.paramInt?.let { if (it in 3..15) burstOrbsVal = it } }
     LaunchedEffect(byId["digital_orb_count"]?.paramInt) { byId["digital_orb_count"]?.paramInt?.let { if (it in 6..30) digitalOrbs = it } }
     LaunchedEffect(byId["step_limit"]?.paramInt) { byId["step_limit"]?.paramInt?.let { if (it in 2..60) stepLimitVal = it } }
+    LaunchedEffect(byId["step_range"]?.paramInt) {
+        byId["step_range"]?.paramInt?.let { packed ->
+            val lo = packed and 0xFF
+            val hi = (packed ushr 8) and 0xFF
+            if (lo in 1..200 && hi in lo..200) {
+                stepRangeMinVal = lo
+                stepRangeMaxVal = hi
+            }
+        }
+    }
 
     val legacyReqIds = remember {
         buildSet {
@@ -321,21 +345,28 @@ internal fun UnifiedStrategyTab(
             }
         }
 
-        // ==================== Group 1: Budget, Compute & Start ====================
-        SectionHeaderWithHelp(
-            text = stringResource(R.string.unified_group_budget),
+        // ==================== Group 1: Budget, Compute & Start (Blue — matches Floating Drawer) ====================
+        val budgetStepsEff = if (cfg.useSystemSteps) settings.maxSteps else cfg.maxSteps
+        val budgetBeamEff = if (cfg.useSystemBeam) settings.beamWidth else cfg.beamWidth
+        val budgetSummary = buildList {
+            byId["step_range"]?.let { add(LocaleHelper.formatWaveChipLabel(ctx, it)) }
+                ?: byId["step_limit"]?.let { add(stringResource(R.string.ov_step_limit_short, it.paramInt)) }
+                ?: add("$budgetStepsEff${stringResource(R.string.unit_steps)}")
+            add(stringResource(R.string.tag_beam_fmt, budgetBeamEff))
+        }.joinToString(" · ")
+        ColoredCollapsibleDrawerCard(
+            title = stringResource(R.string.unified_group_budget),
+            accentColor = DrawerAccentColors.Blue,
+            summaryText = budgetSummary,
+            highlighted = "step_range" in activeIds || "step_limit" in activeIds || "traffic_light" in activeIds || !cfg.useSystemSteps || !cfg.useSystemBeam || cfg.useCharacterOrb || cfg.startPreset != StartPointPreset.ANY,
+            initialExpanded = true,
             onHelp = {
                 onShowHelp(
                     ctx.getString(R.string.help_basic_steps_title),
                     ctx.getString(R.string.help_basic_steps_body) + "\n\n" + ctx.getString(R.string.help_start_char_body)
                 )
             }
-        )
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+        ) {
                 // Strategy Steps + Follow System
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -365,48 +396,79 @@ internal fun UnifiedStrategyTab(
                     )
                 }
 
-                // Temporary Wave Hard Step Limit (限 N 步内)
+                // Temporary Wave Hard Step Limit (限 N 步内) & Step Range Shield (#60 步数盾 [min-max])
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val stepLbl = stringResource(R.string.shield_step_limit_fmt, stepLimitVal)
                     CompactChoicePill(
                         label = stepLbl,
                         selected = "step_limit" in activeIds,
                         onClick = {
-                            onToggleWaveChip(WaveShieldChip("step_limit", stepLbl, ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal))
+                            if ("step_limit" in activeIds) ActiveStrategyStore.removeChip("step_limit")
+                            else ActiveStrategyStore.replaceGroup(
+                                WaveShieldCatalog.STEP_EXCLUSIVE_IDS,
+                                WaveShieldChip("step_limit", stepLbl, ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    val rangeLbl = stringResource(R.string.shield_step_range_fmt, stepRangeMinVal, stepRangeMaxVal)
+                    CompactChoicePill(
+                        label = rangeLbl,
+                        selected = "step_range" in activeIds,
+                        onClick = {
+                            if ("step_range" in activeIds) ActiveStrategyStore.removeChip("step_range")
+                            else ActiveStrategyStore.replaceGroup(
+                                WaveShieldCatalog.STEP_EXCLUSIVE_IDS,
+                                WaveShieldChip("step_range", rangeLbl, ShieldCategory.HAZARD_AND_PATH, paramInt = stepRangeMinVal or (stepRangeMaxVal shl 8))
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if ("step_limit" in activeIds) {
+                    NumericStepperRow(
+                        label = stringResource(R.string.shield_step_limit_fmt, stepLimitVal),
+                        valueText = "≤$stepLimitVal",
+                        onMinus = {
+                            stepLimitVal = (stepLimitVal - 1).coerceIn(2, 60)
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip("step_limit", ctx.getString(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
+                            )
+                        },
+                        onPlus = {
+                            stepLimitVal = (stepLimitVal + 1).coerceIn(2, 60)
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip("step_limit", ctx.getString(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
+                            )
                         }
                     )
-                    if ("step_limit" in activeIds) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            FilledTonalButton(
-                                onClick = {
-                                    stepLimitVal = (stepLimitVal - 1).coerceIn(2, 60)
-                                    ActiveStrategyStore.upsertChip(
-                                        WaveShieldChip("step_limit", ctx.getString(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
-                                    )
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) { Text("−") }
-                            Text("≤$stepLimitVal", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                            FilledTonalButton(
-                                onClick = {
-                                    stepLimitVal = (stepLimitVal + 1).coerceIn(2, 60)
-                                    ActiveStrategyStore.upsertChip(
-                                        WaveShieldChip("step_limit", ctx.getString(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
-                                    )
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) { Text("+") }
-                        }
+                }
+                if ("step_range" in activeIds) {
+                    fun upsertStepRange(lo: Int, hi: Int) {
+                        val cLo = lo.coerceIn(1, 180)
+                        val cHi = hi.coerceIn(cLo, 200)
+                        stepRangeMinVal = cLo
+                        stepRangeMaxVal = cHi
+                        ActiveStrategyStore.upsertChip(
+                            WaveShieldChip("step_range", ctx.getString(R.string.shield_step_range_fmt, cLo, cHi), ShieldCategory.HAZARD_AND_PATH, paramInt = cLo or (cHi shl 8))
+                        )
                     }
+                    NumericStepperRow(
+                        label = stringResource(R.string.step_range_min_label),
+                        valueText = "$stepRangeMinVal",
+                        onMinus = { upsertStepRange(stepRangeMinVal - 1, stepRangeMaxVal) },
+                        onPlus = { upsertStepRange(stepRangeMinVal + 1, maxOf(stepRangeMaxVal, stepRangeMinVal + 1)) }
+                    )
+                    NumericStepperRow(
+                        label = stringResource(R.string.step_range_max_label),
+                        valueText = "$stepRangeMaxVal",
+                        onMinus = { upsertStepRange(minOf(stepRangeMinVal, stepRangeMaxVal - 1), stepRangeMaxVal - 1) },
+                        onPlus = { upsertStepRange(stepRangeMinVal, stepRangeMaxVal + 1) }
+                    )
                 }
 
                 // Unified Compute Slider (40..600) + Follow System
@@ -500,24 +562,33 @@ internal fun UnifiedStrategyTab(
                         )
                     }
                 }
-            }
         }
 
-        // ==================== Group 2: Global Goals & Combo Rules ====================
-        SectionHeaderWithHelp(
-            text = stringResource(R.string.unified_group_goal_combo),
+        // ==================== Group 2: Global Goals & Combo Rules (Indigo — matches Floating Drawer) ====================
+        val comboIds = setOf(
+            "min_combo", "min_first_combo", "min_first_elem_combo",
+            "exact_combo", "exact_first_combo", "wave1_same_kind", "wave1_distinct_kind",
+            "zero_combo", "odd_combo", "even_combo", "no_cascade",
+            "same_combo_elements", "second_wave_combo", "same_elem_combos", "equal_pair_light_dark"
+        )
+        val comboActiveLabels = activeWaveChips.filter { it.id in comboIds }.map { LocaleHelper.formatWaveChipLabel(ctx, it) }
+        val goalComboSummary = buildList {
+            add(LocaleHelper.goalSummary(ctx, cfg))
+            addAll(comboActiveLabels.take(1))
+        }.joinToString(" · ")
+        ColoredCollapsibleDrawerCard(
+            title = stringResource(R.string.unified_group_goal_combo),
+            accentColor = DrawerAccentColors.Indigo,
+            summaryText = goalComboSummary,
+            highlighted = comboActiveLabels.isNotEmpty() || cfg.goalMode != StrategyGoalMode.HIGH_COMBO,
+            initialExpanded = true,
             onHelp = {
                 onShowHelp(
                     ctx.getString(R.string.help_combo_shield_title),
                     ctx.getString(R.string.help_goal_policy_body) + "\n\n" + ctx.getString(R.string.help_combo_shield_body)
                 )
             }
-        )
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+        ) {
                 // 2a. Grouped Global Matching Goal (N / X)
                 Text(
                     text = stringResource(R.string.section_goal_mode),
@@ -689,8 +760,11 @@ internal fun UnifiedStrategyTab(
                 val curComboMode = when {
                     "min_combo" in activeIds -> "min_combo"
                     "min_first_combo" in activeIds -> "min_first_combo"
+                    "min_first_elem_combo" in activeIds -> "min_first_elem_combo"
                     "exact_combo" in activeIds -> "exact_combo"
                     "exact_first_combo" in activeIds -> "exact_first_combo"
+                    "wave1_same_kind" in activeIds -> "wave1_same_kind"
+                    "wave1_distinct_kind" in activeIds -> "wave1_distinct_kind"
                     "zero_combo" in activeIds -> "zero_combo"
                     "odd_combo" in activeIds -> "odd_combo"
                     "even_combo" in activeIds -> "even_combo"
@@ -702,8 +776,11 @@ internal fun UnifiedStrategyTab(
                     val chip = when (mode) {
                         "min_combo" -> WaveShieldChip("min_combo", "${ctx.getString(R.string.combo_type_min_total)} ≥$minTotalComboVal", ShieldCategory.COMBO, paramInt = minTotalComboVal)
                         "min_first_combo" -> WaveShieldChip("min_first_combo", "${ctx.getString(R.string.combo_type_min_first)} ≥$minFirstComboVal", ShieldCategory.COMBO, paramInt = minFirstComboVal)
+                        "min_first_elem_combo" -> WaveShieldChip("min_first_elem_combo", "${ctx.getString(R.string.combo_type_min_first_elem)} ≥$minFirstElemVal", ShieldCategory.COMBO, paramInt = minFirstElemVal)
                         "exact_combo" -> WaveShieldChip("exact_combo", "${ctx.getString(R.string.combo_type_exact_total)} $exactTotalComboVal", ShieldCategory.COMBO, paramInt = exactTotalComboVal)
                         "exact_first_combo" -> WaveShieldChip("exact_first_combo", "${ctx.getString(R.string.combo_type_exact_first)} $exactFirstComboVal", ShieldCategory.COMBO, paramInt = exactFirstComboVal)
+                        "wave1_same_kind" -> WaveShieldChip("wave1_same_kind", "${ctx.getString(R.string.combo_type_wave1_same_kind)} $wave1KindVal", ShieldCategory.COMBO, paramInt = wave1KindVal)
+                        "wave1_distinct_kind" -> WaveShieldChip("wave1_distinct_kind", "${ctx.getString(R.string.combo_type_wave1_distinct_kind)} $wave1KindVal", ShieldCategory.COMBO, paramInt = wave1KindVal)
                         "zero_combo" -> {
                             listOf(
                                 "same_combo_elements", "second_wave_combo", "same_elem_combos",
@@ -728,8 +805,11 @@ internal fun UnifiedStrategyTab(
                         "none" to stringResource(R.string.combo_type_none),
                         "min_combo" to stringResource(R.string.combo_type_min_total),
                         "min_first_combo" to stringResource(R.string.combo_type_min_first),
+                        "min_first_elem_combo" to stringResource(R.string.combo_type_min_first_elem),
                         "exact_combo" to stringResource(R.string.combo_type_exact_total),
                         "exact_first_combo" to stringResource(R.string.combo_type_exact_first),
+                        "wave1_same_kind" to stringResource(R.string.combo_type_wave1_same_kind),
+                        "wave1_distinct_kind" to stringResource(R.string.combo_type_wave1_distinct_kind),
                         "zero_combo" to stringResource(R.string.combo_type_zero),
                         "odd_combo" to stringResource(R.string.combo_type_odd),
                         "even_combo" to stringResource(R.string.combo_type_even)
@@ -762,6 +842,12 @@ internal fun UnifiedStrategyTab(
                                     onMinus = { minFirstComboVal = (minFirstComboVal - 1).coerceIn(1, 12); applyComboType("min_first_combo") },
                                     onPlus = { minFirstComboVal = (minFirstComboVal + 1).coerceIn(1, 12); applyComboType("min_first_combo") }
                                 )
+                                "min_first_elem_combo" -> NumericStepperRow(
+                                    label = stringResource(R.string.combo_param_min_first_elem),
+                                    valueText = stringResource(R.string.combo_value_min_fmt, minFirstElemVal),
+                                    onMinus = { minFirstElemVal = (minFirstElemVal - 1).coerceIn(1, 12); applyComboType("min_first_elem_combo") },
+                                    onPlus = { minFirstElemVal = (minFirstElemVal + 1).coerceIn(1, 12); applyComboType("min_first_elem_combo") }
+                                )
                                 "exact_combo" -> NumericStepperRow(
                                     label = stringResource(R.string.combo_param_exact_total),
                                     valueText = stringResource(R.string.combo_value_exact_fmt, exactTotalComboVal),
@@ -773,6 +859,18 @@ internal fun UnifiedStrategyTab(
                                     valueText = stringResource(R.string.combo_value_exact_fmt, exactFirstComboVal),
                                     onMinus = { exactFirstComboVal = (exactFirstComboVal - 1).coerceIn(1, 12); applyComboType("exact_first_combo") },
                                     onPlus = { exactFirstComboVal = (exactFirstComboVal + 1).coerceIn(1, 12); applyComboType("exact_first_combo") }
+                                )
+                                "wave1_same_kind" -> NumericStepperRow(
+                                    label = stringResource(R.string.combo_param_wave1_same_kind),
+                                    valueText = stringResource(R.string.combo_value_exact_fmt, wave1KindVal),
+                                    onMinus = { wave1KindVal = (wave1KindVal - 1).coerceIn(1, 10); applyComboType("wave1_same_kind") },
+                                    onPlus = { wave1KindVal = (wave1KindVal + 1).coerceIn(1, 10); applyComboType("wave1_same_kind") }
+                                )
+                                "wave1_distinct_kind" -> NumericStepperRow(
+                                    label = stringResource(R.string.combo_param_wave1_distinct_kind),
+                                    valueText = stringResource(R.string.combo_value_exact_fmt, wave1KindVal),
+                                    onMinus = { wave1KindVal = (wave1KindVal - 1).coerceIn(1, 10); applyComboType("wave1_distinct_kind") },
+                                    onPlus = { wave1KindVal = (wave1KindVal + 1).coerceIn(1, 10); applyComboType("wave1_distinct_kind") }
                                 )
                                 "odd_combo", "even_combo" -> Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -811,9 +909,17 @@ internal fun UnifiedStrategyTab(
                             val mask = if (targetAttr in 0..5) (1 shl targetAttr) else 0
                             ActiveStrategyStore.upsertChip(WaveShieldChip("same_elem_combos", ctx.getString(R.string.combo_extra_same_elem, n), ShieldCategory.COMBO, paramInt = n, paramElementMask = mask))
                         }
-                        fun upsertEqualPair(a: Int, b: Int) {
-                            val packed = (a and 0x0F) or ((b and 0x0F) shl 4)
-                            ActiveStrategyStore.upsertChip(WaveShieldChip("equal_pair_light_dark", ctx.getString(R.string.combo_extra_equal_pair, LocaleHelper.elementLabel(ctx, a), LocaleHelper.elementLabel(ctx, b)), ShieldCategory.COMBO, paramElementMask = packed))
+                        fun upsertEqualMulti(mask: Int) {
+                            val clean = mask and 0x3F
+                            val joined = (0..5).filter { (clean and (1 shl it)) != 0 }.joinToString("=") { LocaleHelper.elementLabel(ctx, it) }
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip(
+                                    "equal_pair_light_dark",
+                                    ctx.getString(R.string.combo_extra_equal_multi_fmt, joined),
+                                    ShieldCategory.COMBO,
+                                    paramElementMask = 0x100 or clean
+                                )
+                            )
                         }
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -824,6 +930,12 @@ internal fun UnifiedStrategyTab(
                                 label = sameCLabel,
                                 selected = "same_combo_elements" in activeIds,
                                 onClick = { onToggleWaveChip(WaveShieldChip("same_combo_elements", sameCLabel, ShieldCategory.COMBO)) }
+                            )
+                            val noCasLabel = stringResource(R.string.shield_no_cascade)
+                            CompactChoicePill(
+                                label = noCasLabel,
+                                selected = "no_cascade" in activeIds,
+                                onClick = { onToggleWaveChip(WaveShieldChip("no_cascade", noCasLabel, ShieldCategory.COMBO)) }
                             )
                             CompactChoicePill(
                                 label = stringResource(R.string.combo_extra_second_wave, secondWaveVal),
@@ -841,12 +953,13 @@ internal fun UnifiedStrategyTab(
                                     else upsertSameElem(sameElemGroupsVal, sameElemTarget)
                                 }
                             )
+                            val eqJoined = (0..5).filter { (equalElemsMask and (1 shl it)) != 0 }.joinToString("=") { LocaleHelper.elementLabel(ctx, it) }
                             CompactChoicePill(
-                                label = stringResource(R.string.combo_extra_equal_pair, LocaleHelper.elementLabel(ctx, pairElemA), LocaleHelper.elementLabel(ctx, pairElemB)),
+                                label = stringResource(R.string.combo_extra_equal_multi_fmt, eqJoined),
                                 selected = "equal_pair_light_dark" in activeIds,
                                 onClick = {
                                     if ("equal_pair_light_dark" in activeIds) ActiveStrategyStore.removeChip("equal_pair_light_dark")
-                                    else upsertEqualPair(pairElemA, pairElemB)
+                                    else upsertEqualMulti(equalElemsMask)
                                 }
                             )
                         }
@@ -889,13 +1002,16 @@ internal fun UnifiedStrategyTab(
                         if ("equal_pair_light_dark" in activeIds) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                 for (e in 0 until 6) {
+                                    val bit = 1 shl e
+                                    val isOn = (equalElemsMask and bit) != 0
                                     ElementColorTogglePill(
                                         elemIndex = e,
-                                        selected = e == pairElemA || e == pairElemB,
+                                        selected = isOn,
                                         onClick = {
-                                            if (e != pairElemA && e != pairElemB) {
-                                                pairElemA = pairElemB; pairElemB = e
-                                                upsertEqualPair(pairElemA, pairElemB)
+                                            val next = equalElemsMask xor bit
+                                            if (Integer.bitCount(next) >= 2) {
+                                                equalElemsMask = next
+                                                upsertEqualMulti(next)
                                             }
                                         },
                                         modifier = Modifier.weight(1f)
@@ -905,24 +1021,34 @@ internal fun UnifiedStrategyTab(
                         }
                     }
                 }
-            }
         }
 
-        // ==================== Group 3: Attributes, Orb Counts & 6x4 Per-Element Matrix ====================
-        SectionHeaderWithHelp(
-            text = stringResource(R.string.unified_group_elem_count),
+        // ==================== Group 3: Attributes, Orb Counts & 6x4 Per-Element Matrix (Teal — matches Floating Drawer) ====================
+        val elemIds = setOf(
+            "min_distinct_elements", "require_elements", "three_elements", "five_elements", "five_elements_enchanted",
+            "elem_burst_shield", "anti_first_wave", "forbid_all", "clear_all_element", "unmatchable_elements",
+            "digital_orb_count", "first_wave_full_clear", "any_enchanted_orb_shield", "race_orb_shield",
+            "char_orb_first_wave", "forbid_weakened_orb", "luminous_orb_shield"
+        )
+        val elemActiveLabels = activeWaveChips.filter { it.id in elemIds }.map { LocaleHelper.formatWaveChipLabel(ctx, it) }
+        val customMatrixCount = cfg.elementRules.count { it.targetShape != TargetShape.ANY || it.priority != ElementPriority.NORMAL || it.timing != MatchTiming.ANY || it.minMatchCount != 3 }
+        val elemSummary = buildList {
+            addAll(elemActiveLabels.take(2))
+            if (customMatrixCount > 0) add("${stringResource(R.string.tag_custom_shape)}×$customMatrixCount")
+        }.joinToString(" · ").ifEmpty { stringResource(R.string.ov_card_none_set) }
+        ColoredCollapsibleDrawerCard(
+            title = stringResource(R.string.unified_group_elem_count),
+            accentColor = DrawerAccentColors.Teal,
+            summaryText = elemSummary,
+            highlighted = elemActiveLabels.isNotEmpty() || customMatrixCount > 0,
+            initialExpanded = true,
             onHelp = {
                 onShowHelp(
                     ctx.getString(R.string.help_elem_count_title),
                     ctx.getString(R.string.help_elem_count_body) + "\n\n" + ctx.getString(R.string.help_elem_matrix_body)
                 )
             }
-        )
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+        ) {
                 // 3a. Min Distinct Elements
                 Text(stringResource(R.string.elem_min_distinct_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val curMinDistinct = byId["min_distinct_elements"]?.paramInt ?: 0
@@ -962,6 +1088,7 @@ internal fun UnifiedStrategyTab(
                 val antiMask = readMaskForLimit("anti_first_wave")
                 val forbidMask = readMaskForLimit("forbid_all")
                 val clearMask = readMaskForLimit("clear_all_element")
+                val unmatchMask = readMaskForLimit("unmatchable_elements")
 
                 Text(stringResource(R.string.elem_req_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -1055,23 +1182,24 @@ internal fun UnifiedStrategyTab(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // 3d. Attribute Elimination Limits (Anti-1st / Forbid All / Clear All 1st)
+                // 3d. Attribute Elimination Limits (Anti-1st / Forbid All / Clear All 1st / Unmatchable #23)
                 Text(stringResource(R.string.elem_forbid_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(
                         Triple(0, stringResource(R.string.elem_limit_anti), Integer.bitCount(antiMask)),
                         Triple(1, stringResource(R.string.elem_limit_forbid), Integer.bitCount(forbidMask)),
-                        Triple(2, stringResource(R.string.elem_limit_clear_all), Integer.bitCount(clearMask))
+                        Triple(2, stringResource(R.string.elem_limit_clear_all), Integer.bitCount(clearMask)),
+                        Triple(3, stringResource(R.string.elem_limit_unmatchable), Integer.bitCount(unmatchMask))
                     ).forEach { (idx, lbl, cnt) ->
                         CompactChoicePill(
-                            label = if (cnt > 0) "$lbl ($cnt)" else lbl,
+                            label = if (cnt > 0) "$lbl($cnt)" else lbl,
                             selected = elemLimitMode == idx,
                             onClick = { elemLimitMode = idx },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
-                val curLimitMask = when (elemLimitMode) { 0 -> antiMask; 1 -> forbidMask; else -> clearMask }
+                val curLimitMask = when (elemLimitMode) { 0 -> antiMask; 1 -> forbidMask; 2 -> clearMask; else -> unmatchMask }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     for (e in 0 until 6) {
                         val bit = 1 shl e
@@ -1084,6 +1212,7 @@ internal fun UnifiedStrategyTab(
                                 val antiLbl = ctx.getString(R.string.elem_limit_anti)
                                 val forbidLbl = ctx.getString(R.string.elem_limit_forbid)
                                 val clearLbl = ctx.getString(R.string.elem_limit_clear_all)
+                                val unmatchLbl = ctx.getString(R.string.elem_limit_unmatchable)
                                 when (elemLimitMode) {
                                     0 -> {
                                         writeMaskForLimit("anti_first_wave", antiLbl, nextMask)
@@ -1100,12 +1229,15 @@ internal fun UnifiedStrategyTab(
                                             if ((effectiveReqMask and bit) != 0) writeRequiredElements(effectiveReqMask and bit.inv(), effectiveEnchMask and bit.inv())
                                         }
                                     }
-                                    else -> {
+                                    2 -> {
                                         writeMaskForLimit("clear_all_element", clearLbl, nextMask)
                                         if (turningOn) {
                                             if ((antiMask and bit) != 0) writeMaskForLimit("anti_first_wave", antiLbl, antiMask and bit.inv())
                                             if ((forbidMask and bit) != 0) writeMaskForLimit("forbid_all", forbidLbl, forbidMask and bit.inv())
                                         }
+                                    }
+                                    else -> {
+                                        writeMaskForLimit("unmatchable_elements", unmatchLbl, nextMask)
                                     }
                                 }
                             },
@@ -1260,24 +1392,29 @@ internal fun UnifiedStrategyTab(
                         )
                     }
                 }
-            }
         }
 
-        // ==================== Group 4: Puzzle, Shapes & Column Amelioration ====================
-        SectionHeaderWithHelp(
-            text = stringResource(R.string.unified_group_puzzle_shape),
+        // ==================== Group 4: Puzzle, Shapes & Column Amelioration (Amber — matches Floating Drawer) ====================
+        val shapeIds = setOf("puzzle_shield", "strict_puzzle", "loose_puzzle", "enchanted_puzzle", "cross_shield", "cross_shield_2", "cross_shield_3", "l_shape", "t_shape", "square_2x2", "all_columns_ameliorate")
+        val shapeActiveLabels = activeWaveChips.filter { it.id in shapeIds }.map { LocaleHelper.formatWaveChipLabel(ctx, it) }
+        val colEnabledCnt = cfg.columnRules.take(6).count { it.enabled }
+        val shapeSummary = buildList {
+            addAll(shapeActiveLabels.take(2))
+            if (colEnabledCnt > 0) add("${stringResource(R.string.tag_col_amel)}×$colEnabledCnt")
+        }.joinToString(" · ").ifEmpty { stringResource(R.string.ov_card_none_set) }
+        ColoredCollapsibleDrawerCard(
+            title = stringResource(R.string.unified_group_puzzle_shape),
+            accentColor = DrawerAccentColors.Amber,
+            summaryText = shapeSummary,
+            highlighted = shapeActiveLabels.isNotEmpty() || colEnabledCnt > 0,
+            initialExpanded = true,
             onHelp = {
                 onShowHelp(
                     ctx.getString(R.string.help_puzzle_shape_title),
                     ctx.getString(R.string.help_puzzle_shape_body) + "\n\n" + ctx.getString(R.string.help_columns_body)
                 )
             }
-        )
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+        ) {
                 val pChip = byId["puzzle_shield"]
                 val puzzleMode = when {
                     pChip != null -> if ((pChip.paramInt and 1) != 0) 2 else 1
@@ -1428,24 +1565,28 @@ internal fun UnifiedStrategyTab(
                         }
                     }
                 }
-            }
         }
 
-        // ==================== Group 5: Path, Terrain & Safety ====================
-        SectionHeaderWithHelp(
-            text = stringResource(R.string.unified_group_path_safety),
+        // ==================== Group 5: Path, Terrain & Safety (Crimson — matches Floating Drawer) ====================
+        val pathIds = setOf("traffic_light", "zero_trail_burning", "trail_corrosion", "step_hurt_minimize", "char_orb_terrain", "weijian_burst")
+        val pathActiveLabels = activeWaveChips.filter { it.id in pathIds }.map { LocaleHelper.formatWaveChipLabel(ctx, it) }
+        val pathSummary = buildList {
+            addAll(pathActiveLabels.take(2))
+            if (cfg.allowHitWeatheredToClear) add(stringResource(R.string.switch_hit_weathered).take(6))
+        }.joinToString(" · ").ifEmpty { stringResource(R.string.ov_card_none_set) }
+        ColoredCollapsibleDrawerCard(
+            title = stringResource(R.string.unified_group_path_safety),
+            accentColor = DrawerAccentColors.Crimson,
+            summaryText = pathSummary,
+            highlighted = pathActiveLabels.isNotEmpty() || cfg.allowHitWeatheredToClear,
+            initialExpanded = true,
             onHelp = {
                 onShowHelp(
                     ctx.getString(R.string.help_path_hazard_title),
                     ctx.getString(R.string.help_path_hazard_body)
                 )
             }
-        )
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+        ) {
                 val burnOn = "zero_trail_burning" in activeIds
                 fun upsertBurn(hurts: Int, len: Int) {
                     val packed = (hurts shl 8) or (len and 0xFF)
@@ -1487,50 +1628,59 @@ internal fun UnifiedStrategyTab(
                     checked = cfg.allowHitWeatheredToClear,
                     onCheckedChange = { v -> updateCfg { it.copy(allowHitWeatheredToClear = v) } }
                 )
-            }
         }
 
-        // ==================== Group 6: Leader Skills & Solver Traits ====================
-        SectionHeaderWithHelp(
-            text = stringResource(R.string.unified_group_leader_traits),
+        // ==================== Group 6: Leader Skills & Solver Traits (Purple — matches Floating Drawer) ====================
+        val isHeartAll = (cfg.compatibleLinkMask.getOrElse(5) { 1 shl 5 } and 0x3F) == 0x3F
+        val isLightDark = ((cfg.compatibleLinkMask.getOrElse(3) { 1 shl 3 } and (1 shl 4)) != 0) && !isHeartAll
+        val isWfg = ((cfg.compatibleLinkMask.getOrElse(0) { 1 shl 0 } and (1 shl 1)) != 0) && !isHeartAll
+        val traitsSummary = buildList {
+            when {
+                isHeartAll -> add(stringResource(R.string.link_heart_all))
+                isLightDark -> add(stringResource(R.string.link_light_dark))
+                isWfg -> add(stringResource(R.string.link_wfg))
+            }
+            if (cfg.forceSplitThree) add(stringResource(R.string.tag_split_three))
+            if (cfg.firstWaveOnlyScoring) add(stringResource(R.string.tag_first_only))
+            if (cfg.allowDiagonalMatch) add(stringResource(R.string.tag_diag_match))
+            if (cfg.preferEnchanted) add(stringResource(R.string.switch_prefer_ench).take(4))
+            if (cfg.preferRace) add(stringResource(R.string.switch_prefer_race).take(4))
+        }.joinToString(" · ").ifEmpty { stringResource(R.string.link_standard) }
+        ColoredCollapsibleDrawerCard(
+            title = stringResource(R.string.unified_group_leader_traits),
+            accentColor = DrawerAccentColors.Purple,
+            summaryText = traitsSummary,
+            highlighted = isHeartAll || isLightDark || isWfg || cfg.forceSplitThree || cfg.firstWaveOnlyScoring || cfg.allowDiagonalMatch || cfg.preferEnchanted || cfg.preferRace,
+            initialExpanded = true,
             onHelp = {
                 onShowHelp(
                     ctx.getString(R.string.help_strategy_switches_title),
                     ctx.getString(R.string.help_strategy_switches_body)
                 )
             }
-        )
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(stringResource(R.string.section_link_preset), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val isHeartAll = (cfg.compatibleLinkMask.getOrElse(5) { 1 shl 5 } and 0x3F) == 0x3F
-                val isLightDark = ((cfg.compatibleLinkMask.getOrElse(3) { 1 shl 3 } and (1 shl 4)) != 0) && !isHeartAll
-                val isWfg = ((cfg.compatibleLinkMask.getOrElse(0) { 1 shl 0 } and (1 shl 1)) != 0) && !isHeartAll
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    CompactChoicePill(stringResource(R.string.link_standard), !isHeartAll && !isLightDark && !isWfg, {
-                        updateCfg { it.copy(compatibleLinkMask = List(6) { idx -> 1 shl idx }) }
-                    }, Modifier.weight(1f))
-                    CompactChoicePill(stringResource(R.string.link_heart_all), isHeartAll, {
-                        updateCfg { it.copy(compatibleLinkMask = List(6) { e -> if (e == 5) 0x3F else ((1 shl e) or (1 shl 5)) }) }
-                    }, Modifier.weight(1f))
-                    CompactChoicePill(stringResource(R.string.link_light_dark), isLightDark, {
-                        val ld = (1 shl 3) or (1 shl 4)
-                        updateCfg { it.copy(compatibleLinkMask = List(6) { e -> if (e == 3 || e == 4) ld else (1 shl e) }) }
-                    }, Modifier.weight(1f))
-                    CompactChoicePill(stringResource(R.string.link_wfg), isWfg, {
-                        updateCfg { it.copy(compatibleLinkMask = List(6) { e -> if (e in 0..2) 0x07 else (1 shl e) }) }
-                    }, Modifier.weight(1f))
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                CompactSwitchLine(stringResource(R.string.switch_split_three), cfg.forceSplitThree) { v -> updateCfg { it.copy(forceSplitThree = v) } }
-                CompactSwitchLine(stringResource(R.string.switch_first_wave_only), cfg.firstWaveOnlyScoring) { v -> updateCfg { it.copy(firstWaveOnlyScoring = v) } }
-                CompactSwitchLine(stringResource(R.string.switch_diag_match), cfg.allowDiagonalMatch) { v -> updateCfg { it.copy(allowDiagonalMatch = v) } }
-                CompactSwitchLine(stringResource(R.string.switch_prefer_ench), cfg.preferEnchanted) { v -> updateCfg { it.copy(preferEnchanted = v) } }
-                CompactSwitchLine(stringResource(R.string.switch_prefer_race), cfg.preferRace) { v -> updateCfg { it.copy(preferRace = v) } }
+        ) {
+            Text(stringResource(R.string.section_link_preset), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                CompactChoicePill(stringResource(R.string.link_standard), !isHeartAll && !isLightDark && !isWfg, {
+                    updateCfg { it.copy(compatibleLinkMask = List(6) { idx -> 1 shl idx }) }
+                }, Modifier.weight(1f))
+                CompactChoicePill(stringResource(R.string.link_heart_all), isHeartAll, {
+                    updateCfg { it.copy(compatibleLinkMask = List(6) { e -> if (e == 5) 0x3F else ((1 shl e) or (1 shl 5)) }) }
+                }, Modifier.weight(1f))
+                CompactChoicePill(stringResource(R.string.link_light_dark), isLightDark, {
+                    val ld = (1 shl 3) or (1 shl 4)
+                    updateCfg { it.copy(compatibleLinkMask = List(6) { e -> if (e == 3 || e == 4) ld else (1 shl e) }) }
+                }, Modifier.weight(1f))
+                CompactChoicePill(stringResource(R.string.link_wfg), isWfg, {
+                    updateCfg { it.copy(compatibleLinkMask = List(6) { e -> if (e in 0..2) 0x07 else (1 shl e) }) }
+                }, Modifier.weight(1f))
             }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            CompactSwitchLine(stringResource(R.string.switch_split_three), cfg.forceSplitThree) { v -> updateCfg { it.copy(forceSplitThree = v) } }
+            CompactSwitchLine(stringResource(R.string.switch_first_wave_only), cfg.firstWaveOnlyScoring) { v -> updateCfg { it.copy(firstWaveOnlyScoring = v) } }
+            CompactSwitchLine(stringResource(R.string.switch_diag_match), cfg.allowDiagonalMatch) { v -> updateCfg { it.copy(allowDiagonalMatch = v) } }
+            CompactSwitchLine(stringResource(R.string.switch_prefer_ench), cfg.preferEnchanted) { v -> updateCfg { it.copy(preferEnchanted = v) } }
+            CompactSwitchLine(stringResource(R.string.switch_prefer_race), cfg.preferRace) { v -> updateCfg { it.copy(preferRace = v) } }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -1704,7 +1854,7 @@ private fun StrategyPresetManagerDialog(
                                         ) {
                                             Text(ctx.getString(R.string.btn_duplicate), style = MaterialTheme.typography.labelSmall)
                                         }
-                                        if (!rec.isBuiltIn) {
+                                        if (p.id != TeamPresetRepository.ID_GENERAL) {
                                             Spacer(Modifier.weight(1f))
                                             TextButton(
                                                 onClick = { onDelete(p.id) },

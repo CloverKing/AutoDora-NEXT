@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private val notificationsGrantedState = MutableStateFlow(true)
     private val benchmarkReportState = MutableStateFlow<String?>(null)
     private val isBenchmarkingState = MutableStateFlow(false)
+    private val updateCheckState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
     private var currentLanguage: AppLanguage = AppLanguage.SYSTEM
 
     private fun lctx(): Context = LocaleHelper.localizedContext(this, currentLanguage)
@@ -97,6 +98,7 @@ class MainActivity : ComponentActivity() {
                     val activeWaveChips by ActiveStrategyStore.activeChips.collectAsState()
                     val benchReport by benchmarkReportState.collectAsState()
                     val isBench by isBenchmarkingState.collectAsState()
+                    val updateState by updateCheckState.collectAsState()
 
                     DashboardScreen(
                         health = PermissionHealthState(
@@ -111,6 +113,7 @@ class MainActivity : ComponentActivity() {
                         activeWaveChips = activeWaveChips,
                         benchmarkReport = benchReport,
                         isBenchmarking = isBench,
+                        updateCheckState = updateState,
                         onRequestOverlay = { requestOverlayPermission() },
                         onOpenAccessibility = { openAccessibilitySettings() },
                         onOpenAppDetails = { openAppDetailsSettings() },
@@ -118,6 +121,9 @@ class MainActivity : ComponentActivity() {
                         onRequestNotifications = { requestNotificationPermission() },
                         onToggleOverlayService = { toggleOverlayService() },
                         onRunNativeBenchmark = { runOnDeviceBenchmark() },
+                        onOpenGitHub = { openExternalUrl(UpdateChecker.GITHUB_REPO_URL) },
+                        onCheckForUpdates = { checkForUpdates() },
+                        onOpenUpdateUrl = { url -> openExternalUrl(url) },
                         onUpdateSettings = { transform ->
                             lifecycleScope.launch { settingsRepository.update(transform) }
                         },
@@ -291,6 +297,22 @@ class MainActivity : ComponentActivity() {
             } finally {
                 isBenchmarkingState.value = false
             }
+        }
+    }
+
+    private fun openExternalUrl(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: Exception) {
+            Toast.makeText(this, lctx().getString(R.string.about_open_link_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkForUpdates() {
+        if (updateCheckState.value is UpdateCheckState.Checking) return
+        lifecycleScope.launch {
+            updateCheckState.value = UpdateCheckState.Checking
+            updateCheckState.value = UpdateChecker.checkLatestRelease(BuildConfig.VERSION_NAME)
         }
     }
 }

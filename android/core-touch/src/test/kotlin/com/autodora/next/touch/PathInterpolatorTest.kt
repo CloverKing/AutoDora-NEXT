@@ -277,4 +277,19 @@ class PathInterpolatorTest {
         }
         assertFalse(segs.last().willContinue)
     }
+
+    @Test
+    fun `six-tier swipe speed presets span 2s to 7s with strictly increasing step durations`() {
+        val entries = SwipeSpeedPreset.entries
+        assertEquals("Expected 6 swipe speed tiers (2s..7s)", 6, entries.size)
+        for (i in 1 until entries.size) {
+            assertTrue(
+                "${entries[i]} (${entries[i].stepDurationMs}ms) must be slower than ${entries[i - 1]} (${entries[i - 1].stepDurationMs}ms)",
+                entries[i].stepDurationMs > entries[i - 1].stepDurationMs
+            )
+        }
+        for (preset in entries) {
+            assertEquals(preset, SwipeSpeedPreset.fromStepDurationMs(preset.stepDurationMs))
+        }
+    }
 }

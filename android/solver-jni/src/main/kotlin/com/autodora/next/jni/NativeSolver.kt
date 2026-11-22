@@ -42,7 +42,7 @@ object NativeSolver {
         val tileFlags = IntArray(n) { board.tileFlags[it] }
         val checkpoints = board.orderedCheckpoints.toIntArray()
 
-        val ruleInts = IntArray(93)
+        val ruleInts = IntArray(99)
         ruleInts[0] = if (rules.allowDiagonalMove) 1 else 0
         ruleInts[1] = rules.maxSteps
         ruleInts[2] = rules.exactSteps
@@ -133,6 +133,12 @@ object NativeSolver {
         ruleInts[90] = if (rules.requireCharOrbFirstWave) 1 else 0
         ruleInts[91] = if (rules.forbidWeakenedOrbs) 1 else 0
         ruleInts[92] = if (rules.requireLuminousOrbClear) 1 else 0
+        ruleInts[93] = rules.minSteps
+        ruleInts[94] = rules.minFirstWaveElementalCombo
+        ruleInts[95] = if (rules.disableCascades) 1 else 0
+        ruleInts[96] = rules.wave1KindMode.code
+        ruleInts[97] = rules.equalComboElementsMask
+        ruleInts[98] = rules.unmatchableElementsMask
 
         val ruleDoubles = doubleArrayOf(rules.stepPenaltyWeight, rules.diagonalPenaltyWeight)
 

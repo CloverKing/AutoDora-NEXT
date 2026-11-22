@@ -43,7 +43,7 @@
     <string name="hyperos_guide_body">Android 13 及以上系統安裝本機應用時，無障礙開關可能預設遭鎖定：\n1. 點擊「應用程式詳情」→ 右上角「⋮」或底部選單 →「允許受限設定」；\n2. 返回「無障礙」→「已下載的應用程式」→ 開啟本應用；\n3. 建議將電池策略設為「無限制」並於多工卡片鎖定，避免系統回收懸浮列。</string>
 
     <!-- Built-in Strategy Localized Names & Descriptions -->
-    <string name="preset_general_name">通用高連擊策略</string>
+    <string name="preset_general_name">預設策略</string>
     <string name="preset_general_desc">標準 3 消 · 八向斜轉 · 強化珠優先 · 兼顧高連擊與穩健手數</string>
     <string name="preset_two_match_name">火木心二消策略</string>
     <string name="preset_two_match_desc">火 / 木 / 心 2 粒即消 · 拆珠衝高連擊 · 適配二消隊長</string>
@@ -221,8 +221,8 @@
     <string name="shield_any_enchanted_orb">強化符石首消</string>
     <string name="shield_race_orb">種族符石首消</string>
     <string name="shield_char_orb_first">角色符石首消</string>
-    <string name="shield_forbid_weakened">避消弱化符石</string>
-    <string name="shield_luminous_orb">光暈符石首消</string>
+    <string name="shield_forbid_weakened">避消弱化/邪能/刺血</string>
+    <string name="shield_luminous_orb">流光符石首消</string>
 
     <!-- Shields Tab: 3. Puzzle & Shape Shield -->
     <string name="section_puzzle_shape_shield">拼圖盾與形狀盾</string>
@@ -281,15 +281,17 @@
     <string name="lang_zh_tw">繁體</string>
     <string name="lang_en">English</string>
     <string name="section_speed">滑動速度檔位</string>
-    <string name="speed_desc">快至慢四檔色階</string>
+    <string name="speed_desc">秒數 = 適配轉珠時間；ms = 單格滑動耗時</string>
     <string name="speed_turbo">極速 2秒</string>
     <string name="speed_fast">快轉 3秒</string>
+    <string name="speed_brisk">敏捷 4秒</string>
     <string name="speed_standard">標準 5秒</string>
+    <string name="speed_smooth">舒緩 6秒</string>
     <string name="speed_steady">穩健 7秒</string>
     <string name="section_engine_steps">解盤引擎與步數</string>
     <string name="field_max_steps">最大步數上限（8 ～ 300）</string>
     <string name="error_max_steps">請輸入 8 ～ 300 之間的整數</string>
-    <string name="support_max_steps">目前生效：%1$d 步（超過 60 步自動放寬算路預算，隨時可點「停」中止）</string>
+    <string name="support_max_steps">目前生效：%1$d 步（超過 60 步自動放寬算路預算，隨時可點擊急停圖示中止）</string>
     <string name="slider_beam">解盤算力</string>
     <string name="slider_hold_delay">按住重算顯形等待上限</string>
     <string name="slider_countdown">執行前倒數</string>
@@ -298,9 +300,9 @@
     <string name="bench_error_fmt">效能測試異常：%1$s</string>
     <string name="section_modes">互動與輔助模式</string>
     <string name="mode_test_title">試跑確認模式</string>
-    <string name="mode_test_sub">點擊「算」後先畫線預覽，確認後再點「行」執行</string>
+    <string name="mode_test_sub">點擊計算圖示後先畫線預覽，確認後再點執行圖示轉珠</string>
     <string name="mode_hold_title">按住轉珠重算模式</string>
-    <string name="mode_hold_sub">開啟後點「行」將按住起手珠顯形，不鬆手即時重算續滑</string>
+    <string name="mode_hold_sub">開啟後點擊執行圖示將按住起手珠顯形，不鬆手即時重算續滑</string>
     <string name="mode_nudge_title">按住重算微移 1 格觸發</string>
     <string name="mode_nudge_sub">適配需起手輕移才翻開問號珠的關卡</string>
     <string name="mode_diag_title">允許八向斜轉</string>
@@ -310,7 +312,7 @@
     <string name="mode_badges_title">路徑預覽顯示識盤珠色角標</string>
     <string name="mode_badges_sub">畫線預覽時在每格顯示辨識出的珠色，方便核對首消連擊</string>
     <string name="mode_question_mem_title">全版問號珠記憶</string>
-    <string name="mode_question_mem_sub">背景靜默記住翻面前盤面；若進場直接全版問號，點「算」將自動按住微移顯形重算。</string>
+    <string name="mode_question_mem_sub">背景靜默記住翻面前盤面；若進場直接全版問號，點擊計算圖示將自動按住微移顯形重算。</string>
     <string name="mode_human_title">擬人化微抖動滑動</string>
     <string name="mode_human_sub">滑動軌跡中段加入輕微速度與座標擾動</string>
     <string name="mode_stop_title">懸浮主列內嵌急停按鈕</string>
@@ -323,7 +325,7 @@
 
     <!-- Detailed Contextual Help Dialogs (?) -->
     <string name="help_strategy_library_title">作戰策略庫說明</string>
-    <string name="help_strategy_library_body">【功能作用】\n作戰策略用於定義整場副本中通用的消珠習慣、隊長技特性與算力預算，與「解盾」中針對單個敵人的臨時規則相互疊加生效。\n\n【適用場景】\n• 常規隊：選擇「通用高連擊策略」。\n• 二消隊 / 特定珠數隊長：複製並配置「最低消」與「消珠形態」。\n• 直排昇華 / 角色符石起手 / 違建擴版：直接啟用對應預設或自訂新策略。</string>
+    <string name="help_strategy_library_body">【功能作用】\n作戰策略用於定義整場副本中通用的消珠習慣、隊長技特性與算力預算，與「解盾」中針對單個敵人的臨時規則相互疊加生效。\n\n【適用場景】\n• 常規隊：直接使用「預設策略」。\n• 二消隊 / 特定珠數隊長：另存為新策略並配置「最低消」與「消珠形態」。\n• 直排昇華 / 角色符石起手 / 違建擴版：在對應抽屜中啟用後另存為專屬策略，不需要的策略可在載入管理中刪除。</string>
     <string name="help_basic_steps_title">策略步數與解盤算力說明</string>
     <string name="help_basic_steps_body">【層級優先級：解盾級 &gt; 策略級 &gt; 系統級】\n設定頁中的步數上限與解盤算力屬於「系統級預設值」；策略內可勾選「跟隨系統」或拖動滑塊/修改步數切換為「策略級覆蓋」；本波解盾（如限 15 步、高難複合盾）擁有最高優先級。\n\n【步數上限】\n限制單次轉珠路徑的最大步數（8～300 步）。常規 6×5 盤面建議 30～60 步；6×8 違建或高難拼圖/多十字建議 80～150 步。\n\n【解盤算力】\n控制整套路徑搜尋與解法評估的計算寬度（40～600）：每推進 1 步都會對候選路線進行模擬消除、破盾判定與綜合評分。</string>
     <string name="help_engine_settings_title">解盤引擎與優先級說明</string>
@@ -358,7 +360,7 @@
     <string name="ov_hold">按住轉</string>
     <string name="ov_invert">顛倒</string>
     <string name="ov_tuning">調參解盾</string>
-    <string name="ov_editor">盤面編繪</string>
+    <string name="ov_editor">盤面編排</string>
     <string name="ov_tab_shield">解盾</string>
     <string name="ov_tab_elem">屬性</string>
     <string name="ov_tab_special">專屬</string>
@@ -476,4 +478,44 @@
     <string name="ov_verdict_missing_frame">未識框</string>
     <string name="section_about">關於與版本</string>
     <string name="about_version_fmt">版本號 v%1$s (Build %2$d)</string>
+
+    <!-- v3.4 Official 98-Skill Encyclopedia Upgrades -->
+    <string name="combo_type_min_first_elem">首消屬性</string>
+    <string name="combo_param_min_first_elem">首消屬性組數（不含心）</string>
+    <string name="combo_type_wave1_same_kind">首消同種</string>
+    <string name="combo_param_wave1_same_kind">首消同種類（心通用）</string>
+    <string name="combo_type_wave1_distinct_kind">首消異種</string>
+    <string name="combo_param_wave1_distinct_kind">首消不同種類（心通用）</string>
+    <string name="combo_extra_equal_multi_fmt">%1$s同等</string>
+    <string name="elem_limit_unmatchable">符石禁咒</string>
+    <string name="shield_no_cascade">禁天降(僅首批)</string>
+    <string name="shield_step_range_fmt">步數盾 %1$d–%2$d</string>
+    <string name="step_range_min_label">最少步數</string>
+    <string name="step_range_max_label">最多步數</string>
+
+    <!-- v3.5 Grouped Board Editor, 6-Tier Speed & About/Update Checker -->
+    <string name="editor_title">盤面編排</string>
+    <string name="editor_badge_editing">編輯中</string>
+    <string name="editor_badge_saved">已儲存</string>
+    <string name="editor_hint_unsaved">點劃盤面格子塗抹 · 完成後點「儲存版面」，再用主列計算/執行</string>
+    <string name="editor_hint_saved">編排版面已儲存 · 關閉後直接點擊主懸浮列計算/執行圖示</string>
+    <string name="editor_btn_save">儲存版面</string>
+    <string name="editor_btn_clear">清除標記</string>
+    <string name="editor_grp_orb">珠色與珠型</string>
+    <string name="editor_grp_shape">拼圖與起終點</string>
+    <string name="editor_grp_status">符石狀態</string>
+    <string name="editor_grp_terrain">盤面地形</string>
+    <string name="ov_saved_board_pill">已編排版面</string>
+    <string name="ov_toast_board_saved">編排版面已儲存，請點擊主懸浮列計算或執行圖示</string>
+    <string name="ov_toast_board_cleared">已清除全部標記並恢復實盤辨識</string>
+    <string name="ov_toast_edited_no_solution">已儲存版面未找到可行解，請檢查衝突規則或標記</string>
+    <string name="about_github_btn">GitHub 儲存庫</string>
+    <string name="about_check_update_btn">檢查更新</string>
+    <string name="about_checking_update">正在檢查更新…</string>
+    <string name="about_up_to_date_fmt">目前已是最新版本 (v%1$s)</string>
+    <string name="about_update_avail_fmt">發現新版本 v%1$s</string>
+    <string name="about_update_prerelease_tag">預覽版</string>
+    <string name="about_update_download_btn">前往下載</string>
+    <string name="about_update_error_fmt">檢查更新失敗：%1$s</string>
+    <string name="about_open_link_failed">無法開啟瀏覽器連結</string>
 </resources>

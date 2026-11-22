@@ -69,7 +69,9 @@ class FlashRevealMemoryTracker(
             return false
         }
         val hiddenCount = countHiddenOrQuestion(result.board)
-        val hiddenFlipThreshold = max(6, total / 3)
+        // Genuine ToS full-board '?' (先露后藏) flips >= 60% of the board (18+/30 cells) simultaneously;
+        // requiring >= 60% prevents dimmed VICTORY or wave-transition animations (6..12 dim cells) from falsely popping overlays!
+        val hiddenFlipThreshold = max(18, (total * 0.60f).toInt())
 
         if (isCleanVividBattleBoard(result, minClearConfidence)) {
             val snap = ClearSnapshot(result.board, nowMs, result.averageConfidence)

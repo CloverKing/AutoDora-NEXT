@@ -95,10 +95,13 @@ data class OverlayPalette(
     val orbStroke: Int
 ) {
     /**
-     * Semantic Fast -> Slow thermal color progression with consistent 1dp outline across Light & Dark modes:
+     * Semantic Fast -> Slow 6-tier thermal color progression (2s / 3s / 4s / 5s / 6s / 7s)
+     * with consistent 1dp outline across Light & Dark modes:
      *  - 极速 2s: Crimson Red
-     *  - 快转 3s: Amber Orange
+     *  - 快转 3s: Deep Orange
+     *  - 敏捷 4s: Warm Amber Gold
      *  - 标准 5s: System Primary Blue/Accent
+     *  - 舒缓 6s: Calm Teal
      *  - 稳健 7s: Calm Emerald Green
      */
     fun speedStyle(preset: SwipeSpeedPreset): ChipColorStyle = if (isDark) {
@@ -109,14 +112,24 @@ data class OverlayPalette(
                 stroke = AndroidColor.rgb(242, 139, 130)
             )
             SwipeSpeedPreset.FAST_3S -> ChipColorStyle(
-                bg = AndroidColor.rgb(112, 62, 14),
+                bg = AndroidColor.rgb(112, 52, 14),
                 fg = AndroidColor.rgb(255, 224, 178),
-                stroke = AndroidColor.rgb(255, 183, 77)
+                stroke = AndroidColor.rgb(255, 167, 77)
+            )
+            SwipeSpeedPreset.BRISK_4S -> ChipColorStyle(
+                bg = AndroidColor.rgb(98, 76, 12),
+                fg = AndroidColor.rgb(255, 238, 173),
+                stroke = AndroidColor.rgb(255, 209, 77)
             )
             SwipeSpeedPreset.STANDARD -> ChipColorStyle(
                 bg = primaryContainer,
                 fg = onPrimaryContainer,
                 stroke = primary
+            )
+            SwipeSpeedPreset.SMOOTH_6S -> ChipColorStyle(
+                bg = AndroidColor.rgb(14, 78, 78),
+                fg = AndroidColor.rgb(186, 244, 240),
+                stroke = AndroidColor.rgb(77, 208, 200)
             )
             SwipeSpeedPreset.STEADY -> ChipColorStyle(
                 bg = AndroidColor.rgb(22, 82, 46),
@@ -132,14 +145,24 @@ data class OverlayPalette(
                 stroke = AndroidColor.rgb(211, 47, 47)
             )
             SwipeSpeedPreset.FAST_3S -> ChipColorStyle(
-                bg = AndroidColor.rgb(255, 240, 219),
-                fg = AndroidColor.rgb(166, 75, 0),
-                stroke = AndroidColor.rgb(230, 126, 34)
+                bg = AndroidColor.rgb(255, 238, 214),
+                fg = AndroidColor.rgb(166, 68, 0),
+                stroke = AndroidColor.rgb(230, 118, 20)
+            )
+            SwipeSpeedPreset.BRISK_4S -> ChipColorStyle(
+                bg = AndroidColor.rgb(255, 246, 210),
+                fg = AndroidColor.rgb(146, 98, 0),
+                stroke = AndroidColor.rgb(214, 158, 10)
             )
             SwipeSpeedPreset.STANDARD -> ChipColorStyle(
                 bg = primaryContainer,
                 fg = onPrimaryContainer,
                 stroke = primary
+            )
+            SwipeSpeedPreset.SMOOTH_6S -> ChipColorStyle(
+                bg = AndroidColor.rgb(222, 245, 242),
+                fg = AndroidColor.rgb(0, 105, 92),
+                stroke = AndroidColor.rgb(0, 137, 123)
             )
             SwipeSpeedPreset.STEADY -> ChipColorStyle(
                 bg = AndroidColor.rgb(226, 246, 232),

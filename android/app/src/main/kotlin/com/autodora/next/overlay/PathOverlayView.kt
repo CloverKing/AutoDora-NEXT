@@ -481,6 +481,18 @@ class PathOverlayView(context: Context) : View(context) {
                     textPaint.textSize = tagR
                     canvas.drawText("暴风", (left + right) * 0.5f, top + tagR + 8f, textPaint)
                 }
+                if ((cell.hazards and HazardBits.BLOOD_DRAIN) != 0) {
+                    gridBorderPaint.color = Color.argb(210, 211, 47, 47)
+                    gridBorderPaint.strokeWidth = 4f
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
+                    val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
+                    val tagW = tagH * 1.12f
+                    fillPaint.color = Color.argb(225, 183, 28, 28)
+                    canvas.drawRoundRect(right - tagW - 6f, bottom - tagH - 6f, right - 6f, bottom - 6f, 6f, 6f, fillPaint)
+                    textPaint.color = Color.WHITE
+                    textPaint.textSize = tagH * 0.68f
+                    canvas.drawText("血", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                }
                 if (idx in lowConfidenceIndices) {
                     canvas.drawRect(left + 7f, top + 7f, right - 7f, bottom - 7f, lowConfPaint)
                 }
@@ -585,14 +597,29 @@ class PathOverlayView(context: Context) : View(context) {
         if ((flags and TileFlagBits.START_ALLOWED) != 0) parts.add("起")
         if ((flags and TileFlagBits.END_REQUIRED) != 0) parts.add("终")
         if ((flags and TileFlagBits.BURNING_TILE) != 0) parts.add("燃")
+        if ((flags and TileFlagBits.SCORCHING_TILE) != 0) parts.add("灼")
+        if ((flags and TileFlagBits.BLACK_HOLE) != 0) parts.add("洞")
+        if ((flags and TileFlagBits.END_FORBIDDEN) != 0) parts.add("浴")
         if ((flags and TileFlagBits.SHATTERED) != 0) parts.add("碎")
         if ((flags and TileFlagBits.STORM) != 0) parts.add("暴")
+        if ((flags and TileFlagBits.CHAR_ORB_PASS) != 0) parts.add("通")
+        if ((flags and TileFlagBits.CHAR_ORB_END) != 0) parts.add("停")
         if ((hazards and HazardBits.WEATHERED) != 0) parts.add("风")
         if ((hazards and HazardBits.ELECTRIFIED) != 0) parts.add("电")
+        if ((hazards and HazardBits.FROZEN) != 0) parts.add("冻")
         if ((hazards and HazardBits.ICE_SEALED) != 0) parts.add("冰")
         if ((hazards and HazardBits.PETRIFIED) != 0) parts.add("石")
+        if ((hazards and HazardBits.COAGULATED) != 0) parts.add("凝")
+        if ((hazards and HazardBits.BLOOD_DRAIN) != 0) parts.add("血")
+        if ((hazards and HazardBits.BOMB) != 0) parts.add("炸")
         if ((hazards and HazardBits.PURGATORY_FIRE) != 0) parts.add("狱")
         if ((hazards and HazardBits.FOAM) != 0) parts.add("泡")
+        if ((hazards and HazardBits.EVIL_ENERGY) != 0) parts.add("邪")
+        if ((hazards and HazardBits.BLOOD_THORN) != 0) parts.add("刺")
+        if ((hazards and HazardBits.MAGIC_ORB) != 0) parts.add("魔")
+        if ((hazards and HazardBits.LUMINOUS) != 0) parts.add("光")
+        if ((hazards and HazardBits.PRIORITY) != 0) parts.add("必")
+        if ((hazards and HazardBits.RESERVE) != 0) parts.add("留")
         if ((hazards and HazardBits.LOCKED) != 0) parts.add("锁")
         return parts.take(3).joinToString("")
     }
