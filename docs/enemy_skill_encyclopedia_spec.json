@@ -1,0 +1,2824 @@
+{
+  "source": "Tower of Saviors (神魔之塔) In-Game Encyclopedia — 敵人技能 (1/98 .. 98/98)",
+  "total_skills": 98,
+  "summary_counts": {
+    "FULL": 37,
+    "UPGRADED": 20,
+    "CV_PARTIAL": 6,
+    "NON_BOARD": 35
+  },
+  "skills": [
+    {
+      "index": 1,
+      "name_zh_tw": "指定形狀盾",
+      "name_zh_cn": "指定形状盾",
+      "icon_description": "Dark grey metallic square badge displaying a golden-outlined 5-cell T-shaped polygon frame.",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board with an ornate gold-bordered 5-cell sideways-T frame (col 2 rows 2-4 plus row 3 cols 3-4) containing mixed unmatched orbs.",
+          "caption_zh_tw": "需在指定位置內消除符石"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Same 5-cell gold-bordered frame completely filled with 5 connected Water orbs, with no adjacent Water orbs outside the frame.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 3,
+          "verdict": "wrong",
+          "visual_summary": "Same 5-cell gold-bordered frame filled with 5 Water orbs plus 1 extra connected Water orb immediately outside to the right (highlighted in a red box).",
+          "caption_zh_tw": "連同指定位置外的符石\n一同消除 (紅框內符石)，\n將無法達成條件"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 在指定位置消除指定符石\n⇒ 才會對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "shape_puzzle",
+      "board_cv_cues": "Ornate gold/bronze border frame overlaid directly onto specific board cells forming the target polygon.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must match orbs strictly filling the exact designated shape/cells on the board (and matching required orb type if specified) with ZERO extra connected same-color orbs outside the frame (strict edge rule); otherwise damage dealt becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "puzzle_shield",
+          "strict_puzzle",
+          "loose_puzzle",
+          "enchanted_puzzle"
+        ],
+        "board_flags": "TileFlagBits.PUZZLE_1",
+        "audit_notes": "CvBoardRecognizer detects classic gold & modern metallic frames; strictNoExternalTouch enforces zero external same-color touch (Slide 3 Red-X verified)."
+      }
+    },
+    {
+      "index": 2,
+      "name_zh_tw": "攻前盾",
+      "name_zh_cn": "攻前盾",
+      "icon_description": "Two-tone metallic heater shield split vertically into silver-white (left) and warm bronze-gold (right).",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen showing an enemy at CD 1 with a small pre-attack shield icon displaying '1' circled in red (pointed to by red arrow) beneath its CD.",
+          "caption_zh_tw": "攻前盾圖示存在時，\n無法對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Battle screen after the enemy attacks (red slash effect); the shield icon under CD 1 has vanished (empty dashed red circle pointed to by red arrow).",
+          "caption_zh_tw": "敵人發動指定回合攻擊後，\n攻前盾圖示消失，\n才能對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 敵人無視任何傷害，\n直至敵人發動指定回合數攻擊",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Small silver-gold shield icon with remaining attack count displayed below the enemy's CD (enemy UI, not on the orb board).",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Enemy ignores all damage until it executes the specified number of attacks and the shield icon disappears; no special orb matching breaks it early.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Pre-attack turn-wait shield; use zero_combo if stalling."
+      }
+    },
+    {
+      "index": 3,
+      "name_zh_tw": "強化突破",
+      "name_zh_cn": "强化突破",
+      "icon_description": "Dark metallic shield containing a glowing rainbow five-pointed star (pentagram).",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "6x5 board with a white-boxed horizontal 3-match of Water orbs containing 1 glowing Enhanced Water orb (highlighted inside a green box).",
+          "caption_zh_tw": "這組水符石含有水強化符石 (綠框內符石)，\n消除後可對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "6x5 board with a red-boxed horizontal 3-match of 3 normal (non-enhanced) Water orbs.",
+          "caption_zh_tw": "這組水符石沒有包含強化符石，\n消除後無法對敵人造成傷害"
+        },
+        {
+          "slide": 3,
+          "verdict": "info",
+          "visual_summary": "Darkened board showcasing the 5 glowing elemental Enhanced orbs (Water, Fire, Wood, Light, Dark).",
+          "caption_zh_tw": "不同屬性的強化符石"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 消除屬性強化符石\n⇒ 該屬性才會對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "element_color",
+      "board_cv_cues": "Enhanced orbs on the board emit a bright inner sparkle/glow compared to normal orbs; enemy displays rainbow star shield icon.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Evaluated per attribute: an attacking attribute deals normal damage only if at least one Enhanced (強化) orb of that attribute is eliminated during the turn; otherwise damage from that attribute becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "require_elements (ench mask)",
+          "any_enchanted_orb_shield"
+        ],
+        "board_flags": "Variant.ENCHANTED",
+        "audit_notes": "Per-attribute enchanted orb requirement; CvBoardRecognizer detects multi-frame star gleam."
+      }
+    },
+    {
+      "index": 4,
+      "name_zh_tw": "二屬盾",
+      "name_zh_cn": "二属盾",
+      "icon_description": "Metallic shield displaying 2 specified attribute orb icons stacked vertically (example: Dark on top, Light on bottom).",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Light-Dark 2-element shield icon in top-left; 6x5 board highlights a green box around adjacent vertical 3-matches of Light and Dark orbs.",
+          "caption_zh_tw": "消除圖示中指定的屬性符石\n\n光暗二屬盾：\n同時消除光、暗符石，\n才能對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Light-Dark 2-element shield icon in top-left; horizontal 3-match of Water orbs in row 3 separates 2 rows of Light+Dark above and 1 row below (boxed in green), demonstrating cascade elimination after Water clears.",
+          "caption_zh_tw": "消除水符石後，\n將消除天降的光及暗符石，\n可對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 同時消除指定 2 種屬性符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "element_color",
+      "board_cv_cues": "Enemy shield icon displays the 2 required attribute orbs (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate both specified attribute orbs in the same turn (simultaneously / cumulative across Wave-1 and cascade skyfall, NOT restricted to Wave-1); otherwise damage becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "require_elements"
+        ],
+        "board_flags": "",
+        "audit_notes": "UPGRADED: Official Slide 2 confirms cascade/skyfall clears count! Default require_elements now uses requiredTotalElementsMask (Wave-1 strict remains optional)."
+      }
+    },
+    {
+      "index": 5,
+      "name_zh_tw": "三屬盾",
+      "name_zh_cn": "三属盾",
+      "icon_description": "Metallic shield displaying 3 specified attribute orb icons in a triangle (example: Water, Wood, Fire).",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Water-Fire-Wood 3-element shield icon in top-left; 6x5 board highlights three green-boxed vertical 3-matches of Water, Fire, and Wood orbs.",
+          "caption_zh_tw": "消除圖示中指定的屬性符石\n\n水火木三屬盾：\n同時消除水、火及木符石，\n才能對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Water-Fire-Wood shield icon in top-left; horizontal 3-match of Dark orbs in row 3 separates 2 rows of Water/Fire/Wood above and 1 row below (boxed in green), showing cascade elimination.",
+          "caption_zh_tw": "消除暗符石後，\n將消除天降的水、火及木符石，\n可對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 同時消除指定 3 種屬性符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "element_color",
+      "board_cv_cues": "Enemy shield icon displays the 3 required attribute orbs (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate all 3 specified attribute orbs within the same turn (including cascade/skyfall matches, NOT restricted to Wave-1); otherwise damage becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "three_elements",
+          "require_elements"
+        ],
+        "board_flags": "",
+        "audit_notes": "UPGRADED: Official Slide 2 confirms cascade/skyfall clears count for 3-element shield."
+      }
+    },
+    {
+      "index": 6,
+      "name_zh_tw": "四屬盾",
+      "name_zh_cn": "四属盾",
+      "icon_description": "Metallic shield displaying 4 specified attribute orb icons in a 2x2 layout (example: Fire, Wood, Light, Water).",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Water-Fire-Wood-Light 4-element shield icon in top-left; 6x5 board highlights four green-boxed vertical 4-matches of Water, Fire, Wood, and Light orbs.",
+          "caption_zh_tw": "消除圖示中指定的屬性符石\n\n水火木光四屬盾：\n同時消除水、火、木及光符石，\n才能對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Water-Fire-Wood-Light shield icon in top-left; horizontal 4-match of Dark orbs in row 3 separates 2 rows of Water/Fire/Wood/Light above and 1 row below (boxed in green), showing cascade elimination.",
+          "caption_zh_tw": "消除暗符石後，\n將消除天降的水、火、木及光符石，\n可對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 同時消除指定 4 種屬性符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "element_color",
+      "board_cv_cues": "Enemy shield icon displays the 4 required attribute orbs (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate all 4 specified attribute orbs within the same turn (including cascade/skyfall matches, NOT restricted to Wave-1); otherwise damage becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "require_elements"
+        ],
+        "board_flags": "",
+        "audit_notes": "UPGRADED: Official Slide 2 confirms cascade/skyfall clears count for 4-element shield."
+      }
+    },
+    {
+      "index": 7,
+      "name_zh_tw": "五屬盾",
+      "name_zh_cn": "五属盾",
+      "icon_description": "Metallic shield displaying all 5 elemental attribute orb icons (Water, Fire, Wood, Light, Dark) arranged in a pentagon.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "5-element shield icon in top-left; 6x5 board highlights one green box enclosing 5 vertical 5-orb columns of Water, Fire, Wood, Light, and Dark.",
+          "caption_zh_tw": "消除圖示中指定的屬性符石\n\n五屬盾：\n同時消除水、火、木、光及暗符石，\n才能對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "5-element shield icon in top-left; horizontal 5-match of Heart orbs in row 3 separates 2 rows of Water/Fire/Wood/Light/Dark above and 2 rows below (boxed in green), showing cascade elimination.",
+          "caption_zh_tw": "消除心符石後，\n將消除天降的水、火、木、光及暗符石，\n可對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 同時消除指定 5 種屬性符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "element_color",
+      "board_cv_cues": "Enemy shield icon displays all 5 elemental orb icons (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate all 5 elemental attributes (Water, Fire, Wood, Light, Dark) within the same turn (including cascade/skyfall matches, NOT restricted to Wave-1); otherwise damage becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "five_elements",
+          "require_elements"
+        ],
+        "board_flags": "",
+        "audit_notes": "UPGRADED: Official Slide 2 confirms cascade/skyfall clears count for 5-element shield."
+      }
+    },
+    {
+      "index": 8,
+      "name_zh_tw": "固定連擊盾",
+      "name_zh_cn": "固定连击盾",
+      "icon_description": "Silver circular ring enclosing a metallic six-pointed star (hexagram) with a bold golden target combo integer in the center (example: 6 in header, 5 in slides).",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Fixed-5 combo icon in top-left; 6x5 board highlights 5 separate green-boxed horizontal Wave-1 matches numbered 1 to 5 (Heart x3, Water x3, Fire x5, Wood x3, Water x6).",
+          "caption_zh_tw": "首批消除圖示中指定的組數符石\n\n固定 5 連擊盾：\n首批消除 5 組符石，\n才能對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "Fixed-5 combo icon in top-left; 6x5 board highlights only 4 white-boxed horizontal Wave-1 matches numbered 1 to 4 (fewer than 5).",
+          "caption_zh_tw": "首批消除少於指定組數符石，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 首批消除固定連擊 (Combo)\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "combo",
+      "board_cv_cues": "Enemy skill icon displays the exact required Wave-1 combo integer inside a silver hexagram ring (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate EXACTLY the specified number of Wave-1 (首批) combos (neither fewer nor more; cascades after Wave-1 do not affect the Wave-1 count); otherwise damage becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "exact_first_combo"
+        ],
+        "board_flags": "",
+        "audit_notes": "Exact Wave-1 combo count (cascades after Wave-1 allowed)."
+      }
+    },
+    {
+      "index": 9,
+      "name_zh_tw": "連擊相等盾",
+      "name_zh_cn": "连击相等盾",
+      "icon_description": "Cluster of specified orb icons (example: Fire, Water, Wood) perched directly above bold golden letters 'COM'.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Water-Fire-Wood 'COM' icon in top-left; 6x5 board shows 1 green-boxed 3-match each of Water, Fire, and Wood (each labeled '1'), plus an unrelated 6-match of Dark orbs.",
+          "caption_zh_tw": "根據圖示中指定的屬性符石，\n首批消除相同組數\n\n水火木連擊相等盾：\n首批消除相同組數的水、火及木符石，\n才能對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "Water-Fire-Wood 'COM' icon in top-left; 6x5 board shows 2 red-boxed 3-matches of Water (labeled '1' and '2') alongside only 1 match of Fire and 1 match of Wood.",
+          "caption_zh_tw": "首批消除額外多 1 組水符石，\n無法達成首批消除相同組數的\n水、火及木符石，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 同時首批消除相同組數的指定種類符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "combo",
+      "board_cv_cues": "Enemy skill icon displays the specified orb types above 'COM' (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must simultaneously eliminate an EXACTLY EQUAL non-zero number of Wave-1 (首批) combo groups for every specified orb type (e.g., Water_groups == Fire_groups == Wood_groups >= 1; unspecified orb types may be matched freely); otherwise damage becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "equal_pair_light_dark (generalized N-color equal_combo_elements)"
+        ],
+        "board_flags": "",
+        "audit_notes": "UPGRADED: Official Slide 1-2 shows 3-color Water=Fire=Wood! Generalized RuleConfig.equalComboElementsMask to support 2..6 arbitrary specified elements."
+      }
+    },
+    {
+      "index": 10,
+      "name_zh_tw": "反首消符石盾",
+      "name_zh_cn": "反首消符石盾",
+      "icon_description": "Metallic shield containing a specified orb icon (header shows Heart) overlaid with a white bouncing/deflecting V-arrow indicating reflection.",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Water anti-first-match shield icon in top-left; 6x5 board has a horizontal 3-match of Heart orbs in row 3 separating 2 Water orbs above (green box) and 1 Water orb below (green box), matching Water via Wave-2 cascade instead of Wave-1.",
+          "caption_zh_tw": "不要首批消除水符石；\n或可透過「非首批消除的方式 ——\n消除心符石後，將消除天降的水符石」，\n以消除水符石，亦可對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "Water anti-first-match shield icon in top-left; 6x5 board highlights a vertical 3-match of Water orbs in a red box eliminated in Wave-1.",
+          "caption_zh_tw": "首批消除水符石，\n無法對敵人造成傷害"
+        },
+        {
+          "slide": 3,
+          "verdict": "info",
+          "visual_summary": "Darkened board displaying all 6 orb-type variants of the anti-first-match shield icon (Water, Fire, Wood, Light, Dark, Heart).",
+          "caption_zh_tw": "不同種類的反首消符石盾圖示"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 首批消除指定符石及擊中敵人\n⇒ 敵人承受傷害變為 1",
+      "category": "element_color",
+      "board_cv_cues": "Enemy shield icon showing the forbidden orb type (Water/Fire/Wood/Light/Dark/Heart) (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must NOT eliminate the specified orb type(s) in Wave-1 (首批) — doing so reduces enemy damage taken to 1 when hit; eliminating that orb type via Wave-2+ cascades (非首批/天降) is explicitly permitted.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "anti_first_wave"
+        ],
+        "board_flags": "",
+        "audit_notes": "Wave-1 forbidden orb; Wave-2 cascade explicitly allowed (Slide 1 matches MatchTiming.ForbidFirstWaveAllowCascade)."
+      }
+    },
+    {
+      "index": 11,
+      "name_zh_tw": "全版消除盾",
+      "name_zh_cn": "全版消除盾",
+      "icon_description": "Square metallic badge showing glowing multi-element orbs behind bold silver-white letters 'ALL'.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Entire 6x5 board enclosed in one green border: all 6 columns are solid vertical 5-matches (Water, Fire, Wood, Light, Dark, Heart), clearing all 30 orbs in Wave-1.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "Nearly full-board Wave-1 clear except 1 single unmatched Heart orb at row 1 col 3 highlighted in a red box.",
+          "caption_zh_tw": "沒有消除紅框內的心符石，\n無法達成首批消除\n場上所有符石的條件，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 首批消除場上所有符石\n⇒ 才能對敵人造成攻擊傷害",
+      "category": "orb_count",
+      "board_cv_cues": "Enemy skill icon displays orbs behind 'ALL' (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate 100% of orbs on the entire board (0 remaining orbs) in Wave-1 (首批); otherwise attack damage cannot be dealt.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "first_wave_full_clear"
+        ],
+        "board_flags": "",
+        "audit_notes": "Wave-1 100% full-board clear (0 remaining matchable orbs)."
+      }
+    },
+    {
+      "index": 12,
+      "name_zh_tw": "全消盾",
+      "name_zh_cn": "全消盾",
+      "icon_description": "Dark metallic square badge featuring a glowing question-mark orb ('?') above bold silver-white letters 'ALL'.",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen showing an enemy with the '? ALL' icon under CD 1 and a glowing aura ring around its body containing Water and Fire orb symbols (circled in red and enlarged below as 'Water + Fire').",
+          "caption_zh_tw": "根據圖示中指定的符石種類，\n首批消除場上所有指定符石，\n才能對敵人造成傷害\n\n全消盾 - 水、火：\n首批消除場上所有水及火符石"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "'Water + Fire' target indicator at top; 6x5 board has every Water and Fire orb enclosed in green-bordered Wave-1 matches (two Water 3-matches, one Fire 4-match, one Fire 3-match, leaving 0 Water/Fire orbs).",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 3,
+          "verdict": "wrong",
+          "visual_summary": "Expanded 6x8 board (+3 extra rows skill active) with 'Water + Fire' overlay; all Water/Fire orbs in the standard bottom 5 rows (cols 1-2) are matched, but 2 Fire and 2 Water orbs remain unmatched in the extra top 3 rows (boxed in red).",
+          "caption_zh_tw": "發動額外增加 3 行符石的技能，\n亦需首批消除額外 3 行內的\n指定符石 - 水及火符石，\n才能對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 首批消除場上所有指定種類符石\n⇒ 才能對敵人造成攻擊傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "orb_count",
+      "board_cv_cues": "Enemy displays '? ALL' icon under CD plus an orbiting aura ring around the enemy sprite showing the exact required orb type(s) (e.g., Water + Fire).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate ALL orbs of the specified orb type(s) present on the board in Wave-1 (首批消除場上所有指定符石, 0 leftover of those types), including inside any +3 extra-row skills; otherwise damage cannot be dealt. (Note: gold box in sheet only captured the bottom of slide 3 with no separate bullet-list text below it.)",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "clear_all_element"
+        ],
+        "board_flags": "",
+        "audit_notes": "Wave-1 clear ALL orbs of specified element(s), including 6x8 expanded rows (Slide 3 verified)."
+      }
+    },
+    {
+      "index": 13,
+      "name_zh_tw": "首消粒數盾",
+      "name_zh_cn": "首消粒数盾",
+      "icon_description": "Metallic shield with fiery orange-gold letters 'NUM' across the center.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Enemy enveloped by a glowing white magic circle showing '26' (pointed to by red arrow); 6x5 board outlines exactly 26 Wave-1 matched orbs in green (cols 3-6 full 5-matches = 20 orbs + cols 1-2 bottom 3-matches = 6 orbs; 4 top-left orbs unmatched).",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "Same enemy with '26' magic circle; 6x5 board outlines 26 matched orbs in white plus 1 extra connected Water orb at row 2 col 1 in a red box (27 Wave-1 orbs eliminated).",
+          "caption_zh_tw": "首批消除多於或少於 26 粒符石，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 首批消除指定粒數符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "orb_count",
+      "board_cv_cues": "Glowing white magic circle overlaid on the enemy sprite displaying the exact required orb count integer (e.g., '26'), plus 'NUM' shield icon.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate the EXACT specified total number of orbs in Wave-1 (首批消除指定粒數符石 — neither more nor fewer than N); otherwise enemy damage taken becomes 1.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "digital_orb_count"
+        ],
+        "board_flags": "",
+        "audit_notes": "Exact Wave-1 total orb count (exactFirstWaveTotalOrbs == N)."
+      }
+    },
+    {
+      "index": 14,
+      "name_zh_tw": "十字限盾",
+      "name_zh_cn": "十字限盾",
+      "icon_description": "Dark square badge showing 5 bronze spheres arranged in a '+' (cross) shape with radiating golden light.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "6x5 board showing an exact 5-orb '+' (cross) shape of Heart orbs outlined in green with no extra connected Heart orbs.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "6x5 board showing an oversized 9-orb '+' shape of Heart orbs outlined in white, with the 4 extra tip orbs (top, bottom, far-left, far-right) individually boxed in red.",
+          "caption_zh_tw": "消除額外符石，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 以【十】形首批消除\n指定組數 5 粒符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "shape_puzzle",
+      "board_cv_cues": "Enemy skill icon displays a 5-orb '+' shape (no fixed board cell frame).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate the specified number of groups in a STRICT exact 5-orb '+' (cross) shape in Wave-1 (首批); attaching any extra same-color orbs invalidates the shape and reduces damage to 1.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "cross_shield"
+        ],
+        "board_flags": "",
+        "audit_notes": "Strict exact 5-orb '+' shape in Wave-1 (isExactCross5, zero extra orbs)."
+      }
+    },
+    {
+      "index": 15,
+      "name_zh_tw": "T字限盾",
+      "name_zh_cn": "T字限盾",
+      "icon_description": "Dark square badge showing 5 bronze spheres arranged in a 'T' shape with radiating golden light.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "6x5 board showing an exact 5-orb 'T' shape of Water orbs outlined in green (3-orb top bar + 2-orb downward stem) with no extra connected Water orbs.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "6x5 board showing an oversized 9-orb 'T' shape of Water orbs outlined in white (5-orb top bar + 4-orb stem), with the 2 extra wing orbs and 2 extra bottom-stem orbs highlighted in red boxes.",
+          "caption_zh_tw": "消除額外符石，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 以【T】形首批消除\n指定組數 5 粒符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "shape_puzzle",
+      "board_cv_cues": "Enemy skill icon displays a 5-orb 'T' shape (no fixed board cell frame).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate the specified number of groups in a STRICT exact 5-orb 'T' shape in Wave-1 (首批); attaching any extra same-color orbs invalidates the shape and reduces damage to 1.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "t_shape"
+        ],
+        "board_flags": "",
+        "audit_notes": "UPGRADED: Official Slide 2 proves strict exact 5-orb T-shape! Fixed evaluator.cpp & RuleComposer to enforce strictShape (orbCount==5) + added L/T pull-distance shaping."
+      }
+    },
+    {
+      "index": 16,
+      "name_zh_tw": "L字限盾",
+      "name_zh_cn": "L字限盾",
+      "icon_description": "Dark square badge showing 5 bronze spheres arranged in an 'L' shape with radiating golden light.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "6x5 board showing an exact 5-orb 'L' shape of Water orbs outlined in green (3-orb vertical leg + 3-orb horizontal leg sharing the corner) with no extra connected Water orbs.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "6x5 board showing an oversized 9-orb 'L' shape of Water orbs outlined in white (5-orb vertical + 5-orb horizontal), with the 2 extra top orbs and 2 extra rightmost orbs boxed in red.",
+          "caption_zh_tw": "消除額外符石，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 以【L】形首批消除\n指定組數 5 粒符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "shape_puzzle",
+      "board_cv_cues": "Enemy skill icon displays a 5-orb 'L' shape (no fixed board cell frame).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate the specified number of groups in a STRICT exact 5-orb 'L' shape in Wave-1 (首批); attaching any extra same-color orbs invalidates the shape and reduces damage to 1.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "l_shape"
+        ],
+        "board_flags": "",
+        "audit_notes": "UPGRADED: Official Slide 2 proves strict exact 5-orb L-shape! Fixed evaluator.cpp & RuleComposer to enforce strictShape (orbCount==5) + added L/T pull-distance shaping."
+      }
+    },
+    {
+      "index": 17,
+      "name_zh_tw": "首殺盾",
+      "name_zh_cn": "首杀盾",
+      "icon_description": "Crimson-red metallic heater shield bearing a bold white numeral '1' in the center.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with two enemies: left enemy (CD 1) has the red '1' shield icon boxed in white beneath its CD; right enemy (CD 19) is targeted with a crosshair and takes only '1' damage (pointed to by red arrows) while the left enemy remains alive.",
+          "caption_zh_tw": "持有首殺盾的敵人在場時，\n無法在同一回合內對其他敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 召喚師必需先擊斃持有首殺盾的敵人\n⇒ 才能對其他敵人造成傷害",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Small red shield icon with white '1' displayed under the priority enemy's CD (enemy UI, not on the orb board).",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Targeting/kill-order constraint: must kill the enemy holding the First-Kill Shield first; while it is on the field, other enemies cannot be damaged even within the same turn.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Enemy target-kill-order mechanic (tap target enemy first)."
+      }
+    },
+    {
+      "index": 18,
+      "name_zh_tw": "首消組數屬性符石盾",
+      "name_zh_cn": "首消组数属性符石盾",
+      "icon_description": "Pentagram ring linking the 5 elemental orbs (Fire, Wood, Light, Dark, Water) with bold yellow '≥5' (threshold count) in the center.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "'≥5' 5-element ring icon in top-left; 6x5 board highlights 5 separate green-boxed vertical 3-matches of elemental orbs numbered 1 to 5 (Water, Wood, Water, Dark, Water — showing multiple groups of the same element each count).",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "'≥5' 5-element ring icon in top-left; 6x5 board highlights 4 white-boxed vertical 3-matches of elemental orbs (numbered 1 to 4) plus a 5th red-boxed vertical 3-match of Heart orbs, failing because Heart is not an elemental orb.",
+          "caption_zh_tw": "心符石不屬於屬性符石，\n在首批消除 4 組屬性符石的情況下，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 首批消除指定組數屬性符石\n⇒ 才能對敵人造成攻擊傷害",
+      "category": "combo",
+      "board_cv_cues": "Enemy skill icon displays a 5-element pentagram ring with '≥N' (e.g., '≥5') in the center (no board overlay).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Must eliminate at least the specified number (≥N) of Wave-1 (首批) combo groups of elemental orbs (Water/Fire/Wood/Light/Dark — Heart orbs do NOT count; separate groups of the same attribute count individually); otherwise attack damage cannot be dealt.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "min_first_elem_combo"
+        ],
+        "board_flags": "",
+        "audit_notes": "NEW: Official Slide 2 proves Heart orbs do NOT count toward elemental groups! Added RuleConfig.minFirstWaveElementalCombo & min_first_elem_combo chip."
+      }
+    },
+    {
+      "index": 19,
+      "name_zh_tw": "力的印記",
+      "name_zh_cn": "力的印记",
+      "icon_description": "Silver-blue toothed gear wheel framing a white circle with a clenched golden-orange fist inside.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen showing the gear-fist icon with counter '10' in the top-left player status bar (pointed to by red arrow); on the 6x5 board, 9 Water orbs bear small circular gear-fist stamps on their top-right corner, with 8 of them boxed in green for elimination.",
+          "caption_zh_tw": "我方效果欄會顯示\n持有的印記力量數量"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 消除力的印記符石\n⇒ 回合結束時獲得印記力量\n• 疊至最高指定數量印記力量\n⇒ 才會對敵人造成傷害\n• 召喚師死亡後\n⇒ 清空力的印記及印記力量",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "Small circular gear-and-fist mark stamped on the top-right corner of specific board orbs; player effect bar (top-left) displays the gear-fist icon with accumulated stack count.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Eliminating orbs stamped with the Mark of Power (力的印記) accumulates Power Stacks at turn end. Must stack up to the specified maximum count before damage can be dealt to the enemy; dying resets all marks and stacks to 0.",
+      "autodora_mapping": {
+        "coverage_status": "CV_PARTIAL",
+        "wave_shield_chips": [],
+        "board_flags": "HazardBits.PRIORITY",
+        "audit_notes": "Top-right orb badge mark (力的印記); mark priority orbs in Board Editor to prioritize clearing; CvBoardRecognizer excludes top-right corner from orb hue."
+      }
+    },
+    {
+      "index": 20,
+      "name_zh_tw": "% 防禦盾",
+      "name_zh_cn": "% 防御盾",
+      "icon_description": "Glossy sky-blue and silver heater shield with a bright vertical white center highlight.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen showing two enemies each displaying the blue shield icon circled in white under their CD, with white ovals around their HP bars labeled '25%' (left enemy) and '50%' (right enemy).",
+          "caption_zh_tw": "左方：防禦盾 25%\n右方：防禦盾 50%"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每回合最多只能對敵人造成\n敵人生命力指定 % 的攻擊傷害",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Small blue-silver shield icon displayed under the enemy's CD (enemy UI, not on the orb board).",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Caps attack damage dealt to the enemy per turn at most a specified percentage (e.g., 25% or 50%) of the enemy's max HP, preventing one-shot kills and requiring multi-turn damage.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Per-turn max % HP damage cap."
+      }
+    },
+    {
+      "index": 21,
+      "name_zh_tw": "指定連擊法印",
+      "name_zh_cn": "指定连击法印",
+      "icon_description": "Circular glowing white/silver ornate crest/seal (法印) with symmetrical filigree swirl patterns inside a luminous halo.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Board shows 5 horizontal 3-orb Wave-1 matches outlined in green on the left half (Row 0: 3 Heart; Row 1: 3 Water; Row 2: 3 Fire; Row 3: 3 Earth; Row 4: 3 Water). Inset battle frame shows enemy (CD 1) orbited by 5 glowing white seal orbs (target = 5 Combo), with a green checkmark in top-right.",
+          "caption_zh_tw": "首批消除指定組數的符石，\n才能對敵人造成傷害，\n且敵人不會發動攻擊"
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "Board shows 6 horizontal 3-orb Wave-1 matches: 5 green-outlined matches on the left plus a 6th 3-Dark match outlined in red at bottom-right. Inset battle frame shows enemy (CD 1) orbited by 5 glowing white seal orbs (exceeding target by 1), with a red X in top-right.",
+          "caption_zh_tw": "首批消除多於或少於指定組數的符石，\n無法對敵人造成傷害，\n且敵人會根據差距的組數，\n反擊相應次數攻擊"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 首批消除指定連擊 (Combo)\n⇒ 才會對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1\n\n• 達成指定連擊數\n⇒ 敵人不會發動攻擊\n• 反之，敵人根據差距的連擊數，\n反擊相應次數攻擊",
+      "category": "combo",
+      "board_cv_cues": "None on the 6x5 board; enemy battle sprite is orbited by N glowing white filigree seal orbs (法印) indicating the exact required Wave-1 combo count, plus the seal skill icon.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Exact Wave-1 (首批) combo shield (wave1_combos == N). Matching exact N Wave-1 combos enables normal damage and prevents the enemy from attacking; matching fewer or more reduces all damage dealt to 1 and triggers |actual - N| enemy counterattacks. Note: text_0 in skill_021.png is slightly clipped at the bottom right after '• 反之，敵人根據差距的連擊數，'; Slide 2 caption confirms '反擊相應次數攻擊'. Only Wave-1 combos count (not skyfall).",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "exact_first_combo"
+        ],
+        "board_flags": "",
+        "audit_notes": "Exact Wave-1 combo seal (exactFirstWaveCombo == N; cascades allowed)."
+      }
+    },
+    {
+      "index": 22,
+      "name_zh_tw": "指定減傷抗性敵技",
+      "name_zh_cn": "指定减伤抗性敌技",
+      "icon_description": "Metallic crystalline shield with multi-colored heart/gem accents, green upward double-chevron on bottom-left, and white '50%' text on bottom-right.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing enemy (CD 3) with the 50% shield icon below CD and a glowing circular rune ring overlaid on the enemy displaying '0%' at center, highlighted by a red arrow.",
+          "caption_zh_tw": "達成指定條件，\n敵人會增加或減少減傷抗性"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 敵人身上出現抗性，最大為 100%\n• 抗性愈高，敵人所受傷害愈低",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "None on the 6x5 board; enemy displays a glowing circular magic ring with a percentage number (0%–100%) over its sprite and the 50% resistance shield icon under CD.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Dynamic damage-reduction resistance gauge on the enemy (max 100%); higher resistance lowers incoming damage. Fulfilling the stage-specific condition raises or lowers this resistance percentage.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Dynamic % damage-reduction resistance gauge."
+      }
+    },
+    {
+      "index": 23,
+      "name_zh_tw": "符石禁咒",
+      "name_zh_cn": "符石禁咒",
+      "icon_description": "White prohibition circle-slash symbol overlaid on a ring of multi-attribute orbs.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Left 3 columns (cols 0–2, 15 cells) outlined in a white box filled with Water orbs each stamped with a red prohibition circle-slash mark. Inset battle box shows enemy with a Water-orb prohibition icon pointed to by a red arrow.",
+          "caption_zh_tw": "符石禁咒 - 水：\n無法消除水符石"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 無法消除指定種類符石",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "All orbs of the banned attribute/type on the 6x5 board display a translucent red prohibition circle-slash mark directly on the orb; enemy status bar also shows the attribute-specific prohibition icon.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Specified orb type (e.g., Water) cannot be matched or cleared even when 3+ are connected. Solver must mark that orb type as unmatchable/inert in board simulation (still movable).",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "unmatchable_elements"
+        ],
+        "board_flags": "",
+        "audit_notes": "NEW: Added RuleConfig.unmatchableElementsMask in simulator.cpp so banned orb attributes truly cannot form matches even when 3+ align."
+      }
+    },
+    {
+      "index": 24,
+      "name_zh_tw": "開技消耗代價",
+      "name_zh_cn": "开技消耗代价",
+      "icon_description": "Hooded grim reaper skull with scythe on a dark red background and white '50%' text at the bottom.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing enemy (CD 1) with the 50% reaper icon circled in red (pointed to by a red arrow). Another red arrow points to the left team member portrait; '-50%' appears above the HP bar which is cut to 108/216 inside a white frame.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每次發動或關閉主動技能時\n⇒ 消耗召喚師生命力",
+      "category": "team_skill_other",
+      "board_cv_cues": "None on the 6x5 board; enemy displays the grim reaper percentage icon below CD.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Activating or deactivating (toggling off) any active skill consumes summoner HP (e.g., 50%). Pure active-skill cost mechanic; does not alter orb movement or matching.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "HP cost on toggling active skills."
+      }
+    },
+    {
+      "index": 25,
+      "name_zh_tw": "燃燒",
+      "name_zh_cn": "燃烧",
+      "icon_description": "Bright orange-yellow flickering flame with embers on a dark square background.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board with the leftmost column (col 0, 5 cells) framed in a white rectangle; each cell in col 0 is engulfed in bright glowing yellow-orange fire aura obscuring the underlying orb details.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每觸碰被燃燒的位置\n⇒ 扣除召喚師生命力",
+      "category": "path_terrain",
+      "board_cv_cues": "Burning board positions glow intensely with a bright yellow-orange flame aura covering the tile and partially washing out the orb inside.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Burning tile hazard (position-bound). Every time the drag path enters/touches a burning cell, summoner HP is deducted. Solver should avoid stepping on burning coordinates or apply heavy per-step path penalties.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "zero_trail_burning"
+        ],
+        "board_flags": "TileFlagBits.BURNING_TILE",
+        "audit_notes": "Position-bound touch-damage burning tile (burningTileHits <= maxBurningTileHurts)."
+      }
+    },
+    {
+      "index": 26,
+      "name_zh_tw": "黏腐",
+      "name_zh_cn": "黏腐",
+      "icon_description": "Bright green liquid slime splatter with droplets.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board with 5 cells outlined in white rectangles at (0,4), (1,0), (1,1), (3,4), and (4,4), each showing a Water orb coated in a bright pale cyan-green glowing corrosive/sticky sheen.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 黏腐位置的符石一經觸碰\n⇒ 即時停止移動符石",
+      "category": "path_terrain",
+      "board_cv_cues": "Sticky/corrosive (黏腐) cell positions display a bright pale green-cyan viscous glowing coating/halo over the orb.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Sticky/corrosive tile hazard (position-bound). The instant the drag path touches any cell with 黏腐, orb movement terminates immediately. Solver must treat 黏腐 positions as hard impassable obstacles during path generation.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.STICKY_TILE",
+        "audit_notes": "Position-bound sticky/corrosive tile; touching immediately ends path."
+      }
+    },
+    {
+      "index": 27,
+      "name_zh_tw": "瘴氣地型",
+      "name_zh_cn": "瘴气地型",
+      "icon_description": "Billowing purple-violet toxic miasma cloud puff.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Tall combined battle + 6x5 board image. Top-left player effect bar shows a purple miasma cloud icon with yellow '60%' pointed to by a red arrow. On the board, 6 cells framed in white squares at (1,1), (2,5), (3,0), (3,2), (3,5), and (4,4) have speckled green toxic spore/moss overlays.",
+          "caption_zh_tw": "我方效果欄會顯示累積瘴氣 %\n\n瘴氣為可被消除的附加效果"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每經過瘴氣地型\n⇒ 召喚師累積指定 % 瘴氣\n• 當累積至 100% 瘴氣\n⇒ 回合結束時召喚師會死亡",
+      "category": "path_terrain",
+      "board_cv_cues": "Affected board cells show green/yellowish speckled toxic spore/moss overlays; top-left player effect bar displays a purple miasma cloud icon with accumulated percentage (e.g., '60%').",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Miasma terrain (瘴氣地型) places toxic miasma overlays on specific board cells and tracks accumulated miasma % (a removable additional effect) in the player effect bar. Note: In skill_027.png, the tall combined battle+board image pushed the bulleted rule text below the text_0 scroll crop, so full_rule_text_zh_tw is empty and only the slide caption was captured.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.MIASMA",
+        "audit_notes": "Miasma terrain; traversing accumulates % miasma (miasmaHits <= maxMiasmaHits)."
+      }
+    },
+    {
+      "index": 28,
+      "name_zh_tw": "灼熱地型",
+      "name_zh_cn": "灼热地型",
+      "icon_description": "Dark square icon with a blazing orange-white magma/fiery fissure cross splitting the tile.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board with col 0 (leftmost) and col 5 (rightmost) framed in vertical white rectangles; all 10 cells in cols 0 and 5 are covered by intense blazing orange-red flame-and-blue-spark fissure overlays, while cols 1–4 are darkened.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每次於灼熱地型內消除符石\n⇒ 扣除召喚師生命力\n※【護盾】可抵擋此傷害",
+      "category": "path_terrain",
+      "board_cv_cues": "Scorching terrain cells display a vivid blazing orange-red flame fissure and spark overlay completely illuminating the tile border and face.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Scorching terrain (灼熱地型). Unlike 燃燒 (touch damage), HP is deducted each time orbs are cleared/matched inside scorching terrain cells; 【護盾】 shields can block this damage. Solver may traverse these cells freely, but should penalize or avoid matching orbs inside them.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.SCORCHING_TILE",
+        "audit_notes": "NEW: Distinguished from Skill #25 Burning! Scorching terrain hurts on CLEARING inside tile, not touching. Added TileFlagBits.SCORCHING_TILE + Board Editor brush + simulator/evaluator tracking."
+      }
+    },
+    {
+      "index": 29,
+      "name_zh_tw": "火焰地型",
+      "name_zh_cn": "火焰地型",
+      "icon_description": "Circular glossy red medallion containing swirling red-white flame wisps.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board of all Water orbs with 5 cells framed in white rectangles at (0,2), (1,2), (2,3), (3,5), and (4,0), each overlaid with a swirling translucent red-coral flame ring.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 若召喚師沒有在火焰地型位置最後結束轉珠\n⇒ 對每個發動攻擊及擊中敵人的成員造成傷害",
+      "category": "path_terrain",
+      "board_cv_cues": "Flame terrain cells show a translucent swirling red-pink flame vortex ring spinning over the orb.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Required end-position terrain (火焰地型). If the player does NOT finish moving orbs (最後結束轉珠) on a 火焰地型 cell, every attacking team member that hits the enemy suffers recoil damage. Solver should constrain the final path endpoint to land on a 火焰地型 cell.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "traffic_light"
+        ],
+        "board_flags": "TileFlagBits.END_REQUIRED",
+        "audit_notes": "Must finish path on Flame Terrain tile (reuses EndRequired tile flag)."
+      }
+    },
+    {
+      "index": 30,
+      "name_zh_tw": "起結有序",
+      "name_zh_cn": "起结有序",
+      "icon_description": "Bright glowing golden-white swirling spiral vortex on a dark square background.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board with two cells framed in white squares: top-left (0,0) has a bright glowing green vortex with yellow 'GO' text over the orb (start position), and bottom-right (4,5) has a glowing red vortex around the Light orb (end position).",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 需以指定位置 (綠色漩渦)\n開始轉珠及在指定位置 (紅色漩渦) 結束轉珠\n• 未有達成上述條件，\n① 全隊攻擊力變為 0\n② 無法進行回復",
+      "category": "path_terrain",
+      "board_cv_cues": "Designated start cell shows a glowing green vortex with a yellow-white 'GO' overlay; designated end cell shows a glowing red swirling vortex.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Fixed start-and-end path constraint (起結有序). Must start dragging at the green vortex ('GO') cell AND end dragging at the red vortex cell; otherwise entire team ATK becomes 0 and recovery is completely disabled. Solver must fix both path start and path end coordinates.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "traffic_light"
+        ],
+        "board_flags": "TileFlagBits.START_ALLOWED + END_REQUIRED",
+        "audit_notes": "Green 'GO' vortex start + Red vortex end; CvBoardRecognizer V3 auto-detects both + solver startMask/endMask."
+      }
+    },
+    {
+      "index": 31,
+      "name_zh_tw": "血浴地型",
+      "name_zh_cn": "血浴地型",
+      "icon_description": "Dark crimson square icon depicting a red-lit hand/claw with a bright red-white star glint.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board with 6 cells framed in white squares at (0,1), (0,5), (2,0), (2,5), (3,4), and (4,5), each covered by a dark blood-red shadowy swirl overlay that heavily darkens the tile.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 於血浴地型位置結束轉珠\n⇒ 無法對敵人造成攻擊傷害",
+      "category": "path_terrain",
+      "board_cv_cues": "Bloodbath terrain cells have a dark crimson/maroon shadowy circular pool overlay that tints and darkens the orb inside.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Forbidden end-position terrain (血浴地型). Ending orb movement on a 血浴地型 position prevents dealing any attack damage to the enemy. Traversing through it is permitted; solver must forbid the path's final cell from being a 血浴地型 cell.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.END_FORBIDDEN",
+        "audit_notes": "NEW: Bloodbath terrain is passable but FORBIDDEN as path endpoint. Added TileFlagBits.END_FORBIDDEN + Board Editor brush + solver/evaluator endForbiddenMask."
+      }
+    },
+    {
+      "index": 32,
+      "name_zh_tw": "黑洞",
+      "name_zh_cn": "黑洞",
+      "icon_description": "Dark square icon depicting a pitch-black eclipse circle surrounded by a glowing white corona ring.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board with 3 cells along the bottom row framed in white rectangles at (4,1), (4,3), and (4,4), showing dark purple-black swirling void/whirlpool rings behind the orbs.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 於黑洞位置最後結束轉珠\n① 全隊傷害減至 0\n② 敵人發動攻擊時\n⇒ 扣除召喚師 100% 生命力",
+      "category": "path_terrain",
+      "board_cv_cues": "Black hole cells display a dark purple-black swirling void ring/whirlpool behind and around the orb.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Lethal forbidden end-position terrain (黑洞). Finishing orb movement on a black hole cell reduces team damage to 0 AND causes the enemy's attack to deduct 100% of summoner HP. Passing through is safe; solver must strictly ban ending the path on any black hole cell.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.BLACK_HOLE",
+        "audit_notes": "FIXED: Official spec proves Black Hole is passable and ONLY lethal if path ENDS on it! Moved BlackHole from impassable wall to endForbiddenMask in solver.cpp & evaluator.cpp."
+      }
+    },
+    {
+      "index": 33,
+      "name_zh_tw": "中毒",
+      "name_zh_cn": "中毒",
+      "icon_description": "White circle with diagonal bar containing glowing bright green poison bubbles on a black background.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene with two enemies (CD 2 and CD 19). Red arrow points to small green poison bubbles under CD 2 on the left enemy; green toxic particles float around the left enemy and player HP bar (108/216).",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每回合召喚師行動後\n⇒ 扣除召喚師生命力",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "None on the 6x5 board; enemy displays small green poison bubble icons under CD and green poison particles appear over enemy/HP bar.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Poison damage-over-time (中毒). After the summoner acts each turn, HP is deducted. Non-board combat mechanic (matching Hearts can help offset HP loss).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Poison DoT after turn."
+      }
+    },
+    {
+      "index": 34,
+      "name_zh_tw": "敵人反擊傷害",
+      "name_zh_cn": "敌人反击伤害",
+      "icon_description": "Metallic shield struck by an orange impact flash with a white angled rebound arrow bouncing off.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene with two enemies (CD 1 and CD 17). Red arrow points to the small counter-shield icon under CD 1; left enemy displays a red target-shield emblem on its body, and '-150' is shown above the HP bar (66/216).",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 當敵人受到攻擊傷害\n⇒ 敵人會根據自身攻擊力進行反擊",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "None on the 6x5 board; enemy displays the small shield-rebound icon beneath CD.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Enemy counterattack (敵人反擊傷害). Whenever the enemy takes attack damage, it counterattacks based on its own ATK stat. Non-board mechanic.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Enemy counterattack on taking damage."
+      }
+    },
+    {
+      "index": 35,
+      "name_zh_tw": "碎裂",
+      "name_zh_cn": "碎裂",
+      "icon_description": "Dark square icon with radial white shattered-glass fracture lines around a central black hole.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board filled with Water orbs in cols 1–4, while col 0 (leftmost) and col 5 (rightmost) are framed in vertical white rectangles and completely covered with black radial shattered-glass cracks over every cell.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 碎裂位置內的符石\n⇒ 無法消除或引爆",
+      "category": "path_terrain",
+      "board_cv_cues": "Shattered cells are covered by dense white-and-black radial shattered glass fracture lines with a dark central hole heavily obscuring the orb inside.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Shattered tile zone (碎裂). Orbs inside shattered cell positions cannot be matched/cleared or exploded (無法消除或引爆). Unlike 暴風, touching does not stop movement, so solver must exclude shattered coordinates from match/clear checks while still allowing movement if needed.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.SHATTERED",
+        "audit_notes": "Passable tile, orbs inside cannot eliminate (verified in simulator.cpp & Test #13)."
+      }
+    },
+    {
+      "index": 36,
+      "name_zh_tw": "暴風",
+      "name_zh_cn": "暴风",
+      "icon_description": "Swirling dark greenish-grey cartoon tornado funnel with white rim glow.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board where cells (1,5) through (4,5) on the rightmost column are covered by a semi-transparent grey swirling tornado column, pointed to by a red arrow.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 暴風位置內的符石不能消除或引爆\n• 暴風位置一經觸碰，即時停止移動符石",
+      "category": "path_terrain",
+      "board_cv_cues": "Storm/tornado cells are obscured by a semi-transparent grey swirling whirlwind/tornado graphic spinning over the tiles.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Storm/tornado hazard (暴風) combines both 碎裂 and 黏腐: orbs inside storm cells cannot be cleared or exploded (不能消除或引爆), AND touching a storm cell immediately stops orb movement (即時停止移動符石). Solver must treat storm positions as both impassable walls and unmatchable cells.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.STORM",
+        "audit_notes": "Impassable AND unmatchable; CvBoardRecognizer auto-detects multi-frame grey tornado veil."
+      }
+    },
+    {
+      "index": 37,
+      "name_zh_tw": "連擊護盾",
+      "name_zh_cn": "连击护盾",
+      "icon_description": "Metallic golden-brown shield bearing bold white/orange text 'HIT!' across the front.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing enemy (CD 3) with the small 'HIT!' shield icon beneath CD and 4 glowing white rings around the number '20' above the enemy's head, pointed to by a red arrow.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 對敵人進行指定次數攻擊後\n⇒ 才能對其造成攻擊傷害",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "None on the 6x5 board; enemy displays the 'HIT!' shield icon under CD and a numeric hit counter (e.g., 20) surrounded by glowing white rings above its sprite.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Hit-count shield (連擊護盾 / HIT! shield, distinct from orb Combo shield). Requires landing a specified number of attack hits (指定次數攻擊) before subsequent attacks deal damage. Primarily a team/hit-count combat mechanic rather than a direct combo-count board constraint.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Attack hit-count shield (HIT!)."
+      }
+    },
+    {
+      "index": 38,
+      "name_zh_tw": "漆黑照明",
+      "name_zh_cn": "漆黑照明",
+      "icon_description": "Dark square icon showing a pitch-black eclipse circle surrounded by a bright white corona ring.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 board almost completely pitch black except for a soft circular spotlight centered on the dragged Fire orb at (1,2), faintly illuminating the surrounding ~3x3 cells.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 移動符石時漆黑一片，\n照亮移動符石時觸碰的符石範圍",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "Board is visible before touch, then turns completely black during dragging (移動符石時) except for a small circular spotlight around the currently held orb.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Darkness-with-spotlight visual obstruction (漆黑照明). Board goes pitch black while moving orbs, lighting only the area around the touched orb. Does not change match rules; pre-touch board capture and automated pre-computed path execution completely bypass this hazard.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Darkness-with-spotlight during drag; pre-drag board capture + auto-swipe completely bypasses visual obstruction."
+      }
+    },
+    {
+      "index": 39,
+      "name_zh_tw": "混沌值",
+      "name_zh_cn": "混沌值",
+      "icon_description": "Horned skeletal demon/dragon skull icon with glowing green eyes.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing enemy (CD 2) and a horned skull icon with yellow '25%' in the left player effect bar, pointed to by a red arrow, plus a matching skull emblem in top-right HUD.",
+          "caption_zh_tw": "我方效果欄會顯示累積混沌值 %\n\n混沌值為可被消除的附加效果"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 當混沌值累積至 100%\n⇒ 回合結束時召喚師會死亡\n• 召喚師死亡後\n⇒ 清空混沌值狀態",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "None on the 6x5 board; left player effect bar displays the horned skull icon with accumulated percentage (e.g., '25%').",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Chaos gauge (混沌值), a removable additional effect shown as % in the player effect bar. Reaching 100% kills the summoner at the end of the turn; only summoner death resets the Chaos status (does not state reset on next Wave).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Chaos % death gauge."
+      }
+    },
+    {
+      "index": 40,
+      "name_zh_tw": "崩壞值",
+      "name_zh_cn": "崩坏值",
+      "icon_description": "Ornate ring/frame covered with glowing magenta-crimson fleshy/floral corruptive growths.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing enemy (CD 2) with creeping pink-crimson corruption tendrils along the bottom edge above the HP bar; left player effect bar shows the crimson-growth icon with yellow '25%' pointed to by a red arrow.",
+          "caption_zh_tw": "我方效果欄會顯示累積崩壞值 %\n\n崩壞值為可被消除的附加效果"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 當崩壞值累積至 100%\n⇒ 回合結束時召喚師會死亡\n• 進入下一層數 (Wave) 或召喚師死亡後\n⇒ 清空崩壞值狀態",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "None on the 6x5 board; left player effect bar shows the crimson-growth icon with accumulated percentage (e.g., '25%') and pink-crimson corruption tendrils line the bottom of the battle view.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Collapse/Corruption gauge (崩壞值), a removable additional effect shown as % in the player effect bar. Reaching 100% kills the summoner at the end of the turn; unlike 混沌值, entering the next Wave (進入下一層數 (Wave)) OR summoner death clears the Collapse status.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Collapse % death gauge (clears on wave change)."
+      }
+    },
+    {
+      "index": 41,
+      "name_zh_tw": "連環光牢",
+      "name_zh_cn": "连环光牢",
+      "icon_description": "Faceted dark purple-gray crystal orb overlaid with a bright glowing white-green six-pointed star burst (laser flash).",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 6x5 board where column 1 (all 5 cells from top to bottom) is covered by a bright vertical white-green glowing laser beam; a red arrow points left-upward from row 4 col 3 toward row 3 col 2 adjacent to the beam.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・被射擊的位置一經觸碰\n⇒ 即時停止移動符石",
+      "category": "path_terrain",
+      "board_cv_cues": "Bright glowing white-green laser beam overlaid across targeted cells/column/row ('shot positions') on the 6x5 board.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Laser-shot terrain hazard: the instant the dragged orb touches any shot/laser-marked position, orb movement stops immediately. Solver must treat shot positions as forbidden cells (or immediate path-termination cells).",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.STICKY_TILE / NO_PASS",
+        "audit_notes": "Laser-shot positions stop movement immediately on touch (maps to StickyTile/NoPass)."
+      }
+    },
+    {
+      "index": 42,
+      "name_zh_tw": "漆黑結聚",
+      "name_zh_cn": "漆黑结聚",
+      "icon_description": "Black square icon depicting a solar eclipse — a pitch-black circle surrounded by a glowing white corona ring.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 6x5 board mid-drag (hand cursor on row 1 col 3 Fire orb, active green timer bar); a large circular pitch-black shadow obscures the touched orb and neighboring cells around rows 2-3 cols 3-4.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・移動符石時觸碰的符石\n及周邊範圍陷入漆黑",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "During orb movement, a pitch-black circular shadow overlay covers the currently touched orb and its surrounding neighborhood; orbs remain normally visible prior to dragging.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Visual obscurity hazard during movement: touching an orb causes it and its surrounding area to turn pitch black while dragging. Does not alter match physics; pre-drag board capture still exposes all orbs for solver planning.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Darkness around held orb during drag; pre-drag capture + auto-swipe completely bypasses it."
+      }
+    },
+    {
+      "index": 43,
+      "name_zh_tw": "腐化",
+      "name_zh_cn": "腐化",
+      "icon_description": "Dark cracked rectangular purple slab surrounded by a glowing violet-purple smoky aura.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing an enemy enveloped in rising dark-purple miasma flames; a red arrow points to a purple-glowing corrupted skill badge under 'CD 3' above the enemy.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・可使用「腐化龍刻武裝」或\n無視「腐化」技能無視該腐化敵技",
+      "category": "team_skill_other",
+      "board_cv_cues": "Enemy sprite shrouded in dark purple flame aura with a glowing purple-framed skill icon under CD; no direct board or orb overlay from this tag itself.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Corrupted enemy-skill meta-modifier: can be bypassed using Corrupted Dragonware (腐化龍刻武裝) or active/team skills that specifically ignore Corruption (無視「腐化」).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Corrupted skill meta-tag bypassed by Corrupted Dragonware."
+      }
+    },
+    {
+      "index": 44,
+      "name_zh_tw": "結界地型",
+      "name_zh_cn": "结界地型",
+      "icon_description": "Luminous neon-green 5x5 square grid mesh with glowing green edges on a dark background.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 6x5 board completely overlaid by a translucent glowing green grid/barrier mesh framing all 30 cells.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・結界地型內只能首批消除符石\n・地型內的符石不能轉化或引爆",
+      "category": "path_terrain",
+      "board_cv_cues": "Translucent glowing green grid/mesh overlay with bright green outer boundary covering affected cells (part or all of the 6x5 board).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Barrier Terrain: (1) inside the barrier terrain, orbs can ONLY be eliminated in Wave-1 (首批消除; subsequent cascade/skyfall matches inside the terrain do not eliminate), and (2) orbs inside the terrain cannot be converted or detonated/exploded by skills. Directly changes board cascade simulation inside affected cells.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.BARRIER_FIRST_WAVE_ONLY",
+        "audit_notes": "Inside barrier terrain only Wave-1 eliminates (verified in simulator.cpp & Test #23)."
+      }
+    },
+    {
+      "index": 45,
+      "name_zh_tw": "減傷狀態",
+      "name_zh_cn": "减伤状态",
+      "icon_description": "Metallic bronze-and-silver shield with two small green upward chevrons at the bottom-right.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing enemy '肖恩' with a white box pointed to by a red arrow under 'CD 3' displaying a slashed-sword icon and duration '5'; open enemy detail popup reads '防禦力: 2,147,484,000', '【減傷狀態】', '・5 回合內', '⇒ 敵人減少 99% 所受傷害' (boxed in white).",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・敵人減少指定 % 所受傷害",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Slashed-sword status icon with turn counter above enemy; no board/orb visual cues.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Enemy reduces incoming damage taken by a specified percentage (e.g., 99% damage reduction for 5 turns). Pure combat defense buff.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Enemy % damage reduction buff."
+      }
+    },
+    {
+      "index": 46,
+      "name_zh_tw": "符石連擊零化",
+      "name_zh_cn": "符石连击零化",
+      "icon_description": "Glowing magenta-pink circular crest with intricate white symmetrical floral filigree.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene with a white square framing the enemy and a 5-slot orbital ring around the enemy under 'CD 3'; the top-left slot glows with a blue Water orb icon (indicating Water is the forbidden orb type) while the other 4 slots are darkened.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "wrong",
+          "visual_summary": "Full 6x5 board where 3 horizontally aligned Water orbs in row 3 cols 1-3 are boxed in red, showing that Wave-1 elimination of the specified orb type triggers the penalty.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・首批消除指定種類符石\n① 全隊攻擊力變 0\n② 敵人根據消除指定種類符石的組數\n⇒ 額外追打相應次數攻擊",
+      "category": "element_color",
+      "board_cv_cues": "Orbital halo around enemy highlights the forbidden orb type icon(s) (e.g., Water orb lit); no special overlay on board orbs.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Wave-1 forbidden-orb nullification shield: if the specified orb type(s) are eliminated in Wave-1 (首批消除), (1) whole team ATK becomes 0, and (2) the enemy launches extra follow-up attacks equal to the number of groups of that specified orb type eliminated. Solver must avoid Wave-1 matches of forbidden orb type(s).",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "anti_first_wave"
+        ],
+        "board_flags": "",
+        "audit_notes": "Wave-1 forbidden orb nullifies team ATK & counterattacks (MatchTiming.ForbidFirstWaveAllowCascade)."
+      }
+    },
+    {
+      "index": 47,
+      "name_zh_tw": "反饋",
+      "name_zh_cn": "反馈",
+      "icon_description": "White heart centered inside a spiky golden-orange flame/explosion burst with a black outline.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing enemy with the flame-heart icon under 'CD 2' taking '1' damage hits while golden recoil beams strike both team member portraits (pointed to by two red arrows), inflicting '-2915' damage and dropping player HP to '0/216'.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・對每個發動攻擊及擊中敵人的成員造成傷害",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Heart-in-orange-burst enemy skill icon under CD; no board/orb visual cues.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Deals recoil/feedback damage to the player for each team member that attacks and hits the enemy. Combat damage/recoil mechanic.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Per-attacker recoil damage."
+      }
+    },
+    {
+      "index": 48,
+      "name_zh_tw": "幽閉空間",
+      "name_zh_cn": "幽闭空间",
+      "icon_description": "Monochrome grayscale metallic-silver heart with a dark outline.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 6x5 board where all 30 orbs (columns of Water, Fire, Wood, Light, Dark, Heart) are desaturated into black-and-white grayscale while preserving each orb's silhouette and inner symbol.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・所有符石變為黑白色",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "All 30 orbs on the board are completely desaturated (black-and-white grayscale). CV must classify orb attributes by shape/emblem texture rather than hue/color.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Converts all orbs visually into black-and-white (grayscale). Does not alter matching rules, but acts as a major CV hazard requiring grayscale/shape-based orb classification.",
+      "autodora_mapping": {
+        "coverage_status": "CV_PARTIAL",
+        "wave_shield_chips": [],
+        "board_flags": "HazardBits.BLACK_WHITE",
+        "audit_notes": "All orbs monochrome grayscale; shape/template CV or Board Editor handles it (documented for future TFLite grayscale head)."
+      }
+    },
+    {
+      "index": 49,
+      "name_zh_tw": "移形換影",
+      "name_zh_cn": "移形换影",
+      "icon_description": "Multi-colored faceted prism/kaleidoscope orb (red, blue, green, yellow, purple, pink segments) with a dark outline.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle and full 6x5 board view (rows 1-4 in top box, rows 4-5 in bottom box) showing the multicolor orb icon under 'CD 3' above the enemy and all 30 board cells visually displayed as green Wood orbs to illustrate Water orbs disguised as Wood orbs.",
+          "caption_zh_tw": "水符石偽裝成木符石，\n因此場上實際包含水及木符石"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 無法看透符石的本質\n• 指定種類符石幻化成另一種類符石",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "Orbs of one attribute are visually rendered using another attribute's sprite (e.g., Water orbs looking identically like Wood orbs); signaled by the rainbow prism orb icon under enemy CD.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Visual orb disguise: orbs of specified attribute(s) appear visually disguised as another attribute (example shown: Water orbs disguised as Wood orbs) while retaining their true underlying attribute for matching. Severe CV hazard. (Note: bottom bulleted rule text was scrolled below the captured region in skill_049.png.)",
+      "autodora_mapping": {
+        "coverage_status": "CV_PARTIAL",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Visual orb disguise (e.g. Water looks like Wood); requires player/Board Editor correction."
+      }
+    },
+    {
+      "index": 50,
+      "name_zh_tw": "能力點代價",
+      "name_zh_cn": "能力点代价",
+      "icon_description": "Glowing fiery orange-yellow silhouette of a flexing muscular torso emitting flames inside a dark rounded square frame.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene with a red arrow pointing to the scene-enemy-skill bar on the left above the team portrait bar, showing the flaming flexing-figure icon with remaining points '500'.",
+          "caption_zh_tw": "場景敵技欄會顯示尚餘能力點\n\n能力點不可被消除"
+        }
+      ],
+      "full_rule_text_zh_tw": "・每次發動主動技能\n⇒ 扣除相對應的能力點\n・當能力點扣至 0\n⇒ 無法發動主動技能",
+      "category": "team_skill_other",
+      "board_cv_cues": "Scene skill indicator above the left team portrait showing the flaming-body icon and remaining Ability Points counter (e.g., 500); no board/orb visual cues.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Scene skill budget for active skills: displays remaining Ability Points (cannot be dispelled). Each active skill activation deducts corresponding Ability Points; once depleted to 0, active skills cannot be used.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Ability-point active skill budget."
+      }
+    },
+    {
+      "index": 51,
+      "name_zh_tw": "技能重置",
+      "name_zh_cn": "技能重置",
+      "icon_description": "Dark gray square icon containing a red circular refresh/reset arrow with cyan-blue 'ACT' text underneath.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene overlaid with two stacked skill detail cards for '莫莉' ('ACT 1 符石解放・水'); a large red downward arrow points from the top card showing 'CD 0/14' (white-boxed) to the bottom card showing 'CD 14/14' (white-boxed).",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・將指定成員技能 CD、EP\n及累積戰鬥回合數重置",
+      "category": "team_skill_other",
+      "board_cv_cues": "No board/orb visual cues; resets active skill CD, EP, and accumulated battle turn counters on team member cards.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Resets specified team member(s)' skill CD, EP, and accumulated battle turn count back to initial/reset state.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Resets member skill CD/EP/turns."
+      }
+    },
+    {
+      "index": 52,
+      "name_zh_tw": "一步一傷",
+      "name_zh_cn": "一步一伤",
+      "icon_description": "Four white metallic thorns/spikes radiating rightward with black outlines.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle and top 2 board rows mid-drag; a red arrow points to the four-spikes icon under 'CD 1' above the enemy, while a hand cursor holds a Light orb above row 1 col 2 and '-34' red damage flashes above the HP bar (HP 172/216).",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・每移動 1 步\n⇒ 扣除召喚師生命力",
+      "category": "path_terrain",
+      "board_cv_cues": "Four-white-spikes icon under enemy CD; no per-cell board overlay.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Step-damage penalty: deducts Summoner HP for every 1 movement step taken during orb dragging. Directly constrains solver path length (minimize steps / enforce max_steps survival budget).",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "step_hurt_minimize"
+        ],
+        "board_flags": "",
+        "audit_notes": "Per-step HP deduction; stepPenaltyWeight = 5.0 minimizes path length."
+      }
+    },
+    {
+      "index": 53,
+      "name_zh_tw": "縮時地型",
+      "name_zh_cn": "缩时地型",
+      "icon_description": "Glowing magenta-pink fractured crystal/diamond overlaid with a downward arrow.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 6x5 board with 6 cells (row 2 col 2, row 2 col 5, row 4 col 2, row 4 col 5, row 5 col 1, row 5 col 6) framed in white boxes and overlaid by translucent purple-pink downward-arrow crystal marks.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・每次觸碰縮時地型\n⇒ 減少移動符石時間",
+      "category": "path_terrain",
+      "board_cv_cues": "Translucent pinkish-purple downward-arrow crystal icon overlaid directly onto affected board cells.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Time-reduction terrain: each time the player's path touches a marked cell, remaining orb-movement time is reduced. Solver should avoid or penalize stepping on marked cells.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "HazardBits.WITHERED_VINE",
+        "audit_notes": "Touch reduces orb-move time (penalized per touch via witheredVineHits)."
+      }
+    },
+    {
+      "index": 54,
+      "name_zh_tw": "角色符石地型盾",
+      "name_zh_cn": "角色符石地型盾",
+      "icon_description": "Fiery orange-red framed square icon containing a black silhouette of an angry spiky-haired character with glowing white eyes and mouth.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 6x5 board where two cells (row 1 col 1 Water orb and row 1 col 6 Fire orb) are highlighted with glowing yellow square terrain frames, pointed to by two red arrows.",
+          "caption_zh_tw": "指定地型會以黃色框示意"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Full 6x5 board mid-drag (hand cursor pulling down from the leader portrait to spawn a Character Runestone / 角色符石), placing the leader's character orb inside the yellow-framed cell at row 1 col 1 (row 1 col 6 also has a yellow frame).",
+          "caption_zh_tw": "發動角色符石，\n並將角色符石放置於指定地型"
+        }
+      ],
+      "full_rule_text_zh_tw": "・「移動符石時間完結一刻」\n角色符石需置於指定地型內，\n該角色才能對敵人造成攻擊傷害，\n其他成員攻擊力變 0",
+      "category": "path_terrain",
+      "board_cv_cues": "Designated target terrain cells are outlined by glowing yellow square cell borders on the 6x5 board; active Character Runestones display a character portrait inside the orb.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Character Runestone Terrain Shield: at the exact moment orb movement ends ('移動符石時間完結一刻'), a Character Runestone (角色符石) must rest inside a designated yellow-framed terrain cell for that character to deal damage; all other members' ATK becomes 0. Directly constrains starting/ending orb placement.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "char_orb_terrain"
+        ],
+        "board_flags": "TileFlagBits.CHAR_ORB_END",
+        "audit_notes": "Character Runestone must end inside yellow-framed terrain tile (requireCharOrbEnd + charOrbEndMask)."
+      }
+    },
+    {
+      "index": 55,
+      "name_zh_tw": "亡命爆擊",
+      "name_zh_cn": "亡命爆击",
+      "icon_description": "Brown wooden gunpowder barrel with iron hoops and a red flame emblem on the front.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing a defeated enemy dispersing in blue smoke; a red arrow points to the flaming-barrel icon beside '142' under 'CD 3', while '-6' red damage strikes the player (HP 194/216).",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・敵人死亡後會對召喚師\n⇒ 造成指定傷害",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Flaming wooden barrel icon (with value indicator) under enemy CD; no board/orb visual cues.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Death-rattle self-destruct: upon dying, the enemy deals a specified amount of damage to the Summoner.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Death-rattle self-destruct damage."
+      }
+    },
+    {
+      "index": 56,
+      "name_zh_tw": "隱身",
+      "name_zh_cn": "隐身",
+      "icon_description": "Green grassy bush silhouette backed by dark shadow with a gleaming white-red four-pointed flash above.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene where the enemy sprite appears semi-transparent and desaturated/grayish, with a stealth shield icon displayed under 'CD 3'.",
+          "caption_zh_tw": "隱身效果期間，\n敵人顯示為半透明，\n並有隱身圖示"
+        },
+        {
+          "slide": 2,
+          "verdict": "info",
+          "visual_summary": "Battle scene after stealth breaks: enemy sprite is fully opaque and colored under 'CD 1' with the stealth icon gone, and player HP has dropped to 116/216 after the enemy's first attack.",
+          "caption_zh_tw": "敵人會發動第 1 次攻擊、\n受到傷害或消耗後，\n隱身圖示消除，\n才能對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "・敵人會隱身\n⇒ 直至發動第 1 次攻擊、\n受到傷害或消耗\n・隱身期間敵人\n不受任何攻擊傷害\n及不會被附上狀態",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Enemy sprite appears semi-transparent with a stealth status icon under CD; no board/orb visual cues.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Enemy remains in Stealth until it launches its 1st attack or takes skill damage/HP drain. While stealthed, the enemy takes zero attack damage and cannot be inflicted with any status effects.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Enemy stealth until 1st attack or skill damage."
+      }
+    },
+    {
+      "index": 57,
+      "name_zh_tw": "首消相同種類盾",
+      "name_zh_cn": "首消相同种类盾",
+      "icon_description": "Cluster of three differently colored orb emblems (Blue Water, Red Fire, Green Wood) crossed out by a bold white 'X' with black outline.",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Battle and top 4 rows of 6x5 board; enemy has 5 glowing white runic combo orbs floating around it and the 3-color-X icon under 'CD 3'. Wave-1 matches outlined in green show ① 3 Water (row 1 cols 1-3), ② 3 Water (row 2 cols 4-6), ③ 3 Water (row 3 cols 1-3), ④ 3 Water (row 4 cols 4-6) [continuing to 5 total same-element groups].",
+          "caption_zh_tw": "圖中顯示需達成首消 5 組符石條件，\n需首批消除 5 組相同種類的符石，\n才會對敵人造成傷害"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Battle and top 4 rows of 6x5 board with the same 5-orb enemy; Wave-1 matches outlined in green show ① 3 Water (row 1 cols 1-3), ② 3 Heart (row 2 cols 4-6), ③ 3 Heart (row 3 cols 1-3), ④ 3 Water (row 4 cols 4-6), showing Heart orb groups acting as universal wildcards compatible with Water.",
+          "caption_zh_tw": "心符石通用：\n每組心符石可視作\n任何一種屬性符石以達成條件"
+        },
+        {
+          "slide": 3,
+          "verdict": "wrong",
+          "visual_summary": "Battle and full 6x5 board (rows 1-4 in top box, rows 3-5 in bottom gold box); Wave-1 matches outlined in white show ① 3 Water, ② 3 Heart, ③ 3 Heart, ④ 3 Water, ⑤ 3 Water (row 5 cols 1-3), plus an offending ⑥ 3 Fire (row 5 cols 4-6) outlined in red — violating the exact 5-group same-kind Wave-1 shield.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 達成首消「指定連擊」條件\n⇒ 才會對敵人造成傷害\n■ 需重複首消相同種類\n■ 心符石通用",
+      "category": "combo",
+      "board_cv_cues": "Halo of N glowing white combo orbs around enemy (e.g., 5 orbs = exact 5 Wave-1 combos) plus the 3-color-orb-X icon under CD; no board cell overlays.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Wave-1 Exact Same-Kind Combo Shield (首消相同種類盾): Must achieve the exact specified Wave-1 combo count (5 shown by floating white orbs) using ONLY groups of a single attribute type; Heart orb groups act as wildcards (slide 2 passes with Water + Heart groups). Matching a second element or extra combo (slide 3: 6th group of Fire outlined in red) fails. (Note: bottom caption and rule text were scrolled below the captured region in skill_057.png.)",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "wave1_same_kind"
+        ],
+        "board_flags": "",
+        "audit_notes": "NEW: Wave-1 exact N combos of a single attribute with Heart-orb universal wildcards (心符石通用)! Added RuleConfig.wave1KindMode = SameKindHeartWild + chip + UI + tests."
+      }
+    },
+    {
+      "index": 58,
+      "name_zh_tw": "首消不同種類盾",
+      "name_zh_cn": "首消不同种类盾",
+      "icon_description": "Two overlapping Blue Water orb emblems crossed out by a bold white 'X' with black outline.",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Battle and top 4 rows of 6x5 board; enemy has 5 glowing white runic combo orbs floating around it and the double-blue-X icon under 'CD 3'. Wave-1 matches outlined in green in cols 1-3 show ① 3 Water (row 1), ② 3 Wood (row 2), ③ 3 Fire (row 3), ④ 3 Light (row 4) [and ⑤ 3 Dark in row 5], i.e. 5 groups of all distinct elements.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Battle and full 6x5 board (rows 1-4 in top box, rows 3-5 in bottom-right gold box); Wave-1 matches outlined in green in cols 1-3 show ① 3 Water (row 1), ② 3 Heart (row 2), ③ 3 Wood (row 3), ④ 3 Heart (row 4), ⑤ 3 Dark (row 5), passing with two separate Heart groups because each Heart group can represent any attribute.",
+          "caption_zh_tw": "心符石通用：\n每組心符石可視作\n任何一種屬性符石以達成條件"
+        },
+        {
+          "slide": 3,
+          "verdict": "wrong",
+          "visual_summary": "Battle and full 6x5 board (rows 1-4 in top box, rows 3-5 in bottom-left and bottom-middle gold boxes); Wave-1 matches outlined in white in cols 1-3 show ① 3 Water, ② 3 Fire, ③ 3 Wood, ④ 3 Light, ⑤ 3 Dark, plus a 6th match ⑥ 3 Light (row 3 cols 4-6) outlined in red — failing due to both exceeding 5 groups and repeating Light.",
+          "caption_zh_tw": "首批消除多於或少於 5 組不同種類的符石，\n或首批消除多於一組相同屬性符石，\n將無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "・達成首消「指定連擊」條件\n⇒ 才會對敵人造成傷害\n■ 需重複首消不同種類\n■ 心符石通用",
+      "category": "combo",
+      "board_cv_cues": "Halo of N glowing white combo orbs around enemy (e.g., 5 orbs = exact 5 Wave-1 combos) plus the double-blue-orb-X icon under CD; no board cell overlays.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Wave-1 Exact Different-Kind Combo Shield (首消不同種類盾): Must eliminate EXACTLY N Wave-1 groups (neither more nor fewer; 5 in example) with at most 1 group per attribute element (matching >1 group of the same attribute fails). Heart groups are universal wildcards (心符石通用): EACH Heart group may independently substitute for any attribute, so multiple Heart groups are valid (as shown in slide 2).",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "wave1_distinct_kind"
+        ],
+        "board_flags": "",
+        "audit_notes": "NEW: Wave-1 exact N combos of distinct attributes (<=1 per non-Heart element) with Heart-orb universal wildcards (心符石通用)! Added RuleConfig.wave1KindMode = DistinctKindHeartWild + chip + UI + tests."
+      }
+    },
+    {
+      "index": 59,
+      "name_zh_tw": "煉獄之火",
+      "name_zh_cn": "炼狱之火",
+      "icon_description": "Bright glowing cyan-blue flame with dark outline and small blue sparks.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 6x5 board where column 2 (all 5 cells, framed in a white rectangle) is engulfed in bright glowing blue-white-magenta flames.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "・煉獄之火一經觸碰\n⇒ 召喚師會死亡",
+      "category": "path_terrain",
+      "board_cv_cues": "Affected board cells/column burn with bright glowing blue-purple/white-hot flames (visually distinct from standard orange burning terrain).",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Instant-death fire terrain (Purgatory Fire): touching any Purgatory Fire cell immediately kills the Summoner. Solver must treat affected cells as strictly impassable hard walls.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [],
+        "board_flags": "HazardBits.PURGATORY_FIRE",
+        "audit_notes": "Instant-death blue-flame terrain; strictly impassable hard wall (verified in Test #22)."
+      }
+    },
+    {
+      "index": 60,
+      "name_zh_tw": "步數盾",
+      "name_zh_cn": "步数盾",
+      "icon_description": "Single brown leather boot facing right with a dark outline.",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle scene showing enemy '肖恩' inside a glowing circular rune ring with the boot icon under 'CD 1'; open enemy detail popup reads '防禦力: 20', '【25-30 步數盾】', '・於 25-30 步數結束轉珠', '⇒ 才會對敵人造成傷害' (boxed in white).",
+          "caption_zh_tw": "需於指定步數範圍內結束轉珠"
+        },
+        {
+          "slide": 2,
+          "verdict": "correct",
+          "visual_summary": "Battle and top 2 board rows mid-drag (hand cursor dragging a Heart orb); a red arrow points to the enemy's rune ring displaying the moved step count '26' in white text (within the 25-30 target range).",
+          "caption_zh_tw": "移動符石時，\n敵人身上會顯示已移動的步數，\n數字為白色時代表達成條件，\n可對敵人造成傷害"
+        },
+        {
+          "slide": 3,
+          "verdict": "wrong",
+          "visual_summary": "Battle and top 2 board rows mid-drag; a red arrow points to the enemy's rune ring displaying the moved step count '12' in red text (outside the 25-30 target range).",
+          "caption_zh_tw": "數字為紅色時代表未能達成條件，\n無法對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "・於指定步數內結束轉珠\n⇒ 才會對敵人造成傷害",
+      "category": "path_terrain",
+      "board_cv_cues": "Boot icon under enemy CD and a magic circle on the enemy showing live step count while dragging (white = range satisfied, red = out of range); no board cell overlays.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Step-Count Shield: must finish orb movement within a specified inclusive step-count range (e.g., 25–30 steps) to deal damage to the enemy. Directly imposes min_steps and max_steps bounds on the solver's path length.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "step_range",
+          "exact_steps"
+        ],
+        "board_flags": "",
+        "audit_notes": "NEW: Official Slide 1 shows inclusive range [25-30 steps]! Added RuleConfig.minSteps + step_range chip + solver/evaluator range support."
+      }
+    },
+    {
+      "index": 61,
+      "name_zh_tw": "步數限制",
+      "name_zh_cn": "步数限制",
+      "icon_description": "A brown leather boot facing right on a dark background.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 5x6 orb board mid-drag; the held Heart orb at row 2 col 3 displays a white remaining-step number '23' overlaid on a small boot silhouette, while its origin cell at row 3 col 3 shows a dimmed Heart orb.",
+          "caption_zh_tw": "移動符石時會顯示尚餘可移動的步數，數字為 0 時將即時停止移動符石"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每回合只能移動指定步數，步數用盡時將停止移動符石",
+      "category": "path_terrain",
+      "board_cv_cues": "During orb dragging, a numeric remaining-step counter overlaid with a small boot icon appears directly on the held orb; a brown boot icon also indicates the skill on the enemy/HUD.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Caps orb movement to a fixed maximum number of steps per turn; when the remaining step count reaches 0, orb movement immediately terminates. Directly constrains the solver's maximum path length (max_steps).",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "step_limit"
+        ],
+        "board_flags": "",
+        "audit_notes": "Hard max steps per turn (maxSteps)."
+      }
+    },
+    {
+      "index": 62,
+      "name_zh_tw": "回復顛倒",
+      "name_zh_cn": "回复颠倒",
+      "icon_description": "Two white curved arrows forming a circular reversal loop around a white plus (+) symbol with pink and blue glow.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a red arrow pointing to the circular-arrow-plus status icon under 'CD 1' above the enemy; on the board below, a white rectangle highlights 3 matched pink Heart orbs in the top row.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 透過「消除心符石或兼具心符石效果」的回復效果無效。\n• 消除心符石或「兼具心符石效果的符石」\n⇒ 扣除召喚師相應效果的生命力 (此效果不計算回復加成)",
+      "category": "element_color",
+      "board_cv_cues": "Enemy status bar shows the circular-arrows-with-plus icon under CD; no special overlay on Heart orbs on the board.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Nullifies healing from eliminating Heart orbs or orbs possessing Heart-orb effects, and converts that recovery into HP damage to the summoner (ignoring recovery multipliers). Solver should avoid eliminating Heart orbs (and any orbs carrying Heart effect).",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "forbid_all_heart"
+        ],
+        "board_flags": "",
+        "audit_notes": "Recovery reversal turns Heart clears into damage -> forbid_all (Heart)."
+      }
+    },
+    {
+      "index": 63,
+      "name_zh_tw": "終結倒數",
+      "name_zh_cn": "终结倒数",
+      "icon_description": "A pale skull with glowing red eyes on a dark background.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a red arrow pointing to the enemy status bar below 'CD 3', showing a scythe/death icon with '100%' and a red remaining-turns counter '4'.",
+          "caption_zh_tw": "敵方效果欄會顯示尚餘的倒數回合"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 敵人倒數指定回合後\n⇒ 消耗召喚師 100% 生命力",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Enemy status bar displays a countdown death/scythe icon labeled '100%' with a red integer showing remaining turns; no board-level orb visual change.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Enemy counts down a specified number of turns (displayed in the enemy status bar); once the countdown finishes, it drains 100% of the summoner's HP.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Lethal turn countdown."
+      }
+    },
+    {
+      "index": 64,
+      "name_zh_tw": "凝護",
+      "name_zh_cn": "凝护",
+      "icon_description": "A curved white scythe blade above golden '50%' text inside a dark square.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a red arrow pointing to a pink Heart-shield icon and a '10%' scythe icon below 'CD 3' above the enemy, plus an open enemy detail popup for '【靈之凝護】' highlighting with a white box: '• 每消除 1 粒心符石 ⇒ 可扣除敵人 10% 生命力' and '• 除此之外，敵人不會受到任何傷害'.",
+          "caption_zh_tw": "靈之凝護：消除心符石可扣除敵人生命力"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 達成指定條件，可扣除敵人生命力\n• 除此之外，敵人不會受到任何傷害",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Enemy status bar shows a shield-type badge paired with a scythe-percentage icon (e.g., pink Heart shield + '10%' scythe); no board orb markers.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Enemy takes zero damage from all normal attacks and effects except by fulfilling a specified condition to deduct a percentage of enemy HP (e.g., 靈之凝護 deducts 10% enemy HP per Heart orb eliminated). Solver goal shifts to maximizing the specific condition's board metric (such as Heart orb count) rather than normal attack damage.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "maximize_element_orbs",
+          "elem_burst_shield"
+        ],
+        "board_flags": "",
+        "audit_notes": "Condition-only HP drain (e.g. Heart orb clears) -> maximize target orb count."
+      }
+    },
+    {
+      "index": 65,
+      "name_zh_tw": "囚錮生命力上限",
+      "name_zh_cn": "囚锢生命力上限",
+      "icon_description": "A glowing pink-red heart inside a dark red-bordered square frame.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a red arrow pointing to a heart-with-'50%' icon under 'CD 1' above the enemy; the summoner's HP bar at the bottom has its right half sealed/greyed out labeled '50%' with current HP capped at '108/216'.",
+          "caption_zh_tw": "回復生命力時，無法回復被囚錮的生命力"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 囚錮召喚師指定 % 總生命力\n• 最多囚錮至 1 點",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Enemy status bar shows a heart + percentage icon, and the right portion of the summoner's HP bar is visibly greyed/locked off with a percentage label; no orb board change.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Seals/locks a specified percentage of the summoner's total HP (down to a minimum of 1 usable HP); healing cannot recover HP past the locked portion.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Max HP lock/seal."
+      }
+    },
+    {
+      "index": 66,
+      "name_zh_tw": "只能消除首批符石",
+      "name_zh_cn": "只能消除首批符石",
+      "icon_description": "A bright red 'X' overlaid on white vertical falling-orb/arrow streaks inside a dark metal-bordered square.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 5x6 board showing rows 1-2 (2 Water, 2 Fire, 2 Earth) outlined in red, row 3 (6 Heart orbs) outlined in green, and rows 4-5 (2 Water, 2 Fire, 2 Earth) outlined in red, illustrating that after Wave-1 Heart orbs clear, the Water/Fire/Earth orbs dropping into contact cannot match.",
+          "caption_zh_tw": "首批消除心符石後，掉落的水、火及木符石不能消除"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 移動符石後，掉落的符石不能消除",
+      "category": "combo",
+      "board_cv_cues": "Enemy/stage status bar displays the red-X-over-falling-streaks icon; orbs on the 5x6 board have no special overlay.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Completely disables cascades and skyfall matches: after moving orbs, only Wave-1 ('首批') matches are cleared and any orbs that drop afterward cannot eliminate. Solver must evaluate Wave-1 matches only (disable cascade simulation).",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "no_cascade (first_wave_only)"
+        ],
+        "board_flags": "",
+        "audit_notes": "NEW: Official spec disables ALL cascades after Wave-1! Added RuleConfig.disableCascades in simulator.cpp + no_cascade wave chip."
+      }
+    },
+    {
+      "index": 67,
+      "name_zh_tw": "累積符石盾",
+      "name_zh_cn": "累积符石盾",
+      "icon_description": "A hollow eight-pointed star outline in pale gold/beige.",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen showing enemy surrounded by a glowing purple circular barrier displaying '30' (with a purple Dark-star shield icon under 'CD 1'); on the board below, 21 Dark orbs across rows 1-4 are outlined in white.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "info",
+          "visual_summary": "Battle screen mid-attack with a red arrow pointing to the glowing purple barrier's counter reduced to '3', while hits deal only '1' damage (blue '1' numbers) over a dimmed board.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 3,
+          "verdict": "info",
+          "visual_summary": "Battle screen with the enemy circled in white showing the purple circular barrier completely broken and gone under 'CD 1', allowing normal damage.",
+          "caption_zh_tw": "達成指定消除條件後，可破解累積符石盾，並能對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 於同 1 回合內消除指定粒數的指定種類符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1\n• 累積消除指定粒數的指定種類符石\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "orb_count",
+      "board_cv_cues": "Enemy is enclosed in a glowing elemental circular barrier displaying the remaining required orb count in the center, paired with an elemental eight-pointed star icon under CD; no special marks on board orbs.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Two variants: requires eliminating a specified number of a specified orb type either within a single turn ('於同 1 回合內') or cumulatively across turns ('累積消除') to break the shield and deal damage; otherwise damage taken by the enemy becomes 1. Solver should target or maximize total eliminated count of the required orb color.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "elem_burst_shield",
+          "maximize_element_orbs"
+        ],
+        "board_flags": "",
+        "audit_notes": "Single-turn or cumulative N-orb color shield."
+      }
+    },
+    {
+      "index": 68,
+      "name_zh_tw": "陰之氣",
+      "name_zh_cn": "阴之气",
+      "icon_description": "A glowing purple crescent moon surrounded by a spiky black aura and small purple sparkles.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 5x6 board with column 2 (five Water orbs) outlined in green; each of those five Water orbs has a small white-rimmed golden circular emblem at its top-right corner, while both leader portraits display red '禁' seal icons.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "info",
+          "visual_summary": "Open enemy detail popup for '莫莉' displaying '【陰之氣 - 拘束】' with purple crescent icon and text: '• 進場時，敵人會擁有 20 層陰之氣', '• 陰之氣為 0 時 ⇒ 回合結束時，陰之氣消失', '• 陰之氣 ≥0 ⇒ 拘束所有成員：不能發動龍刻脈動、主動技能及龍刻技能'.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 陰之氣為 0 時\n⇒ 回合結束時，陰之氣消失\n• 陰之氣 ≥0\n⇒ 拘束所有成員：不能發動龍刻脈動、主動技能及龍刻技能",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "Enemy status bar shows a purple crescent-aura icon with stack count, team portraits show red bind/seal overlays, and specific board orbs carry a small white-rimmed golden circular mark at their top-right corner.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "While enemy has Yin Qi (active at ≥0 stacks; disappears at turn end when stacks reach 0), all team members are bound and cannot activate Dragonware Pulse, Active Skills, or Dragonware Skills. Board displays marked orbs (golden circular corner mark in Slide 1) used to interact with / deplete layers, which CV can detect for solver prioritization.",
+      "autodora_mapping": {
+        "coverage_status": "CV_PARTIAL",
+        "wave_shield_chips": [],
+        "board_flags": "HazardBits.PRIORITY",
+        "audit_notes": "Yin Qi stack aura with top-right golden circular orb marks; prioritize marked orbs via Priority brush."
+      }
+    },
+    {
+      "index": 69,
+      "name_zh_tw": "陽之氣",
+      "name_zh_cn": "阳之气",
+      "icon_description": "A glowing golden-yellow sun with triangular rays and a dark crescent shadow on its right edge.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 5x6 board with column 3 (five Water orbs) outlined in green; each of those five Water orbs has a small white-rimmed circular badge showing a sword with a red prohibition slash at its top-right corner.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "info",
+          "visual_summary": "Open enemy detail popup for '莫莉' displaying '【陽之氣】' with golden sun icon and text: '• 進場時，敵人會擁有 5 層陽之氣', '• 陽之氣為 0 時 ⇒ 回合結束時，陽之氣消失', '• 陽之氣 ≥0 ① 無法對敵人造成傷害、消耗 ② 敵人回復相等於該傷害、消耗的血量 ③ 敵人不會被附上狀態'.",
+          "caption_zh_tw": ""
+        }
+      ],
+      "full_rule_text_zh_tw": "• 陽之氣為 0 時\n⇒ 回合結束時，陽之氣消失\n• 陽之氣 ≥0\n① 無法對敵人造成傷害、消耗\n② 敵人回復相等於該傷害、消耗的血量\n③ 敵人不會被附上狀態",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "Enemy status bar shows a golden sun-aura icon with stack count; specific board orbs display a small white-rimmed circular slashed-sword badge at their top-right corner.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "While enemy has Yang Qi (active at ≥0 stacks; disappears at turn end when stacks reach 0): (1) cannot deal damage or HP drain to the enemy; (2) enemy heals by an amount equal to that damage/drain; (3) enemy is immune to status ailments. Slide 1 highlights orbs bearing the slashed-sword corner mark on the board, which CV can detect so the solver prioritizes clearing marked orbs to deplete stacks.",
+      "autodora_mapping": {
+        "coverage_status": "CV_PARTIAL",
+        "wave_shield_chips": [],
+        "board_flags": "HazardBits.PRIORITY",
+        "audit_notes": "Yang Qi stack aura with top-right slashed-sword orb marks; prioritize marked orbs via Priority brush."
+      }
+    },
+    {
+      "index": 70,
+      "name_zh_tw": "鏽化值",
+      "name_zh_cn": "锈化值",
+      "icon_description": "Two crossed pale swords glowing with a fiery orange-red rust aura inside a dark square.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen (lower half obscured/black in capture frame) with a red arrow pointing to the top-right HUD button under the settings gear displaying the crossed-swords Rust icon.",
+          "caption_zh_tw": ""
+        },
+        {
+          "slide": 2,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a red arrow pointing to the Rust gauge indicator above the left leader portrait displaying the crossed-swords icon and '25%'.",
+          "caption_zh_tw": "每次發動主動技能後，累積指定 % 鏽化值"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 當鏽化值累積至 100%\n⇒ 全隊攻擊力變 0\n• 召喚師死亡後\n⇒ 清空鏽化值狀態\n• 消除附加效果不能消除鏽化值",
+      "category": "team_skill_other",
+      "board_cv_cues": "HUD displays a crossed-swords Rust icon under the top-right settings gear and a percentage readout (e.g., '25%') above the left leader portrait; no orb board visual changes.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Activating active skills accumulates a specified percentage of Rust Value; upon reaching 100%, the entire team's ATK becomes 0. Cannot be removed by dispel/effect-clearing skills and only clears upon summoner death (revive).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Active-skill Rust % gauge."
+      }
+    },
+    {
+      "index": 71,
+      "name_zh_tw": "石牢",
+      "name_zh_cn": "石牢",
+      "icon_description": "A diagonal pointing finger gesture covered by a white prohibition circle-and-slash symbol inside a dark square.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen showing stone rubble blocking the bottom of all 6 team portraits; a red arrow points to a Radiant orb (流光符石) dragged onto the 4th character portrait, which is bordered in red to indicate activation is blocked.",
+          "caption_zh_tw": "發動流光符石時，角色頭像會被阻擋及有紅框示意不能發動"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 不能發動角色符石",
+      "category": "team_skill_other",
+      "board_cv_cues": "Team character portraits have rocky stone rubble covering their lower border (and show a red blocking border when attempting to drag a Radiant orb onto them); no 5x6 orb tile overlay.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Prevents activating Character Runes (角色符石), including blocking Radiant orbs (流光符石) from triggering via character portraits.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Blocks Character Runestone activation."
+      }
+    },
+    {
+      "index": 72,
+      "name_zh_tw": "雷之氣",
+      "name_zh_cn": "雷之气",
+      "icon_description": "Two jagged golden-yellow lightning bolts with bright yellow aura.",
+      "slides_count": 3,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen where enemy has 'CD 1' and yellow lightning stack icon '5'; team deals massive damage ('EXCEED TRILLION') while two red arrows point to team portraits struck by counter-lightning ('-787330', HP dropping to '0/578000').",
+          "caption_zh_tw": "隊伍成員發動攻擊並擊中持有雷之氣的敵人，會受到指定傷害並進入觸電狀態"
+        },
+        {
+          "slide": 2,
+          "verdict": "info",
+          "visual_summary": "Battle screen showing enemy surrounded by a swirling golden lightning ring ('CD 1', lightning stack '5'); on the 5x6 Water board below, a red dashed rectangle highlights a 2x3 block of 6 Water orbs (rows 2-3, cols 2-4), each bearing a circular silver-rimmed lightning-removal mark ('除雷印記') at its top-right corner.",
+          "caption_zh_tw": "每消除 1 粒除雷印記符石，敵人減少 1 層雷之氣"
+        },
+        {
+          "slide": 3,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a red arrow pointing to an empty dashed red circle under 'CD 1' where the Thunder Qi icon has disappeared after reaching 0 layers at turn end, with the enemy's lightning aura gone.",
+          "caption_zh_tw": "雷之氣為 0 時，回合結束時，雷之氣消失"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 雷之氣為 0 時\n⇒ 回合結束時，雷之氣消失\n• 雷之氣 ≥0\n① 對每個發動攻擊及擊中敵人的成員\n⇒ 造成指定傷害\n② 受上述傷害的成員\n⇒ 進入永久觸電狀態：\n■ 不能發動主動技能\n■ 不能發動角色符石\n■ 流光符石不能進入角色頭像",
+      "category": "orb_hazard_mark",
+      "board_cv_cues": "Enemy has a yellow lightning icon with stack count under CD and a golden electric aura ring; board orbs marked with '除雷印記' show a circular silver-rimmed badge at their top-right corner.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "While enemy has Thunder Qi (active at ≥0 stacks; disappears at turn end when at 0), every team member who attacks and hits the enemy takes specified damage and enters permanent Electrocuted state (cannot use active skills, character runes, or drag Radiant orbs into portrait). Eliminating each '除雷印記' marked orb removes 1 stack of Thunder Qi, so CV should detect marked orbs for the solver to clear.",
+      "autodora_mapping": {
+        "coverage_status": "CV_PARTIAL",
+        "wave_shield_chips": [],
+        "board_flags": "HazardBits.PRIORITY",
+        "audit_notes": "Thunder Qi stack aura with top-right lightning-removal orb marks (除雷印記); prioritize marked orbs via Priority brush."
+      }
+    },
+    {
+      "index": 73,
+      "name_zh_tw": "炎之氣",
+      "name_zh_cn": "炎之气",
+      "icon_description": "A stylized bright red-and-black jagged flame cluster.",
+      "slides_count": 2,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with enemy engulfed in swirling orange fire ('CD 1'); upper red arrow points to a dashed red circle around the Flame Qi icon with stack '5', lower red arrow points to the team's count-shield icon ('12') marked with a red X while '-1000' damage hits the player (HP 576000/578000).",
+          "caption_zh_tw": "持有炎之氣的敵人的攻擊會令數值護盾和次數護盾失效"
+        },
+        {
+          "slide": 2,
+          "verdict": "info",
+          "visual_summary": "Battle screen immediately after killing the Flame Qi enemy ('100000000' damage white puff); the player suffers '-635800' HP loss (0/578000 HP, 100% HP drain).",
+          "caption_zh_tw": "擊斃持有炎之氣的敵人會被消耗 100% 生命力"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 炎之氣為 0 時\n⇒ 回合結束時，炎之氣消失\n• 炎之氣 ≥0\n① 「數值護盾」、「次數護盾」失效\n② 敵人無視所有減傷效果和意志技能\n③ 敵人死亡後\n⇒ 消耗召喚師 100% 生命力",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Enemy displays a red flame icon with stack count under CD and a swirling fire ring beneath its feet; no board orb markers shown in this entry.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "While enemy has Flame Qi (active at ≥0 stacks; disappears at turn end when at 0): (1) numeric shields and hit-count shields are nullified; (2) enemy ignores all damage reduction and willpower/resolve skills; (3) killing the enemy while Flame Qi is active drains 100% of the summoner's HP.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Flame Qi aura (ignores shields/willpower; 100% HP drain on kill while active)."
+      }
+    },
+    {
+      "index": 74,
+      "name_zh_tw": "EP 代價",
+      "name_zh_cn": "EP 代价",
+      "icon_description": "A beige/tan rounded square icon with bright green '×2' on top and white 'EP' below.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with an upper red arrow pointing to a dashed red circle around the '×2 EP' icon under 'CD 1' above the enemy, and a second red arrow inside the active skill confirmation dialog ('現有能量值 (EP) : 14/14') pointing to a dashed red oval around '(EP: 16)' (doubled from 8 EP).",
+          "caption_zh_tw": "原本需要消耗 8 EP 的主動技能，遇到 EP 代價 - 2 倍敵技時會變為需要消耗 16 EP"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 發動 EP 技能時\n⇒ 所需 EP 倍化",
+      "category": "team_skill_other",
+      "board_cv_cues": "Enemy status bar shows the '×2 EP' (or EP multiplier) icon under CD; no orb board visual changes.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Multiplies the EP activation cost of EP-based active skills by a specified factor (e.g., 2x doubles an 8 EP skill cost to 16 EP). No separate bullet rule text appears below the slide in the encyclopedia capture.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Multiplies EP skill activation cost."
+      }
+    },
+    {
+      "index": 75,
+      "name_zh_tw": "無法控制",
+      "name_zh_cn": "无法控制",
+      "icon_description": "A bright red 'X' inside a dark grey square above bold red 'STAT' text.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a red arrow pointing to a dashed red circle around the red 'X / STAT' immunity icon under 'CD 1' above the enemy.",
+          "caption_zh_tw": "持有無法控制的敵人不會被附上狀態，例如中毒、冥控、點燃等"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 敵人不會被附上狀態",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "Enemy status bar displays the red 'X / STAT' icon under CD; no orb board visual change.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Enemy cannot be inflicted with any status ailments/debuffs (such as Poison, Dark Control/Delay, Ignite, etc.).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Enemy immune to status effects."
+      }
+    },
+    {
+      "index": 76,
+      "name_zh_tw": "技能 CD 增加敵技",
+      "name_zh_cn": "技能 CD 增加敌技",
+      "icon_description": "A red circular clockwise arrow inside a dark grey square above cyan-blue 'ACT' text.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a character skill popup ('凜潔心界・曼陀羅') showing ACT I and ACT II both at 'CD 2/5', with a red arrow pointing to 'CD 2/5'.",
+          "caption_zh_tw": "原本為 0 CD 的技能，遇到技能 CD+2 敵技時會變為 2 CD"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 所有成員技能 CD 增加",
+      "category": "team_skill_other",
+      "board_cv_cues": "Enemy skill icon is the red circular arrow above cyan 'ACT'; increases team cooldowns with no orb board visual change.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Increases active skill cooldown (CD) of all team members by a specified number of turns (e.g., CD+2 changes a 0 CD skill to 2 CD).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Increases team active skill CD."
+      }
+    },
+    {
+      "index": 77,
+      "name_zh_tw": "技能 EP 減少敵技",
+      "name_zh_cn": "技能 EP 减少敌技",
+      "icon_description": "A red circular clockwise arrow inside a dark grey square above cyan-blue 'EP' text.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a character skill popup ('破厄天弓・帝鴻') showing ACT I '靈氣凝聚' at 'EP 4/14', with a red arrow pointing to 'EP 4/14'.",
+          "caption_zh_tw": "原本為 14 EP，遇到技能 EP-10 敵技時會變為 4 EP"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 所有成員技能 EP 減少",
+      "category": "team_skill_other",
+      "board_cv_cues": "Enemy skill icon is the red circular arrow above cyan 'EP'; decreases team members' current EP with no orb board visual change.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Reduces current EP of all EP-based team members by a specified amount (e.g., EP-10 reduces 14 EP to 4 EP).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Decreases team active skill EP."
+      }
+    },
+    {
+      "index": 78,
+      "name_zh_tw": "角色符石通行地型",
+      "name_zh_cn": "角色符石通行地型",
+      "icon_description": "A grey carved stone square block set inside a beveled metallic/stone frame.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 5x6 board showing an Earth Character Rune at row 1 col 3 circled in dashed yellow-orange with a dragging hand cursor above it, while all 6 Water orbs in row 2 are enclosed in a light-blue dashed terrain box; a curved red arrow attempts to drag the Earth Character Rune downward across row 2 into row 4 col 2 and is marked with an inline red 'X' indicating the path is blocked.",
+          "caption_zh_tw": "非指定屬性的角色符石不能通過地型"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 指定位置\n⇒ 出現角色符石通行地型\n• 地型內的符石不能消除\n• 只有指定角色符石可以通過地型",
+      "category": "path_terrain",
+      "board_cv_cues": "Specified board cells have a distinct elemental/stone terrain border/tint overlay (illustrated as a glowing light-blue dashed frame across row 2); orbs inside these cells are unmatchable and impassable except to the specified Character Rune.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Spawns Character-Rune Passable Terrain on specified board positions: (1) orbs inside the terrain cannot be eliminated; (2) only the specified Character Rune (e.g., matching the specified attribute) can pass through the terrain, blocking normal orbs and non-matching character runes. Directly constrains solver path traversal and excludes terrain cells from matching.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "char_orb_terrain"
+        ],
+        "board_flags": "TileFlagBits.CHAR_ORB_PASS",
+        "audit_notes": "UPGRADED: Official spec states orbs inside CharOrbPass terrain CANNOT eliminate and ONLY Character Orb can pass! Enforced non-char-orb impassability & unmatchability when charOrbPassOnly mode is active."
+      }
+    },
+    {
+      "index": 79,
+      "name_zh_tw": "温律臨界",
+      "name_zh_cn": "温律临界",
+      "icon_description": "A white vertical thermometer icon with graduation tick marks on the left, set against a glowing blue-to-purple gradient rounded square.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle screen with a red arrow pointing to a vertical thermometer gauge at the top-left of the battle stage reading '0'; on the 5x6 board below, a 2x3 block of 6 Fire orbs (rows 1-2, cols 1-3) is outlined with a red dashed box and a 2x3 block of 6 Water orbs (rows 3-4, cols 1-3) is outlined with a light-blue dashed box.",
+          "caption_zh_tw": "首批消除指定符石 (水符石) 以減少温度\n首批消除指定符石 (火符石) 以提升温度"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每首批消除指定符石\n⇒ 温度提升、減少\n• 發動攻擊前温度為指定度數\n⇒ 才會對敵人造成攻擊傷害\n⇒ 否則全隊攻擊力變 0",
+      "category": "orb_count",
+      "board_cv_cues": "A vertical blue-to-red thermometer gauge with a numeric temperature readout (e.g., '0') appears at the top-left of the combat area above the left leader portrait; no special markings on the board orbs.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Wave-1 ('首批') elimination of specified orb types raises or lowers a battle temperature gauge (e.g., Wave-1 Water orbs decrease temperature, Wave-1 Fire orbs increase temperature) to achieve a required temperature value before attacking. Note: additional rule text below '發動攻擊前温度為指定度數' is faded/clipped at the bottom edge of the captured sheet. Directly constrains Wave-1 orb counts of the raising/lowering colors.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "elementRules[e].exactFirstWaveOrbs"
+        ],
+        "board_flags": "",
+        "audit_notes": "Wave-1 temperature delta between raising & lowering orb colors (supported via per-element Wave-1 orb counts)."
+      }
+    },
+    {
+      "index": 80,
+      "name_zh_tw": "泥沼地型",
+      "name_zh_cn": "泥沼地型",
+      "icon_description": "A dark brown swirling mud puddle filling a square tile.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Full 5x6 orb board where all 6 cells along row 5 (bottom row) are covered by dark semi-transparent swirling mud overlays and highlighted inside a red rectangle.",
+          "caption_zh_tw": "移動符石時觸碰泥沼地型，相應泥沼地型會消失"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每次觸碰泥沼地型\n① 移動符石時間減少\n② 所有成員增加指定回合「泥沼」狀態：不能發動攻擊",
+      "category": "path_terrain",
+      "board_cv_cues": "Affected board cells have a dark brown-black swirling mud puddle overlay darkening the orb underneath.",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Touching a Mud Terrain cell while moving orbs removes that mud cell, but each touch: (1) reduces orb-movement time, and (2) inflicts all team members with specified turns of '泥沼' status (cannot attack). Note: a downward scroll chevron appears at the bottom of the gold box, indicating possible additional uncaptured lines below. Solver should avoid routing the drag path through Mud Terrain cells.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.MIASMA / BURNING_TILE",
+        "audit_notes": "Mud Terrain: touching reduces move time & inflicts cannot-attack Mud status -> avoid stepping on Mud cells (mapped via Miasma / EndForbidden / Board Editor avoidance)."
+      }
+    },
+    {
+      "index": 81,
+      "name_zh_tw": "寒之氣",
+      "name_zh_cn": "寒之气",
+      "icon_description": "Glowing blue ice crystal cluster with a tall central hexagonal ice spire cradled by two curved blue crystal prongs and two small shards at the bottom corners.",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 寒之氣為 0 時\n⇒ 回合結束時，寒之氣消失\n• 寒之氣 ≥0\n① 場上符石不能轉化、引爆或移除\n② 不能額外增加符石\n③ 只能消除首批符石",
+      "category": "team_skill_other",
+      "board_cv_cues": "No preview board shown; blue ice-crystal aura icon (寒之氣) with a numeric counter on the enemy/field HUD.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Field counter aura (寒之氣). When counter reaches 0, it disappears at end of turn. While counter ≥0 (including during the turn it reaches 0 before end-of-turn): (1) board orbs cannot be converted, exploded, or removed; (2) no extra orbs can be added; (3) ONLY Wave-1 (首批) orbs can dissolve (all cascades/skyfall waves are completely disabled, which directly alters solver match simulation).",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [
+          "no_cascade"
+        ],
+        "board_flags": "",
+        "audit_notes": "UPGRADED: Cold Qi disables all cascades (只能消除首批符石) -> directly handled by new RuleConfig.disableCascades + no_cascade chip."
+      }
+    },
+    {
+      "index": 82,
+      "name_zh_tw": "靈罩",
+      "name_zh_cn": "灵罩",
+      "icon_description": "Silver-white glowing rounded-square frame enclosing a bright white-silver heater shield silhouette over a dark grey gradient background.",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 當「靈罩」數量為 0 時\n⇒ 扣除召喚師 100% 生命力",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "No board overlay; silver shield-in-square icon (靈罩) with stack count displayed on enemy/HUD.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Spirit Barrier stack counter (靈罩). When the number of 靈罩 reaches 0, deducts 100% of the summoner's HP (instant lethal HP drain).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Spirit Barrier stack counter (0 => 100% HP drain)."
+      }
+    },
+    {
+      "index": 83,
+      "name_zh_tw": "脈流",
+      "name_zh_cn": "脉流",
+      "icon_description": "Black rounded square containing a glowing rainbow-colored waveform/equalizer spectrum peaking near center-right (purple, blue, cyan, green, yellow, orange, red, magenta).",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 與當前脈流不同屬性的成員\n(不包括白芒脈流)\n⇒ 不能發動主動技能\n• 召喚師死亡後\n⇒ 重置為白芒脈流",
+      "category": "team_skill_other",
+      "board_cv_cues": "No board overlay; rainbow waveform spectrum icon (脈流) and active Pulse attribute indicator on stage/HUD.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Elemental Pulse (脈流) stage mechanic. Team members whose attribute differs from the current Pulse cannot activate Active Skills (exception: neutral White-Ray Pulse / 白芒脈流). Resets to 白芒脈流 after the summoner dies (revive).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Elemental Pulse active-skill attribute lock."
+      }
+    },
+    {
+      "index": 84,
+      "name_zh_tw": "我方效果欄狀態弱攻",
+      "name_zh_cn": "我方效果栏状态弱攻",
+      "icon_description": "Golden-yellow metallic shield emblem with orange-red inner shading, black outline, and bold white/gold letters 'STS' across the center.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Upper battle scene (no puzzle board) showing a Water mage enemy (CD 5) with a red arrow pointing to its gold 'STS' shield icon reading '20%'. A red dashed rectangle on the left highlights the player's effect bar (我方效果欄) containing 1 sword-buff status icon ('1').",
+          "caption_zh_tw": "根據我方效果欄狀態數量，敵人減少所受傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 根據我方效果欄狀態數量\n⇒ 敵人減少所受傷害",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "No board overlay; enemy displays gold 'STS' shield status icon with a damage-reduction percentage (e.g. '20%') that scales with the count of status icons in the player's left-side effect bar.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Enemy receives reduced damage scaling with the number of active status icons currently in the player's effect bar (我方效果欄).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Damage reduction scaling with player buff count."
+      }
+    },
+    {
+      "index": 85,
+      "name_zh_tw": "即效永生",
+      "name_zh_cn": "即效永生",
+      "icon_description": "Golden cross centered inside a golden circular ring on a black background.",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 敵人每回合開始及結束時、每次發動主動技能或龍刻技能時\n⇒ 完全回復生命力",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "No board overlay; golden cross-in-circle status icon on enemy.",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Instant full-heal enemy defense: enemy completely recovers HP at the start and end of every turn, and every time an Active Skill or Dragonware (龍刻) skill is activated. Must kill the enemy in one lethal blow.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Enemy full-heals on turn start/end and skill use."
+      }
+    },
+    {
+      "index": 86,
+      "name_zh_tw": "佑律",
+      "name_zh_cn": "佑律",
+      "icon_description": "Dark brown-tan rounded square showing three pale cream scalloped orbs/chimes hanging/falling at staggered heights along three dark vertical streaks from the top edge (attribute-colored in battle, e.g. blue water droplets).",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Tall battle-and-board screenshot: Water mage enemy (CD 5) with a red arrow pointing to a blue square status icon showing three falling blue water-droplet orbs (Water variant of 佑律). Below, the entire 6x5 puzzle board (rows 1-4 in blue box, rows 4-5 continuing into gold box text_0) is outlined by a thick white dashed border and completely filled with 30 Water orbs carrying various race badges (Dragon, Human, Machina, Elf, God, Beast, Demon). No caption or text is visible below the board in the capture.",
+          "caption_zh_tw": "發動技能移除符石後掉落的符石，會以水符石代替"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 進場時、每回合結束時及每次發動主動技能\n⇒ 所有被移除及引爆的符石\n⇒ 以指定符石代替",
+      "category": "element_color",
+      "board_cv_cues": "Enemy status icon shows three attribute-colored falling droplets/orbs in a square frame (e.g. blue for Water); preview highlights the entire 6x5 board turned into that single attribute (Water orbs with race badges).",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Capture in skill_086.png was truncated at the bottom of the 6x5 board before scrolling to the caption and rule bullets. Visually shows the Water-attribute 佑律 enemy icon and an entire 6x5 board filled with Water orbs (per ToS reference, X之佑律 replaces removed/exploded orbs with specified-attribute orbs on entry, turn-end, and active-skill activation; re-capture recommended for exact verbatim encyclopedia wording).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Replaces removed/exploded orbs with specified element on entry/turn-end/skill."
+      }
+    },
+    {
+      "index": 87,
+      "name_zh_tw": "起動浮標",
+      "name_zh_cn": "启动浮标",
+      "icon_description": "Glowing teal-green orb nestled inside an angled golden-yellow triangular/diamond cursor bracket with warm amber glow behind it.",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 只能在指定起動浮標位置起手\n(發動指定角色符石)",
+      "category": "path_terrain",
+      "board_cv_cues": "Glowing teal-and-gold cursor/buoy marker ('起動浮標') overlaid on a single designated cell of the 6x5 board (activating a designated Character Orb).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Mandatory start-cell path constraint: player can ONLY start dragging (起手) from the designated Starting Buoy (起動浮標) board cell position, triggering the designated Character Orb (角色符石). Directly maps to a fixed-start-cell constraint in the solver.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "traffic_light"
+        ],
+        "board_flags": "TileFlagBits.START_ALLOWED",
+        "audit_notes": "Mandatory starting buoy cell (StartAllowed + Character Orb)."
+      }
+    },
+    {
+      "index": 88,
+      "name_zh_tw": "次批消除盾",
+      "name_zh_cn": "次批消除盾",
+      "icon_description": "Dark metallic square showing three cracked grey stone blocks along the bottom with white vertical motion streaks above them.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "correct",
+          "visual_summary": "Battle-and-board screenshot with a large green checkmark circle at right. Water mage enemy (CD 3) has a red arrow pointing to the 3-stone-blocks-with-streaks status icon stamped with red '6'. Above the 6x5 board, numbered black circles 1 through 6 sit over columns 1-6. Row 3 contains 6 dimmed Heart orbs (clearing in Wave 1), while rows 1-2 and rows 4-5 contain matching vertical pairs per column (Water, Fire, Earth, Light, Dark, Earth) each framed in a vertical white dashed column outline so that after Row 3 Hearts dissolve in Wave 1, all 6 columns drop and dissolve simultaneously as 6 combos in Wave 2.",
+          "caption_zh_tw": "第 2 批消除 ≥6 組符石\n⇒ 才能對敵人造成傷害"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 第 2 批消除指定連擊 (Combo)\n⇒ 才能對敵人造成傷害\n⇒ 否則敵人承受傷害變為 1",
+      "category": "combo",
+      "board_cv_cues": "Enemy status icon shows 3 cracked stone blocks with vertical white streaks and a red number N (e.g. '6') indicating the required Wave-2 combo count; no permanent board overlay.",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Wave-2 Cascade Combo Shield (次批消除盾): must dissolve ≥N (specified) combos specifically in the 2nd wave/batch (第 2 批 — after Wave-1 dissolves and gravity drops orbs) to deal damage; otherwise enemy damage taken becomes 1. Requires explicit Wave-2 combo planning in the solver (not Wave-1 and not total combos).",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "second_wave_combo"
+        ],
+        "board_flags": "",
+        "audit_notes": "Wave-2 cascade combo shield (>= N Wave-2 combos, verified in Test #21)."
+      }
+    },
+    {
+      "index": 89,
+      "name_zh_tw": "冰魄暴劫",
+      "name_zh_cn": "冰魄暴劫",
+      "icon_description": "Dark blue-black square showing multiple glowing cyan-white sharp icicle shards raining downward.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Battle-and-board screenshot with Water mage enemy above (red arrow near top-left edge) and a 6x5 board divided into two 3x5 halves: left 3 columns contain 15 Earth (green) orbs enclosed in a green dashed outline (good — reduces %), right 3 columns contain 15 Water (blue) orbs enclosed in a red dashed outline (bad — increases %).",
+          "caption_zh_tw": "消除木符石會減少冰魄暴劫 %\n消除水符石則會增加冰魄暴劫 %"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每消除木符石\n⇒ 減少冰魄暴劫 %\n• 每消除水符石\n⇒ 提升冰魄暴劫 %\n• 擊斃敵人後\n⇒ 根據冰魄暴劫 %\n⇒ 消耗召喚師相應 % 生命力",
+      "category": "element_color",
+      "board_cv_cues": "No board overlay; enemy displays falling cyan icicles icon with a live percentage counter (冰魄暴劫 %).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Water-attribute death-rattle gauge (冰魄暴劫 %): every Earth orb dissolved (total, not limited to Wave-1) reduces the %, while every Water orb dissolved increases the %. Upon defeating the enemy, consumes that corresponding % of the summoner's HP. Solver should maximize Earth orb dissolves and avoid Water orb dissolves.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "elem_burst_shield + forbid_all"
+        ],
+        "board_flags": "",
+        "audit_notes": "Ice Death-Rattle: maximize Wood, avoid Water."
+      }
+    },
+    {
+      "index": 90,
+      "name_zh_tw": "熔焰焚爆",
+      "name_zh_cn": "熔焰焚爆",
+      "icon_description": "Dark square containing a glowing orange-gold swirling fireball/flame vortex.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 puzzle board screenshot split into two 3x5 halves: left 3 columns contain 15 Water (blue) orbs enclosed in a green dashed outline (reduces %), right 3 columns contain 15 Fire (red) orbs enclosed in a red dashed outline (increases %).",
+          "caption_zh_tw": "消除水符石會減少熔焰焚爆 %\n消除火符石則會增加熔焰焚爆 %"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每消除水符石\n⇒ 減少熔焰焚爆 %\n• 每消除火符石\n⇒ 提升熔焰焚爆 %\n• 擊斃敵人後\n⇒ 根據熔焰焚爆 %\n⇒ 消耗召喚師相應 % 生命力",
+      "category": "element_color",
+      "board_cv_cues": "No board overlay; enemy displays glowing orange swirling fireball icon with a live percentage counter (熔焰焚爆 %).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Fire-attribute death-rattle gauge (熔焰焚爆 %): every Water orb dissolved (total, not limited to Wave-1) reduces the %, while every Fire orb dissolved increases the %. Upon defeating the enemy, consumes that corresponding % of the summoner's HP. Solver should maximize Water orb dissolves and avoid Fire orb dissolves.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "elem_burst_shield + forbid_all"
+        ],
+        "board_flags": "",
+        "audit_notes": "Flame Death-Rattle: maximize Water, avoid Fire."
+      }
+    },
+    {
+      "index": 91,
+      "name_zh_tw": "風刃蔓藤",
+      "name_zh_cn": "风刃蔓藤",
+      "icon_description": "Dark green square showing bright-green thorny vines and jagged wind-blade tendrils framing a dark central hollow.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 puzzle board screenshot split into two 3x5 halves: left 3 columns contain 15 Fire (red) orbs enclosed in a green dashed outline (reduces %), right 3 columns contain 15 Earth (green) orbs enclosed in a red dashed outline (increases %).",
+          "caption_zh_tw": "消除火符石會減少風刃蔓藤 %\n消除木符石則會增加風刃蔓藤 %"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每消除火符石\n⇒ 減少風刃蔓藤 %\n• 每消除木符石\n⇒ 提升風刃蔓藤 %\n• 擊斃敵人後\n⇒ 根據風刃蔓藤 %\n⇒ 消耗召喚師相應 % 生命力",
+      "category": "element_color",
+      "board_cv_cues": "No board overlay; enemy displays glowing green thorny-vine vortex icon with a live percentage counter (風刃蔓藤 %).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Earth-attribute death-rattle gauge (風刃蔓藤 %): every Fire orb dissolved (total, not limited to Wave-1) reduces the %, while every Earth orb dissolved increases the %. Upon defeating the enemy, consumes that corresponding % of the summoner's HP. Solver should maximize Fire orb dissolves and avoid Earth orb dissolves.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "elem_burst_shield + forbid_all"
+        ],
+        "board_flags": "",
+        "audit_notes": "Wind Death-Rattle: maximize Fire, avoid Wood."
+      }
+    },
+    {
+      "index": 92,
+      "name_zh_tw": "聖劍裁決",
+      "name_zh_cn": "圣剑裁决",
+      "icon_description": "Dark gold-black square showing multiple glowing white-gold holy swords descending into a radiant golden burst at the bottom.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 puzzle board screenshot split into two 3x5 halves: left 3 columns contain 15 Dark (purple) orbs enclosed in a green dashed outline (reduces %), right 3 columns contain 15 Light (yellow) orbs enclosed in a red dashed outline (increases %).",
+          "caption_zh_tw": "消除暗符石會減少聖劍裁決 %\n消除光符石則會增加聖劍裁決 %"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每消除暗符石\n⇒ 減少聖劍裁決 %\n• 每消除光符石\n⇒ 提升聖劍裁決 %\n• 擊斃敵人後\n⇒ 根據聖劍裁決 %\n⇒ 消耗召喚師相應 % 生命力",
+      "category": "element_color",
+      "board_cv_cues": "No board overlay; enemy displays descending golden holy-swords icon with a live percentage counter (聖劍裁決 %).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Light-attribute death-rattle gauge (聖劍裁決 %): every Dark orb dissolved (total, not limited to Wave-1) reduces the %, while every Light orb dissolved increases the %. Upon defeating the enemy, consumes that corresponding % of the summoner's HP. Solver should maximize Dark orb dissolves and avoid Light orb dissolves.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "elem_burst_shield + forbid_all"
+        ],
+        "board_flags": "",
+        "audit_notes": "Holy Sword Death-Rattle: maximize Dark, avoid Light."
+      }
+    },
+    {
+      "index": 93,
+      "name_zh_tw": "深淵滅襲",
+      "name_zh_cn": "深渊灭袭",
+      "icon_description": "Dark square showing a glowing purple-magenta and white swirling abyssal vortex/black hole.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "6x5 puzzle board screenshot split into two 3x5 halves: left 3 columns contain 15 Light (yellow) orbs enclosed in a green dashed outline (reduces %), right 3 columns contain 15 Dark (purple) orbs enclosed in a red dashed outline (increases %).",
+          "caption_zh_tw": "消除光符石會減少深淵滅襲 %\n消除暗符石則會增加深淵滅襲 %"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 每消除光符石\n⇒ 減少深淵滅襲 %\n• 每消除暗符石\n⇒ 提升深淵滅襲 %\n• 擊斃敵人後\n⇒ 根據深淵滅襲 %\n⇒ 消耗召喚師相應 % 生命力",
+      "category": "element_color",
+      "board_cv_cues": "No board overlay; enemy displays glowing purple swirling abyssal-vortex icon with a live percentage counter (深淵滅襲 %).",
+      "solver_relevance": "direct_board_rule",
+      "key_mechanics_summary": "Dark-attribute death-rattle gauge (深淵滅襲 %): every Light orb dissolved (total, not limited to Wave-1) reduces the %, while every Dark orb dissolved increases the %. Upon defeating the enemy, consumes that corresponding % of the summoner's HP. Solver should maximize Light orb dissolves and avoid Dark orb dissolves.",
+      "autodora_mapping": {
+        "coverage_status": "FULL",
+        "wave_shield_chips": [
+          "elem_burst_shield + forbid_all"
+        ],
+        "board_flags": "",
+        "audit_notes": "Abyss Death-Rattle: maximize Light, avoid Dark."
+      }
+    },
+    {
+      "index": 94,
+      "name_zh_tw": "兩相消耗",
+      "name_zh_cn": "两相消耗",
+      "icon_description": "Dark red-and-black square showing a curved reaper scythe with a bold white angled reflection arrow ('<') and white text '50%' at the bottom-left.",
+      "slides_count": 1,
+      "slides": [
+        {
+          "slide": 1,
+          "verdict": "info",
+          "visual_summary": "Upper battle scene (no puzzle board): Water mage enemy (CD 4) taking massive attack damage ('3689348814741910323') in a bright orange-white flash; red arrow points to the enemy's '50%' scythe-arrow status icon. Below, red '-5376' damage is circled in a red dashed oval over the player's team bar and player HP drops by half to '5373/10749'.",
+          "caption_zh_tw": "消耗敵人生命力時，會消耗召喚師指定 % 的生命力"
+        }
+      ],
+      "full_rule_text_zh_tw": "• 消耗敵人生命力時\n⇒ 消耗召喚師生命力",
+      "category": "turn_damage_defense",
+      "board_cv_cues": "No board overlay; enemy displays dark-red scythe-and-arrow status icon stamped with a percentage (e.g. '50%').",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Mutual HP consumption: whenever the enemy's HP is consumed/reduced, a specified percentage of the summoner's HP is also consumed.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Mutual % HP drain when draining enemy HP."
+      }
+    },
+    {
+      "index": 95,
+      "name_zh_tw": "附加消除",
+      "name_zh_cn": "附加消除",
+      "icon_description": "Blank dark olive-grey framed square (no icon graphic in encyclopedia).",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 消除所有附加效果",
+      "category": "team_skill_other",
+      "board_cv_cues": "No board overlay and no persistent enemy status icon (instant dispel trigger).",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Dispels/clears all active attached buff/status effects (附加效果).",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Dispels all active status effects."
+      }
+    },
+    {
+      "index": 96,
+      "name_zh_tw": "灼熱地型",
+      "name_zh_cn": "灼热地型",
+      "icon_description": "Blank dark olive-grey framed square (no icon graphic in encyclopedia).",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 每次於地型內消除符石\n⇒ 扣除召喚師生命力\n※【護盾】可抵擋此傷害",
+      "category": "path_terrain",
+      "board_cv_cues": "No preview image in encyclopedia; in battle, designated cells on the 6x5 board are covered by a fiery/scorching terrain overlay (灼熱地型).",
+      "solver_relevance": "board_hazard_or_mark",
+      "key_mechanics_summary": "Scorching Terrain hazard (灼熱地型, note verbatim character '型'): every time orbs are dissolved inside the terrain area, deducts summoner HP. Note: 【護盾】 (Shield) can block this damage. Unlike drag-path burning, triggers on orb dissolution inside the terrain cells; solver should avoid dissolving orbs inside marked terrain cells when unprotected.",
+      "autodora_mapping": {
+        "coverage_status": "UPGRADED",
+        "wave_shield_chips": [],
+        "board_flags": "TileFlagBits.SCORCHING_TILE",
+        "audit_notes": "Duplicate/variant encyclopedia entry of Skill #28 Scorching Terrain -> handled by new TileFlagBits.SCORCHING_TILE."
+      }
+    },
+    {
+      "index": 97,
+      "name_zh_tw": "金穗聖果",
+      "name_zh_cn": "金穗圣果",
+      "icon_description": "Blank dark olive-grey framed square (no icon graphic in encyclopedia).",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 角色技能效果",
+      "category": "team_skill_other",
+      "board_cv_cues": "No icon or board preview in encyclopedia (character-specific skill effect entry).",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Encyclopedia placeholder entry for a character-specific skill effect (角色技能效果); no enemy skill rules are specified in the entry.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Character-specific skill effect placeholder (金穗聖果)."
+      }
+    },
+    {
+      "index": 98,
+      "name_zh_tw": "蝕骨腐果",
+      "name_zh_cn": "蚀骨腐果",
+      "icon_description": "Blank dark olive-grey framed square (no icon graphic in encyclopedia).",
+      "slides_count": 0,
+      "slides": [],
+      "full_rule_text_zh_tw": "• 角色技能效果",
+      "category": "team_skill_other",
+      "board_cv_cues": "No icon or board preview in encyclopedia (character-specific skill effect entry).",
+      "solver_relevance": "non_board_mechanic",
+      "key_mechanics_summary": "Encyclopedia placeholder entry for a character-specific skill effect (角色技能效果); no enemy skill rules are specified in the entry.",
+      "autodora_mapping": {
+        "coverage_status": "NON_BOARD",
+        "wave_shield_chips": [],
+        "board_flags": "",
+        "audit_notes": "Character-specific skill effect placeholder (蝕骨腐果)."
+      }
+    }
+  ]
+}

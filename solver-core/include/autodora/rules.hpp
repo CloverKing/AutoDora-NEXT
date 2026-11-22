@@ -62,6 +62,13 @@ enum class ComboParity : uint8_t {
     Even = 2
 };
 
+// Official ToS Encyclopedia Skills #57 & #58 (with Heart-orb universal wildcard 心符石通用)
+enum class Wave1KindMode : uint8_t {
+    Any = 0,
+    SameKindHeartWild = 1,     // #57 首消相同種類盾 (Wave-1 non-Heart groups share <=1 element; Heart wildcard)
+    DistinctKindHeartWild = 2  // #58 首消不同種類盾 (Wave-1 non-Heart elements each <=1 group; Heart wildcard)
+};
+
 struct ElementRule {
     uint8_t minMatchCount = 3; // 1, 2, 3, or 4
     TargetShape targetShape = TargetShape::Any;
@@ -115,6 +122,7 @@ struct ShapeShieldRule {
 struct RuleConfig {
     // --- Movement & Step Controls ---
     bool allowDiagonalMove = true;         // 允许斜转 (8 向移动)
+    uint16_t minSteps = 0;                 // 步数盾下限 (#60: 如 25-30 步区间, 0 = 无下限)
     uint16_t maxSteps = 30;                // 步数上限 (1..300; 违建/排珠/长手转可达 100~300)
     int16_t exactSteps = -1;               // 精确步数盾 (-1 = 关闭)
     double stepPenaltyWeight = 0.08;       // 一步一伤时可调高至 5.0+
@@ -153,20 +161,25 @@ struct RuleConfig {
     int8_t maxTotalCombo = -1;             // -1 = 不限制
     int8_t exactTotalCombo = -1;           // -1 = 不限制 (含 0C 空转)
     uint8_t minFirstWaveCombo = 0;
+    uint8_t minFirstWaveElementalCombo = 0; // #18 首消組數屬性符石盾 (仅计水火木光暗, 严格排除心符石!)
     int8_t exactFirstWaveCombo = -1;       // -1 = 不限制
     bool firstWaveOnlyScoring = false;     // 只计首批 Combo (不依赖天降叠珠)
+    bool disableCascades = false;          // #66 只能消除首批符石 / #81 寒之氣: 物理关闭第2波及以后天降消除!
     ComboParity comboParity = ComboParity::Any;
     bool comboParityFirstWaveOnly = true;
     bool sameComboAcrossEliminatedElements = false; // 同属同 C
+    Wave1KindMode wave1KindMode = Wave1KindMode::Any; // #57 首消相同種類盾 / #58 首消不同種類盾 (心符石通用)
     bool avoidSkyfallRisk = true;          // 固定 C / 奇偶盾时惩罚易意外天降残留结构
     uint8_t minSecondWaveCombo = 0;        // 次批消除盾: 第2波(天降叠珠)最少 Combo
     uint8_t requiredSecondWaveElementsMask = 0; // 次批消除盾: 第2波需含属性掩码
-    bool requireEqualPairCombos = false;   // 双属首消 Combo 同等盾 (如首消光暗同等盾)
+    bool requireEqualPairCombos = false;   // 双属/多属首消 Combo 同等盾 (#9 連擊相等盾)
     uint8_t equalPairElemA = 3;            // 默认光 (Light)
     uint8_t equalPairElemB = 4;            // 默认暗 (Dark)
-    bool equalPairMustBeNonZero = true;    // 要求双属各自均 > 0 且首消 Combo 数相等
+    uint8_t equalComboElementsMask = 0;    // #9 通用 2..6 属連擊相等盾掩码 (如水火木 0b000111; 非 0 时优先于 A/B)
+    bool equalPairMustBeNonZero = true;    // 要求指定各属均 > 0 且首消 Combo 数相等
     uint8_t requiredSameElementCombos = 0; // 同属连击盾 (如首消 3 组暗)
     int8_t sameElementComboTarget = -1;    // -1 = 任意单属达到 N 组, 0..5 = 指定属性
+    uint8_t unmatchableElementsMask = 0;   // #23 符石禁咒: 指定属性即使 3 连也无法消除!
 
     // --- Count & Element Shields ---
     int16_t exactFirstWaveTotalOrbs = -1;  // 数字盾 (-1 = 关闭, 如 18 / 20 / 28)

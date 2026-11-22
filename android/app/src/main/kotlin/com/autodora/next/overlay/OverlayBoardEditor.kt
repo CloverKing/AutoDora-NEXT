@@ -52,8 +52,13 @@ class OverlayBoardEditorController(
         BoardBrush.ToggleHazard(HazardBits.ICE_SEALED, "冰封"),
         BoardBrush.ToggleHazard(HazardBits.PETRIFIED, "石化"),
         BoardBrush.ToggleTileFlag(TileFlagBits.BURNING_TILE, "燃烧"),
+        BoardBrush.ToggleTileFlag(TileFlagBits.SCORCHING_TILE, "灼热"),
+        BoardBrush.ToggleTileFlag(TileFlagBits.BLACK_HOLE, "黑洞"),
+        BoardBrush.ToggleTileFlag(TileFlagBits.END_FORBIDDEN, "血浴"),
         BoardBrush.ToggleTileFlag(TileFlagBits.SHATTERED, "碎裂"),
         BoardBrush.ToggleTileFlag(TileFlagBits.STORM, "暴风"),
+        BoardBrush.ToggleTileFlag(TileFlagBits.CHAR_ORB_PASS, "角通"),
+        BoardBrush.ToggleTileFlag(TileFlagBits.CHAR_ORB_END, "角停"),
         BoardBrush.ToggleHazard(HazardBits.PURGATORY_FIRE, "炼狱"),
         BoardBrush.ClearMarkers
     )

@@ -25,6 +25,8 @@ void BoardState::rebuildMasks() noexcept {
     miasmaMask = 0;
     charOrbPassMask = 0;
     charOrbEndMask = 0;
+    scorchingTileMask = 0;
+    endForbiddenMask = 0;
 
     const uint8_t n = cellCount();
     for (uint8_t i = 0; i < n; ++i) {
@@ -43,7 +45,7 @@ void BoardState::rebuildMasks() noexcept {
         if (f & TileFlagBits::Shattered)            shatteredMask |= b;
         if (f & TileFlagBits::BurningTile)          burningTileMask |= b;
         if (f & TileFlagBits::StickyTile)           stickyTileMask |= b;
-        if (f & TileFlagBits::BlackHole)            blackHoleMask |= b;
+        if (f & TileFlagBits::BlackHole)            { blackHoleMask |= b; endForbiddenMask |= b; }
         if (f & TileFlagBits::NoPass)               noPassMask |= b;
         if (f & TileFlagBits::BarrierFirstWaveOnly) barrierMask |= b;
         if (f & TileFlagBits::SealedStone)          sealedStoneMask |= b;
@@ -52,6 +54,8 @@ void BoardState::rebuildMasks() noexcept {
         if (f & TileFlagBits::Miasma)               miasmaMask |= b;
         if (f & TileFlagBits::CharOrbPass)          charOrbPassMask |= b;
         if (f & TileFlagBits::CharOrbEnd)           charOrbEndMask |= b;
+        if (f & TileFlagBits::ScorchingTile)        scorchingTileMask |= b;
+        if (f & TileFlagBits::EndForbidden)         endForbiddenMask |= b;
     }
 }
 

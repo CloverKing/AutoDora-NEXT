@@ -476,4 +476,18 @@
     <string name="ov_verdict_missing_frame">No Frame</string>
     <string name="section_about">About &amp; Version</string>
     <string name="about_version_fmt">Version v%1$s (Build %2$d)</string>
+
+    <!-- v3.4 Official 98-Skill Encyclopedia Upgrades -->
+    <string name="combo_type_min_first_elem">1st Elem</string>
+    <string name="combo_param_min_first_elem">1st-Wave Elem Groups (No Heart)</string>
+    <string name="combo_type_wave1_same_kind">1st Same</string>
+    <string name="combo_param_wave1_same_kind">1st Same Kind (Heart Wild)</string>
+    <string name="combo_type_wave1_distinct_kind">1st Distinct</string>
+    <string name="combo_param_wave1_distinct_kind">1st Distinct Kinds (Heart Wild)</string>
+    <string name="combo_extra_equal_multi_fmt">%1$s Equal</string>
+    <string name="elem_limit_unmatchable">Unmatchable</string>
+    <string name="shield_no_cascade">No Cascade (W1)</string>
+    <string name="shield_step_range_fmt">Steps %1$d–%2$d</string>
+    <string name="step_range_min_label">Min Steps</string>
+    <string name="step_range_max_label">Max Steps</string>
 </resources>

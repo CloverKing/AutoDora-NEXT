@@ -476,4 +476,18 @@
     <string name="ov_verdict_missing_frame">未識框</string>
     <string name="section_about">關於與版本</string>
     <string name="about_version_fmt">版本號 v%1$s (Build %2$d)</string>
+
+    <!-- v3.4 Official 98-Skill Encyclopedia Upgrades -->
+    <string name="combo_type_min_first_elem">首消屬性</string>
+    <string name="combo_param_min_first_elem">首消屬性組數（不含心）</string>
+    <string name="combo_type_wave1_same_kind">首消同種</string>
+    <string name="combo_param_wave1_same_kind">首消同種類（心通用）</string>
+    <string name="combo_type_wave1_distinct_kind">首消異種</string>
+    <string name="combo_param_wave1_distinct_kind">首消不同種類（心通用）</string>
+    <string name="combo_extra_equal_multi_fmt">%1$s同等</string>
+    <string name="elem_limit_unmatchable">符石禁咒</string>
+    <string name="shield_no_cascade">禁天降(僅首批)</string>
+    <string name="shield_step_range_fmt">步數盾 %1$d–%2$d</string>
+    <string name="step_range_min_label">最少步數</string>
+    <string name="step_range_max_label">最多步數</string>
 </resources>

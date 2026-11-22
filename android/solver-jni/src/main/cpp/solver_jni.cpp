@@ -279,6 +279,12 @@ Java_com_autodora_next_jni_NativeSolver_nativeSolve(
     rules.requireCharOrbFirstWave         = riAt(90, 0) != 0;
     rules.forbidWeakenedOrbs              = riAt(91, 0) != 0;
     rules.requireLuminousOrbClear         = riAt(92, 0) != 0;
+    rules.minSteps                        = static_cast<uint16_t>(std::clamp(riAt(93, 0), 0, 300));
+    rules.minFirstWaveElementalCombo      = static_cast<uint8_t>(riAt(94, 0));
+    rules.disableCascades                 = riAt(95, 0) != 0;
+    rules.wave1KindMode                   = static_cast<Wave1KindMode>(riAt(96, 0));
+    rules.equalComboElementsMask          = static_cast<uint8_t>(riAt(97, 0));
+    rules.unmatchableElementsMask         = static_cast<uint8_t>(riAt(98, 0));
 
     rules.stepPenaltyWeight     = rdAt(0, 0.08);
     rules.diagonalPenaltyWeight = rdAt(1, 0.05);

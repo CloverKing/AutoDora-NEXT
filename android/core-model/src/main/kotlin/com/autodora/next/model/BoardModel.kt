@@ -83,6 +83,8 @@ object TileFlagBits {
     const val MIASMA = 1 shl 16
     const val CHAR_ORB_PASS = 1 shl 17
     const val CHAR_ORB_END = 1 shl 18
+    const val SCORCHING_TILE = 1 shl 19
+    const val END_FORBIDDEN = 1 shl 20
 }
 
 @Serializable

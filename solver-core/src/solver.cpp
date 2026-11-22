@@ -109,10 +109,13 @@ struct SearchNode {
     }
 };
 
-inline bool canEnterCell(const BoardState& board, uint8_t idx, const RuleConfig& rules) noexcept {
+inline bool canEnterCell(const BoardState& board, uint8_t idx, const RuleConfig& rules, bool usedCharacterOrb = false) noexcept {
     const uint64_t b = bitOf(idx);
     if ((b & board.validMask) == 0) return false;
-    if ((b & (board.stormMask | board.blackHoleMask | board.noPassMask)) != 0) return false;
+    // Note: BlackHole (#32) & EndForbidden (#31) ARE passable during movement and only forbidden as final endpoint!
+    if ((b & (board.stormMask | board.noPassMask)) != 0) return false;
+    // Skill #78 (角色符石通行地型): only Character Runestone can traverse CharOrbPass terrain!
+    if (!usedCharacterOrb && (b & board.charOrbPassMask) != 0) return false;
     const Cell& c = board.cells[idx];
     if (c.isImmovable()) return false;
     if ((c.hazards & HazardBits::PurgatoryFire) != 0) return false; // 炼狱之火: 触碰即死!
@@ -302,7 +305,10 @@ SolveOutput PuzzleSolver::solve(
     const uint8_t cols = baseBoard.cols;
     const uint8_t totalCells = baseBoard.cellCount();
     const uint8_t dirCount = rules.allowDiagonalMove ? 8 : 4;
-    const uint16_t maxSteps = std::min<uint16_t>(rules.maxSteps, kMaxMoveSteps);
+    const uint16_t rawMax = (rules.exactSteps >= 0)
+        ? static_cast<uint16_t>(std::max<int>(rules.maxSteps, rules.exactSteps))
+        : std::max<uint16_t>(rules.maxSteps, rules.minSteps);
+    const uint16_t maxSteps = std::min<uint16_t>(rawMax, kMaxMoveSteps);
     // For single fixed-start solves (Hold-and-Replan), keep exact beamWidth (no 2x bloat for 30-cell diversity)
     // so the solver reaches deep high-combo solutions within a tight ~100-175ms real-time budget!
     const uint32_t beamWidth = (rules.fixedStartCell >= 0)
@@ -341,7 +347,6 @@ SolveOutput PuzzleSolver::solve(
         const uint8_t idx = baseBoard.index(0, cCol);
         if ((baseBoard.validMask & bitOf(idx)) != 0 &&
             (baseBoard.stormMask & bitOf(idx)) == 0 &&
-            (baseBoard.blackHoleMask & bitOf(idx)) == 0 &&
             (baseBoard.noPassMask & bitOf(idx)) == 0) {
             SearchNode node;
             node.board = baseBoard;
@@ -525,7 +530,7 @@ SolveOutput PuzzleSolver::solve(
                     if (!parent.board.inBounds(nr, nc)) continue;
 
                     const uint8_t nextIdx = cellIndex(static_cast<uint8_t>(nr), static_cast<uint8_t>(nc), cols);
-                    if (!canEnterCell(parent.board, nextIdx, rules)) continue;
+                    if (!canEnterCell(parent.board, nextIdx, rules, parent.usedCharacterOrb)) continue;
 
                     // Traffic Light exact reachability pruning: discard branches that cannot possibly reach endMask in remaining steps
                     const int remSteps = static_cast<int>(maxSteps) - static_cast<int>(parent.stepCount + 1);
@@ -631,7 +636,18 @@ SolveOutput PuzzleSolver::solve(
                             ? minStepsToMask(nextIdx, baseBoard.endMask, true)
                             : manhToEnd;
                         const double pull = (remSteps <= stepToEnd + 6) ? 180.0 : 42.0;
-                        child.frontierScore = ev.totalScore + 150000.0 + static_cast<double>(manhToEnd) * 200.0 - static_cast<double>(stepToEnd) * pull;
+                        child.frontierScore += 150000.0 + static_cast<double>(manhToEnd) * 200.0 - static_cast<double>(stepToEnd) * pull;
+                    }
+                    if (baseBoard.endForbiddenMask != 0 && (baseBoard.endForbiddenMask & bitOf(nextIdx)) != 0 && remSteps >= 1) {
+                        // BlackHole (#32) / Bloodbath (#31) are passable during movement; neutralize terminal cliff mid-path!
+                        child.frontierScore += 150600.0 - ((remSteps <= 2) ? 120.0 : 0.0);
+                    }
+                    if (rules.exactSteps < 0 && rules.minSteps > 0 && child.stepCount < rules.minSteps) {
+                        // Step-Range Shield (#60): allow smooth beam exploration until reaching minSteps!
+                        child.frontierScore += 100000.0 + static_cast<double>(rules.minSteps - child.stepCount) * 180.0;
+                    }
+                    if (rules.exactSteps >= 0 && child.stepCount < static_cast<uint16_t>(rules.exactSteps)) {
+                        child.frontierScore += 100000.0 + static_cast<double>(rules.exactSteps - child.stepCount) * 200.0;
                     }
                     child.allHardMet = ev.allHardConstraintsMet;
                     threadEvaluated[tid]++;

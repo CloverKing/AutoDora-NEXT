@@ -202,8 +202,78 @@ class RuleComposerTest {
         assertEquals(TargetShape.COUNT_6, compMulti.elementRules[0].targetShape)
         assertEquals(TargetShape.COUNT_6, compMulti.elementRules[2].targetShape)
         assertEquals(TargetShape.ANY, compMulti.elementRules[3].targetShape)
-        assertEquals(reqMask, compMulti.requiredFirstWaveElementsMask)
+        // Official Skills #4-#7 allow cascades by default (requiredTotalElementsMask), unless Wave-1 bit (paramInt=2) is set!
+        assertEquals(reqMask, compMulti.requiredTotalElementsMask)
+        assertEquals(0, compMulti.requiredFirstWaveElementsMask)
         assertEquals(enchMask, compMulti.requiredEnchantedElementsMask)
+
+        val chipWave1Strict = chip.copy(paramInt = 2)
+        val compWave1 = RuleComposer.compose(baseMulti, listOf(chipWave1Strict))
+        assertEquals(reqMask, compWave1.requiredFirstWaveElementsMask)
+    }
+
+    @Test
+    fun `compose and verdicts support official 98-skill encyclopedia upgrades`() {
+        val equalWfgMask = 0x100 or Element.WATER.bitMask or Element.FIRE.bitMask or Element.WOOD.bitMask
+        val stepRangePacked = 25 or (30 shl 8)
+        val chips = listOf(
+            WaveShieldChip("min_first_elem_combo", "首消≥5组属性珠", ShieldCategory.COMBO, paramInt = 5),
+            WaveShieldChip("wave1_distinct_kind", "首消不同种类 5C", ShieldCategory.COMBO, paramInt = 5),
+            WaveShieldChip("equal_pair_light_dark", "水=火=木", ShieldCategory.COMBO, paramElementMask = equalWfgMask),
+            WaveShieldChip("step_range", "步数盾 25-30", ShieldCategory.HAZARD_AND_PATH, paramInt = stepRangePacked),
+            WaveShieldChip("no_cascade", "禁天降(仅首批)", ShieldCategory.COMBO),
+            WaveShieldChip("unmatchable_elements", "符石禁咒:水", ShieldCategory.COUNT_AND_ELEMENT, paramElementMask = Element.WATER.bitMask),
+            WaveShieldChip("l_shape", "L形盾", ShieldCategory.SHAPE_AND_PUZZLE)
+        )
+        val composed = RuleComposer.compose(TeamBasePreset("default", "Default"), chips)
+        assertEquals(5, composed.minFirstWaveElementalCombo)
+        assertEquals(5, composed.exactFirstWaveCombo)
+        assertEquals(Wave1KindMode.DISTINCT_KIND_HEART_WILD, composed.wave1KindMode)
+        assertEquals(Element.WATER.bitMask or Element.FIRE.bitMask or Element.WOOD.bitMask, composed.equalComboElementsMask)
+        assertEquals(25, composed.minSteps)
+        assertEquals(30, composed.maxSteps)
+        assertTrue(composed.disableCascades)
+        assertEquals(Element.WATER.bitMask, composed.unmatchableElementsMask)
+        assertTrue("Official #16 L-shape must default to strict 5-orb shape", composed.shapeShield.strictShape)
+
+        // Verify ShieldVerdictEvaluator catches Heart-only non-elemental failure (#18) and step_range [25..30] (#60)!
+        val board = BoardState(cols = 6, rows = 5, cells = List(30) { CellState(Element.WATER) })
+        val solWith4Elem1Heart = SolutionPath(
+            start = CellCoord(0, 0),
+            usedCharacterOrb = false,
+            characterOrbCol = 0,
+            moves = List(27) { Direction.RIGHT },
+            waypoints = listOf(CellCoord(0, 0), CellCoord(0, 1)),
+            stepCount = 27,
+            firstWaveCombo = 5,
+            totalCombo = 5,
+            firstWaveOrbs = 15,
+            totalOrbs = 15,
+            allHardConstraintsMet = false,
+            satisfiedFlags = ShieldStatusBits.STEP_LIMIT or ShieldStatusBits.WAVE1_KIND_SHIELD,
+            failedFlags = ShieldStatusBits.COMBO_SHIELD,
+            score = 0.0,
+            tag = "Test",
+            groups = listOf(
+                MatchSummary(Element.WATER, 3, 1, false),
+                MatchSummary(Element.FIRE, 3, 1, false),
+                MatchSummary(Element.WOOD, 3, 1, false),
+                MatchSummary(Element.LIGHT, 3, 1, false),
+                MatchSummary(Element.HEART, 3, 1, false)
+            )
+        )
+        val verdicts = ShieldVerdictEvaluator.evaluate(
+            listOf(
+                WaveShieldChip("min_first_elem_combo", "首消≥5组属性珠", ShieldCategory.COMBO, paramInt = 5),
+                WaveShieldChip("wave1_distinct_kind", "首消不同种类 5C", ShieldCategory.COMBO, paramInt = 5),
+                WaveShieldChip("step_range", "步数盾 25-30", ShieldCategory.HAZARD_AND_PATH, paramInt = stepRangePacked)
+            ),
+            board,
+            solWith4Elem1Heart
+        ).associateBy { it.chipId }
+        assertEquals("4 elemental + 1 Heart must FAIL #18 min_first_elem_combo >=5", ShieldVerdictStatus.FAILED, verdicts.getValue("min_first_elem_combo").status)
+        assertEquals("4 distinct + 1 Heart wildcard must PASS #58 wave1_distinct_kind 5C", ShieldVerdictStatus.PASSED, verdicts.getValue("wave1_distinct_kind").status)
+        assertEquals("27 steps inside [25..30] must PASS #60 step_range", ShieldVerdictStatus.PASSED, verdicts.getValue("step_range").status)
     }
 
     @Test

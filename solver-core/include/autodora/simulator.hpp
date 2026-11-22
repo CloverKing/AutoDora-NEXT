@@ -73,6 +73,7 @@ struct SimulationResult {
     uint8_t lightPrisonRemaining = 0;
     uint8_t luminousCleared = 0;
     uint8_t weakenedEliminated = 0;
+    uint8_t scorchingOrbsCleared = 0;  // #28/#96 灼热地型内被消除的符石数
     uint8_t priorityOrbsRemaining = 0;
     uint8_t reserveOrbsBroken = 0;
     uint16_t petrifiedAdjacentHits = 0;

@@ -14,12 +14,16 @@ object WaveShieldCatalog {
     fun allChips(): List<WaveShieldChip> = listOf(
         // A. Combo Shields (连击盾)
         WaveShieldChip("min_combo", "≥ 7 Combo", ShieldCategory.COMBO, paramInt = 7),
+        WaveShieldChip("min_first_elem_combo", "首消 ≥5 组属性珠", ShieldCategory.COMBO, paramInt = 5),
         WaveShieldChip("exact_combo", "指定 6 Combo", ShieldCategory.COMBO, paramInt = 6),
         WaveShieldChip("exact_first_combo", "首消 6 Combo", ShieldCategory.COMBO, paramInt = 6),
+        WaveShieldChip("wave1_same_kind", "首消同种类 5C", ShieldCategory.COMBO, paramInt = 5),
+        WaveShieldChip("wave1_distinct_kind", "首消不同种类 5C", ShieldCategory.COMBO, paramInt = 5),
         WaveShieldChip("zero_combo", "0 Combo 空转", ShieldCategory.COMBO),
         WaveShieldChip("odd_combo", "奇数 Combo", ShieldCategory.COMBO),
         WaveShieldChip("even_combo", "偶数 Combo", ShieldCategory.COMBO),
         WaveShieldChip("first_wave_only", "只计首批", ShieldCategory.COMBO),
+        WaveShieldChip("no_cascade", "禁天降(仅首批)", ShieldCategory.COMBO),
         WaveShieldChip("same_combo_elements", "同属同 C", ShieldCategory.COMBO),
         WaveShieldChip("second_wave_combo", "次批叠珠 ≥ 1C", ShieldCategory.COMBO, paramInt = 1),
         WaveShieldChip("equal_pair_light_dark", "光暗同等 C", ShieldCategory.COMBO),
@@ -70,9 +74,14 @@ object WaveShieldCatalog {
         else -> chip
     }
 
-    val COMBO_EXCLUSIVE_IDS = setOf("min_combo", "min_first_combo", "exact_combo", "exact_first_combo", "zero_combo", "odd_combo", "even_combo")
+    val COMBO_EXCLUSIVE_IDS = setOf(
+        "min_combo", "min_first_combo", "min_first_elem_combo",
+        "exact_combo", "exact_first_combo", "wave1_same_kind", "wave1_distinct_kind",
+        "zero_combo", "odd_combo", "even_combo"
+    )
     val PUZZLE_EXCLUSIVE_IDS = setOf("puzzle_shield", "loose_puzzle", "strict_puzzle", "enchanted_puzzle")
     val CROSS_EXCLUSIVE_IDS = setOf("cross_shield", "cross_shield_2", "cross_shield_3")
+    val STEP_EXCLUSIVE_IDS = setOf("step_limit", "step_range", "exact_steps")
 
     /**
      * Preset Puzzle Shield shape masks on a 6x5 (or wider) board centered around row 1..3, col 1..4.

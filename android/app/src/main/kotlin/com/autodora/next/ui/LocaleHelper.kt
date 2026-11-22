@@ -111,9 +111,13 @@ object LocaleHelper {
         return when (chip.id) {
             "min_combo" -> "${ctx.getString(R.string.combo_type_min_total)} ≥${chip.paramInt}"
             "min_first_combo" -> "${ctx.getString(R.string.combo_type_min_first)} ≥${chip.paramInt}"
+            "min_first_elem_combo" -> "${ctx.getString(R.string.combo_type_min_first_elem)} ≥${chip.paramInt}"
             "exact_combo" -> "${ctx.getString(R.string.combo_type_exact_total)} ${chip.paramInt}"
             "exact_first_combo" -> "${ctx.getString(R.string.combo_type_exact_first)} ${chip.paramInt}"
+            "wave1_same_kind" -> "${ctx.getString(R.string.combo_type_wave1_same_kind)} ${chip.paramInt}"
+            "wave1_distinct_kind" -> "${ctx.getString(R.string.combo_type_wave1_distinct_kind)} ${chip.paramInt}"
             "zero_combo" -> ctx.getString(R.string.combo_type_zero)
+            "no_cascade" -> ctx.getString(R.string.shield_no_cascade)
             "odd_combo" -> {
                 val scope = ctx.getString(if (chip.paramInt == 1) R.string.combo_parity_scope_total else R.string.combo_parity_scope_first)
                 "${ctx.getString(R.string.combo_type_odd)}（$scope）"
@@ -130,9 +134,15 @@ object LocaleHelper {
                 if (elemNames.isNotEmpty()) "$base·$elemNames" else base
             }
             "equal_pair_light_dark" -> {
-                val a = if (chip.paramElementMask != 0) (chip.paramElementMask and 0x0F).coerceIn(0, 5) else 3
-                val b = if (chip.paramElementMask != 0) ((chip.paramElementMask ushr 4) and 0x0F).coerceIn(0, 5) else 4
-                ctx.getString(R.string.combo_extra_equal_pair, elementLabel(ctx, a), elementLabel(ctx, b))
+                if ((chip.paramElementMask and 0x100) != 0) {
+                    val m = chip.paramElementMask and 0x3F
+                    val joined = (0..5).filter { (m and (1 shl it)) != 0 }.joinToString("=") { elementLabel(ctx, it) }
+                    ctx.getString(R.string.combo_extra_equal_multi_fmt, joined.ifEmpty { "${elementLabel(ctx, 3)}=${elementLabel(ctx, 4)}" })
+                } else {
+                    val a = if (chip.paramElementMask != 0) (chip.paramElementMask and 0x0F).coerceIn(0, 5) else 3
+                    val b = if (chip.paramElementMask != 0) ((chip.paramElementMask ushr 4) and 0x0F).coerceIn(0, 5) else 4
+                    ctx.getString(R.string.combo_extra_equal_pair, elementLabel(ctx, a), elementLabel(ctx, b))
+                }
             }
             "min_distinct_elements" -> ctx.getString(R.string.elem_min_distinct_fmt, chip.paramInt.coerceIn(2, 6))
             "require_elements" -> {
@@ -156,6 +166,7 @@ object LocaleHelper {
             "anti_first_wave" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_anti)}:$elemNames" else ctx.getString(R.string.elem_limit_anti)
             "forbid_all" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_forbid)}:$elemNames" else ctx.getString(R.string.elem_limit_forbid)
             "clear_all_element" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_clear_all)}:$elemNames" else ctx.getString(R.string.elem_limit_clear_all)
+            "unmatchable_elements" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_unmatchable)}:$elemNames" else ctx.getString(R.string.elem_limit_unmatchable)
             "digital_orb_count" -> ctx.getString(R.string.shield_digital_orbs_fmt, chip.paramInt.coerceIn(1, 48))
             "first_wave_full_clear" -> ctx.getString(R.string.shield_full_clear)
             "any_enchanted_orb_shield" -> ctx.getString(R.string.shield_any_enchanted_orb)
@@ -204,6 +215,11 @@ object LocaleHelper {
                 "${ctx.getString(R.string.burn_path_title)}·$lenStr·≤$maxH"
             }
             "step_limit" -> ctx.getString(R.string.shield_step_limit_fmt, chip.paramInt.coerceAtLeast(1))
+            "step_range" -> {
+                val lo = (chip.paramInt and 0xFF).coerceIn(1, 200)
+                val hi = ((chip.paramInt ushr 8) and 0xFF).coerceIn(lo, 200)
+                ctx.getString(R.string.shield_step_range_fmt, lo, hi)
+            }
             "traffic_light" -> ctx.getString(R.string.shield_traffic_light)
             "trail_corrosion" -> ctx.getString(R.string.shield_trail_corrosion)
             "step_hurt_minimize" -> ctx.getString(R.string.shield_step_hurt)

@@ -58,6 +58,8 @@ struct BoardState {
     uint64_t miasmaMask = 0;
     uint64_t charOrbPassMask = 0;
     uint64_t charOrbEndMask = 0;
+    uint64_t scorchingTileMask = 0;
+    uint64_t endForbiddenMask = 0; // Union of BlackHole (#32) and EndForbidden / 血浴地型 (#31)
 
     constexpr uint8_t cellCount() const noexcept {
         return static_cast<uint8_t>(cols * rows);

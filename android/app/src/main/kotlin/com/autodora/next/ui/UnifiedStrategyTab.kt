@@ -80,8 +80,10 @@ internal fun UnifiedStrategyTab(
     // Synchronized working numeric parameters for wave shields
     var minTotalComboVal by remember { mutableStateOf(byId["min_combo"]?.paramInt ?: 6) }
     var minFirstComboVal by remember { mutableStateOf(byId["min_first_combo"]?.paramInt ?: 5) }
+    var minFirstElemVal by remember { mutableStateOf(byId["min_first_elem_combo"]?.paramInt ?: 5) }
     var exactTotalComboVal by remember { mutableStateOf(byId["exact_combo"]?.paramInt ?: 6) }
     var exactFirstComboVal by remember { mutableStateOf(byId["exact_first_combo"]?.paramInt ?: 4) }
+    var wave1KindVal by remember { mutableStateOf(byId["wave1_same_kind"]?.paramInt ?: byId["wave1_distinct_kind"]?.paramInt ?: 5) }
     var parityFirstOnly by remember {
         mutableStateOf((byId["odd_combo"]?.paramInt ?: byId["even_combo"]?.paramInt ?: 0) != 1)
     }
@@ -91,23 +93,45 @@ internal fun UnifiedStrategyTab(
         val m = byId["same_elem_combos"]?.paramElementMask ?: 0
         mutableStateOf((0..5).firstOrNull { (m and (1 shl it)) != 0 } ?: -1)
     }
-    val initialPairPacked = byId["equal_pair_light_dark"]?.paramElementMask ?: ((4 shl 4) or 3)
-    var pairElemA by remember { mutableStateOf((initialPairPacked and 0x0F).coerceIn(0, 5)) }
-    var pairElemB by remember { mutableStateOf(((initialPairPacked ushr 4) and 0x0F).coerceIn(0, 5)) }
+    val initialEqMask = run {
+        val raw = byId["equal_pair_light_dark"]?.paramElementMask ?: 0
+        when {
+            (raw and 0x100) != 0 -> raw and 0x3F
+            raw != 0 -> (1 shl (raw and 0x0F).coerceIn(0, 5)) or (1 shl ((raw ushr 4) and 0x0F).coerceIn(0, 5))
+            else -> (1 shl 3) or (1 shl 4)
+        }
+    }
+    var equalElemsMask by remember { mutableStateOf(initialEqMask) }
     var burstOrbsVal by remember { mutableStateOf(byId["elem_burst_shield"]?.paramInt?.coerceIn(3, 15) ?: 5) }
     var elemLimitMode by remember { mutableStateOf(0) }
     var digitalOrbs by remember { mutableStateOf(byId["digital_orb_count"]?.paramInt ?: 18) }
     var maxBurnHurts by remember { mutableStateOf(((byId["zero_trail_burning"]?.paramInt ?: 0) ushr 8) and 0xFF) }
     var burnTrailLen by remember { mutableStateOf((byId["zero_trail_burning"]?.paramInt ?: 0) and 0xFF) }
     var stepLimitVal by remember { mutableStateOf(byId["step_limit"]?.paramInt ?: 15) }
+    var stepRangeMinVal by remember { mutableStateOf((byId["step_range"]?.paramInt?.and(0xFF))?.takeIf { it in 1..200 } ?: 20) }
+    var stepRangeMaxVal by remember { mutableStateOf(((byId["step_range"]?.paramInt ?: 0) ushr 8 and 0xFF).takeIf { it in 1..200 } ?: 25) }
 
     LaunchedEffect(byId["min_combo"]?.paramInt) { byId["min_combo"]?.paramInt?.let { if (it in 1..15) minTotalComboVal = it } }
     LaunchedEffect(byId["min_first_combo"]?.paramInt) { byId["min_first_combo"]?.paramInt?.let { if (it in 1..15) minFirstComboVal = it } }
+    LaunchedEffect(byId["min_first_elem_combo"]?.paramInt) { byId["min_first_elem_combo"]?.paramInt?.let { if (it in 1..12) minFirstElemVal = it } }
     LaunchedEffect(byId["exact_combo"]?.paramInt) { byId["exact_combo"]?.paramInt?.let { if (it in 1..15) exactTotalComboVal = it } }
     LaunchedEffect(byId["exact_first_combo"]?.paramInt) { byId["exact_first_combo"]?.paramInt?.let { if (it in 1..15) exactFirstComboVal = it } }
+    LaunchedEffect(byId["wave1_same_kind"]?.paramInt, byId["wave1_distinct_kind"]?.paramInt) {
+        (byId["wave1_same_kind"] ?: byId["wave1_distinct_kind"])?.paramInt?.let { if (it in 1..10) wave1KindVal = it }
+    }
     LaunchedEffect(byId["elem_burst_shield"]?.paramInt) { byId["elem_burst_shield"]?.paramInt?.let { if (it in 3..15) burstOrbsVal = it } }
     LaunchedEffect(byId["digital_orb_count"]?.paramInt) { byId["digital_orb_count"]?.paramInt?.let { if (it in 6..30) digitalOrbs = it } }
     LaunchedEffect(byId["step_limit"]?.paramInt) { byId["step_limit"]?.paramInt?.let { if (it in 2..60) stepLimitVal = it } }
+    LaunchedEffect(byId["step_range"]?.paramInt) {
+        byId["step_range"]?.paramInt?.let { packed ->
+            val lo = packed and 0xFF
+            val hi = (packed ushr 8) and 0xFF
+            if (lo in 1..200 && hi in lo..200) {
+                stepRangeMinVal = lo
+                stepRangeMaxVal = hi
+            }
+        }
+    }
 
     val legacyReqIds = remember {
         buildSet {
@@ -365,48 +389,79 @@ internal fun UnifiedStrategyTab(
                     )
                 }
 
-                // Temporary Wave Hard Step Limit (限 N 步内)
+                // Temporary Wave Hard Step Limit (限 N 步内) & Step Range Shield (#60 步数盾 [min-max])
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val stepLbl = stringResource(R.string.shield_step_limit_fmt, stepLimitVal)
                     CompactChoicePill(
                         label = stepLbl,
                         selected = "step_limit" in activeIds,
                         onClick = {
-                            onToggleWaveChip(WaveShieldChip("step_limit", stepLbl, ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal))
+                            if ("step_limit" in activeIds) ActiveStrategyStore.removeChip("step_limit")
+                            else ActiveStrategyStore.replaceGroup(
+                                WaveShieldCatalog.STEP_EXCLUSIVE_IDS,
+                                WaveShieldChip("step_limit", stepLbl, ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    val rangeLbl = stringResource(R.string.shield_step_range_fmt, stepRangeMinVal, stepRangeMaxVal)
+                    CompactChoicePill(
+                        label = rangeLbl,
+                        selected = "step_range" in activeIds,
+                        onClick = {
+                            if ("step_range" in activeIds) ActiveStrategyStore.removeChip("step_range")
+                            else ActiveStrategyStore.replaceGroup(
+                                WaveShieldCatalog.STEP_EXCLUSIVE_IDS,
+                                WaveShieldChip("step_range", rangeLbl, ShieldCategory.HAZARD_AND_PATH, paramInt = stepRangeMinVal or (stepRangeMaxVal shl 8))
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if ("step_limit" in activeIds) {
+                    NumericStepperRow(
+                        label = stringResource(R.string.shield_step_limit_fmt, stepLimitVal),
+                        valueText = "≤$stepLimitVal",
+                        onMinus = {
+                            stepLimitVal = (stepLimitVal - 1).coerceIn(2, 60)
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip("step_limit", ctx.getString(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
+                            )
+                        },
+                        onPlus = {
+                            stepLimitVal = (stepLimitVal + 1).coerceIn(2, 60)
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip("step_limit", ctx.getString(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
+                            )
                         }
                     )
-                    if ("step_limit" in activeIds) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            FilledTonalButton(
-                                onClick = {
-                                    stepLimitVal = (stepLimitVal - 1).coerceIn(2, 60)
-                                    ActiveStrategyStore.upsertChip(
-                                        WaveShieldChip("step_limit", ctx.getString(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
-                                    )
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) { Text("−") }
-                            Text("≤$stepLimitVal", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                            FilledTonalButton(
-                                onClick = {
-                                    stepLimitVal = (stepLimitVal + 1).coerceIn(2, 60)
-                                    ActiveStrategyStore.upsertChip(
-                                        WaveShieldChip("step_limit", ctx.getString(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
-                                    )
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) { Text("+") }
-                        }
+                }
+                if ("step_range" in activeIds) {
+                    fun upsertStepRange(lo: Int, hi: Int) {
+                        val cLo = lo.coerceIn(1, 180)
+                        val cHi = hi.coerceIn(cLo, 200)
+                        stepRangeMinVal = cLo
+                        stepRangeMaxVal = cHi
+                        ActiveStrategyStore.upsertChip(
+                            WaveShieldChip("step_range", ctx.getString(R.string.shield_step_range_fmt, cLo, cHi), ShieldCategory.HAZARD_AND_PATH, paramInt = cLo or (cHi shl 8))
+                        )
                     }
+                    NumericStepperRow(
+                        label = stringResource(R.string.step_range_min_label),
+                        valueText = "$stepRangeMinVal",
+                        onMinus = { upsertStepRange(stepRangeMinVal - 1, stepRangeMaxVal) },
+                        onPlus = { upsertStepRange(stepRangeMinVal + 1, maxOf(stepRangeMaxVal, stepRangeMinVal + 1)) }
+                    )
+                    NumericStepperRow(
+                        label = stringResource(R.string.step_range_max_label),
+                        valueText = "$stepRangeMaxVal",
+                        onMinus = { upsertStepRange(minOf(stepRangeMinVal, stepRangeMaxVal - 1), stepRangeMaxVal - 1) },
+                        onPlus = { upsertStepRange(stepRangeMinVal, stepRangeMaxVal + 1) }
+                    )
                 }
 
                 // Unified Compute Slider (40..600) + Follow System
@@ -689,8 +744,11 @@ internal fun UnifiedStrategyTab(
                 val curComboMode = when {
                     "min_combo" in activeIds -> "min_combo"
                     "min_first_combo" in activeIds -> "min_first_combo"
+                    "min_first_elem_combo" in activeIds -> "min_first_elem_combo"
                     "exact_combo" in activeIds -> "exact_combo"
                     "exact_first_combo" in activeIds -> "exact_first_combo"
+                    "wave1_same_kind" in activeIds -> "wave1_same_kind"
+                    "wave1_distinct_kind" in activeIds -> "wave1_distinct_kind"
                     "zero_combo" in activeIds -> "zero_combo"
                     "odd_combo" in activeIds -> "odd_combo"
                     "even_combo" in activeIds -> "even_combo"
@@ -702,8 +760,11 @@ internal fun UnifiedStrategyTab(
                     val chip = when (mode) {
                         "min_combo" -> WaveShieldChip("min_combo", "${ctx.getString(R.string.combo_type_min_total)} ≥$minTotalComboVal", ShieldCategory.COMBO, paramInt = minTotalComboVal)
                         "min_first_combo" -> WaveShieldChip("min_first_combo", "${ctx.getString(R.string.combo_type_min_first)} ≥$minFirstComboVal", ShieldCategory.COMBO, paramInt = minFirstComboVal)
+                        "min_first_elem_combo" -> WaveShieldChip("min_first_elem_combo", "${ctx.getString(R.string.combo_type_min_first_elem)} ≥$minFirstElemVal", ShieldCategory.COMBO, paramInt = minFirstElemVal)
                         "exact_combo" -> WaveShieldChip("exact_combo", "${ctx.getString(R.string.combo_type_exact_total)} $exactTotalComboVal", ShieldCategory.COMBO, paramInt = exactTotalComboVal)
                         "exact_first_combo" -> WaveShieldChip("exact_first_combo", "${ctx.getString(R.string.combo_type_exact_first)} $exactFirstComboVal", ShieldCategory.COMBO, paramInt = exactFirstComboVal)
+                        "wave1_same_kind" -> WaveShieldChip("wave1_same_kind", "${ctx.getString(R.string.combo_type_wave1_same_kind)} $wave1KindVal", ShieldCategory.COMBO, paramInt = wave1KindVal)
+                        "wave1_distinct_kind" -> WaveShieldChip("wave1_distinct_kind", "${ctx.getString(R.string.combo_type_wave1_distinct_kind)} $wave1KindVal", ShieldCategory.COMBO, paramInt = wave1KindVal)
                         "zero_combo" -> {
                             listOf(
                                 "same_combo_elements", "second_wave_combo", "same_elem_combos",
@@ -728,8 +789,11 @@ internal fun UnifiedStrategyTab(
                         "none" to stringResource(R.string.combo_type_none),
                         "min_combo" to stringResource(R.string.combo_type_min_total),
                         "min_first_combo" to stringResource(R.string.combo_type_min_first),
+                        "min_first_elem_combo" to stringResource(R.string.combo_type_min_first_elem),
                         "exact_combo" to stringResource(R.string.combo_type_exact_total),
                         "exact_first_combo" to stringResource(R.string.combo_type_exact_first),
+                        "wave1_same_kind" to stringResource(R.string.combo_type_wave1_same_kind),
+                        "wave1_distinct_kind" to stringResource(R.string.combo_type_wave1_distinct_kind),
                         "zero_combo" to stringResource(R.string.combo_type_zero),
                         "odd_combo" to stringResource(R.string.combo_type_odd),
                         "even_combo" to stringResource(R.string.combo_type_even)
@@ -762,6 +826,12 @@ internal fun UnifiedStrategyTab(
                                     onMinus = { minFirstComboVal = (minFirstComboVal - 1).coerceIn(1, 12); applyComboType("min_first_combo") },
                                     onPlus = { minFirstComboVal = (minFirstComboVal + 1).coerceIn(1, 12); applyComboType("min_first_combo") }
                                 )
+                                "min_first_elem_combo" -> NumericStepperRow(
+                                    label = stringResource(R.string.combo_param_min_first_elem),
+                                    valueText = stringResource(R.string.combo_value_min_fmt, minFirstElemVal),
+                                    onMinus = { minFirstElemVal = (minFirstElemVal - 1).coerceIn(1, 12); applyComboType("min_first_elem_combo") },
+                                    onPlus = { minFirstElemVal = (minFirstElemVal + 1).coerceIn(1, 12); applyComboType("min_first_elem_combo") }
+                                )
                                 "exact_combo" -> NumericStepperRow(
                                     label = stringResource(R.string.combo_param_exact_total),
                                     valueText = stringResource(R.string.combo_value_exact_fmt, exactTotalComboVal),
@@ -773,6 +843,18 @@ internal fun UnifiedStrategyTab(
                                     valueText = stringResource(R.string.combo_value_exact_fmt, exactFirstComboVal),
                                     onMinus = { exactFirstComboVal = (exactFirstComboVal - 1).coerceIn(1, 12); applyComboType("exact_first_combo") },
                                     onPlus = { exactFirstComboVal = (exactFirstComboVal + 1).coerceIn(1, 12); applyComboType("exact_first_combo") }
+                                )
+                                "wave1_same_kind" -> NumericStepperRow(
+                                    label = stringResource(R.string.combo_param_wave1_same_kind),
+                                    valueText = stringResource(R.string.combo_value_exact_fmt, wave1KindVal),
+                                    onMinus = { wave1KindVal = (wave1KindVal - 1).coerceIn(1, 10); applyComboType("wave1_same_kind") },
+                                    onPlus = { wave1KindVal = (wave1KindVal + 1).coerceIn(1, 10); applyComboType("wave1_same_kind") }
+                                )
+                                "wave1_distinct_kind" -> NumericStepperRow(
+                                    label = stringResource(R.string.combo_param_wave1_distinct_kind),
+                                    valueText = stringResource(R.string.combo_value_exact_fmt, wave1KindVal),
+                                    onMinus = { wave1KindVal = (wave1KindVal - 1).coerceIn(1, 10); applyComboType("wave1_distinct_kind") },
+                                    onPlus = { wave1KindVal = (wave1KindVal + 1).coerceIn(1, 10); applyComboType("wave1_distinct_kind") }
                                 )
                                 "odd_combo", "even_combo" -> Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -811,9 +893,17 @@ internal fun UnifiedStrategyTab(
                             val mask = if (targetAttr in 0..5) (1 shl targetAttr) else 0
                             ActiveStrategyStore.upsertChip(WaveShieldChip("same_elem_combos", ctx.getString(R.string.combo_extra_same_elem, n), ShieldCategory.COMBO, paramInt = n, paramElementMask = mask))
                         }
-                        fun upsertEqualPair(a: Int, b: Int) {
-                            val packed = (a and 0x0F) or ((b and 0x0F) shl 4)
-                            ActiveStrategyStore.upsertChip(WaveShieldChip("equal_pair_light_dark", ctx.getString(R.string.combo_extra_equal_pair, LocaleHelper.elementLabel(ctx, a), LocaleHelper.elementLabel(ctx, b)), ShieldCategory.COMBO, paramElementMask = packed))
+                        fun upsertEqualMulti(mask: Int) {
+                            val clean = mask and 0x3F
+                            val joined = (0..5).filter { (clean and (1 shl it)) != 0 }.joinToString("=") { LocaleHelper.elementLabel(ctx, it) }
+                            ActiveStrategyStore.upsertChip(
+                                WaveShieldChip(
+                                    "equal_pair_light_dark",
+                                    ctx.getString(R.string.combo_extra_equal_multi_fmt, joined),
+                                    ShieldCategory.COMBO,
+                                    paramElementMask = 0x100 or clean
+                                )
+                            )
                         }
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -824,6 +914,12 @@ internal fun UnifiedStrategyTab(
                                 label = sameCLabel,
                                 selected = "same_combo_elements" in activeIds,
                                 onClick = { onToggleWaveChip(WaveShieldChip("same_combo_elements", sameCLabel, ShieldCategory.COMBO)) }
+                            )
+                            val noCasLabel = stringResource(R.string.shield_no_cascade)
+                            CompactChoicePill(
+                                label = noCasLabel,
+                                selected = "no_cascade" in activeIds,
+                                onClick = { onToggleWaveChip(WaveShieldChip("no_cascade", noCasLabel, ShieldCategory.COMBO)) }
                             )
                             CompactChoicePill(
                                 label = stringResource(R.string.combo_extra_second_wave, secondWaveVal),
@@ -841,12 +937,13 @@ internal fun UnifiedStrategyTab(
                                     else upsertSameElem(sameElemGroupsVal, sameElemTarget)
                                 }
                             )
+                            val eqJoined = (0..5).filter { (equalElemsMask and (1 shl it)) != 0 }.joinToString("=") { LocaleHelper.elementLabel(ctx, it) }
                             CompactChoicePill(
-                                label = stringResource(R.string.combo_extra_equal_pair, LocaleHelper.elementLabel(ctx, pairElemA), LocaleHelper.elementLabel(ctx, pairElemB)),
+                                label = stringResource(R.string.combo_extra_equal_multi_fmt, eqJoined),
                                 selected = "equal_pair_light_dark" in activeIds,
                                 onClick = {
                                     if ("equal_pair_light_dark" in activeIds) ActiveStrategyStore.removeChip("equal_pair_light_dark")
-                                    else upsertEqualPair(pairElemA, pairElemB)
+                                    else upsertEqualMulti(equalElemsMask)
                                 }
                             )
                         }
@@ -889,13 +986,16 @@ internal fun UnifiedStrategyTab(
                         if ("equal_pair_light_dark" in activeIds) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                 for (e in 0 until 6) {
+                                    val bit = 1 shl e
+                                    val isOn = (equalElemsMask and bit) != 0
                                     ElementColorTogglePill(
                                         elemIndex = e,
-                                        selected = e == pairElemA || e == pairElemB,
+                                        selected = isOn,
                                         onClick = {
-                                            if (e != pairElemA && e != pairElemB) {
-                                                pairElemA = pairElemB; pairElemB = e
-                                                upsertEqualPair(pairElemA, pairElemB)
+                                            val next = equalElemsMask xor bit
+                                            if (Integer.bitCount(next) >= 2) {
+                                                equalElemsMask = next
+                                                upsertEqualMulti(next)
                                             }
                                         },
                                         modifier = Modifier.weight(1f)
@@ -962,6 +1062,7 @@ internal fun UnifiedStrategyTab(
                 val antiMask = readMaskForLimit("anti_first_wave")
                 val forbidMask = readMaskForLimit("forbid_all")
                 val clearMask = readMaskForLimit("clear_all_element")
+                val unmatchMask = readMaskForLimit("unmatchable_elements")
 
                 Text(stringResource(R.string.elem_req_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -1055,23 +1156,24 @@ internal fun UnifiedStrategyTab(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // 3d. Attribute Elimination Limits (Anti-1st / Forbid All / Clear All 1st)
+                // 3d. Attribute Elimination Limits (Anti-1st / Forbid All / Clear All 1st / Unmatchable #23)
                 Text(stringResource(R.string.elem_forbid_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(
                         Triple(0, stringResource(R.string.elem_limit_anti), Integer.bitCount(antiMask)),
                         Triple(1, stringResource(R.string.elem_limit_forbid), Integer.bitCount(forbidMask)),
-                        Triple(2, stringResource(R.string.elem_limit_clear_all), Integer.bitCount(clearMask))
+                        Triple(2, stringResource(R.string.elem_limit_clear_all), Integer.bitCount(clearMask)),
+                        Triple(3, stringResource(R.string.elem_limit_unmatchable), Integer.bitCount(unmatchMask))
                     ).forEach { (idx, lbl, cnt) ->
                         CompactChoicePill(
-                            label = if (cnt > 0) "$lbl ($cnt)" else lbl,
+                            label = if (cnt > 0) "$lbl($cnt)" else lbl,
                             selected = elemLimitMode == idx,
                             onClick = { elemLimitMode = idx },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
-                val curLimitMask = when (elemLimitMode) { 0 -> antiMask; 1 -> forbidMask; else -> clearMask }
+                val curLimitMask = when (elemLimitMode) { 0 -> antiMask; 1 -> forbidMask; 2 -> clearMask; else -> unmatchMask }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     for (e in 0 until 6) {
                         val bit = 1 shl e
@@ -1084,6 +1186,7 @@ internal fun UnifiedStrategyTab(
                                 val antiLbl = ctx.getString(R.string.elem_limit_anti)
                                 val forbidLbl = ctx.getString(R.string.elem_limit_forbid)
                                 val clearLbl = ctx.getString(R.string.elem_limit_clear_all)
+                                val unmatchLbl = ctx.getString(R.string.elem_limit_unmatchable)
                                 when (elemLimitMode) {
                                     0 -> {
                                         writeMaskForLimit("anti_first_wave", antiLbl, nextMask)
@@ -1100,12 +1203,15 @@ internal fun UnifiedStrategyTab(
                                             if ((effectiveReqMask and bit) != 0) writeRequiredElements(effectiveReqMask and bit.inv(), effectiveEnchMask and bit.inv())
                                         }
                                     }
-                                    else -> {
+                                    2 -> {
                                         writeMaskForLimit("clear_all_element", clearLbl, nextMask)
                                         if (turningOn) {
                                             if ((antiMask and bit) != 0) writeMaskForLimit("anti_first_wave", antiLbl, antiMask and bit.inv())
                                             if ((forbidMask and bit) != 0) writeMaskForLimit("forbid_all", forbidLbl, forbidMask and bit.inv())
                                         }
+                                    }
+                                    else -> {
+                                        writeMaskForLimit("unmatchable_elements", unmatchLbl, nextMask)
                                     }
                                 }
                             },

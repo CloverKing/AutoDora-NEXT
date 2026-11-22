@@ -64,6 +64,13 @@ enum class ComboParity(val code: Int) {
     EVEN(2)
 }
 
+@Serializable
+enum class Wave1KindMode(val code: Int) {
+    ANY(0),
+    SAME_KIND_HEART_WILD(1),
+    DISTINCT_KIND_HEART_WILD(2)
+}
+
 /**
  * Legacy AutoDora-inspired high-level global goal modes (全局求解目标模式).
  * Stored inside each Strategy Preset so players can express team goals cleanly.
@@ -177,6 +184,7 @@ data class RuleConfig(
     val useSystemSteps: Boolean = true,       // true = inherit System Settings maxSteps; false = Strategy overrides System
     val useSystemBeam: Boolean = true,        // true = inherit System Settings beamWidth; false = Strategy overrides System
     val allowDiagonalMove: Boolean = true,
+    val minSteps: Int = 0,
     val maxSteps: Int = 30,
     val exactSteps: Int = -1,
     val stepPenaltyWeight: Double = 0.08,
@@ -207,20 +215,25 @@ data class RuleConfig(
     val maxTotalCombo: Int = -1,
     val exactTotalCombo: Int = -1,
     val minFirstWaveCombo: Int = 0,
+    val minFirstWaveElementalCombo: Int = 0,
     val exactFirstWaveCombo: Int = -1,
     val firstWaveOnlyScoring: Boolean = false,
+    val disableCascades: Boolean = false,
     val comboParity: ComboParity = ComboParity.ANY,
     val comboParityFirstWaveOnly: Boolean = true,
     val sameComboAcrossEliminatedElements: Boolean = false,
+    val wave1KindMode: Wave1KindMode = Wave1KindMode.ANY,
     val avoidSkyfallRisk: Boolean = true,
     val minSecondWaveCombo: Int = 0,
     val requiredSecondWaveElementsMask: Int = 0,
     val requireEqualPairCombos: Boolean = false,
     val equalPairElemA: Int = 3,
     val equalPairElemB: Int = 4,
+    val equalComboElementsMask: Int = 0,
     val equalPairMustBeNonZero: Boolean = true,
     val requiredSameElementCombos: Int = 0,
     val sameElementComboTarget: Int = -1,
+    val unmatchableElementsMask: Int = 0,
 
     val exactFirstWaveTotalOrbs: Int = -1,
     val requireFirstWaveFullClear: Boolean = false,

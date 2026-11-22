@@ -38,6 +38,7 @@ constexpr uint32_t RaceOrbShield     = 1u << 23;
 constexpr uint32_t CharOrbTerrain    = 1u << 24;
 constexpr uint32_t TrailCellsGoal    = 1u << 25;
 constexpr uint32_t MiasmaLimit       = 1u << 26;
+constexpr uint32_t Wave1KindShield   = 1u << 27; // #57 首消相同種類盾 / #58 首消不同種類盾
 } // namespace ShieldStatusBits
 
 struct PathMetrics {

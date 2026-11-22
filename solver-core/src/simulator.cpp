@@ -22,14 +22,15 @@ inline uint8_t requiredRunForElement(Element e, const RuleConfig& rules) noexcep
     return (m >= 1 && m <= 6) ? m : 3;
 }
 
-inline bool canCellEliminate(const BoardState& board, uint8_t idx, uint8_t wave = 1) noexcept {
+inline bool canCellEliminate(const BoardState& board, uint8_t idx, const RuleConfig& rules, uint8_t wave = 1) noexcept {
     const uint64_t b = bitOf(idx);
     if ((b & board.validMask) == 0) return false;
-    if ((b & (board.stormMask | board.shatteredMask | board.sealedStoneMask)) != 0) return false;
-    if (wave > 1 && (b & board.barrierMask) != 0) return false;
+    if ((b & (board.stormMask | board.shatteredMask | board.sealedStoneMask | board.charOrbPassMask)) != 0) return false;
+    if (wave > 1 && (rules.disableCascades || (b & board.barrierMask) != 0)) return false;
     const Cell& c = board.cells[idx];
     if (!c.isMatchable()) return false;
     if (c.isUnmatchableHazard()) return false;
+    if (rules.unmatchableElementsMask != 0 && (elementBit(c.element) & rules.unmatchableElementsMask) != 0) return false;
     return true;
 }
 
@@ -171,7 +172,7 @@ void analyzeGroupGeometry(MatchGroup& g, const BoardState& board) noexcept {
     }
 }
 
-uint16_t countSkyfallRiskPairs(const BoardState& board) noexcept {
+uint16_t countSkyfallRiskPairs(const BoardState& board, const RuleConfig& rules) noexcept {
     uint16_t pairs = 0;
     const uint8_t cols = board.cols;
     const uint8_t rows = board.rows;
@@ -179,17 +180,17 @@ uint16_t countSkyfallRiskPairs(const BoardState& board) noexcept {
     for (uint8_t r = 0; r < rows; ++r) {
         for (uint8_t c = 0; c < cols; ++c) {
             const uint8_t idx = cellIndex(r, c, cols);
-            if (!canCellEliminate(board, idx)) continue;
+            if (!canCellEliminate(board, idx, rules)) continue;
             const Element e = board.cells[idx].element;
             if (c + 1 < cols) {
                 const uint8_t rIdx = cellIndex(r, static_cast<uint8_t>(c + 1), cols);
-                if (canCellEliminate(board, rIdx) && board.cells[rIdx].element == e) {
+                if (canCellEliminate(board, rIdx, rules) && board.cells[rIdx].element == e) {
                     pairs++;
                 }
             }
             if (r + 1 < rows) {
                 const uint8_t dIdx = cellIndex(static_cast<uint8_t>(r + 1), c, cols);
-                if (canCellEliminate(board, dIdx) && board.cells[dIdx].element == e) {
+                if (canCellEliminate(board, dIdx, rules) && board.cells[dIdx].element == e) {
                     pairs++;
                 }
             }
@@ -221,7 +222,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
     for (uint8_t i = 0; i < totalCells; ++i) {
         const uint64_t b = bitOf(i);
         const Cell& c = cur.cells[i];
-        if (canCellEliminate(cur, i, 1)) {
+        if (canCellEliminate(cur, i, rules, 1)) {
             res.matchableCellsAtStart++;
             res.initialElementCounts[static_cast<uint8_t>(c.element)]++;
         }
@@ -259,7 +260,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
 
         // 1. Check 1-match elements first
         for (uint8_t i = 0; i < totalCells; ++i) {
-            if (!canCellEliminate(cur, i, nextWave)) continue;
+            if (!canCellEliminate(cur, i, rules, nextWave)) continue;
             if (requiredRunForElement(cur.cells[i].element, rules) == 1) {
                 matchedMask |= bitOf(i);
             }
@@ -271,7 +272,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
             int c = startC;
             while (cur.inBounds(r, c)) {
                 const uint8_t idx = cellIndex(static_cast<uint8_t>(r), static_cast<uint8_t>(c), cols);
-                if (!canCellEliminate(cur, idx, nextWave)) {
+                if (!canCellEliminate(cur, idx, rules, nextWave)) {
                     r += dr;
                     c += dc;
                     continue;
@@ -288,7 +289,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
 
                 while (cur.inBounds(nr, nc)) {
                     const uint8_t nIdx = cellIndex(static_cast<uint8_t>(nr), static_cast<uint8_t>(nc), cols);
-                    if (!canCellEliminate(cur, nIdx, nextWave)) break;
+                    if (!canCellEliminate(cur, nIdx, rules, nextWave)) break;
                     const Element nextEl = cur.cells[nIdx].element;
                     if (!areElementsCompatible(baseEl, nextEl, rules)) break;
                     runMask |= bitOf(nIdx);
@@ -443,6 +444,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
             if (hz & HazardBits::Priority)      clearedPriority |= origBit;
             if (hz & HazardBits::Reserve)       brokenReserve |= origBit;
             if (cur.cells[i].variant == Variant::Weakened) res.weakenedEliminated++;
+            if ((bitOf(i) & cur.scorchingTileMask) != 0) res.scorchingOrbsCleared++;
             if (wave == 1) {
                 if (hz & HazardBits::BloodDrain) clearedBloodFirst |= origBit;
                 if (hz & HazardBits::Bomb)       clearedBombFirst |= origBit;
@@ -453,7 +455,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
 
         if (wave == 1) {
             for (uint8_t i = 0; i < totalCells; ++i) {
-                if (canCellEliminate(cur, i, 1)) {
+                if (canCellEliminate(cur, i, rules, 1)) {
                     res.remainingAfterFirstWave[static_cast<uint8_t>(cur.cells[i].element)]++;
                 }
             }
@@ -491,14 +493,17 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
         }
 
         if (wave == 1 && rules.avoidSkyfallRisk) {
-            res.skyfallRiskPairs = countSkyfallRiskPairs(cur);
+            res.skyfallRiskPairs = countSkyfallRiskPairs(cur, rules);
+        }
+        if (wave == 1 && rules.disableCascades) {
+            break;
         }
     }
 
     if (wave == 0) {
         res.remainingAfterFirstWave = res.initialElementCounts;
         if (rules.avoidSkyfallRisk) {
-            res.skyfallRiskPairs = countSkyfallRiskPairs(cur);
+            res.skyfallRiskPairs = countSkyfallRiskPairs(cur, rules);
         }
     }
 
