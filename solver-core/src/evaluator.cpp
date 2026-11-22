@@ -1087,21 +1087,23 @@ EvalResult evaluateCandidate(
         }
     }
 
-    if (rules.requiredRaceElementsMask != 0 || rules.requireAnyRaceOrb) {
+    if (rules.requiredRaceElementsMask != 0 || rules.requiredRaceTypesMask != 0 || rules.requireAnyRaceOrb) {
         const uint8_t missingRace = static_cast<uint8_t>(rules.requiredRaceElementsMask & ~sim.firstWaveRaceElementsMask);
+        const uint8_t missingRaceTypes = static_cast<uint8_t>(rules.requiredRaceTypesMask & ~sim.firstWaveRaceTypesMask);
         const bool anyRaceOk = !rules.requireAnyRaceOrb || sim.totalRaceOrbsFirstWave > 0;
-        if (missingRace == 0 && anyRaceOk) {
+        if (missingRace == 0 && missingRaceTypes == 0 && anyRaceOk) {
             markSat(ShieldStatusBits::RaceOrbShield);
             shaping += 1200.0;
         } else {
             unmetFocusShield = true;
-            const int missCnt = std::popcount(missingRace) + (anyRaceOk ? 0 : 1);
+            const int missCnt = std::popcount(missingRace) + std::popcount(missingRaceTypes) + (anyRaceOk ? 0 : 1);
             markFail(ShieldStatusBits::RaceOrbShield, static_cast<double>(missCnt));
             for (uint8_t i = 0; i < totalCells; ++i) {
                 const Cell& c = boardAfterMoves.cells[i];
-                if (c.variant == Variant::Race && c.isMatchable()) {
+                if ((c.variant == Variant::Race || c.race != RaceType::None) && c.isMatchable()) {
                     const uint8_t eb = elementBit(c.element);
-                    if ((missingRace & eb) != 0 || !anyRaceOk) {
+                    const uint8_t rb = raceBit(c.race);
+                    if ((missingRace & eb) != 0 || (missingRaceTypes & rb) != 0 || !anyRaceOk) {
                         shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 130.0);
                     }
                 }

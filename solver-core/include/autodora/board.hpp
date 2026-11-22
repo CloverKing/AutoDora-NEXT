@@ -14,6 +14,7 @@ constexpr uint8_t kMaxCheckpoints = 8;
 struct Cell {
     Element element = Element::Empty;
     Variant variant = Variant::Normal;
+    RaceType race = RaceType::None; // 0 = 无/通用种族, 1..7 = 神/魔/人/兽/龙/妖/机 (fits in existing struct padding!)
     uint32_t hazards = HazardBits::None;
 
     constexpr bool isMatchable() const noexcept {

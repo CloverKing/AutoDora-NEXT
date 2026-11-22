@@ -381,4 +381,25 @@ class RuleComposerTest {
         val combined = HazardBits.COAGULATED or HazardBits.EVIL_ENERGY or HazardBits.MAGIC_ORB or HazardBits.BLOOD_THORN
         assertEquals(4, Integer.bitCount(combined))
     }
+
+    @Test
+    fun `compose maps race_orb_shield to specific RaceType bitmask or generic any-race mode`() {
+        val base = TeamBasePreset("default", "Default")
+        // Generic any-race shield (paramInt == 0)
+        val generic = RuleComposer.compose(
+            base,
+            listOf(WaveShieldChip("race_orb_shield", "种族符石首消", ShieldCategory.COUNT_AND_ELEMENT, paramInt = 0))
+        )
+        assertTrue(generic.requireAnyRaceOrb)
+        assertEquals(0, generic.requiredRaceTypesMask)
+
+        // Specific God + Demon race shield
+        val mask = RaceType.GOD.bitMask or RaceType.DEMON.bitMask
+        val specific = RuleComposer.compose(
+            base,
+            listOf(WaveShieldChip("race_orb_shield", "种族符石首消", ShieldCategory.COUNT_AND_ELEMENT, paramInt = mask))
+        )
+        assertFalse(specific.requireAnyRaceOrb)
+        assertEquals(mask, specific.requiredRaceTypesMask)
+    }
 }

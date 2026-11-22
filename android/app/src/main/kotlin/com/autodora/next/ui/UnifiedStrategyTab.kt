@@ -1298,6 +1298,44 @@ internal fun UnifiedStrategyTab(
                         )
                     }
                 }
+                if ("race_orb_shield" in activeIds) {
+                    val curRaceMask = (byId["race_orb_shield"]?.paramInt ?: 0) and 0x7F
+                    val baseRaceLbl = ctx.getString(R.string.shield_race_orb)
+                    Text(
+                        text = stringResource(R.string.race_select_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        CompactChoicePill(
+                            label = stringResource(R.string.race_any),
+                            selected = curRaceMask == 0,
+                            onClick = {
+                                ActiveStrategyStore.upsertChip(
+                                    WaveShieldChip("race_orb_shield", baseRaceLbl, ShieldCategory.COUNT_AND_ELEMENT, paramInt = 0)
+                                )
+                            },
+                            modifier = Modifier.weight(1.25f)
+                        )
+                        for (race in RaceType.ALL_RACES) {
+                            val on = (curRaceMask and race.bitMask) != 0
+                            CompactChoicePill(
+                                label = LocaleHelper.raceShortLabel(ctx, race),
+                                selected = on,
+                                onClick = {
+                                    val nextMask = curRaceMask xor race.bitMask
+                                    ActiveStrategyStore.upsertChip(
+                                        WaveShieldChip("race_orb_shield", baseRaceLbl, ShieldCategory.COUNT_AND_ELEMENT, paramInt = nextMask)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
                 if ("digital_orb_count" in activeIds) {
                     NumericStepperRow(
                         label = stringResource(R.string.shield_digital_orbs_step),

@@ -158,7 +158,11 @@ Java_com_autodora_next_jni_NativeSolver_nativeSolve(
 
     for (int i = 0; i < n; ++i) {
         if (i < static_cast<int>(els.size()))  board.cells[i].element = static_cast<Element>(els[i]);
-        if (i < static_cast<int>(vars.size())) board.cells[i].variant = static_cast<Variant>(vars[i]);
+        if (i < static_cast<int>(vars.size())) {
+            const int rawVar = vars[i];
+            board.cells[i].variant = static_cast<Variant>(rawVar & 0x0F);
+            board.cells[i].race = static_cast<RaceType>((rawVar >> 4) & 0x0F);
+        }
         if (i < static_cast<int>(hazs.size())) board.cells[i].hazards = static_cast<uint32_t>(hazs[i]);
         if (i < static_cast<int>(tflags.size())) board.tileFlags[i] = static_cast<uint32_t>(tflags[i]);
     }
@@ -285,6 +289,7 @@ Java_com_autodora_next_jni_NativeSolver_nativeSolve(
     rules.wave1KindMode                   = static_cast<Wave1KindMode>(riAt(96, 0));
     rules.equalComboElementsMask          = static_cast<uint8_t>(riAt(97, 0));
     rules.unmatchableElementsMask         = static_cast<uint8_t>(riAt(98, 0));
+    rules.requiredRaceTypesMask           = static_cast<uint8_t>(riAt(99, 0));
 
     rules.stepPenaltyWeight     = rdAt(0, 0.08);
     rules.diagonalPenaltyWeight = rdAt(1, 0.05);

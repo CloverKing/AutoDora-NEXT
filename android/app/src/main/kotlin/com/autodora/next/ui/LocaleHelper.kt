@@ -8,6 +8,7 @@ import com.autodora.next.data.AppLanguage
 import com.autodora.next.data.ThemeMode
 import com.autodora.next.model.ElementPriority
 import com.autodora.next.model.MatchTiming
+import com.autodora.next.model.RaceType
 import com.autodora.next.model.RuleConfig
 import com.autodora.next.model.ShieldVerdict
 import com.autodora.next.model.ShieldVerdictStatus
@@ -45,6 +46,17 @@ object LocaleHelper {
         4 -> ctx.getString(R.string.elem_dark)
         5 -> ctx.getString(R.string.elem_heart)
         else -> "?"
+    }
+
+    fun raceShortLabel(ctx: Context, race: RaceType): String = when (race) {
+        RaceType.GOD -> ctx.getString(R.string.race_short_god)
+        RaceType.DEMON -> ctx.getString(R.string.race_short_demon)
+        RaceType.HUMAN -> ctx.getString(R.string.race_short_human)
+        RaceType.BEAST -> ctx.getString(R.string.race_short_beast)
+        RaceType.DRAGON -> ctx.getString(R.string.race_short_dragon)
+        RaceType.ELF -> ctx.getString(R.string.race_short_elf)
+        RaceType.MACHINA -> ctx.getString(R.string.race_short_machina)
+        RaceType.NONE -> ctx.getString(R.string.race_any)
     }
 
     fun themeLabel(ctx: Context, mode: ThemeMode): String = when (mode) {
@@ -172,7 +184,18 @@ object LocaleHelper {
             "digital_orb_count" -> ctx.getString(R.string.shield_digital_orbs_fmt, chip.paramInt.coerceIn(1, 48))
             "first_wave_full_clear" -> ctx.getString(R.string.shield_full_clear)
             "any_enchanted_orb_shield" -> ctx.getString(R.string.shield_any_enchanted_orb)
-            "race_orb_shield" -> ctx.getString(R.string.shield_race_orb)
+            "race_orb_shield" -> {
+                val raceMask = chip.paramInt and 0x7F
+                val base = ctx.getString(R.string.shield_race_orb)
+                if (raceMask != 0) {
+                    val races = RaceType.ALL_RACES
+                        .filter { (raceMask and it.bitMask) != 0 }
+                        .joinToString("") { raceShortLabel(ctx, it) }
+                    "$base:$races"
+                } else {
+                    base
+                }
+            }
             "char_orb_first_wave" -> ctx.getString(R.string.shield_char_orb_first)
             "forbid_weakened_orb" -> ctx.getString(R.string.shield_forbid_weakened)
             "luminous_orb_shield" -> ctx.getString(R.string.shield_luminous_orb)

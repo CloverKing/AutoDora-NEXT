@@ -493,6 +493,15 @@ class PathOverlayView(context: Context) : View(context) {
                     textPaint.textSize = tagH * 0.68f
                     canvas.drawText("血", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
                 }
+                if (cell.variant == Variant.RACE) {
+                    val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
+                    val tagW = tagH * 1.12f
+                    fillPaint.color = Color.argb(225, 123, 31, 162)
+                    canvas.drawRoundRect(left + 6f, bottom - tagH - 6f, left + tagW + 6f, bottom - 6f, 6f, 6f, fillPaint)
+                    textPaint.color = Color.WHITE
+                    textPaint.textSize = tagH * 0.68f
+                    canvas.drawText(raceShortZh(cell.race), left + tagW * 0.5f + 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                }
                 if (idx in lowConfidenceIndices) {
                     canvas.drawRect(left + 7f, top + 7f, right - 7f, bottom - 7f, lowConfPaint)
                 }
@@ -560,7 +569,7 @@ class PathOverlayView(context: Context) : View(context) {
 
                 val suffix = when (cell.variant) {
                     Variant.ENCHANTED -> "+"
-                    Variant.RACE -> "族"
+                    Variant.RACE -> raceShortZh(cell.race)
                     Variant.WEAKENED -> "-"
                     else -> ""
                 }
@@ -737,6 +746,17 @@ class PathOverlayView(context: Context) : View(context) {
             Element.DARK -> "暗"
             Element.HEART -> "心"
             else -> "?"
+        }
+
+        fun raceShortZh(race: RaceType): String = when (race) {
+            RaceType.GOD -> "神"
+            RaceType.DEMON -> "魔"
+            RaceType.HUMAN -> "人"
+            RaceType.BEAST -> "兽"
+            RaceType.DRAGON -> "龙"
+            RaceType.ELF -> "妖"
+            RaceType.MACHINA -> "机"
+            RaceType.NONE -> "族"
         }
     }
 }

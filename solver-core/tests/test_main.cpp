@@ -33,7 +33,7 @@ void verifyPathReplay(const BoardState& initial, const RuleConfig& rules, const 
     if (sol.usedCharacterOrb) {
         require(rules.useCharacterOrb, "usedCharacterOrb without rule");
         require(sol.start.row == 0 && sol.start.col == rules.characterOrbCol, "character orb must start at (0, col)");
-        b.at(0, rules.characterOrbCol) = Cell{rules.characterOrbElement, Variant::Normal, HazardBits::None};
+        b.at(0, rules.characterOrbCol) = Cell{rules.characterOrbElement, Variant::Normal, RaceType::None, HazardBits::None};
     }
 
     CellCoord cur = sol.start;
@@ -1897,6 +1897,45 @@ void testEvilEnergyAndBloodThornAvoidance() {
     require(out.solutions[0].simulation.bloodThornEliminated == 0, "must NOT eliminate BloodThorn");
 }
 
+// -----------------------------------------------------------------------------
+// 49. Specific Race Runestone Shield (指定种族符石盾: 神族/魔族精确区分)
+// -----------------------------------------------------------------------------
+void testSpecificRaceRunestoneShield() {
+    // Board has a God-race Water orb already matched in row 0 (WWW), and a Demon-race Fire orb scattered at (2,3).
+    // Requiring Demon race runestone MUST fail on raw board (even though God race matches!) and solve by matching Demon!
+    BoardState b = BoardState::fromString(
+        "WWWGLD"
+        "GLDHWF"
+        "LDHFGL"
+        "DHWGLD"
+        "FWGHDW",
+        6, 5
+    );
+    b.at(0, 1).variant = Variant::Race;
+    b.at(0, 1).race = RaceType::God;
+    b.at(2, 3).variant = Variant::Race;
+    b.at(2, 3).race = RaceType::Demon;
+
+    RuleConfig r;
+    r.requiredRaceTypesMask = raceBit(RaceType::Demon);
+    r.maxSteps = 22;
+    r.beamWidth = 180;
+    r.maxTimeMs = 600;
+
+    // Raw board matches God Water only -> MUST NOT satisfy Demon race shield!
+    auto simRaw = simulateBoard(b, r);
+    require((simRaw.firstWaveRaceTypesMask & raceBit(RaceType::God)) != 0, "raw board should match God orb");
+    require((simRaw.firstWaveRaceTypesMask & raceBit(RaceType::Demon)) == 0, "raw board must NOT match Demon orb");
+
+    PuzzleSolver solver;
+    auto out = solver.solve(b, r);
+    require(!out.solutions.empty() && out.solutions[0].evaluation.allHardConstraintsMet,
+            "solver must satisfy specific Demon race runestone shield");
+    verifyPathReplay(b, r, out.solutions[0]);
+    require((out.solutions[0].simulation.firstWaveRaceTypesMask & raceBit(RaceType::Demon)) != 0,
+            "solved path must eliminate Demon race runestone in Wave 1");
+}
+
 } // namespace
 
 int main() {
@@ -1950,6 +1989,7 @@ int main() {
     runTest("46. Runestone #8 BloodDrain All-Wave + #13 Movable Foam Burst", testBloodDrainAllWaveAndMovableFoam);
     runTest("47. Runestone #9 Bomb Touch Avoidance + #17 MagicOrb (+3C/orb)", testBombTouchAvoidanceAndMagicOrbBonus);
     runTest("48. Runestone #12 EvilEnergy & #20 BloodThorn Elimination Avoidance", testEvilEnergyAndBloodThornAvoidance);
+    runTest("49. Specific Race Runestone Shield (指定种族符石盾: 神/魔精确区分)", testSpecificRaceRunestoneShield);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;

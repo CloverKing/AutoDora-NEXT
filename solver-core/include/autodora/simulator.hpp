@@ -50,6 +50,7 @@ struct SimulationResult {
     uint8_t firstWaveEnchantedElementsMask = 0;
     uint8_t totalEnchantedElementsMask = 0;
     uint8_t firstWaveRaceElementsMask = 0;
+    uint8_t firstWaveRaceTypesMask = 0;
     uint8_t totalRaceOrbsFirstWave = 0;
 
     std::array<uint8_t, kNumElements> firstWaveElementCombos{};

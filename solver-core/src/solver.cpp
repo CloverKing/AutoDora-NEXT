@@ -350,7 +350,7 @@ SolveOutput PuzzleSolver::solve(
             (baseBoard.noPassMask & bitOf(idx)) == 0) {
             SearchNode node;
             node.board = baseBoard;
-            node.board.cells[idx] = Cell{rules.characterOrbElement, Variant::Normal, HazardBits::None};
+            node.board.cells[idx] = Cell{rules.characterOrbElement, Variant::Normal, RaceType::None, HazardBits::None};
             node.startIdx = idx;
             node.curIdx = idx;
             node.usedCharacterOrb = true;

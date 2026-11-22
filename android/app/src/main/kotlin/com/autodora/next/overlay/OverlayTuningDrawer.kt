@@ -941,6 +941,35 @@ class OverlayTuningDrawerController(
         })
         body.addView(spRow2)
 
+        if ("race_orb_shield" in activeIds) {
+            val curRaceMask = (byId["race_orb_shield"]?.paramInt ?: 0) and 0x7F
+            body.addView(makeSubLabel(s(R.string.race_select_label), p))
+            val raceRow = hRow(bottomMarginDp = 4)
+            raceRow.addView(makeToggle(s(R.string.race_any), curRaceMask == 0, p, weight = 1.25f, marginEndDp = 3) {
+                onUpsertWaveChip(WaveShieldChip("race_orb_shield", s(R.string.shield_race_orb), ShieldCategory.COUNT_AND_ELEMENT, paramInt = 0))
+            })
+            RaceType.ALL_RACES.forEachIndexed { idx, race ->
+                val sel = (curRaceMask and race.bitMask) != 0
+                raceRow.addView(
+                    makeChip(
+                        LocaleHelper.raceShortLabel(lctx, race),
+                        padH = 2,
+                        weight = 1f,
+                        marginEndDp = if (idx == RaceType.ALL_RACES.lastIndex) 0 else 3
+                    ) {
+                        val nextMask = curRaceMask xor race.bitMask
+                        onUpsertWaveChip(
+                            WaveShieldChip("race_orb_shield", s(R.string.shield_race_orb), ShieldCategory.COUNT_AND_ELEMENT, paramInt = nextMask)
+                        )
+                    }.also {
+                        if (sel) styleChip(it, ACCENT_PURPLE, Color.WHITE, ACCENT_PURPLE)
+                        else styleChip(it, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+                    }
+                )
+            }
+            body.addView(raceRow)
+        }
+
         // Sub-group E: 6x4 Per-Element Rules Matrix
         body.addView(makeSubDivider(p))
         body.addView(makeSubLabel(s(R.string.section_elem_matrix), p))

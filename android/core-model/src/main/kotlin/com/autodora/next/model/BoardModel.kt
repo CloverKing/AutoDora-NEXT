@@ -35,6 +35,26 @@ enum class Variant(val code: Int) {
     }
 }
 
+/**
+ * Official 7 Tower of Saviors Race Runestone Types (神魔之塔 7 大种族符石).
+ */
+@Serializable
+enum class RaceType(val code: Int, val bitMask: Int) {
+    NONE(0, 0),
+    GOD(1, 1 shl 0),      // 神族
+    DEMON(2, 1 shl 1),    // 魔族
+    HUMAN(3, 1 shl 2),    // 人类
+    BEAST(4, 1 shl 3),    // 兽类
+    DRAGON(5, 1 shl 4),   // 龙类
+    ELF(6, 1 shl 5),      // 妖精
+    MACHINA(7, 1 shl 6);  // 机械族
+
+    companion object {
+        val ALL_RACES = listOf(GOD, DEMON, HUMAN, BEAST, DRAGON, ELF, MACHINA)
+        fun fromCode(code: Int): RaceType = entries.firstOrNull { it.code == code } ?: NONE
+    }
+}
+
 object HazardBits {
     const val NONE = 0
     const val WEATHERED = 1 shl 0
@@ -117,7 +137,8 @@ data class CellState(
     val element: Element = Element.UNKNOWN,
     val variant: Variant = Variant.NORMAL,
     val hazards: Int = HazardBits.NONE,
-    val confidence: Float = 1.0f
+    val confidence: Float = 1.0f,
+    val race: RaceType = RaceType.NONE
 )
 
 @Serializable

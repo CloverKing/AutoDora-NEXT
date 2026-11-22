@@ -14,14 +14,24 @@ import com.autodora.next.R
 import com.autodora.next.model.*
 import com.autodora.next.ui.OverlayPalette
 
-sealed class BoardBrush(val id: String, val label: String) {
+sealed class BoardBrush(val id: String, val fallbackLabel: String, val labelRes: Int = 0) {
     data class PaintElement(val element: Element) : BoardBrush("el_${element.code}", PathOverlayView.elementShortZh(element))
     data object ToggleEnchanted : BoardBrush("var_ench", "强化+")
-    data object ToggleRace : BoardBrush("var_race", "种族")
     data object ToggleWeakened : BoardBrush("var_weak", "弱化-")
-    data class ToggleTileFlag(val flag: Int, val tag: String) : BoardBrush("flag_$flag", tag)
+    data class ToggleRaceType(val race: RaceType, val textRes: Int, val fallback: String) :
+        BoardBrush("race_${race.code}", fallback, textRes)
+    data class ToggleExclusiveTileFlag(
+        val flag: Int,
+        val conflictFlag: Int,
+        val textRes: Int,
+        val fallback: String
+    ) : BoardBrush("xflag_$flag", fallback, textRes)
+    data class ToggleTileFlag(val flag: Int, val tag: String, val textRes: Int = 0) :
+        BoardBrush("flag_$flag", tag, textRes)
     data class ToggleHazard(val hazard: Int, val tag: String) : BoardBrush("haz_$hazard", tag)
-    data object ClearMarkers : BoardBrush("clear_cell", "清格标")
+    data object ClearMarkers : BoardBrush("clear_cell", "清除格标", R.string.editor_btn_clear_cell)
+
+    fun resolveLabel(ctx: Context): String = if (labelRes != 0) ctx.getString(labelRes) else fallbackLabel
 }
 
 private data class BrushGroupSpec(
@@ -33,10 +43,12 @@ private data class BrushGroupSpec(
 /**
  * Grouped, Multi-Row Wrapped Brush Palette Panel for the 1:1 Interactive Board Editor (盘面编排).
  *
- * Workflow:
- *  1. Tap/drag directly over the game board below using color-coded grouped brushes.
- *  2. Tap 「保存版面」 to save the edited board (then use the main floating toolbar's Solve/Play buttons),
- *     or tap 「清除标记」 to strip all markers and revert to live screen capture.
+ * Groups (5 distinct color-coded sections + standalone 「清除格标」 tool outside all colored boxes):
+ *  1. Indigo  — 珠色与珠型 (水/火/木/光/暗/心 + 强化+/弱化-)
+ *  2. Purple  — 种族符石 (神族/魔族/人类/兽类/龙类/妖精/机械)
+ *  3. Amber   — 拼图与起结有序 (拼图, 单点绿色漩涡, 单点红色漩涡, 多格角色通行, 多格角色停放)
+ *  4. Teal    — 符石状态 (全量官方符石状态)
+ *  5. Crimson — 盘面地形 (燃烧/灼热/黑洞/血浴/碎裂/暴风)
  */
 class OverlayBoardEditorController(
     private val context: Context,
@@ -67,9 +79,22 @@ class OverlayBoardEditorController(
                 ),
                 listOf(
                     BoardBrush.ToggleEnchanted,
-                    BoardBrush.ToggleRace,
-                    BoardBrush.ToggleWeakened,
-                    BoardBrush.ClearMarkers
+                    BoardBrush.ToggleWeakened
+                )
+            )
+        ),
+        BrushGroupSpec(
+            titleRes = R.string.editor_grp_race,
+            accentColor = ACCENT_PURPLE,
+            rows = listOf(
+                listOf(
+                    BoardBrush.ToggleRaceType(RaceType.GOD, R.string.race_god, "神族"),
+                    BoardBrush.ToggleRaceType(RaceType.DEMON, R.string.race_demon, "魔族"),
+                    BoardBrush.ToggleRaceType(RaceType.HUMAN, R.string.race_human, "人类"),
+                    BoardBrush.ToggleRaceType(RaceType.BEAST, R.string.race_beast, "兽类"),
+                    BoardBrush.ToggleRaceType(RaceType.DRAGON, R.string.race_dragon, "龙类"),
+                    BoardBrush.ToggleRaceType(RaceType.ELF, R.string.race_elf, "妖精"),
+                    BoardBrush.ToggleRaceType(RaceType.MACHINA, R.string.race_machina, "机械")
                 )
             )
         ),
@@ -78,11 +103,21 @@ class OverlayBoardEditorController(
             accentColor = ACCENT_AMBER,
             rows = listOf(
                 listOf(
-                    BoardBrush.ToggleTileFlag(TileFlagBits.PUZZLE_1, "拼图"),
-                    BoardBrush.ToggleTileFlag(TileFlagBits.START_ALLOWED, "起手绿"),
-                    BoardBrush.ToggleTileFlag(TileFlagBits.END_REQUIRED, "停手红"),
-                    BoardBrush.ToggleTileFlag(TileFlagBits.CHAR_ORB_PASS, "角通"),
-                    BoardBrush.ToggleTileFlag(TileFlagBits.CHAR_ORB_END, "角停")
+                    BoardBrush.ToggleTileFlag(TileFlagBits.PUZZLE_1, "拼图", R.string.editor_brush_puzzle),
+                    BoardBrush.ToggleExclusiveTileFlag(
+                        flag = TileFlagBits.START_ALLOWED,
+                        conflictFlag = TileFlagBits.END_REQUIRED,
+                        textRes = R.string.editor_brush_green_vortex,
+                        fallback = "绿色漩涡"
+                    ),
+                    BoardBrush.ToggleExclusiveTileFlag(
+                        flag = TileFlagBits.END_REQUIRED,
+                        conflictFlag = TileFlagBits.START_ALLOWED,
+                        textRes = R.string.editor_brush_red_vortex,
+                        fallback = "红色漩涡"
+                    ),
+                    BoardBrush.ToggleTileFlag(TileFlagBits.CHAR_ORB_PASS, "角色通行", R.string.editor_brush_char_pass),
+                    BoardBrush.ToggleTileFlag(TileFlagBits.CHAR_ORB_END, "角色停放", R.string.editor_brush_char_end)
                 )
             )
         ),
@@ -130,7 +165,7 @@ class OverlayBoardEditorController(
         )
     )
 
-    private val allBrushes: List<Pair<BoardBrush, Int>> = brushGroups.flatMap { grp ->
+    private val allGroupBrushes: List<Pair<BoardBrush, Int>> = brushGroups.flatMap { grp ->
         grp.rows.flatten().map { brush -> brush to grp.accentColor }
     }
 
@@ -140,6 +175,7 @@ class OverlayBoardEditorController(
     private val titleLabel: TextView
     private val statusBadge: TextView
     private val hintLabel: TextView
+    private val clearCellBrushBtn: TextView
     private val saveBoardBtn: TextView
     private val clearAllBtn: TextView
     private val exitBtn: TextView
@@ -147,13 +183,13 @@ class OverlayBoardEditorController(
     init {
         val dm = context.resources.displayMetrics
         val panelWidth = minOf(dm.widthPixels - dp(16), dp(356))
-        val maxScrollH = (dm.heightPixels * 0.37f).toInt().coerceIn(dp(230), dp(320))
+        val maxScrollH = (dm.heightPixels * 0.38f).toInt().coerceIn(dp(230), dp(310))
 
         rootView = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
             elevation = dp(4).toFloat()
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setPadding(dp(8), dp(5), dp(8), dp(5))
             layoutParams = LinearLayout.LayoutParams(
                 panelWidth,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -163,7 +199,7 @@ class OverlayBoardEditorController(
             }
         }
 
-        // Top action bar: Title + State Badge + [保存版面] + [清除标记] + [✕]
+        // Row 1 — Header: Title + State Badge + [保存版面] + [清除标记] + [✕]
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -202,23 +238,46 @@ class OverlayBoardEditorController(
         header.addView(exitBtn)
         rootView.addView(header)
 
-        // Live workflow hint line
-        hintLabel = TextView(context).apply {
-            text = context.getString(R.string.editor_hint_unsaved)
-            textSize = 9f
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
+        // Row 2 — Standalone Tool Bar OUTSIDE all colored group boxes: Workflow hint + 「清除格标」 brush!
+        val toolBar = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(2)
-                bottomMargin = dp(5)
+                topMargin = dp(3)
+                bottomMargin = dp(4)
             }
         }
-        rootView.addView(hintLabel)
+        hintLabel = TextView(context).apply {
+            text = context.getString(R.string.editor_hint_unsaved)
+            textSize = 8.8f
+            setSingleLine(true)
+            ellipsize = TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
+        }
+        toolBar.addView(hintLabel)
 
-        // Bounded vertical ScrollView containing 4 clean color-coded multi-row brush groups
+        clearCellBrushBtn = makeHeaderBtn(
+            label = context.getString(R.string.editor_btn_clear_cell),
+            marginEndDp = 0,
+            padH = 8
+        ) {
+            activeBrush = BoardBrush.ClearMarkers
+            refreshBrushStyles()
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(22)
+            )
+        }
+        toolBar.addView(clearCellBrushBtn)
+        rootView.addView(toolBar)
+
+        // Bounded vertical ScrollView containing 5 clean color-coded multi-row brush groups
         val scroll = object : ScrollView(context) {
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                 val boundedH = MeasureSpec.makeMeasureSpec(maxScrollH, MeasureSpec.AT_MOST)
@@ -243,12 +302,12 @@ class OverlayBoardEditorController(
         brushGroups.forEachIndexed { gIdx, group ->
             val groupBox = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(6), dp(4), dp(6), dp(5))
+                setPadding(dp(6), dp(3), dp(6), dp(4))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    bottomMargin = if (gIdx == brushGroups.lastIndex) 0 else dp(5)
+                    bottomMargin = if (gIdx == brushGroups.lastIndex) 0 else dp(4)
                 }
             }
 
@@ -259,15 +318,15 @@ class OverlayBoardEditorController(
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(3) }
+                ).apply { bottomMargin = dp(2) }
             }
             gHdr.addView(View(context).apply {
                 background = rounded(group.accentColor, dp(2).toFloat(), null)
-                layoutParams = LinearLayout.LayoutParams(dp(3), dp(10)).apply { marginEnd = dp(5) }
+                layoutParams = LinearLayout.LayoutParams(dp(3), dp(9)).apply { marginEnd = dp(5) }
             })
             val gTitle = TextView(context).apply {
                 text = context.getString(group.titleRes)
-                textSize = 9.5f
+                textSize = 9.2f
                 typeface = Typeface.DEFAULT_BOLD
                 setSingleLine(true)
             }
@@ -291,7 +350,7 @@ class OverlayBoardEditorController(
                 }
                 rowBrushes.forEachIndexed { bIdx, brush ->
                     val btn = makeGridBrushBtn(
-                        label = brush.label,
+                        label = brush.resolveLabel(context),
                         marginEndDp = if (bIdx == rowBrushes.lastIndex) 0 else 3
                     ) {
                         activeBrush = brush
@@ -387,12 +446,23 @@ class OverlayBoardEditorController(
 
     private fun refreshBrushStyles() {
         val p = currentPalette ?: return
-        for ((b, accent) in allBrushes) {
+        // Standalone 「清除格标」 button outside all colored groups
+        val clearSel = activeBrush == BoardBrush.ClearMarkers
+        val clearLbl = BoardBrush.ClearMarkers.resolveLabel(lctx)
+        clearCellBrushBtn.text = if (clearSel) "●$clearLbl" else clearLbl
+        if (clearSel) {
+            styleBtn(clearCellBrushBtn, ACCENT_SLATE, Color.WHITE, Color.WHITE)
+        } else {
+            styleBtn(clearCellBrushBtn, p.chipOffBg, p.onSurface, p.outline)
+        }
+
+        for ((b, accent) in allGroupBrushes) {
             val btn = brushButtons[b.id] ?: continue
             val selected = (b.id == activeBrush.id)
+            val lbl = b.resolveLabel(lctx)
             if (b is BoardBrush.PaintElement) {
                 val elemCol = PathOverlayView.elementColor(b.element)
-                btn.text = if (selected) "●${b.label}" else b.label
+                btn.text = if (selected) "●$lbl" else lbl
                 btn.setTextColor(Color.WHITE)
                 btn.background = rounded(
                     elemCol,
@@ -401,7 +471,7 @@ class OverlayBoardEditorController(
                     strokePx = if (selected) dp(2) else dp(1)
                 )
             } else {
-                btn.text = if (selected) "●${b.label}" else b.label
+                btn.text = if (selected) "●$lbl" else lbl
                 if (selected) {
                     styleBtn(btn, accent, Color.WHITE, Color.WHITE)
                 } else {
@@ -411,47 +481,8 @@ class OverlayBoardEditorController(
         }
     }
 
-    fun applyActiveBrush(board: BoardState, row: Int, col: Int): BoardState {
-        val idx = row * board.cols + col
-        if (idx !in board.cells.indices) return board
-        val newCells = board.cells.toMutableList()
-        val newFlags = board.tileFlags.toMutableList()
-        val oldCell = newCells[idx]
-        val oldFlags = newFlags[idx]
-
-        when (val b = activeBrush) {
-            is BoardBrush.PaintElement -> {
-                newCells[idx] = oldCell.copy(
-                    element = b.element,
-                    hazards = oldCell.hazards and HazardBits.QUESTION.inv(),
-                    confidence = 1.0f
-                )
-            }
-            BoardBrush.ToggleEnchanted -> {
-                val nextVar = if (oldCell.variant == Variant.ENCHANTED) Variant.NORMAL else Variant.ENCHANTED
-                newCells[idx] = oldCell.copy(variant = nextVar)
-            }
-            BoardBrush.ToggleRace -> {
-                val nextVar = if (oldCell.variant == Variant.RACE) Variant.NORMAL else Variant.RACE
-                newCells[idx] = oldCell.copy(variant = nextVar)
-            }
-            BoardBrush.ToggleWeakened -> {
-                val nextVar = if (oldCell.variant == Variant.WEAKENED) Variant.NORMAL else Variant.WEAKENED
-                newCells[idx] = oldCell.copy(variant = nextVar)
-            }
-            is BoardBrush.ToggleTileFlag -> {
-                newFlags[idx] = oldFlags xor b.flag
-            }
-            is BoardBrush.ToggleHazard -> {
-                newCells[idx] = oldCell.copy(hazards = oldCell.hazards xor b.hazard)
-            }
-            BoardBrush.ClearMarkers -> {
-                newCells[idx] = oldCell.copy(variant = Variant.NORMAL, hazards = HazardBits.NONE)
-                newFlags[idx] = TileFlagBits.NONE
-            }
-        }
-        return board.copy(cells = newCells, tileFlags = newFlags)
-    }
+    fun applyActiveBrush(board: BoardState, row: Int, col: Int): BoardState =
+        applyBrushToBoard(board, activeBrush, row, col)
 
     private fun makeHeaderBtn(label: String, marginEndDp: Int = 4, padH: Int = 8, onClick: () -> Unit): TextView {
         return TextView(context).apply {
@@ -460,10 +491,10 @@ class OverlayBoardEditorController(
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
             gravity = Gravity.CENTER
-            setPadding(dp(padH), dp(3), dp(padH), dp(3))
+            setPadding(dp(padH), dp(2), dp(padH), dp(2))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(24)
+                dp(23)
             ).apply { marginEnd = dp(marginEndDp) }
             setOnClickListener { onClick() }
         }
@@ -472,15 +503,15 @@ class OverlayBoardEditorController(
     private fun makeGridBrushBtn(label: String, marginEndDp: Int = 3, onClick: () -> Unit): TextView {
         return TextView(context).apply {
             text = label
-            textSize = 9.5f
+            textSize = 9.0f
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
             ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.CENTER
-            setPadding(dp(2), dp(3), dp(2), dp(3))
+            setPadding(dp(1), dp(2), dp(1), dp(2))
             layoutParams = LinearLayout.LayoutParams(
                 0,
-                dp(23),
+                dp(21),
                 1f
             ).apply { marginEnd = dp(marginEndDp) }
             setOnClickListener { onClick() }
@@ -502,9 +533,76 @@ class OverlayBoardEditorController(
     private fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()
 
     companion object {
-        private val ACCENT_INDIGO = Color.rgb(63, 81, 181)
-        private val ACCENT_AMBER = Color.rgb(230, 118, 0)
-        private val ACCENT_TEAL = Color.rgb(0, 137, 123)
-        private val ACCENT_CRIMSON = Color.rgb(211, 47, 47)
+        private const val ACCENT_INDIGO = 0xFF3F51B5.toInt()
+        private const val ACCENT_PURPLE = 0xFF7B1FA2.toInt()
+        private const val ACCENT_AMBER = 0xFFE67600.toInt()
+        private const val ACCENT_TEAL = 0xFF00897B.toInt()
+        private const val ACCENT_CRIMSON = 0xFFD32F2F.toInt()
+        private const val ACCENT_SLATE = 0xFF475569.toInt()
+
+        /**
+         * Pure board-mutation helper shared by the interactive Board Editor and JVM unit tests.
+         * Enforces strict single-point exclusivity for Start/End vortexes (起结有序: 绿色漩涡 / 红色漩涡),
+         * multi-cell painting for Character Runestone pass/end terrains (#54 / #78), and exact 7-race selection.
+         */
+        fun applyBrushToBoard(board: BoardState, brush: BoardBrush, row: Int, col: Int): BoardState {
+            val idx = row * board.cols + col
+            if (idx !in board.cells.indices) return board
+            val newCells = board.cells.toMutableList()
+            val newFlags = board.tileFlags.toMutableList()
+            val oldCell = newCells[idx]
+            val oldFlags = newFlags[idx]
+
+            when (brush) {
+                is BoardBrush.PaintElement -> {
+                    newCells[idx] = oldCell.copy(
+                        element = brush.element,
+                        hazards = oldCell.hazards and HazardBits.QUESTION.inv(),
+                        confidence = 1.0f
+                    )
+                }
+                BoardBrush.ToggleEnchanted -> {
+                    val nextVar = if (oldCell.variant == Variant.ENCHANTED) Variant.NORMAL else Variant.ENCHANTED
+                    newCells[idx] = oldCell.copy(variant = nextVar, race = RaceType.NONE)
+                }
+                BoardBrush.ToggleWeakened -> {
+                    val nextVar = if (oldCell.variant == Variant.WEAKENED) Variant.NORMAL else Variant.WEAKENED
+                    newCells[idx] = oldCell.copy(variant = nextVar, race = RaceType.NONE)
+                }
+                is BoardBrush.ToggleRaceType -> {
+                    if (oldCell.variant == Variant.RACE && oldCell.race == brush.race) {
+                        newCells[idx] = oldCell.copy(variant = Variant.NORMAL, race = RaceType.NONE)
+                    } else {
+                        newCells[idx] = oldCell.copy(variant = Variant.RACE, race = brush.race)
+                    }
+                }
+                is BoardBrush.ToggleExclusiveTileFlag -> {
+                    val alreadySet = (oldFlags and brush.flag) != 0
+                    // Clear this exclusive flag from every cell on the board first (strictly <= 1 cell!)
+                    for (i in newFlags.indices) {
+                        newFlags[i] = newFlags[i] and brush.flag.inv()
+                    }
+                    if (!alreadySet) {
+                        // Also clear conflicting start/end flag on this same cell (start != end)
+                        newFlags[idx] = (newFlags[idx] and brush.conflictFlag.inv()) or brush.flag
+                    }
+                }
+                is BoardBrush.ToggleTileFlag -> {
+                    newFlags[idx] = oldFlags xor brush.flag
+                }
+                is BoardBrush.ToggleHazard -> {
+                    newCells[idx] = oldCell.copy(hazards = oldCell.hazards xor brush.hazard)
+                }
+                BoardBrush.ClearMarkers -> {
+                    newCells[idx] = oldCell.copy(
+                        variant = Variant.NORMAL,
+                        race = RaceType.NONE,
+                        hazards = HazardBits.NONE
+                    )
+                    newFlags[idx] = TileFlagBits.NONE
+                }
+            }
+            return board.copy(cells = newCells, tileFlags = newFlags)
+        }
     }
 }

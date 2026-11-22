@@ -37,12 +37,12 @@ object NativeSolver {
     ): SolveOutput = withContext(Dispatchers.Default) {
         val n = board.cols * board.rows
         val elements = IntArray(n) { board.cells[it].element.code }
-        val variants = IntArray(n) { board.cells[it].variant.code }
+        val variants = IntArray(n) { board.cells[it].variant.code or (board.cells[it].race.code shl 4) }
         val hazards = IntArray(n) { board.cells[it].hazards }
         val tileFlags = IntArray(n) { board.tileFlags[it] }
         val checkpoints = board.orderedCheckpoints.toIntArray()
 
-        val ruleInts = IntArray(99)
+        val ruleInts = IntArray(100)
         ruleInts[0] = if (rules.allowDiagonalMove) 1 else 0
         ruleInts[1] = rules.maxSteps
         ruleInts[2] = rules.exactSteps
@@ -139,6 +139,7 @@ object NativeSolver {
         ruleInts[96] = rules.wave1KindMode.code
         ruleInts[97] = rules.equalComboElementsMask
         ruleInts[98] = rules.unmatchableElementsMask
+        ruleInts[99] = rules.requiredRaceTypesMask
 
         val ruleDoubles = doubleArrayOf(rules.stepPenaltyWeight, rules.diagonalPenaltyWeight)
 

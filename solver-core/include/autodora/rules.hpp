@@ -189,6 +189,7 @@ struct RuleConfig {
     uint8_t requiredEnchantedElementsMask = 0; // 五属强化盾等
     bool requireAnyEnchantedOrb = false;       // 任意强化符石首消盾 (不限颜色)
     uint8_t requiredRaceElementsMask = 0;      // 指定属性种族符石首消盾
+    uint8_t requiredRaceTypesMask = 0;         // 指定具体种族符石首消盾 (bit 0..6 = 神/魔/人/兽/龙/妖/机)
     bool requireAnyRaceOrb = false;            // 任意种族符石首消盾
     bool requireCharOrbFirstWave = false;      // 角色符石首消盾 (起手/角色珠须纳入首批消除)
     bool forbidWeakenedOrbs = false;           // 避消弱化符石 (弱化围城等严禁消除弱化珠)

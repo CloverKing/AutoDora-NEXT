@@ -684,7 +684,7 @@ class OverlayControllerService : Service() {
                 val cur = editedBoard
                 if (cur != null) {
                     editedBoard = cur.copy(
-                        cells = cur.cells.map { it.copy(variant = Variant.NORMAL, hazards = HazardBits.NONE) },
+                        cells = cur.cells.map { it.copy(variant = Variant.NORMAL, race = RaceType.NONE, hazards = HazardBits.NONE) },
                         tileFlags = List(cur.cols * cur.rows) { TileFlagBits.NONE }
                     )
                 }

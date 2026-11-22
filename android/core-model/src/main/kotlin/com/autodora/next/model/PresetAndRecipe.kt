@@ -402,9 +402,11 @@ object RuleComposer {
                     highDifficultyShield = true
                 }
                 "race_orb_shield" -> {
+                    val raceTypesMask = chip.paramInt and 0x7F
                     cfg = cfg.copy(
                         requiredRaceElementsMask = cfg.requiredRaceElementsMask or chip.paramElementMask,
-                        requireAnyRaceOrb = chip.paramElementMask == 0
+                        requiredRaceTypesMask = cfg.requiredRaceTypesMask or raceTypesMask,
+                        requireAnyRaceOrb = chip.paramElementMask == 0 && raceTypesMask == 0
                     )
                     highDifficultyShield = true
                 }

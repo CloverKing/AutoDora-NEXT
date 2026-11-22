@@ -67,6 +67,23 @@ enum class Variant : uint8_t {
     Weakened = 3   // 弱化符石
 };
 
+// Official 7 Tower of Saviors Races (神魔之塔 7 大种族符石)
+enum class RaceType : uint8_t {
+    None = 0,
+    God = 1,     // 神族
+    Demon = 2,   // 魔族
+    Human = 3,   // 人类
+    Beast = 4,   // 兽类
+    Dragon = 5,  // 龙类
+    Elf = 6,     // 妖精
+    Machina = 7  // 机械族
+};
+
+constexpr uint8_t raceBit(RaceType r) noexcept {
+    const uint8_t code = static_cast<uint8_t>(r);
+    return (code >= 1 && code <= 7) ? static_cast<uint8_t>(1u << (code - 1)) : 0u;
+}
+
 // Hazards attached to the orb itself (move when the orb is swapped)
 namespace HazardBits {
 constexpr uint32_t None          = 0;

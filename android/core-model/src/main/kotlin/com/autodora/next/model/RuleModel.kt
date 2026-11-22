@@ -242,6 +242,7 @@ data class RuleConfig(
     val requiredEnchantedElementsMask: Int = 0,
     val requireAnyEnchantedOrb: Boolean = false,
     val requiredRaceElementsMask: Int = 0,
+    val requiredRaceTypesMask: Int = 0,
     val requireAnyRaceOrb: Boolean = false,
     val requireCharOrbFirstWave: Boolean = false,
     val forbidWeakenedOrbs: Boolean = false,

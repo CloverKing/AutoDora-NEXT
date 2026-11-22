@@ -347,6 +347,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
             g.element = cur.cells[start].element;
             uint8_t groupEnchMask = 0;
             uint8_t groupRaceMask = 0;
+            uint8_t groupRaceTypesMask = 0;
 
             std::array<uint8_t, kMaxCells> queueBuf{};
             uint8_t qHead = 0, qTail = 0;
@@ -366,9 +367,10 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
                     g.enchantedCount++;
                     groupEnchMask |= uBit;
                 }
-                if (uc.variant == Variant::Race) {
+                if (uc.variant == Variant::Race || uc.race != RaceType::None) {
                     g.raceCount++;
                     groupRaceMask |= uBit;
+                    groupRaceTypesMask |= raceBit(uc.race);
                 }
 
                 const int ur = u / cols;
@@ -406,6 +408,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
                 res.firstWaveElementOrbs[elIdx] += g.orbCount;
                 res.firstWaveEnchantedElementsMask |= groupEnchMask;
                 res.firstWaveRaceElementsMask |= groupRaceMask;
+                res.firstWaveRaceTypesMask |= groupRaceTypesMask;
                 res.totalRaceOrbsFirstWave += g.raceCount;
                 res.firstWaveClearedMask |= g.cellMask;
             } else if (wave == 2) {
@@ -463,7 +466,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
             if (wave == 1) {
                 if (hz & HazardBits::LockedHurt) clearedLockedHurtFirst |= origBit;
             }
-            cur.cells[i] = Cell{Element::Empty, Variant::Normal, HazardBits::None};
+            cur.cells[i] = Cell{Element::Empty, Variant::Normal, RaceType::None, HazardBits::None};
         }
 
         if (wave == 1) {
@@ -499,7 +502,7 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
                     origSlot[idx] = movableOrig[wIdx];
                     wIdx++;
                 } else {
-                    cur.cells[idx] = Cell{Element::Empty, Variant::Normal, HazardBits::None};
+                    cur.cells[idx] = Cell{Element::Empty, Variant::Normal, RaceType::None, HazardBits::None};
                     origSlot[idx] = idx;
                 }
             }
