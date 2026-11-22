@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
@@ -22,7 +23,9 @@ import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -91,7 +94,8 @@ class OverlayControllerService : Service() {
     private lateinit var pathParams: WindowManager.LayoutParams
     private lateinit var controlRoot: LinearLayout
     private lateinit var controlParams: WindowManager.LayoutParams
-    private lateinit var statusOrbView: TextView
+    private lateinit var statusOrbView: FrameLayout
+    private lateinit var statusOrbBadge: TextView
     private lateinit var toolbarContainer: LinearLayout
 
     // Compact All-Icon Main Bar Controls
@@ -410,17 +414,45 @@ class OverlayControllerService : Service() {
             )
         }
 
-        statusOrbView = TextView(this).apply {
-            text = "D"
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
+        val orbSize = dp(32)
+        val orbRingPad = dp(2)
+        val circleOutline = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setOval(0, 0, view.width, view.height)
+            }
+        }
+        statusOrbView = FrameLayout(this).apply {
             elevation = dp(3).toFloat()
-            val size = dp(30)
-            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+            setPadding(orbRingPad, orbRingPad, orbRingPad, orbRingPad)
+            layoutParams = LinearLayout.LayoutParams(orbSize, orbSize).apply {
                 marginEnd = dp(4)
             }
         }
+        val appIconView = ImageView(this).apply {
+            setImageResource(R.drawable.ic_overlay_app_orb)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            outlineProvider = circleOutline
+            clipToOutline = true
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        statusOrbView.addView(appIconView)
+
+        statusOrbBadge = TextView(this).apply {
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            outlineProvider = circleOutline
+            clipToOutline = true
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        statusOrbView.addView(statusOrbBadge)
         topRow.addView(statusOrbView)
 
         toolbarContainer = LinearLayout(this).apply {
@@ -1949,25 +1981,32 @@ class OverlayControllerService : Service() {
         val p = palette
         when (phase) {
             OverlayPhase.IDLE -> {
-                statusOrbView.text = "D"
-                statusOrbView.setTextColor(p.onPrimary)
-                statusOrbView.background = circleBg(p.primary, p.orbStroke)
+                statusOrbBadge.visibility = View.GONE
+                statusOrbView.background = circleBg(Color.TRANSPARENT, p.orbStroke)
                 if (::stopIconBtn.isInitialized) {
                     styleIconBtn(stopIconBtn, p.errorContainer, p.onErrorContainer, null)
                 }
             }
             OverlayPhase.CALCULATING -> {
-                statusOrbView.text = "…"
-                statusOrbView.setTextColor(p.onTertiary)
+                statusOrbBadge.visibility = View.VISIBLE
+                statusOrbBadge.text = "…"
+                statusOrbBadge.setTextColor(p.onTertiary)
+                statusOrbBadge.setBackgroundColor(
+                    Color.argb(195, Color.red(p.tertiary), Color.green(p.tertiary), Color.blue(p.tertiary))
+                )
                 statusOrbView.background = circleBg(p.tertiary, p.orbStroke)
                 if (::stopIconBtn.isInitialized) {
                     styleIconBtn(stopIconBtn, p.error, p.onError, p.onError)
                 }
             }
             OverlayPhase.MOVING -> {
-                statusOrbView.text = "▶"
-                statusOrbView.setTextColor(p.onPrimaryContainer)
-                statusOrbView.background = circleBg(p.primaryContainer, p.primary)
+                statusOrbBadge.visibility = View.VISIBLE
+                statusOrbBadge.text = "▶"
+                statusOrbBadge.setTextColor(p.onPrimary)
+                statusOrbBadge.setBackgroundColor(
+                    Color.argb(195, Color.red(p.primary), Color.green(p.primary), Color.blue(p.primary))
+                )
+                statusOrbView.background = circleBg(p.primary, p.orbStroke)
                 if (::stopIconBtn.isInitialized) {
                     styleIconBtn(stopIconBtn, p.error, p.onError, p.onError)
                 }
