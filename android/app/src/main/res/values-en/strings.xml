@@ -283,6 +283,10 @@
     <string name="floating_bar_layout_title">Floating Bar Layout</string>
     <string name="floating_bar_horizontal">Horizontal</string>
     <string name="floating_bar_vertical">Vertical</string>
+    <string name="floating_bar_dock_title">Floating Bar Dock Side</string>
+    <string name="floating_bar_dock_left">Left</string>
+    <string name="floating_bar_dock_right">Right</string>
+    <string name="floating_bar_memory_hint">Snaps to left/right edge &amp; remembers position; Horizontal Right expands leftward</string>
     <string name="section_speed">Swipe Speed Presets</string>
     <string name="speed_desc">Seconds = target turn time; ms = time per grid step</string>
     <string name="speed_turbo">Turbo 2s</string>

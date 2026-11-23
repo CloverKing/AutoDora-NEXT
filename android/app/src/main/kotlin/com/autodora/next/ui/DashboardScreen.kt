@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.FormatAlignLeft
+import androidx.compose.material.icons.automirrored.outlined.FormatAlignRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -618,7 +620,7 @@ private fun SettingsTab(
         ColoredCollapsibleDrawerCard(
             title = stringResource(R.string.section_appearance),
             accentColor = DrawerAccentColors.Purple,
-            summaryText = "${LocaleHelper.themeLabel(context, settings.themeMode)} · ${LocaleHelper.languageLabel(context, settings.language)} · ${stringResource(if (settings.floatingBarVertical) R.string.floating_bar_vertical else R.string.floating_bar_horizontal)}",
+            summaryText = "${LocaleHelper.themeLabel(context, settings.themeMode)} · ${LocaleHelper.languageLabel(context, settings.language)} · ${stringResource(if (settings.floatingBarVertical) R.string.floating_bar_vertical else R.string.floating_bar_horizontal)}${stringResource(if (settings.floatingBarDockRight) R.string.floating_bar_dock_right else R.string.floating_bar_dock_left)}",
             highlighted = true,
             initialExpanded = true
         ) {
@@ -710,6 +712,47 @@ private fun SettingsTab(
                     }
                 }
             }
+
+            Text(
+                text = stringResource(R.string.floating_bar_dock_title),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                val dockSides = listOf(
+                    Triple(false, R.string.floating_bar_dock_left, Icons.AutoMirrored.Outlined.FormatAlignLeft),
+                    Triple(true, R.string.floating_bar_dock_right, Icons.AutoMirrored.Outlined.FormatAlignRight)
+                )
+                dockSides.forEachIndexed { idx, (isRight, labelRes, iconVec) ->
+                    SegmentedButton(
+                        selected = settings.floatingBarDockRight == isRight,
+                        onClick = {
+                            onUpdateSettings {
+                                it.copy(floatingBarDockRight = isRight, floatingBarPosXRatio = -1f)
+                            }
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(idx, dockSides.size),
+                        icon = {
+                            Icon(
+                                imageVector = iconVec,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    ) {
+                        Text(
+                            stringResource(labelRes),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+            Text(
+                text = stringResource(R.string.floating_bar_memory_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         // 2. Amber Drawer: Swipe Speed Presets + Slim Native Slider (matches Floating Quick Amber)

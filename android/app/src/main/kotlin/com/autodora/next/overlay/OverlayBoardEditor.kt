@@ -445,13 +445,19 @@ class OverlayBoardEditorController(
         rootView.addView(scroll)
     }
 
-    fun setMaxPanelWidth(widthPx: Int, topMarginPx: Int = dp(4), marginStartPx: Int = dp(4)) {
+    fun setMaxPanelWidth(
+        widthPx: Int,
+        topMarginPx: Int = dp(4),
+        marginStartPx: Int = dp(4),
+        marginEndPx: Int = 0
+    ) {
         val lp = (rootView.layoutParams as? LinearLayout.LayoutParams)
             ?: LinearLayout.LayoutParams(widthPx, LinearLayout.LayoutParams.WRAP_CONTENT)
-        if (lp.width != widthPx || lp.topMargin != topMarginPx || lp.marginStart != marginStartPx) {
+        if (lp.width != widthPx || lp.topMargin != topMarginPx || lp.marginStart != marginStartPx || lp.marginEnd != marginEndPx) {
             lp.width = widthPx
             lp.topMargin = topMarginPx
             lp.marginStart = marginStartPx
+            lp.marginEnd = marginEndPx
             rootView.layoutParams = lp
         }
     }

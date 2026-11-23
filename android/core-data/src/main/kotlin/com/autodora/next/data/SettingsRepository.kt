@@ -39,6 +39,9 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val language: AppLanguage = AppLanguage.SYSTEM,
     val floatingBarVertical: Boolean = false,
+    val floatingBarDockRight: Boolean = false,
+    val floatingBarPosXRatio: Float = -1f,       // <0 = auto edge snap; 0..1 = remembered left (or right if dockRight) ratio
+    val floatingBarPosYRatio: Float = -1f,       // <0 = default top margin; 0..1 = remembered top Y ratio
     val calibration: BoardCalibration = BoardCalibration(),
     val maxSteps: Int = 28,
     val beamWidth: Int = 180,
@@ -83,6 +86,9 @@ class SettingsRepository(private val context: Context) {
         val THEME_MODE = intPreferencesKey("ui_theme_mode")
         val APP_LANGUAGE = intPreferencesKey("ui_app_language")
         val FLOATING_BAR_VERTICAL = booleanPreferencesKey("ux_floating_bar_vertical")
+        val FLOATING_BAR_DOCK_RIGHT = booleanPreferencesKey("ux_floating_bar_dock_right")
+        val FLOATING_BAR_POS_X_RATIO = floatPreferencesKey("ux_floating_bar_pos_x_ratio")
+        val FLOATING_BAR_POS_Y_RATIO = floatPreferencesKey("ux_floating_bar_pos_y_ratio")
         val LEFT_RATIO = floatPreferencesKey("calib_left_ratio")
         val RIGHT_RATIO = floatPreferencesKey("calib_right_ratio")
         val BOTTOM_RATIO = floatPreferencesKey("calib_bottom_ratio_v2")
@@ -115,6 +121,9 @@ class SettingsRepository(private val context: Context) {
         themeMode = ThemeMode.fromOrdinalSafe(p[Keys.THEME_MODE]),
         language = AppLanguage.fromOrdinalSafe(p[Keys.APP_LANGUAGE]),
         floatingBarVertical = p[Keys.FLOATING_BAR_VERTICAL] ?: false,
+        floatingBarDockRight = p[Keys.FLOATING_BAR_DOCK_RIGHT] ?: false,
+        floatingBarPosXRatio = p[Keys.FLOATING_BAR_POS_X_RATIO] ?: -1f,
+        floatingBarPosYRatio = p[Keys.FLOATING_BAR_POS_Y_RATIO] ?: -1f,
         calibration = BoardCalibration(
             leftRatio = p[Keys.LEFT_RATIO] ?: 0.0f,
             rightRatio = p[Keys.RIGHT_RATIO] ?: 1.0f,
@@ -151,6 +160,9 @@ class SettingsRepository(private val context: Context) {
             p[Keys.THEME_MODE] = next.themeMode.ordinal
             p[Keys.APP_LANGUAGE] = next.language.ordinal
             p[Keys.FLOATING_BAR_VERTICAL] = next.floatingBarVertical
+            p[Keys.FLOATING_BAR_DOCK_RIGHT] = next.floatingBarDockRight
+            p[Keys.FLOATING_BAR_POS_X_RATIO] = if (next.floatingBarPosXRatio < 0f) -1f else next.floatingBarPosXRatio.coerceIn(0f, 1f)
+            p[Keys.FLOATING_BAR_POS_Y_RATIO] = if (next.floatingBarPosYRatio < 0f) -1f else next.floatingBarPosYRatio.coerceIn(0f, 0.96f)
             p[Keys.LEFT_RATIO] = next.calibration.leftRatio.coerceIn(0f, 0.35f)
             p[Keys.RIGHT_RATIO] = next.calibration.rightRatio.coerceIn(0.65f, 1f)
             p[Keys.BOTTOM_RATIO] = if (next.calibration.bottomRatio < 0f) {

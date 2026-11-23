@@ -283,6 +283,10 @@
     <string name="floating_bar_layout_title">悬浮栏排列方向</string>
     <string name="floating_bar_horizontal">横排</string>
     <string name="floating_bar_vertical">竖排</string>
+    <string name="floating_bar_dock_title">悬浮栏停靠侧</string>
+    <string name="floating_bar_dock_left">靠左</string>
+    <string name="floating_bar_dock_right">靠右</string>
+    <string name="floating_bar_memory_hint">拖动悬浮球松手自动左右吸边并记忆位置；横排靠右向左展开（图标在右侧）</string>
     <string name="section_speed">划动速度档位</string>
     <string name="speed_desc">秒数 = 适配转珠时间；ms = 单格划动耗时</string>
     <string name="speed_turbo">极速 2秒</string>

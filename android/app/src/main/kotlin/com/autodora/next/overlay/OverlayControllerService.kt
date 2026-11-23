@@ -1,5 +1,6 @@
 package com.autodora.next.overlay
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -25,6 +26,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
@@ -100,7 +102,8 @@ class OverlayControllerService : Service() {
     private lateinit var statusOrbBadge: TextView
     private lateinit var toolbarContainer: LinearLayout
     private val toolbarButtons = ArrayList<ImageView>()
-    private var verticalBarOnRight = false
+    private var hasRestoredPosition = false
+    private var snapAnimator: ValueAnimator? = null
 
     // Compact All-Icon Main Bar Controls
     private lateinit var solveIconBtn: ImageView
@@ -178,28 +181,32 @@ class OverlayControllerService : Service() {
 
         serviceScope.launch {
             settingsRepository.settingsFlow.collectLatest { latest ->
+                val isFirstEmission = !hasRestoredPosition
                 val presetSwitched = settings.activePresetId != latest.activePresetId
                 val previewModeChanged = settings.testModeOnlyDraw != latest.testModeOnlyDraw
+                val emergencyBtnChanged = settings.showEmergencyStop != latest.showEmergencyStop
                 val solverSettingChanged = settings.allowDiagonalMove != latest.allowDiagonalMove ||
                     settings.maxSteps != latest.maxSteps ||
                     settings.beamWidth != latest.beamWidth
-                val layoutChanged = settings.floatingBarVertical != latest.floatingBarVertical
+                val verticalChanged = settings.floatingBarVertical != latest.floatingBarVertical
+                val dockChanged = settings.floatingBarDockRight != latest.floatingBarDockRight
                 settings = latest
                 if (presetSwitched || previewModeChanged || solverSettingChanged) {
                     invalidateLastSolution()
                 }
-                if (layoutChanged) {
-                    if (latest.floatingBarVertical) {
-                        val barCenterX = controlParams.x + barRow.left + (barRow.width / 2)
-                        verticalBarOnRight = barRow.width > 0 && controlParams.x > dp(48) && barCenterX > screenW / 2
-                    } else {
-                        verticalBarOnRight = false
-                    }
-                }
                 stopIconBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
                 applyOverlayTheme()
-                if (layoutChanged) {
-                    clampControlWindowToScreen()
+                when {
+                    isFirstEmission -> {
+                        hasRestoredPosition = true
+                        restoreRememberedPosition(latest)
+                    }
+                    dockChanged -> {
+                        snapToDockEdge(latest.floatingBarDockRight, animate = true)
+                    }
+                    verticalChanged || (latest.floatingBarDockRight && (previewModeChanged || emergencyBtnChanged)) -> {
+                        snapToDockEdge(latest.floatingBarDockRight, animate = false)
+                    }
                 }
                 ensureAlwaysOnBackgroundWatcher()
                 if (calibrationMode) {
@@ -236,7 +243,7 @@ class OverlayControllerService : Service() {
         super.onConfigurationChanged(newConfig)
         resolvePhysicalScreenSize()
         applyOverlayTheme()
-        clampControlWindowToScreen()
+        snapToDockEdge(settings.floatingBarDockRight, animate = false)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -248,6 +255,8 @@ class OverlayControllerService : Service() {
     }
 
     override fun onDestroy() {
+        snapAnimator?.cancel()
+        snapAnimator = null
         backgroundWatchJob?.cancel()
         triggerEmergencyStop()
         serviceScope.cancel()
@@ -820,6 +829,7 @@ class OverlayControllerService : Service() {
         statusOrbView.setOnTouchListener { _, ev ->
             when (ev.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    snapAnimator?.cancel()
                     initX = controlParams.x
                     initY = controlParams.y
                     touchX = ev.rawX
@@ -857,19 +867,33 @@ class OverlayControllerService : Service() {
                             refreshActiveShieldStrip()
                         }
                         clampControlWindowToScreen(anchorRight)
-                    } else if (settings.floatingBarVertical) {
-                        val barScreenLeft = controlParams.x + barRow.left
-                        val barWidth = barRow.width.coerceAtLeast(dp(36))
-                        val barCenterX = barScreenLeft + barWidth / 2
-                        val nextOnRight = barCenterX > screenW / 2
-                        if (nextOnRight != verticalBarOnRight) {
-                            verticalBarOnRight = nextOnRight
+                    } else {
+                        // Magnetic left/right edge snap + persistent memory for both Horizontal & Vertical modes!
+                        val orbCenterX = controlParams.x + barRow.left + statusOrbView.left +
+                            (statusOrbView.width.coerceAtLeast(dp(32)) / 2)
+                        val nextDockRight = orbCenterX > screenW / 2
+                        val yRatio = if (screenH > 0) {
+                            (controlParams.y.toFloat() / screenH.toFloat()).coerceIn(0f, 0.96f)
+                        } else {
+                            -1f
+                        }
+                        val dockChanged = nextDockRight != settings.floatingBarDockRight
+                        settings = settings.copy(
+                            floatingBarDockRight = nextDockRight,
+                            floatingBarPosXRatio = -1f,
+                            floatingBarPosYRatio = yRatio
+                        )
+                        if (dockChanged) {
                             applyFloatingBarLayout()
-                            if (verticalBarOnRight) {
-                                clampControlWindowToScreen(anchorRightEdgePx = barScreenLeft + barWidth)
-                            } else {
-                                controlParams.x = barScreenLeft.coerceIn(0, (screenW - barWidth).coerceAtLeast(0))
-                                clampControlWindowToScreen()
+                        }
+                        snapToDockEdge(nextDockRight, animate = true)
+                        serviceScope.launch {
+                            settingsRepository.update {
+                                it.copy(
+                                    floatingBarDockRight = nextDockRight,
+                                    floatingBarPosXRatio = -1f,
+                                    floatingBarPosYRatio = yRatio
+                                )
                             }
                         }
                     }
@@ -1943,24 +1967,42 @@ class OverlayControllerService : Service() {
     private fun applyFloatingBarLayout() {
         if (!::controlRoot.isInitialized || !::barRow.isInitialized || !::panelsColumn.isInitialized) return
         val vertical = settings.floatingBarVertical
-        val onRight = vertical && verticalBarOnRight
+        val dockRight = settings.floatingBarDockRight
+        val vertRight = vertical && dockRight
+        val horizRight = !vertical && dockRight
 
-        val wantFirst: View = if (onRight) panelsColumn else barRow
-        val wantSecond: View = if (onRight) barRow else panelsColumn
+        // 1. Order [barRow, panelsColumn] vs [panelsColumn, barRow]
+        val wantFirst: View = if (vertRight) panelsColumn else barRow
+        val wantSecond: View = if (vertRight) barRow else panelsColumn
         if (controlRoot.childCount != 2 || controlRoot.getChildAt(0) !== wantFirst || controlRoot.getChildAt(1) !== wantSecond) {
             controlRoot.removeAllViews()
             controlRoot.addView(wantFirst)
             controlRoot.addView(wantSecond)
         }
 
+        // 2. Order [statusOrbView, toolbarContainer] vs [toolbarContainer, statusOrbView]
+        // Horizontal + Dock Right puts the circular App Orb on the RIGHT edge and unfolds the toolbar LEFTWARD!
+        val wantBarFirst: View = if (horizRight) toolbarContainer else statusOrbView
+        val wantBarSecond: View = if (horizRight) statusOrbView else toolbarContainer
+        if (barRow.childCount != 2 || barRow.getChildAt(0) !== wantBarFirst || barRow.getChildAt(1) !== wantBarSecond) {
+            barRow.removeAllViews()
+            barRow.addView(wantBarFirst)
+            barRow.addView(wantBarSecond)
+        }
+
         controlRoot.orientation = if (vertical) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-        controlRoot.gravity = if (vertical) Gravity.TOP else (Gravity.TOP or Gravity.START)
+        controlRoot.gravity = when {
+            vertical -> Gravity.TOP
+            dockRight -> Gravity.TOP or Gravity.END
+            else -> Gravity.TOP or Gravity.START
+        }
 
         barRow.orientation = if (vertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         barRow.gravity = if (vertical) Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
 
         (statusOrbView.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
-            lp.marginEnd = if (vertical) 0 else dp(4)
+            lp.marginStart = if (horizRight) dp(4) else 0
+            lp.marginEnd = if (!vertical && !dockRight) dp(4) else 0
             lp.bottomMargin = if (vertical) dp(4) else 0
             statusOrbView.layoutParams = lp
         }
@@ -1983,16 +2025,17 @@ class OverlayControllerService : Service() {
         }
 
         (panelsColumn.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
-            lp.marginStart = if (vertical && !onRight) dp(4) else 0
-            lp.marginEnd = if (onRight) dp(4) else 0
+            lp.marginStart = if (vertical && !dockRight) dp(4) else 0
+            lp.marginEnd = if (vertRight) dp(4) else 0
             lp.topMargin = 0
             panelsColumn.layoutParams = lp
         }
-        panelsColumn.gravity = if (onRight) Gravity.END else Gravity.START
+        panelsColumn.gravity = if (dockRight) Gravity.END else Gravity.START
 
         (activeShieldScroll.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.topMargin = if (vertical) 0 else dp(2)
-            lp.marginStart = if (vertical) 0 else dp(34)
+            lp.marginStart = if (!vertical && !dockRight) dp(34) else 0
+            lp.marginEnd = if (horizRight) dp(34) else 0
             activeShieldScroll.layoutParams = lp
         }
 
@@ -2004,12 +2047,14 @@ class OverlayControllerService : Service() {
         }
         (summaryStrip.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.topMargin = if (vertical) dp(2) else dp(3)
-            lp.marginStart = if (vertical) 0 else dp(4)
+            lp.marginStart = if (!vertical && !dockRight) dp(4) else 0
+            lp.marginEnd = if (horizRight) dp(4) else 0
             summaryStrip.layoutParams = lp
         }
         (calibrationBar.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.topMargin = if (vertical) dp(2) else dp(3)
-            lp.marginStart = if (vertical) 0 else dp(4)
+            lp.marginStart = if (!vertical && !dockRight) dp(4) else 0
+            lp.marginEnd = if (horizRight) dp(4) else 0
             calibrationBar.layoutParams = lp
         }
 
@@ -2017,7 +2062,8 @@ class OverlayControllerService : Service() {
         boardEditor.setMaxPanelWidth(
             widthPx = editorW,
             topMarginPx = if (vertical) 0 else dp(4),
-            marginStartPx = if (vertical) 0 else dp(4)
+            marginStartPx = if (!vertical && !dockRight) dp(4) else 0,
+            marginEndPx = if (horizRight) dp(4) else 0
         )
 
         val drawerW = if (vertical) {
@@ -2409,9 +2455,78 @@ class OverlayControllerService : Service() {
     }
 
     private fun currentRightAnchorIfPinned(): Int? {
-        if (!settings.floatingBarVertical || !verticalBarOnRight) return null
+        if (!settings.floatingBarDockRight) return null
         val w = controlRoot.width
         return if (w > 0) (controlParams.x + w).coerceIn(dp(44), screenW) else null
+    }
+
+    private fun restoreRememberedPosition(s: AppSettings) {
+        controlRoot.post {
+            val w = controlRoot.width.coerceAtLeast(dp(44))
+            val h = controlRoot.height.coerceAtLeast(dp(44))
+            val maxX = (screenW - w).coerceAtLeast(0)
+            val maxY = (screenH - h).coerceAtLeast(0)
+            val edgePad = dp(4)
+            val targetX = if (s.floatingBarDockRight) {
+                (screenW - w - edgePad).coerceIn(0, maxX)
+            } else {
+                edgePad.coerceIn(0, maxX)
+            }
+            val targetY = if (s.floatingBarPosYRatio >= 0f) {
+                (s.floatingBarPosYRatio * screenH).toInt().coerceIn(0, maxY)
+            } else {
+                dp(38).coerceIn(0, maxY)
+            }
+            if (targetX != controlParams.x || targetY != controlParams.y) {
+                controlParams.x = targetX
+                controlParams.y = targetY
+                try {
+                    windowManager.updateViewLayout(controlRoot, controlParams)
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    private fun snapToDockEdge(dockRight: Boolean, animate: Boolean) {
+        snapAnimator?.cancel()
+        controlRoot.post {
+            val w = controlRoot.width
+            val h = controlRoot.height
+            if (w <= 0 || h <= 0) return@post
+            val maxX = (screenW - w).coerceAtLeast(0)
+            val maxY = (screenH - h).coerceAtLeast(0)
+            val edgePad = dp(4)
+            val targetX = if (dockRight) {
+                (screenW - w - edgePad).coerceIn(0, maxX)
+            } else {
+                edgePad.coerceIn(0, maxX)
+            }
+            val clampedY = controlParams.y.coerceIn(0, maxY)
+            controlParams.y = clampedY
+            val startX = controlParams.x.coerceIn(0, maxX)
+            if (animate && abs(targetX - startX) > dp(2)) {
+                snapAnimator = ValueAnimator.ofInt(startX, targetX).apply {
+                    duration = 180L
+                    interpolator = DecelerateInterpolator()
+                    addUpdateListener { anim ->
+                        controlParams.x = anim.animatedValue as Int
+                        try {
+                            windowManager.updateViewLayout(controlRoot, controlParams)
+                        } catch (_: Exception) {
+                            anim.cancel()
+                        }
+                    }
+                    start()
+                }
+            } else if (targetX != controlParams.x || clampedY != controlParams.y) {
+                controlParams.x = targetX
+                try {
+                    windowManager.updateViewLayout(controlRoot, controlParams)
+                } catch (_: Exception) {
+                }
+            }
+        }
     }
 
     private fun clampControlWindowToScreen(anchorRightEdgePx: Int? = null) {
@@ -2421,7 +2536,7 @@ class OverlayControllerService : Service() {
             if (w <= 0 || h <= 0) return@post
             val maxX = (screenW - w).coerceAtLeast(0)
             val maxY = (screenH - h).coerceAtLeast(0)
-            val desiredX = if (anchorRightEdgePx != null && settings.floatingBarVertical && verticalBarOnRight) {
+            val desiredX = if (anchorRightEdgePx != null && settings.floatingBarDockRight) {
                 anchorRightEdgePx - w
             } else {
                 controlParams.x

@@ -1445,9 +1445,10 @@ class OverlayTuningDrawerController(
             populateHoldAndInvertControls(swBody, p)
         }
 
-        // Card 3 (Purple): Appearance, Theme, Language & Floating Bar Layout (matches Launch App Settings Purple card!)
+        // Card 3 (Purple): Appearance, Theme, Language & Floating Bar Layout/Dock (matches Launch App Settings Purple card!)
         val barLayoutLbl = s(if (settings.floatingBarVertical) R.string.floating_bar_vertical else R.string.floating_bar_horizontal)
-        val s2Summary = "${LocaleHelper.themeLabel(lctx, settings.themeMode)} · ${LocaleHelper.languageLabel(lctx, settings.language)} · $barLayoutLbl"
+        val barDockLbl = s(if (settings.floatingBarDockRight) R.string.floating_bar_dock_right else R.string.floating_bar_dock_left)
+        val s2Summary = "${LocaleHelper.themeLabel(lctx, settings.themeMode)} · ${LocaleHelper.languageLabel(lctx, settings.language)} · $barLayoutLbl$barDockLbl"
         addAccordionGroupCard(3, s(R.string.section_appearance), s2Summary, true, ACCENT_PURPLE, p)?.let { appBody ->
             val themeRow = hRow(bottomMarginDp = 4)
             ThemeMode.entries.forEachIndexed { idx, tm ->
@@ -1466,8 +1467,8 @@ class OverlayTuningDrawerController(
             appBody.addView(langRow)
 
             appBody.addView(makeSubDivider(p))
-            appBody.addView(makeSubLabel(s(R.string.floating_bar_layout_title), p))
-            val barLayoutRow = hRow(bottomMarginDp = 0)
+            appBody.addView(makeSubLabel("${s(R.string.floating_bar_layout_title)} · ${s(R.string.floating_bar_dock_title)}", p))
+            val barLayoutRow = hRow(bottomMarginDp = 4)
             barLayoutRow.addView(makeToggle(s(R.string.floating_bar_horizontal), !settings.floatingBarVertical, p, weight = 1f, marginEndDp = 4) {
                 onUpdateSettings { it.copy(floatingBarVertical = false) }
             })
@@ -1475,6 +1476,15 @@ class OverlayTuningDrawerController(
                 onUpdateSettings { it.copy(floatingBarVertical = true) }
             })
             appBody.addView(barLayoutRow)
+
+            val barDockRow = hRow(bottomMarginDp = 0)
+            barDockRow.addView(makeToggle(s(R.string.floating_bar_dock_left), !settings.floatingBarDockRight, p, weight = 1f, marginEndDp = 4) {
+                onUpdateSettings { it.copy(floatingBarDockRight = false, floatingBarPosXRatio = -1f) }
+            })
+            barDockRow.addView(makeToggle(s(R.string.floating_bar_dock_right), settings.floatingBarDockRight, p, weight = 1f, marginEndDp = 0) {
+                onUpdateSettings { it.copy(floatingBarDockRight = true, floatingBarPosXRatio = -1f) }
+            })
+            appBody.addView(barDockRow)
         }
     }
 

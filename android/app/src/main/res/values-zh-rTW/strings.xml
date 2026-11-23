@@ -283,6 +283,10 @@
     <string name="floating_bar_layout_title">懸浮列排列方向</string>
     <string name="floating_bar_horizontal">橫排</string>
     <string name="floating_bar_vertical">豎排</string>
+    <string name="floating_bar_dock_title">懸浮列停靠側</string>
+    <string name="floating_bar_dock_left">靠左</string>
+    <string name="floating_bar_dock_right">靠右</string>
+    <string name="floating_bar_memory_hint">拖動懸浮球放手自動左右吸邊並記憶位置；橫排靠右向左展開（圖示在右側）</string>
     <string name="section_speed">滑動速度檔位</string>
     <string name="speed_desc">秒數 = 適配轉珠時間；ms = 單格滑動耗時</string>
     <string name="speed_turbo">極速 2秒</string>
