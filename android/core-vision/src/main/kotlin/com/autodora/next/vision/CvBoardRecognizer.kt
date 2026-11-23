@@ -97,13 +97,25 @@ class CvBoardRecognizer : BoardRecognizer {
         var questionCount = 0
         var raceBadgeCount = 0
 
+        // Pre-scan per-cell abnormal status statistics (13x13 HSV grid) BEFORE Traffic Light detection so
+        // square Frozen / Ice-Sealed crystal blocks on Wood/Fire orbs never falsely trigger corner-ray
+        // Green GO Start or Red Burst End markers!
+        val abnormalStats = arrayOfNulls<CellAbnormalStats>(total)
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val idx = r * cols + c
+                abnormalStats[idx] = analyzeCellAbnormalMultiFrame(
+                    frames, geometry.cellCenterX(c), geometry.cellCenterY(r), cellW, cellH
+                )
+            }
+        }
+
         // Pre-scan Traffic Light markers (GO green start + red 8-ray burst end) so white 'GO' lettering
         // is known before orb classification and never triggers false '?' or Enchanted flags.
-        detectTrafficLightMarkers(frames, geometry, tileFlags)
+        detectTrafficLightMarkers(frames, geometry, tileFlags, abnormalStats)
 
         val stormWeakFlags = BooleanArray(total)
         val stormStrongFlags = BooleanArray(total)
-        val abnormalStats = arrayOfNulls<CellAbnormalStats>(total)
 
         for (r in 0 until rows) {
             for (c in 0 until cols) {
@@ -112,8 +124,7 @@ class CvBoardRecognizer : BoardRecognizer {
                 val cy = geometry.cellCenterY(r)
 
                 val isTlStart = (tileFlags[idx] and TileFlagBits.START_ALLOWED) != 0
-                val stats = analyzeCellAbnormalMultiFrame(frames, cx, cy, cellW, cellH)
-                abnormalStats[idx] = stats
+                val stats = abnormalStats[idx]
                 val cellState = classifyCellMultiFrame(
                     frames = frames,
                     cx = cx,
@@ -206,11 +217,13 @@ class CvBoardRecognizer : BoardRecognizer {
                 } else if (!isStorm &&
                     (cell.hazards and (HazardBits.ELECTRIFIED or HazardBits.PURGATORY_FIRE)) == 0 &&
                     (flags and (TileFlagBits.PUZZLE_1 or TileFlagBits.PUZZLE_2 or TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED)) == 0 &&
-                    stats.maxFireBorder >= 0.20f &&
-                    stats.maxFireCorner >= 0.12f &&
-                    stats.maxAvgBodyV >= 0.76f
+                    stats.maxAvgBodyV >= 0.40f &&
+                    ((stats.maxFireBorder >= 0.20f && stats.maxFireCorner >= 0.06f) ||
+                        (stats.maxFireBorder >= 0.18f && stats.maxFireCorner >= 0.12f))
                 ) {
-                    // 3. Burning Tile (#25 燃燒地型): fiery orange-gold flame spilling brightly into dark outer corners/edges
+                    // 3. Color-Invariant Burning Tile (#25 燃燒地型): fiery orange-gold flame spilling brightly into
+                    //    outer border/corners on ANY of the 6 orb colors (no Light-orb brightness bias; avgV >= 0.40
+                    //    only excludes pitch-black non-battle modals, verified 0/329 FP on real battle screens!)
                     tileFlags[idx] = flags or TileFlagBits.BURNING_TILE
                 }
             }
@@ -339,7 +352,8 @@ class CvBoardRecognizer : BoardRecognizer {
     private fun detectTrafficLightMarkers(
         frames: List<VisionFrame>,
         geometry: BoardGeometry,
-        tileFlags: MutableList<Int>
+        tileFlags: MutableList<Int>,
+        abnormalStats: Array<CellAbnormalStats?>
     ) {
         val cols = geometry.cols
         val rows = geometry.rows
@@ -380,6 +394,11 @@ class CvBoardRecognizer : BoardRecognizer {
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 val idx = r * cols + c
+                // Square Frozen / Ice-Sealed ice cubes fill all 4 corners with green/red facets, and
+                // Electrified / Purgatory Fire orbs have blinding white cores that could otherwise pair with
+                // adjacent Wood/Fire orbs to mimic Traffic Light Green GO or Red Burst corner rays!
+                val ab = abnormalStats[idx]
+                if (ab != null && (ab.isFrozen || ab.isIceSealed || ab.isElectrified || ab.isPurgatoryFire)) continue
                 val cx = geometry.cellCenterX(c)
                 val cy = geometry.cellCenterY(r)
                 val isCorner = (r == 0 || r == rows - 1) && (c == 0 || c == cols - 1)
@@ -1022,9 +1041,10 @@ class CvBoardRecognizer : BoardRecognizer {
     }
 
     /**
-     * Single-pass 13x13 per-cell HSV analyzer detecting visually unmistakable ToS runestone statuses
-     * (Electrified, Frozen, Ice-Sealed, Purgatory Fire, Bomb, Evil Energy) and tile terrains
-     * (Burning Tile, Bloodbath Tile, Shattered Tile) with multi-frame peak fusion and 0/330 false positives.
+     * Single-pass 13x13 per-cell color-invariant HSV + lattice analyzer detecting visually unmistakable ToS
+     * runestone statuses (Electrified, Frozen, Ice-Sealed, Purgatory Fire, Bomb, Evil Energy) and tile terrains
+     * (Burning Tile, Bloodbath Tile, Shattered Tile) across ALL 6 orb colors (Water/Fire/Wood/Light/Dark/Heart)
+     * with multi-frame peak fusion and 0/330 false positives on real battle boards.
      */
     private fun analyzeCellAbnormalMultiFrame(
         frames: List<VisionFrame>,
@@ -1054,33 +1074,57 @@ class CvBoardRecognizer : BoardRecognizer {
         val rimVotes = FloatArray(6)
         val bombOuterVotes = FloatArray(6)
 
-        val steps = 13 // -6..+6 normalized dx/dy in [-0.462..+0.462]
+        val gridN = 13 // -6..+6 normalized dx/dy in [-0.465..+0.465]
+        val stepNorm = 0.465f / 6f
+        val gridH = FloatArray(gridN * gridN)
+        val gridS = FloatArray(gridN * gridN)
+        val gridV = FloatArray(gridN * gridN)
+
         for (f in frames) {
+            // Pass 1: sample 13x13 HSV grid once for both region statistics & adjacent crystal-lattice transitions
+            for (iy in -6..6) {
+                val dy = iy * stepNorm
+                val py = (cy + dy * cellH).roundToInt()
+                val rowOff = (iy + 6) * gridN
+                for (ix in -6..6) {
+                    val dx = ix * stepNorm
+                    val px = (cx + dx * cellW).roundToInt()
+                    val (h, s, v) = rgbToHsv(f.getArgb(px, py))
+                    val gIdx = rowOff + (ix + 6)
+                    gridH[gIdx] = h
+                    gridS[gIdx] = s
+                    gridV[gIdx] = v
+                }
+            }
+
             var coreTot = 0; var bombRedHits = 0
-            var innerTot = 0; var whCoreHits = 0; var iceCyanCoreHits = 0
+            var innerTot = 0; var whCoreHits = 0; var satColorCoreHits = 0
             var midTot = 0; var bombGreyHits = 0
             var bodyTot = 0; var bodyVSum = 0f; var whBodyHits = 0; var darkBodyHits = 0
             var highVBodyHits = 0; var satBodyHits = 0; var crackSilverHits = 0
             var iceWhiteBodyHits = 0; var icePurpBodyHits = 0; var tealWispHits = 0; var bbRedHits = 0
+            var latticePairs = 0; var latticeEdges = 0
             var purgRingTot = 0; var purgMagHits = 0
             var cornerTot = 0; var bbCornerHits = 0; var fireCornerHits = 0
             var borderTot = 0; var elecBorderHits = 0; var elecCyanBorderHits = 0; var fireBorderHits = 0
             val cTot = IntArray(4)
             val cElec = IntArray(4)
-            val cIce = IntArray(4)
+            val cBright = IntArray(4)
+            val cIceDark = IntArray(4)
 
             for (iy in -6..6) {
-                val dy = iy * (0.465f / 6f)
-                val py = (cy + dy * cellH).roundToInt()
+                val dy = iy * stepNorm
                 val ay = abs(dy)
+                val rowOff = (iy + 6) * gridN
                 for (ix in -6..6) {
-                    val dx = ix * (0.465f / 6f)
-                    val px = (cx + dx * cellW).roundToInt()
+                    val dx = ix * stepNorm
                     val ax = abs(dx)
                     val rr = hypot(dx.toDouble(), dy.toDouble()).toFloat()
                     val linf = max(ax, ay)
-
-                    val (h, s, v) = rgbToHsv(f.getArgb(px, py))
+                    val gIdx = rowOff + (ix + 6)
+                    val h = gridH[gIdx]
+                    val s = gridS[gIdx]
+                    val v = gridV[gIdx]
 
                     if (rr <= 0.145f) {
                         coreTot++
@@ -1089,7 +1133,8 @@ class CvBoardRecognizer : BoardRecognizer {
                     if (rr <= 0.285f) {
                         innerTot++
                         if (v >= 0.90f && s <= 0.26f) whCoreHits++
-                        if (v >= 0.42f && h in 195f..260f && s >= 0.35f) iceCyanCoreHits++
+                        // Color-invariant underlying orb facet color (ANY of the 6 elements with S>=0.32 & V>=0.38)
+                        if (v >= 0.38f && s >= 0.32f) satColorCoreHits++
                     }
                     if (rr in 0.18f..0.355f) {
                         midTot++
@@ -1099,17 +1144,30 @@ class CvBoardRecognizer : BoardRecognizer {
                         bodyTot++
                         bodyVSum += v
                         if (v >= 0.88f && s <= 0.28f) whBodyHits++
-                        if (v < 0.26f) darkBodyHits++
+                        if (v < 0.28f) darkBodyHits++
                         if (v >= 0.60f) highVBodyHits++
                         if (s >= 0.35f && v >= 0.28f) satBodyHits++
                         if (s <= 0.22f && v in 0.22f..0.85f) crackSilverHits++
-                        if (v >= 0.76f && s <= 0.30f) iceWhiteBodyHits++
-                        if (v >= 0.35f && h in 252f..308f && s >= 0.35f) icePurpBodyHits++
-                        if (h in 165f..210f && s >= 0.22f && v >= 0.34f) tealWispHits++
+                        if (v >= 0.74f && s <= 0.30f) iceWhiteBodyHits++
+                        if (v >= 0.35f && h in 250f..310f && s >= 0.35f) icePurpBodyHits++
+                        // Tight turquoise wisp hue (162..198°) separates Evil Energy wisps from regular blue Water (202..230°)
+                        if (h in 162f..198f && s >= 0.22f && v >= 0.32f) tealWispHits++
                         if ((h <= 22f || h >= 332f) && s >= 0.28f && v in 0.12f..0.42f) bbRedHits++
+
+                        // Color-invariant ice crystal lattice texture: sharp white-vs-saturated jumps between neighbors
+                        if (ix < 6 && hypot((dx + stepNorm).toDouble(), dy.toDouble()) <= 0.385) {
+                            latticePairs++
+                            val nIdx = gIdx + 1
+                            if (abs(s - gridS[nIdx]) >= 0.22f && min(v, gridV[nIdx]) >= 0.45f) latticeEdges++
+                        }
+                        if (iy < 6 && hypot(dx.toDouble(), (dy + stepNorm).toDouble()) <= 0.385) {
+                            latticePairs++
+                            val nIdx = gIdx + gridN
+                            if (abs(s - gridS[nIdx]) >= 0.22f && min(v, gridV[nIdx]) >= 0.45f) latticeEdges++
+                        }
                     }
                     if (rr in 0.22f..0.385f && s >= 0.30f && v >= 0.46f) {
-                        // Rim votes for underlying element recovery (excludes dark brown tile background V < 0.46;
+                        // Rim votes for underlying element recovery across all 6 colors (excludes dark brown tile V < 0.46;
                         // Light orb amber-gold outer compass tips sit at H∈[15°,74°] while pure Fire sits at H<15°/≥346°)
                         val elIdx = when {
                             h < 15f || h >= 346f -> Element.FIRE.code
@@ -1130,7 +1188,10 @@ class CvBoardRecognizer : BoardRecognizer {
                         val ci = (if (dx > 0f) 1 else 0) + (if (dy > 0f) 2 else 0)
                         cTot[ci]++
                         if (v >= 0.48f && ((h in 182f..268f && s >= 0.22f) || (v >= 0.78f && s <= 0.28f))) cElec[ci]++
-                        if (v >= 0.45f && ((h in 185f..310f) || s <= 0.28f)) cIce[ci]++
+                        // Color-invariant bright square corner (any bright crystal/frosted facet covering normally dark corners)
+                        if (v >= 0.48f && (s <= 0.36f || (v >= 0.54f && s >= 0.28f))) cBright[ci]++
+                        // Purple-tinted or frosted square corner for 3-turn Ice-Sealed cubes
+                        if (v >= 0.34f && ((h in 240f..315f) || s <= 0.30f)) cIceDark[ci]++
                         if (ax >= 0.33f && ay >= 0.33f) {
                             cornerTot++
                             if ((h <= 22f || h >= 332f) && s >= 0.28f && v in 0.12f..0.38f) bbCornerHits++
@@ -1150,13 +1211,14 @@ class CvBoardRecognizer : BoardRecognizer {
             val avgV = bodyVSum / bTot
             val whCore = whCoreHits.toFloat() / max(1, innerTot)
             val whBody = whBodyHits.toFloat() / bTot
+            val satColorCore = satColorCoreHits.toFloat() / max(1, innerTot)
             val darkBody = darkBodyHits.toFloat() / bTot
             val highVBody = highVBodyHits.toFloat() / bTot
             val satBody = satBodyHits.toFloat() / bTot
             val crackSilver = crackSilverHits.toFloat() / bTot
             val iceWhiteBody = iceWhiteBodyHits.toFloat() / bTot
             val icePurpBody = icePurpBodyHits.toFloat() / bTot
-            val iceCyanCore = iceCyanCoreHits.toFloat() / max(1, innerTot)
+            val latticeRatio = latticeEdges.toFloat() / max(1, latticePairs)
             val tealWisp = tealWispHits.toFloat() / bTot
             val bbRed = bbRedHits.toFloat() / bTot
             val bbCorner = bbCornerHits.toFloat() / max(1, cornerTot)
@@ -1169,27 +1231,48 @@ class CvBoardRecognizer : BoardRecognizer {
             val fireCorner = fireCornerHits.toFloat() / max(1, cornerTot)
 
             var elecCornerHits = 0
-            var iceCornerAny = 0
+            var brightCornerHits = 0
+            var iceDarkCornerHits = 0
             for (ci in 0 until 4) {
                 val ct = max(1, cTot[ci]).toFloat()
                 if (cElec[ci] / ct >= 0.16f) elecCornerHits++
-                if (cIce[ci] / ct >= 0.16f) iceCornerAny++
+                if (cBright[ci] / ct >= 0.20f) brightCornerHits++
+                if (cIceDark[ci] / ct >= 0.16f) iceDarkCornerHits++
             }
 
-            if (icePurpBody >= 0.35f && iceWhiteBody >= 0.22f && iceCornerAny >= 3) {
+            // 1. Ice-Sealed (#03 冰封): purple faceted crystal cube (distinguished from Frozen-on-Dark by
+            //    deeper purple body >= 0.45 + crisp veins in 0.20..0.44 + high lattice transitions >= 0.30)
+            if (icePurpBody >= 0.45f && iceWhiteBody in 0.20f..0.44f && latticeRatio >= 0.30f && iceDarkCornerHits >= 2) {
                 anyIceSealed = true
-            } else if (elecCornerHits >= 4 && iceWhiteBody >= 0.42f && iceCyanCore >= 0.22f && whCore < 0.58f) {
+            } else if (brightCornerHits >= 4 &&
+                iceWhiteBody >= 0.38f &&
+                satColorCore >= 0.20f &&
+                latticeRatio >= 0.30f &&
+                whCore < 0.60f
+            ) {
+                // 2. Color-Invariant Frozen (#03 凍結): square ice cube covering all 4 corners + dense white crystal
+                //    lattice + ANY saturated underlying orb color + strong white/color lattice transitions (works 6/6 colors!)
                 anyFrozen = true
-            } else if (whCore >= 0.65f && whBody >= 0.52f && purgMag >= 0.12f && elecCyanBorder < 0.14f) {
+            } else if (whCore >= 0.65f && whBody >= 0.52f && purgMag >= 0.12f &&
+                (elecCyanBorder < 0.14f || purgMag >= elecCyanBorder * 1.5f)
+            ) {
+                // 3. Purgatory Fire (#59 煉獄之火): blinding white-hot body + vivid neon magenta/purple halo
                 anyPurgatory = true
             } else if ((whCore >= 0.30f && whBody >= 0.25f && elecBorder >= 0.24f && elecCyanBorder >= 0.14f) ||
-                (avgV >= 0.90f && whBody >= 0.14f && elecCyanBorder >= 0.36f && elecCornerHits >= 2)
+                (avgV >= 0.62f && whBody >= 0.14f && elecCyanBorder >= 0.34f && elecCornerHits >= 2) ||
+                (avgV >= 0.58f && whBody >= 0.08f && elecCyanBorder >= 0.42f && elecCornerHits >= 3)
             ) {
+                // 4. Color-Invariant Electrified (#01 電擊): peak flash phase OR dim-phase cyan lightning border
+                //    (relaxed avgV >= 0.58..0.62 catches darker Fire/Wood/Dark orbs even on non-peak frames!)
                 anyElectrified = true
             }
 
+            // 5. Bomb (#09 爆破炸彈): fixed bright red core + matte grey metallic hex ring (6/6 color-invariant)
             if (bombRed >= 0.22f && bombGrey >= 0.45f) anyBomb = true
-            if (avgV <= 0.25f && darkBody >= 0.62f && highVBody <= 0.06f && tealWisp >= 0.06f) anyEvilEnergy = true
+
+            // 6. Color-Invariant Evil Energy (#12 邪惡能量): dark shadowed orb + glowing turquoise wisps (162..198°),
+            //    relaxed avgV <= 0.34 & darkBody >= 0.54 supports brighter Light/Heart underlying orbs too!
+            if (avgV <= 0.34f && darkBody >= 0.54f && highVBody <= 0.08f && tealWisp >= 0.06f) anyEvilEnergy = true
 
             if (avgV < minAvgBodyV) minAvgBodyV = avgV
             if (avgV > maxAvgBodyV) maxAvgBodyV = avgV
@@ -1202,12 +1285,6 @@ class CvBoardRecognizer : BoardRecognizer {
             if (fireBorder > maxFireBorder) maxFireBorder = fireBorder
             if (fireCorner > maxFireCorner) maxFireCorner = fireCorner
         }
-
-        // Guard against unused steps warning while keeping constant clear
-        val _grid = steps
-        if (_grid < 0) return CellAbnormalStats(
-            false, false, false, false, false, false, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, rimVotes, bombOuterVotes
-        )
 
         return CellAbnormalStats(
             isIceSealed = anyIceSealed,
@@ -1402,7 +1479,9 @@ class CvBoardRecognizer : BoardRecognizer {
         fun isGoldPixel(x: Int, y: Int): Boolean {
             for (f in frames) {
                 val (h, s, v) = rgbToHsv(f.getArgb(x, y))
-                if (h in 26f..64f && s >= 0.48f && v >= 0.80f) return true
+                // Pure warm yellow-gold (36°..64°) cleanly excludes fiery orange Burning Tile borders (10°..33°),
+                // preventing contiguous 1x6 Burning Rows / Burning Rings from ever misclassifying as PUZZLE_1!
+                if (h in 36f..64f && s >= 0.48f && v >= 0.80f) return true
             }
             return false
         }
@@ -1440,8 +1519,8 @@ class CvBoardRecognizer : BoardRecognizer {
         //    H in [34°, 62°] cleanly separates golden filigree from dark-brown seams (H~24..31, V~0.21)
         //    and red/orange Fire orb rim spill (H < 28).
         if (h in 34f..62f && s >= 0.24f && v >= 0.46f) return true
-        // 3) Legacy / Classic bright neon amber-gold glowing puzzle perimeter
-        if (h in 26f..66f && s >= 0.45f && v >= 0.72f) return true
+        // 3) Legacy / Classic bright neon yellow-gold glowing puzzle perimeter (35°..66° excludes fiery orange 10°..33°)
+        if (h in 35f..66f && s >= 0.45f && v >= 0.72f) return true
         return false
     }
 

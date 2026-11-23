@@ -1479,4 +1479,211 @@ class CvBoardRecognizerTest {
             assertTrue("Real (1,0) must flag BURNING_TILE", (r.board.tileFlags[1 * 6 + 0] and TileFlagBits.BURNING_TILE) != 0)
         }
     }
+
+    @Test
+    fun `full 6-color Cartesian product detects Electrified, Frozen, Ice-Sealed, Bomb, Evil Energy, Purgatory, and Burning across all 6 elements`() {
+        val cell = 90
+        val cols = 6
+        val rows = 5
+        val recognizer = CvBoardRecognizer()
+        val geom = BoardGeometry(0f, 0f, (cols * cell).toFloat(), (rows * cell).toFloat(), cols, rows)
+
+        val elementColors = listOf(
+            Element.WATER to 0xFF1E9CFF.toInt(),
+            Element.FIRE to 0xFFE8261E.toInt(),
+            Element.WOOD to 0xFF28B83C.toInt(),
+            Element.LIGHT to 0xFFFFD420.toInt(),
+            Element.DARK to 0xFF8C2CE0.toInt(),
+            Element.HEART to 0xFFF44E9C.toInt()
+        )
+        // Darker variants (testing color-invariance on darker Water/Wood/Dark orbs on Burning & Electrified dim-arc!)
+        val dimElementColors = mapOf(
+            Element.WATER to 0xFF1874C8.toInt(),
+            Element.FIRE to 0xFFC2221A.toInt(),
+            Element.WOOD to 0xFF228C32.toInt(),
+            Element.LIGHT to 0xFFD8B21C.toInt(),
+            Element.DARK to 0xFF6A20B0.toInt(),
+            Element.HEART to 0xFFC83E80.toInt()
+        )
+        val darkenedEvilColors = mapOf(
+            Element.WATER to 0xFF142230.toInt(),
+            Element.FIRE to 0xFF2E1414.toInt(),
+            Element.WOOD to 0xFF142818.toInt(),
+            Element.LIGHT to 0xFF3E3818.toInt(), // brighter darkened Light (V~0.24)
+            Element.DARK to 0xFF221430.toInt(),
+            Element.HEART to 0xFF441E30.toInt()  // brighter darkened Heart (V~0.27)
+        )
+
+        fun buildBaseFrame(): SyntheticBoardFrame {
+            val f = SyntheticBoardFrame(cols * cell, rows * cell)
+            for (r in 0 until rows) {
+                for (c in 0 until cols) {
+                    f.drawCell(c * cell, r * cell, cell, elementColors[c].second)
+                }
+            }
+            return f
+        }
+
+        fun paintCell(f: SyntheticBoardFrame, r: Int, c: Int, fn: (dx: Float, dy: Float, rr: Float) -> Int?) {
+            val x0 = c * cell
+            val y0 = r * cell
+            val cx = x0 + cell * 0.5f
+            val cy = y0 + cell * 0.5f
+            for (y in y0 until y0 + cell) {
+                for (x in x0 until x0 + cell) {
+                    val dx = (x - cx) / cell
+                    val dy = (y - cy) / cell
+                    val rr = hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                    fn(dx, dy, rr)?.let { f.pixels[y * f.width + x] = it }
+                }
+            }
+        }
+
+        // Board A: Row 0 = Electrified (Peak Flash), Row 1 = Electrified (Dim Arc), Row 2 = Frozen (6 colors!),
+        //          Row 3 = Bomb (6 colors!), Row 4 = Normal control row (must have 0 false hazards!)
+        val boardA = buildBaseFrame()
+        for (c in 0 until 6) {
+            val (el, baseColor) = elementColors[c]
+            val dimColor = dimElementColors.getValue(el)
+
+            // Row 0: Electrified Peak Flash × 6 colors
+            paintCell(boardA, 0, c) { dx, dy, rr ->
+                val linf = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+                when {
+                    rr <= 0.27f -> 0xFFF7FBFF.toInt()
+                    rr <= 0.37f -> baseColor
+                    linf >= 0.39f -> 0xFF38B8FF.toInt()
+                    else -> null
+                }
+            }
+
+            // Row 1: Electrified Dim Arc Phase × 6 colors (even dark Wood/Dark/Fire at V~0.65..0.78!)
+            paintCell(boardA, 1, c) { dx, dy, rr ->
+                val linf = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+                when {
+                    rr <= 0.16f -> 0xFFF2FAFF.toInt()
+                    rr <= 0.37f -> dimColor
+                    linf >= 0.385f -> 0xFF34B4FF.toInt()
+                    else -> null
+                }
+            }
+
+            // Row 2: Color-Invariant Frozen Square Crystal × 6 colors (including Dark!)
+            paintCell(boardA, 2, c) { dx, dy, _ ->
+                val facet = (kotlin.math.floor((dx + 0.5f) * 8f).toInt() + kotlin.math.floor((dy + 0.5f) * 8f).toInt()) and 1
+                if (facet == 0) 0xFFCCD6E4.toInt() else baseColor
+            }
+
+            // Row 3: Bomb × 6 colors (red core + grey metallic hex casing + 6-color outer rim)
+            paintCell(boardA, 3, c) { _, _, rr ->
+                when {
+                    rr <= 0.14f -> 0xFFFF1818.toInt()
+                    rr <= 0.35f -> 0xFF787C82.toInt()
+                    rr <= 0.42f -> baseColor
+                    else -> null
+                }
+            }
+        }
+
+        val recA = recognizer.recognizeFrames(listOf(boardA), geom)
+        for (c in 0 until 6) {
+            val el = elementColors[c].first
+            // Row 0: Electrified Peak Flash + exact underlying element recovery
+            val r0 = recA.board.cellAt(0, c)
+            assertTrue("Electrified Peak ($el) must flag ELECTRIFIED", (r0.hazards and HazardBits.ELECTRIFIED) != 0)
+            assertEquals("Electrified Peak ($el) must recover $el", el, r0.element)
+
+            // Row 1: Electrified Dim Arc + exact underlying element recovery
+            val r1 = recA.board.cellAt(1, c)
+            assertTrue("Electrified DimArc ($el) must flag ELECTRIFIED", (r1.hazards and HazardBits.ELECTRIFIED) != 0)
+            assertEquals("Electrified DimArc ($el) must recover $el", el, r1.element)
+
+            // Row 2: Color-Invariant Frozen × 6 colors (even Dark must be FROZEN, NOT ICE_SEALED!)
+            val r2 = recA.board.cellAt(2, c)
+            assertTrue("Frozen ($el) must flag FROZEN", (r2.hazards and HazardBits.FROZEN) != 0)
+            assertEquals("Frozen ($el) must recover $el", el, r2.element)
+
+            // Row 3: Bomb × 6 colors + exact underlying element recovery
+            val r3 = recA.board.cellAt(3, c)
+            assertTrue("Bomb ($el) must flag BOMB", (r3.hazards and HazardBits.BOMB) != 0)
+            assertEquals("Bomb ($el) must recover $el", el, r3.element)
+
+            // Row 4: Normal 6-color control row -> ZERO false positives
+            val r4 = recA.board.cellAt(4, c)
+            assertEquals("Control ($el) must have ZERO hazards", HazardBits.NONE, r4.hazards)
+            assertEquals("Control ($el) must have ZERO terrain flags", TileFlagBits.NONE, recA.board.tileFlags[4 * 6 + c])
+            assertEquals("Control ($el) element mismatch", el, r4.element)
+        }
+        assertEquals(0, recA.questionOrbsDetected)
+        assertEquals("Frozen Wood must NEVER falsely trigger Traffic Light Start", 0, recA.trafficLightStartCount)
+        assertEquals("Frozen Fire must NEVER falsely trigger Traffic Light End", 0, recA.trafficLightEndCount)
+
+        // Board B: Row 0 = Burning Tile × 6 dim colors (no Light-orb brightness bias!),
+        //          Row 1 = Evil Energy × 6 colors (including brighter darkened Light/Heart!),
+        //          Row 2 = Ice-Sealed × 6 colors, Row 3 = Purgatory Fire × 6 colors, Row 4 = Normal control row!
+        val boardB = buildBaseFrame()
+        for (c in 0 until 6) {
+            val (el, baseColor) = elementColors[c]
+            val dimColor = dimElementColors.getValue(el)
+            val evilColor = darkenedEvilColors.getValue(el)
+
+            // Row 0: Burning Tile × 6 dim colors (avgV down to ~0.55 on Dark/Water/Wood!)
+            paintCell(boardB, 0, c) { dx, dy, rr ->
+                val linf = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+                when {
+                    linf >= 0.37f -> 0xFFFF8214.toInt()
+                    rr <= 0.36f -> dimColor
+                    else -> 0xFFE86A10.toInt()
+                }
+            }
+
+            // Row 1: Evil Energy × 6 colors (dark shadowed orb + turquoise wisps H~183°)
+            paintCell(boardB, 1, c) { dx, dy, rr ->
+                val wisp = (kotlin.math.abs(dx - 0.12f) < 0.07f && kotlin.math.abs(dy - 0.08f) < 0.07f) ||
+                    (kotlin.math.abs(dx + 0.14f) < 0.07f && kotlin.math.abs(dy + 0.10f) < 0.07f)
+                when {
+                    wisp -> 0xFF348C8E.toInt()
+                    rr <= 0.40f -> evilColor
+                    else -> null
+                }
+            }
+
+            // Row 2: Ice-Sealed (purple faceted crystal cube: ~66% purple + ~33% white veins!)
+            paintCell(boardB, 2, c) { dx, dy, _ ->
+                val vein = (kotlin.math.floor((dx + 0.5f) * 9f).toInt() + kotlin.math.floor((dy + 0.5f) * 9f).toInt()) % 3 == 0
+                if (vein) 0xFFEDE4FA.toInt() else 0xFF9424E0.toInt()
+            }
+
+            // Row 3: Purgatory Fire × 6 colors (blinding white core + underlying 6-color orb rim + neon magenta halo on dark tile)
+            paintCell(boardB, 3, c) { _, _, rr ->
+                when {
+                    rr <= 0.315f -> 0xFFFFFAFE.toInt()
+                    rr <= 0.365f -> baseColor
+                    rr <= 0.46f -> 0xFFD030E8.toInt()
+                    else -> null
+                }
+            }
+        }
+
+        val recB = recognizer.recognizeFrames(listOf(boardB), geom)
+        for (c in 0 until 6) {
+            val el = elementColors[c].first
+            assertTrue("Burning Tile ($el dim) must flag BURNING_TILE", (recB.board.tileFlags[0 * 6 + c] and TileFlagBits.BURNING_TILE) != 0)
+            assertEquals("Burning Tile ($el dim) must preserve $el", el, recB.board.cellAt(0, c).element)
+
+            assertTrue("Evil Energy ($el) must flag EVIL_ENERGY", (recB.board.cellAt(1, c).hazards and HazardBits.EVIL_ENERGY) != 0)
+            assertTrue("Ice-Sealed ($el) must flag ICE_SEALED", (recB.board.cellAt(2, c).hazards and HazardBits.ICE_SEALED) != 0)
+            assertTrue("Purgatory Fire ($el) must flag PURGATORY_FIRE", (recB.board.cellAt(3, c).hazards and HazardBits.PURGATORY_FIRE) != 0)
+
+            assertEquals("ControlB ($el) must have ZERO hazards", HazardBits.NONE, recB.board.cellAt(4, c).hazards)
+            assertEquals("ControlB ($el) must have ZERO terrain flags", TileFlagBits.NONE, recB.board.tileFlags[4 * 6 + c])
+        }
+        assertEquals(6, recB.burningTilesDetected)
+        assertEquals(6, recB.evilEnergyOrbsDetected)
+        assertEquals(6, recB.frozenOrbsDetected)
+        assertEquals(6, recB.purgatoryFireOrbsDetected)
+        assertEquals("Contiguous 1x6 Burning Row must NEVER falsely trigger Puzzle Shield", 0, recB.puzzleCellsDetected)
+        assertEquals("Board B must have ZERO false Traffic Light Starts", 0, recB.trafficLightStartCount)
+        assertEquals("Board B must have ZERO false Traffic Light Ends", 0, recB.trafficLightEndCount)
+    }
 }
