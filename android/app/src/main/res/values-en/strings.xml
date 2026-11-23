@@ -522,11 +522,14 @@
     <!-- v3.5 Grouped Board Editor, 6-Tier Speed & About/Update Checker -->
     <string name="editor_title">Board Editor</string>
     <string name="editor_badge_editing">Editing</string>
+    <string name="editor_badge_scanning">Scanning...</string>
     <string name="editor_badge_saved">Saved</string>
     <string name="editor_hint_unsaved">Tap/drag cells to paint · Save Board, then use main Solve / Play</string>
     <string name="editor_hint_saved">Board saved · Close and tap main floating bar Solve / Play</string>
     <string name="editor_btn_save">Save Board</string>
     <string name="editor_btn_clear">Clear Marks</string>
+    <string name="editor_btn_rescan">Re-scan</string>
+    <string name="ov_toast_editor_rescanned">Live board recognized</string>
     <string name="editor_grp_orb">Orbs &amp; Variants</string>
     <string name="editor_grp_race">Race Runestones</string>
     <string name="editor_grp_shape">Puzzle &amp; Start→End</string>

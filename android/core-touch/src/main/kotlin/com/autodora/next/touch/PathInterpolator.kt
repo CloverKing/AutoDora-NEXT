@@ -169,7 +169,7 @@ object PathInterpolator {
                 val midPt = ScreenPoint((prevPt.x + targetPt.x) * 0.5f, (prevPt.y + targetPt.y) * 0.5f)
                 draftSegments.add(listOf(prevPt, midPt, targetPt) to diagMs)
             } else {
-                val arcScale = if (move.isDiagonal) 1.35f else 1.0f
+                val arcScale = if (move.isDiagonal) 1.414f else 1.0f
                 val stepMs = (config.stepDurationMs * arcScale * speedVar).roundToLong().coerceAtLeast(16L)
                 // Guard Step 1 against Unity turn-timer wake-up frame drops:
                 // When Step 1 -> Step 2 makes an immediate 90-degree orthogonal turn on a full-path start,

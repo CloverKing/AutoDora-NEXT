@@ -70,6 +70,7 @@ class OverlayBoardEditorController(
     private val context: Context,
     private val onSaveEditedBoard: () -> Unit,
     private val onClearAllMarkers: () -> Unit,
+    private val onRescanLiveBoard: () -> Unit,
     private val onCloseEditor: () -> Unit,
     private val onPanelHeightChanged: (() -> Unit)? = null
 ) {
@@ -78,6 +79,7 @@ class OverlayBoardEditorController(
         private set
 
     private var isSavedState: Boolean = false
+    private var isScanningState: Boolean = false
     private var expandedGroupIdx: Int? = 0 // Single-open exclusive accordion: default Group 0 (珠色与珠型) open
     private var lctx: Context = context
     private var currentPalette: OverlayPalette? = null
@@ -194,6 +196,7 @@ class OverlayBoardEditorController(
     private val titleLabel: TextView
     private val statusBadge: TextView
     private val hintLabel: TextView
+    private val rescanBtn: TextView
     private val clearCellBrushBtn: TextView
     private val saveBoardBtn: TextView
     private val clearAllBtn: TextView
@@ -280,10 +283,24 @@ class OverlayBoardEditorController(
         }
         toolBar.addView(hintLabel)
 
+        rescanBtn = makeHeaderBtn(
+            label = context.getString(R.string.editor_btn_rescan),
+            marginEndDp = 4,
+            padH = 7
+        ) {
+            onRescanLiveBoard()
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(22)
+            ).apply { marginEnd = dp(4) }
+        }
+        toolBar.addView(rescanBtn)
+
         clearCellBrushBtn = makeHeaderBtn(
             label = context.getString(R.string.editor_btn_clear_cell),
             marginEndDp = 0,
-            padH = 8
+            padH = 7
         ) {
             activeBrush = BoardBrush.ClearMarkers
             refreshBrushStyles()
@@ -475,6 +492,8 @@ class OverlayBoardEditorController(
         titleLabel.text = lctx.getString(R.string.editor_title)
         titleLabel.setTextColor(palette.onSurface)
         hintLabel.setTextColor(palette.onSurfaceVariant)
+        rescanBtn.text = lctx.getString(R.string.editor_btn_rescan)
+        styleBtn(rescanBtn, palette.secondaryContainer, palette.onSecondaryContainer, palette.outline)
         clearAllBtn.text = lctx.getString(R.string.editor_btn_clear)
         styleBtn(clearAllBtn, palette.errorContainer, palette.onErrorContainer, null)
         styleBtn(exitBtn, palette.chipOffBg, palette.onSurfaceVariant, palette.chipOffStroke)
@@ -532,6 +551,13 @@ class OverlayBoardEditorController(
         refreshSaveStateChrome()
     }
 
+    fun setScanningState(scanning: Boolean) {
+        if (isScanningState != scanning) {
+            isScanningState = scanning
+            refreshSaveStateChrome()
+        }
+    }
+
     fun markDirty() {
         if (isSavedState) {
             isSavedState = false
@@ -541,7 +567,16 @@ class OverlayBoardEditorController(
 
     private fun refreshSaveStateChrome() {
         val p = currentPalette ?: return
-        if (isSavedState) {
+        if (isScanningState) {
+            statusBadge.text = lctx.getString(R.string.editor_badge_scanning)
+            val scanBg = if (p.isDark) Color.rgb(18, 56, 74) else Color.rgb(225, 245, 254)
+            val scanFg = if (p.isDark) Color.rgb(128, 222, 234) else Color.rgb(1, 87, 155)
+            val scanStroke = Color.rgb(0, 151, 167)
+            styleBtn(statusBadge, scanBg, scanFg, scanStroke)
+            saveBoardBtn.text = if (isSavedState) "✓ ${lctx.getString(R.string.editor_btn_save)}" else lctx.getString(R.string.editor_btn_save)
+            styleBtn(saveBoardBtn, p.primary, p.onPrimary, null)
+            hintLabel.text = lctx.getString(R.string.editor_hint_unsaved)
+        } else if (isSavedState) {
             statusBadge.text = "✓ ${lctx.getString(R.string.editor_badge_saved)}"
             val savedBg = if (p.isDark) Color.rgb(22, 62, 42) else Color.rgb(232, 245, 233)
             val savedFg = if (p.isDark) Color.rgb(129, 236, 172) else Color.rgb(27, 94, 32)

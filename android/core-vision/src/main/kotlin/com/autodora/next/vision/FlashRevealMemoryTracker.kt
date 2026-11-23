@@ -200,8 +200,9 @@ class FlashRevealMemoryTracker(
             val unknownCount = board.cells.indices.count { i ->
                 val el = board.cells[i].element
                 val isStorm = (board.tileFlags[i] and com.autodora.next.model.TileFlagBits.STORM) != 0
+                val isShattered = (board.tileFlags[i] and com.autodora.next.model.TileFlagBits.SHATTERED) != 0
                 val isPetrified = (board.cells[i].hazards and HazardBits.PETRIFIED) != 0
-                !isStorm && !isPetrified && (el == Element.UNKNOWN || el == Element.EMPTY)
+                !isStorm && !isShattered && !isPetrified && (el == Element.UNKNOWN || el == Element.EMPTY)
             }
             if (unknownCount > 2) return false
             if (result.averageConfidence < minConf) return false

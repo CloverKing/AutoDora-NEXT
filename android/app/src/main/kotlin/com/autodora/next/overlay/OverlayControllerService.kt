@@ -162,6 +162,7 @@ class OverlayControllerService : Service() {
     private var usedMemorizedSnapshot = false
     private var selectedSolutionIdx = 0
     private var activeJob: Job? = null
+    private var editorScanJob: Job? = null
     private var backgroundWatchJob: Job? = null
     private var activeCancelToken: NativeCancelToken? = null
     private val flashMemoryTracker = FlashRevealMemoryTracker()
@@ -750,6 +751,7 @@ class OverlayControllerService : Service() {
                 refreshPathCanvas()
                 toast(lctx.getString(R.string.ov_toast_board_cleared))
             },
+            onRescanLiveBoard = { scanLiveBoardForEditor(clearSavedFirst = true, explicitTrigger = true) },
             onCloseEditor = { setBoardEditorMode(false) },
             onPanelHeightChanged = { clampControlWindowToScreen(currentRightAnchorIfPinned()) }
         )
@@ -950,17 +952,22 @@ class OverlayControllerService : Service() {
         }
 
         activeJob = serviceScope.launch {
-            setPhase(OverlayPhase.CALCULATING)
-            // Completely hide PathOverlayView & flush any stale MediaProjection cached frame BEFORE capture
-            // so previously rendered yellow puzzle outlines or path arrows NEVER pollute Frame 0 seam scoring!
+            // ALWAYS flush any stale MediaProjection cached frame BEFORE capture so a frozen/stalled
+            // VirtualDisplay (e.g., HyperOS screen recorder takeover or wave transition) can NEVER silently
+            // return a previous wave's board and swipe the wrong solution on the live screen!
             val hadVisibleOverlay = pathOverlayView.visibility == View.VISIBLE && pathOverlayView.hasVisibleDrawing()
+            capturer.clearCachedFrame()
+            setPhase(OverlayPhase.CALCULATING)
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
             pathOverlayView.visibility = View.INVISIBLE
+            controlRoot.postInvalidate()
             if (hadVisibleOverlay) {
+                delay(60)
                 capturer.clearCachedFrame()
-                delay(95)
+                controlRoot.postInvalidate()
+                delay(55)
             } else {
-                delay(40)
+                delay(55)
             }
 
             val trafficLightChipActive = activeWaveChips.any { it.id == "traffic_light" }
@@ -1112,8 +1119,11 @@ class OverlayControllerService : Service() {
                 val totalCells = (boardToSolve.cols * boardToSolve.rows).coerceAtLeast(1)
                 val unknownCells = boardToSolve.cells.indices.count { i ->
                     val el = boardToSolve.cells[i].element
-                    val isStorm = (boardToSolve.tileFlags[i] and TileFlagBits.STORM) != 0
-                    !isStorm && (el == Element.UNKNOWN || el == Element.EMPTY)
+                    val flags = boardToSolve.tileFlags[i]
+                    val haz = boardToSolve.cells[i].hazards
+                    val isKnownSpecial = (flags and (TileFlagBits.STORM or TileFlagBits.SHATTERED or TileFlagBits.END_FORBIDDEN)) != 0 ||
+                        (haz and (HazardBits.PETRIFIED or HazardBits.EVIL_ENERGY)) != 0
+                    !isKnownSpecial && (el == Element.UNKNOWN || el == Element.EMPTY)
                 }
                 val isGenuineQuestionBoard = resolvedFromMemory || liveRec.questionOrbsDetected >= 6
                 val notInBattleBoard = !isGenuineQuestionBoard && (
@@ -1277,19 +1287,22 @@ class OverlayControllerService : Service() {
         if (tuningDrawerOpen) setTuningDrawerOpen(false)
 
         activeJob = serviceScope.launch {
-            setPhase(OverlayPhase.MOVING)
-            // Completely hide PathOverlayView & clear memorized overlay BEFORE pre-touch capture
-            // so translucent memorized orb badges NEVER pollute preBmp or reveal polling frames!
+            // ALWAYS flush stale cached frame BEFORE capturing preBmp so Hold-and-Replan never acts on an old wave!
             val hadVisibleOverlay = pathOverlayView.visibility == View.VISIBLE && pathOverlayView.hasVisibleDrawing()
+            capturer.clearCachedFrame()
+            setPhase(OverlayPhase.MOVING)
             flashMemoryTracker.clearLock()
             usedMemorizedSnapshot = false
             pathOverlayView.visibility = View.INVISIBLE
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false, null, null, false)
+            controlRoot.postInvalidate()
             if (hadVisibleOverlay) {
+                delay(60)
                 capturer.clearCachedFrame()
-                delay(95)
+                controlRoot.postInvalidate()
+                delay(50)
             } else {
-                delay(30)
+                delay(50)
             }
 
             // Pre-touch geometry & baseline board scan (costs 0ms on the game's turn timer!)
@@ -1609,6 +1622,8 @@ class OverlayControllerService : Service() {
         touchExecutor.emergencyStop()
         activeJob?.cancel()
         activeJob = null
+        editorScanJob?.cancel()
+        editorScanJob = null
         setControlBarTouchable(true)
         setPhase(OverlayPhase.IDLE)
         hidePathOverlay()
@@ -1658,7 +1673,11 @@ class OverlayControllerService : Service() {
         if (enabled && tuningDrawerOpen) setTuningDrawerOpen(false)
         boardEditorMode = enabled
         boardEditor.rootView.visibility = if (boardEditorMode && toolbarExpanded) View.VISIBLE else View.GONE
-        if (boardEditorMode) {
+        if (!boardEditorMode) {
+            editorScanJob?.cancel()
+            editorScanJob = null
+            boardEditor.setScanningState(false)
+        } else {
             val geom = currentGeometry ?: settings.calibration.toBase6x5Geometry(screenW, screenH)
             currentGeometry = geom
             val saved = savedEditedBoard
@@ -1666,6 +1685,7 @@ class OverlayControllerService : Service() {
                 editedBoard = saved
                 boardEditor.setSavedState(true)
             } else {
+                // Immediately populate placeholder so the grid renders with 0ms lag, then auto-scan the live screen!
                 if (editedBoard == null || editedBoard!!.cols != geom.cols || editedBoard!!.rows != geom.rows) {
                     editedBoard = lastRecognition?.board
                         ?: flashMemoryTracker.currentLockedSnapshot()
@@ -1676,6 +1696,7 @@ class OverlayControllerService : Service() {
                         )
                 }
                 boardEditor.setSavedState(false)
+                scanLiveBoardForEditor(clearSavedFirst = false, explicitTrigger = false)
             }
         }
         updatePathOverlayTouchability()
@@ -1683,6 +1704,125 @@ class OverlayControllerService : Service() {
         syncDrawerData()
         refreshPathCanvas()
         clampControlWindowToScreen(anchorRight)
+    }
+
+    /**
+     * Automatically captures fresh live frames from the game screen, detects board geometry,
+     * and recognizes all 6 elements + Enchanted/Race + Puzzle/TrafficLight + abnormal statuses & terrains
+     * directly into [editedBoard] so the user starts Board Editor from the real live board instead of empty/stale orbs!
+     */
+    private fun scanLiveBoardForEditor(clearSavedFirst: Boolean, explicitTrigger: Boolean) {
+        if (currentPhase != OverlayPhase.IDLE) return
+        val capturer = ScreenCaptureSession.capturer.value
+        if (capturer == null || !capturer.isReady.value) {
+            if (explicitTrigger) {
+                toast(lctx.getString(R.string.toast_capture_denied))
+            }
+            return
+        }
+        editorScanJob?.cancel()
+        editorScanJob = serviceScope.launch {
+            val frames = ArrayList<android.graphics.Bitmap>()
+            boardEditor.setScanningState(true)
+            // Temporarily hide both Board Editor panel & PathOverlayView so live screen capture is 100% unobstructed
+            val wasEditorVisible = boardEditor.rootView.visibility == View.VISIBLE
+            pathOverlayView.visibility = View.INVISIBLE
+            boardEditor.rootView.visibility = View.INVISIBLE
+            capturer.clearCachedFrame()
+            controlRoot.postInvalidate()
+            try {
+                delay(95L)
+                val scanCount = minOf(settings.multiFrameCount, 3).coerceAtLeast(2)
+                var captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
+                if (captured.isEmpty()) {
+                    controlRoot.postInvalidate()
+                    delay(120L)
+                    captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
+                }
+                if (captured.isEmpty() && capturer.tryRecoverSurface()) {
+                    captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
+                }
+                frames.addAll(captured)
+                if (frames.isEmpty()) {
+                    if (explicitTrigger) {
+                        toast(lctx.getString(R.string.ov_toast_capture_stalled))
+                    }
+                    return@launch
+                }
+
+                val firstBlank = withContext(Dispatchers.Default) {
+                    com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(frames.first())
+                }
+                if (firstBlank) {
+                    if (explicitTrigger) {
+                        toast(lctx.getString(R.string.ov_toast_capture_blank))
+                    }
+                    return@launch
+                }
+
+                val (geom, isBattleBoard) = withContext(Dispatchers.Default) {
+                    val bmp = frames.first()
+                    val vFrame = DirectBitmapVisionFrame(bmp)
+                    if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(vFrame)) {
+                        return@withContext AutoGridDetector.detect(bmp, settings.calibration) to false
+                    }
+                    val g = AutoGridDetector.detect(bmp, settings.calibration)
+                    if (AutoGridDetector.isBattleBoardPresent(bmp, g)) {
+                        return@withContext g to true
+                    }
+                    val pFrame = com.autodora.next.capture.BitmapPixelFrame(bmp)
+                    val autoG = AutoGridDetector.autoCalibrateFromRealScreen(pFrame)
+                    if (autoG != null && AutoGridDetector.isBattleBoardPresent(pFrame, autoG)) {
+                        return@withContext autoG to true
+                    }
+                    g to false
+                }
+
+                if (!isBattleBoard) {
+                    if (explicitTrigger) {
+                        toast(lctx.getString(R.string.ov_toast_no_board))
+                    }
+                    return@launch
+                }
+
+                val liveRec = boardRecognizer.recognize(frames, geom)
+                val resolvedBoard = when (val res = flashMemoryTracker.resolveForSolve(liveRec)) {
+                    is FlashRevealMemoryTracker.MemoryResolution.UseMemorizedSnapshot -> res.rememberedBoard
+                    else -> liveRec.board
+                }
+                if (!boardEditorMode) return@launch
+
+                currentGeometry = geom
+                lastRecognition = liveRec.copy(board = resolvedBoard)
+                editedBoard = resolvedBoard
+                if (clearSavedFirst) {
+                    savedEditedBoard = null
+                    boardEditor.setSavedState(false)
+                    refreshActiveShieldStrip()
+                    syncDrawerData()
+                }
+                refreshPathCanvas()
+                if (explicitTrigger) {
+                    toast(lctx.getString(R.string.ov_toast_editor_rescanned))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Board editor live auto-scan failed", e)
+            } finally {
+                frames.forEach { if (!it.isRecycled) it.recycle() }
+                boardEditor.setScanningState(false)
+                pathOverlayView.visibility = View.VISIBLE
+                boardEditor.rootView.visibility = if (boardEditorMode && toolbarExpanded) {
+                    View.VISIBLE
+                } else if (wasEditorVisible && boardEditorMode) {
+                    View.VISIBLE
+                } else {
+                    View.GONE
+                }
+                refreshPathCanvas()
+            }
+        }
     }
 
     private fun toggleTuningDrawer() {
@@ -1811,8 +1951,9 @@ class OverlayControllerService : Service() {
                 val capturer = ScreenCaptureSession.capturer.value ?: continue
                 if (!capturer.isReady.value) continue
 
-                // Never call tryRecoverSurface() merely because lastFrameAgeMs > 8s — static screens on
-                // HyperOS/Android 15 legitimately stop pushing SurfaceFlinger frames while VirtualDisplay is healthy!
+                // Ignore stale frames (> 4s old) in background watcher so a stalled/frozen VirtualDisplay
+                // never feeds an old previous-wave board into FlashRevealMemoryTracker!
+                if (capturer.lastFrameAgeMs > 4_000L) continue
                 val bmp = capturer.captureSingleFrame() ?: continue
                 try {
                     val isBlank = withContext(Dispatchers.Default) {
@@ -1845,7 +1986,11 @@ class OverlayControllerService : Service() {
                                 Triple(null, null, 2) // 2 = non-battle screen (Home Map, Event Banners, Menus)
                             } else {
                                 val r = boardRecognizer.recognize(listOf(bmp), g)
-                                val specialDarkCount = r.bloodDrainOrbsDetected + r.petrifiedOrbsDetected
+                                val specialDarkCount = r.bloodDrainOrbsDetected +
+                                    r.petrifiedOrbsDetected +
+                                    r.shatteredTilesDetected +
+                                    r.bloodbathTilesDetected +
+                                    r.evilEnergyOrbsDetected
                                 if (AutoGridDetector.isDimmedTransitionBoard(bmp, g, r.questionOrbsDetected, specialDarkCount)) {
                                     Triple(null, null, 3) // 3 = dimmed VICTORY / wave-walk transition veil
                                 } else {

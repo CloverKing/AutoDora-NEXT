@@ -1292,4 +1292,191 @@ class CvBoardRecognizerTest {
             assertEquals(0, rec.questionOrbsDetected)
         }
     }
+
+    @Test
+    fun `detects electrified, frozen, ice-sealed, bomb, evil-energy, purgatory, burning, bloodbath, and shattered tiles with zero false positives`() {
+        val cell = 90
+        val cols = 6
+        val rows = 5
+        val frame = SyntheticBoardFrame(cols * cell, rows * cell)
+        val palette = mapOf(
+            Element.WATER to 0xFF1E9CFF.toInt(),
+            Element.FIRE to 0xFFFF3020.toInt(),
+            Element.WOOD to 0xFF2EC840.toInt(),
+            Element.LIGHT to 0xFFFFDF20.toInt(),
+            Element.DARK to 0xFF8C32E6.toInt(),
+            Element.HEART to 0xFFFF5CA8.toInt()
+        )
+        // Base 30 normal orbs
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val idx = r * cols + c
+                frame.drawCell(c * cell, r * cell, cell, palette.getValue(Element.MATCHABLE[idx % 6]))
+            }
+        }
+
+        fun paintCell(r: Int, c: Int, fn: (dx: Float, dy: Float, rr: Float) -> Int?) {
+            val x0 = c * cell
+            val y0 = r * cell
+            val cx = x0 + cell * 0.5f
+            val cy = y0 + cell * 0.5f
+            for (y in y0 until y0 + cell) {
+                for (x in x0 until x0 + cell) {
+                    val dx = (x - cx) / cell
+                    val dy = (y - cy) / cell
+                    val rr = hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                    fn(dx, dy, rr)?.let { frame.pixels[y * frame.width + x] = it }
+                }
+            }
+        }
+
+        // (0,0) Electrified Water (peak white-hot glare + electric cyan border/corners + water rim)
+        paintCell(0, 0) { dx, dy, rr ->
+            val linf = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+            when {
+                rr <= 0.28f -> 0xFFF5FCFF.toInt()
+                rr <= 0.38f -> 0xFF28A4FF.toInt()
+                linf >= 0.38f -> 0xFF36B8FF.toInt()
+                else -> null
+            }
+        }
+        // (0,1) Electrified Light (white-hot glare + golden rim + electric cyan outer arcs -> must recover LIGHT!)
+        paintCell(0, 1) { dx, dy, rr ->
+            val linf = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+            when {
+                rr <= 0.28f -> 0xFFFAF9F4.toInt()
+                rr <= 0.37f -> 0xFFFFCC18.toInt()
+                linf >= 0.39f -> 0xFF42B8FF.toInt()
+                else -> null
+            }
+        }
+        // (0,2) Frozen (square pale cyan-white faceted crystal block filling all 4 corners!)
+        paintCell(0, 2) { dx, dy, _ ->
+            val facet = (kotlin.math.floor((dx + 0.5f) * 8f).toInt() + kotlin.math.floor((dy + 0.5f) * 8f).toInt()) and 1
+            if (facet == 0) 0xFFBCD0E6.toInt() else 0xFF4E86F0.toInt()
+        }
+        // (0,3) Ice-Sealed (square purple faceted crystal block with crisp white veins filling corners!)
+        paintCell(0, 3) { dx, dy, _ ->
+            val vein = (((dx * 18).toInt() + (dy * 18).toInt()) % 3) == 0
+            if (vein) 0xFFF2EAFF.toInt() else 0xFF9C28E8.toInt()
+        }
+        // (0,4) Purgatory Fire (blinding white-hot center + vivid neon magenta/purple halo)
+        paintCell(0, 4) { _, _, rr ->
+            when {
+                rr <= 0.34f -> 0xFFFFFAFE.toInt()
+                rr <= 0.46f -> 0xFFD030E8.toInt()
+                else -> null
+            }
+        }
+        // (0,5) Bomb (vivid red circular core r<=0.14 inside matte grey metallic hex ring r in 0.17..0.36 + Water outer rim)
+        paintCell(0, 5) { _, _, rr ->
+            when {
+                rr <= 0.14f -> 0xFFFF1818.toInt()
+                rr <= 0.35f -> 0xFF7A7D82.toInt()
+                rr <= 0.42f -> 0xFF1E9CFF.toInt()
+                else -> null
+            }
+        }
+        // (1,0) Evil Energy (pitch-dark shadowed orb + soft glowing cyan-teal wisps V~0.55)
+        paintCell(1, 0) { dx, dy, rr ->
+            val wisp = (kotlin.math.abs(dx - 0.12f) < 0.07f && kotlin.math.abs(dy - 0.08f) < 0.07f) ||
+                (kotlin.math.abs(dx + 0.14f) < 0.07f && kotlin.math.abs(dy + 0.10f) < 0.07f)
+            when {
+                wisp -> 0xFF34888C.toInt()
+                rr <= 0.40f -> 0xFF181E24.toInt()
+                else -> null
+            }
+        }
+        // (1,1) Burning Tile (fiery bright orange-gold flame igniting all 4 corners & tile border around a bright orb)
+        paintCell(1, 1) { dx, dy, rr ->
+            val linf = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+            when {
+                linf >= 0.34f -> 0xFFFF8C18.toInt()
+                rr <= 0.34f -> 0xFFFFE448.toInt()
+                else -> 0xFFFF9A20.toInt()
+            }
+        }
+        // (1,2) Bloodbath Tile (deep dark crimson-maroon blood pool drowning the tile)
+        paintCell(1, 2) { _, _, _ -> 0xFF48141E.toInt() }
+        // (1,3) Shattered Tile (pitch-black void with thin medium-silver radial spiderweb cracks)
+        paintCell(1, 3) { dx, dy, _ ->
+            val onCrack = kotlin.math.abs(dx - dy) < 0.025f || kotlin.math.abs(dx + dy) < 0.025f
+            if (onCrack) 0xFF6E747A.toInt() else 0xFF0A0C0E.toInt()
+        }
+
+        val geom = BoardGeometry(0f, 0f, (cols * cell).toFloat(), (rows * cell).toFloat(), cols, rows)
+        val recognizer = CvBoardRecognizer()
+        val rec = recognizer.recognizeFrames(listOf(frame), geom)
+
+        // Verify all 10 positive cells
+        assertTrue("(0,0) must detect ELECTRIFIED", (rec.board.cellAt(0, 0).hazards and HazardBits.ELECTRIFIED) != 0)
+        assertEquals("(0,0) Electrified Water must recover WATER", Element.WATER, rec.board.cellAt(0, 0).element)
+        assertTrue("(0,1) must detect ELECTRIFIED", (rec.board.cellAt(0, 1).hazards and HazardBits.ELECTRIFIED) != 0)
+        assertEquals("(0,1) Electrified Light must recover LIGHT", Element.LIGHT, rec.board.cellAt(0, 1).element)
+        assertTrue("(0,2) must detect FROZEN", (rec.board.cellAt(0, 2).hazards and HazardBits.FROZEN) != 0)
+        assertTrue("(0,3) must detect ICE_SEALED", (rec.board.cellAt(0, 3).hazards and HazardBits.ICE_SEALED) != 0)
+        assertTrue("(0,4) must detect PURGATORY_FIRE", (rec.board.cellAt(0, 4).hazards and HazardBits.PURGATORY_FIRE) != 0)
+        assertTrue("(0,5) must detect BOMB", (rec.board.cellAt(0, 5).hazards and HazardBits.BOMB) != 0)
+        assertEquals("(0,5) Bomb must recover underlying WATER from outer rim", Element.WATER, rec.board.cellAt(0, 5).element)
+        assertTrue("(1,0) must detect EVIL_ENERGY", (rec.board.cellAt(1, 0).hazards and HazardBits.EVIL_ENERGY) != 0)
+        assertTrue("(1,1) must detect BURNING_TILE", (rec.board.tileFlags[1 * 6 + 1] and TileFlagBits.BURNING_TILE) != 0)
+        assertTrue("(1,2) must detect END_FORBIDDEN (Bloodbath)", (rec.board.tileFlags[1 * 6 + 2] and TileFlagBits.END_FORBIDDEN) != 0)
+        assertTrue("(1,3) must detect SHATTERED", (rec.board.tileFlags[1 * 6 + 3] and TileFlagBits.SHATTERED) != 0)
+        assertEquals("(1,3) Shattered cell must be Element.EMPTY", Element.EMPTY, rec.board.cellAt(1, 3).element)
+
+        // Verify ZERO false positives across all remaining 20 normal cells & zero false '?' Question Orbs!
+        assertEquals(0, rec.questionOrbsDetected)
+        assertEquals(2, rec.electrifiedOrbsDetected)
+        assertEquals(2, rec.frozenOrbsDetected)
+        assertEquals(1, rec.purgatoryFireOrbsDetected)
+        assertEquals(1, rec.bombOrbsDetected)
+        assertEquals(1, rec.evilEnergyOrbsDetected)
+        assertEquals(1, rec.burningTilesDetected)
+        assertEquals(1, rec.bloodbathTilesDetected)
+        assertEquals(1, rec.shatteredTilesDetected)
+        for (i in 10 until 30) {
+            assertEquals("Normal cell $i must have ZERO false hazards", HazardBits.NONE, rec.board.cells[i].hazards)
+            assertEquals("Normal cell $i must have ZERO false terrains", TileFlagBits.NONE, rec.board.tileFlags[i])
+        }
+
+        // Optional local real-game verification on gitignored Electrified & Burning user screenshots
+        fun loadLocalBoard(relPath: String): Pair<VisionFrame, BoardGeometry>? {
+            val file = java.io.File(relPath)
+            if (!file.exists()) return null
+            val imageIo = Class.forName("javax.imageio.ImageIO")
+            val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, file)
+            val cls = img.javaClass
+            val w = cls.getMethod("getWidth").invoke(img) as Int
+            val h = cls.getMethod("getHeight").invoke(img) as Int
+            val getRgb = cls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            val vf = object : VisionFrame {
+                override val width: Int = w
+                override val height: Int = h
+                override fun getArgb(x: Int, y: Int): Int =
+                    getRgb.invoke(img, x.coerceIn(0, w - 1), y.coerceIn(0, h - 1)) as Int
+            }
+            val gameH = w * (16f / 9f)
+            val letterbox = maxOf(0f, (h - gameH) * 0.5f)
+            val bot = minOf(h.toFloat(), h - letterbox + gameH * 0.004f)
+            val cw = w / 6f
+            val top = maxOf(0f, bot - cw * 5f)
+            return vf to BoardGeometry(0f, top, w.toFloat(), bot, 6, 5)
+        }
+
+        loadLocalBoard("../../backups/user_training_media/20261123_electrified/electrified_board.jpg")?.let { (vf, g) ->
+            val r = recognizer.recognizeFrames(listOf(vf), g)
+            assertEquals("Real Electrified screenshot must detect exactly 2 electrified orbs", 2, r.electrifiedOrbsDetected)
+            assertTrue("Real (1,1) must flag ELECTRIFIED", (r.board.cellAt(1, 1).hazards and HazardBits.ELECTRIFIED) != 0)
+            assertTrue("Real (2,5) must flag ELECTRIFIED", (r.board.cellAt(2, 5).hazards and HazardBits.ELECTRIFIED) != 0)
+            assertEquals("Real (1,1) Electrified Water must recover WATER", Element.WATER, r.board.cellAt(1, 1).element)
+            assertEquals("Real (2,5) Electrified Light must recover LIGHT", Element.LIGHT, r.board.cellAt(2, 5).element)
+            assertEquals("Electrified orbs must NEVER be misclassified as '?'", 0, r.questionOrbsDetected)
+        }
+
+        loadLocalBoard("../../backups/user_training_media/20261122_barrier_burning_victory/burning_tile_board.jpg")?.let { (vf, g) ->
+            val r = recognizer.recognizeFrames(listOf(vf), g)
+            assertEquals("Real Burning Tile screenshot must detect exactly 1 burning tile", 1, r.burningTilesDetected)
+            assertTrue("Real (1,0) must flag BURNING_TILE", (r.board.tileFlags[1 * 6 + 0] and TileFlagBits.BURNING_TILE) != 0)
+        }
+    }
 }

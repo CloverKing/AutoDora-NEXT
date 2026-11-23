@@ -5,6 +5,7 @@ import com.autodora.next.model.BoardGeometry
 import com.autodora.next.model.BoardState
 import com.autodora.next.model.Element
 import com.autodora.next.model.HazardBits
+import com.autodora.next.model.TileFlagBits
 
 data class RecognitionResult(
     val board: BoardState,
@@ -24,7 +25,19 @@ data class RecognitionResult(
     val bloodDrainOrbsDetected: Int = board.cells.count {
         (it.hazards and (HazardBits.BLOOD_DRAIN or HazardBits.LOCKED_HURT)) != 0
     },
-    val thornOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.THORN) != 0 }
+    val thornOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.THORN) != 0 },
+    val electrifiedOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.ELECTRIFIED) != 0 },
+    val frozenOrbsDetected: Int = board.cells.count {
+        (it.hazards and (HazardBits.FROZEN or HazardBits.ICE_SEALED)) != 0
+    },
+    val bombOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.BOMB) != 0 },
+    val evilEnergyOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.EVIL_ENERGY) != 0 },
+    val purgatoryFireOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.PURGATORY_FIRE) != 0 },
+    val burningTilesDetected: Int = board.tileFlags.count {
+        (it and (TileFlagBits.BURNING_TILE or TileFlagBits.SCORCHING_TILE)) != 0
+    },
+    val bloodbathTilesDetected: Int = board.tileFlags.count { (it and TileFlagBits.END_FORBIDDEN) != 0 },
+    val shatteredTilesDetected: Int = board.tileFlags.count { (it and TileFlagBits.SHATTERED) != 0 }
 )
 
 /**

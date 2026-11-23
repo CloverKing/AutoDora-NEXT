@@ -522,11 +522,14 @@
     <!-- v3.5 Grouped Board Editor, 6-Tier Speed & About/Update Checker -->
     <string name="editor_title">盘面编排</string>
     <string name="editor_badge_editing">编辑中</string>
+    <string name="editor_badge_scanning">识盘中...</string>
     <string name="editor_badge_saved">已保存</string>
     <string name="editor_hint_unsaved">点划盘面格子涂抹 · 完成后点「保存版面」，再用主栏计算/执行</string>
     <string name="editor_hint_saved">编排版面已保存 · 关闭后直接点击主悬浮栏计算/执行图标</string>
     <string name="editor_btn_save">保存版面</string>
     <string name="editor_btn_clear">清除标记</string>
+    <string name="editor_btn_rescan">重新识盘</string>
+    <string name="ov_toast_editor_rescanned">已自动识别当前盘面</string>
     <string name="editor_grp_orb">珠色与珠型</string>
     <string name="editor_grp_race">种族符石</string>
     <string name="editor_grp_shape">拼图与起结有序</string>

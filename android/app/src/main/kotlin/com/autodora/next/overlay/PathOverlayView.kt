@@ -481,55 +481,84 @@ class PathOverlayView(context: Context) : View(context) {
                     textPaint.textSize = tagR
                     canvas.drawText("暴风", (left + right) * 0.5f, top + tagR + 8f, textPaint)
                 }
-                if ((cell.hazards and HazardBits.PETRIFIED) != 0) {
-                    fillPaint.color = Color.argb(60, 48, 36, 44)
-                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, fillPaint)
-                    gridBorderPaint.color = Color.argb(230, 230, 74, 25)
+                fun drawBottomRightHazardTag(
+                    borderColor: Int,
+                    tagBgColor: Int,
+                    label: String,
+                    fillOverlayColor: Int? = null
+                ) {
+                    if (fillOverlayColor != null) {
+                        fillPaint.color = fillOverlayColor
+                        canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, fillPaint)
+                    }
+                    gridBorderPaint.color = borderColor
                     gridBorderPaint.strokeWidth = 4.5f
                     canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
                     val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
-                    val tagW = tagH * 1.12f
-                    fillPaint.color = Color.argb(230, 191, 54, 12)
+                    val tagW = tagH * (if (label.length >= 2) 1.65f else 1.12f)
+                    fillPaint.color = tagBgColor
                     canvas.drawRoundRect(right - tagW - 6f, bottom - tagH - 6f, right - 6f, bottom - 6f, 6f, 6f, fillPaint)
                     textPaint.color = Color.WHITE
                     textPaint.textSize = tagH * 0.68f
-                    canvas.drawText("石", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                    canvas.drawText(label, right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                }
+
+                // Auto-detected & edited board terrains
+                if ((flags and TileFlagBits.BURNING_TILE) != 0) {
+                    drawBottomRightHazardTag(Color.argb(235, 255, 111, 0), Color.argb(235, 230, 81, 0), "燃", Color.argb(46, 255, 111, 0))
+                }
+                if ((flags and TileFlagBits.SCORCHING_TILE) != 0) {
+                    drawBottomRightHazardTag(Color.argb(235, 255, 61, 0), Color.argb(235, 191, 54, 12), "灼", Color.argb(46, 255, 61, 0))
+                }
+                if ((flags and TileFlagBits.BLACK_HOLE) != 0) {
+                    drawBottomRightHazardTag(Color.argb(235, 156, 39, 176), Color.argb(235, 74, 20, 140), "洞", Color.argb(54, 74, 20, 140))
+                }
+                if ((flags and TileFlagBits.END_FORBIDDEN) != 0) {
+                    drawBottomRightHazardTag(Color.argb(235, 198, 40, 40), Color.argb(235, 136, 14, 79), "浴", Color.argb(54, 136, 14, 79))
+                }
+                if ((flags and TileFlagBits.SHATTERED) != 0) {
+                    drawBottomRightHazardTag(Color.argb(225, 144, 164, 174), Color.argb(235, 55, 71, 79), "碎", Color.argb(72, 24, 30, 36))
+                }
+
+                // Auto-detected & edited runestone statuses
+                if ((cell.hazards and HazardBits.ELECTRIFIED) != 0) {
+                    drawBottomRightHazardTag(Color.argb(245, 0, 229, 255), Color.argb(240, 0, 131, 143), "电", Color.argb(48, 0, 229, 255))
+                }
+                if ((cell.hazards and HazardBits.WEATHERED) != 0) {
+                    drawBottomRightHazardTag(Color.argb(240, 255, 213, 79), Color.argb(235, 141, 110, 99), "风", Color.argb(44, 255, 213, 79))
+                }
+                if ((cell.hazards and HazardBits.FROZEN) != 0) {
+                    drawBottomRightHazardTag(Color.argb(240, 128, 222, 234), Color.argb(235, 0, 151, 167), "冻", Color.argb(48, 128, 222, 234))
+                }
+                if ((cell.hazards and HazardBits.ICE_SEALED) != 0) {
+                    drawBottomRightHazardTag(Color.argb(240, 186, 104, 200), Color.argb(235, 106, 27, 154), "冰", Color.argb(52, 156, 39, 176))
+                }
+                if ((cell.hazards and HazardBits.PURGATORY_FIRE) != 0) {
+                    drawBottomRightHazardTag(Color.argb(245, 245, 0, 87), Color.argb(240, 173, 20, 87), "狱", Color.argb(52, 245, 0, 87))
+                }
+                if ((cell.hazards and HazardBits.BOMB) != 0) {
+                    drawBottomRightHazardTag(Color.argb(240, 255, 82, 82), Color.argb(235, 97, 97, 97), "炸", Color.argb(46, 213, 0, 0))
+                }
+                if ((cell.hazards and HazardBits.EVIL_ENERGY) != 0) {
+                    drawBottomRightHazardTag(Color.argb(235, 0, 191, 165), Color.argb(235, 0, 77, 64), "邪", Color.argb(52, 0, 77, 64))
+                }
+                if ((cell.hazards and HazardBits.PETRIFIED) != 0) {
+                    drawBottomRightHazardTag(Color.argb(230, 230, 74, 25), Color.argb(230, 191, 54, 12), "石", Color.argb(60, 48, 36, 44))
+                }
+                if ((cell.hazards and HazardBits.COAGULATED) != 0) {
+                    drawBottomRightHazardTag(Color.argb(230, 77, 208, 225), Color.argb(230, 0, 131, 143), "凝")
+                }
+                if ((cell.hazards and HazardBits.FOAM) != 0) {
+                    drawBottomRightHazardTag(Color.argb(225, 129, 212, 250), Color.argb(230, 2, 119, 189), "泡")
                 }
                 if ((cell.hazards and HazardBits.BLOOD_DRAIN) != 0) {
-                    gridBorderPaint.color = Color.argb(210, 211, 47, 47)
-                    gridBorderPaint.strokeWidth = 4f
-                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
-                    val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
-                    val tagW = tagH * 1.12f
-                    fillPaint.color = Color.argb(225, 183, 28, 28)
-                    canvas.drawRoundRect(right - tagW - 6f, bottom - tagH - 6f, right - 6f, bottom - 6f, 6f, 6f, fillPaint)
-                    textPaint.color = Color.WHITE
-                    textPaint.textSize = tagH * 0.68f
-                    canvas.drawText("血", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                    drawBottomRightHazardTag(Color.argb(210, 211, 47, 47), Color.argb(225, 183, 28, 28), "血")
                 }
                 if ((cell.hazards and HazardBits.LOCKED_HURT) != 0) {
-                    gridBorderPaint.color = Color.argb(215, 255, 160, 0)
-                    gridBorderPaint.strokeWidth = 4f
-                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
-                    val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
-                    val tagW = tagH * 1.12f
-                    fillPaint.color = Color.argb(225, 230, 81, 0)
-                    canvas.drawRoundRect(right - tagW - 6f, bottom - tagH - 6f, right - 6f, bottom - 6f, 6f, 6f, fillPaint)
-                    textPaint.color = Color.WHITE
-                    textPaint.textSize = tagH * 0.68f
-                    canvas.drawText("锁", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                    drawBottomRightHazardTag(Color.argb(215, 255, 160, 0), Color.argb(225, 230, 81, 0), "锁")
                 }
                 if ((cell.hazards and HazardBits.THORN) != 0) {
-                    gridBorderPaint.color = Color.argb(225, 141, 110, 99)
-                    gridBorderPaint.strokeWidth = 4.5f
-                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
-                    val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
-                    val tagW = tagH * 1.12f
-                    fillPaint.color = Color.argb(230, 93, 64, 55)
-                    canvas.drawRoundRect(right - tagW - 6f, bottom - tagH - 6f, right - 6f, bottom - 6f, 6f, 6f, fillPaint)
-                    textPaint.color = Color.WHITE
-                    textPaint.textSize = tagH * 0.68f
-                    canvas.drawText("棘", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                    drawBottomRightHazardTag(Color.argb(225, 141, 110, 99), Color.argb(230, 93, 64, 55), "棘")
                 }
                 if (cell.variant == Variant.RACE) {
                     val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
