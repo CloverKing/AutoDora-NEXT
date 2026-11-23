@@ -405,7 +405,7 @@ private fun OverviewTab(
                     subtitle = stringResource(R.string.perm_capture_sub),
                     granted = health.mediaProjectionReady,
                     actionLabel = stringResource(R.string.perm_grant),
-                    allowAlwaysClick = false,
+                    allowAlwaysClick = true,
                     onAction = onRequestMediaProjection
                 )
                 if (!health.notificationsGranted) {

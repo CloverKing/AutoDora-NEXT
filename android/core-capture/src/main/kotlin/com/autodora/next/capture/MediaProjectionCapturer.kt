@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
 /**
@@ -51,8 +52,12 @@ class MediaProjectionCapturer(
     private var virtualDisplay: VirtualDisplay? = null
     private val imageLock = Any()
     private var latestImage: Image? = null
+    private val released = AtomicBoolean(false)
+    private val recovering = AtomicBoolean(false)
     @Volatile
     private var lastImageTimestampMs: Long = 0L
+    @Volatile
+    private var lastRecoveryAttemptMs: Long = 0L
 
     override val lastFrameAgeMs: Long
         get() {
@@ -62,6 +67,7 @@ class MediaProjectionCapturer(
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
+            if (!released.compareAndSet(false, true)) return
             Log.w(TAG, "MediaProjection stopped by system or user")
             _isReady.value = false
             cleanupVirtualDisplay()
@@ -101,7 +107,9 @@ class MediaProjectionCapturer(
             } ?: return@setOnImageAvailableListener
 
             synchronized(imageLock) {
-                if (!_isReady.value) {
+                // Gate on !released (NOT _isReady) so the very first compositor frame pushed synchronously
+                // during createVirtualDisplay() is NEVER dropped on Android 14/15/16 HyperOS!
+                if (released.get() || r !== imageReader) {
                     incoming.close()
                     return@synchronized
                 }
@@ -111,7 +119,9 @@ class MediaProjectionCapturer(
             }
         }, handler)
 
-        imageReader = reader
+        synchronized(imageLock) {
+            imageReader = reader
+        }
         virtualDisplay = mediaProjection.createVirtualDisplay(
             "AutoDora-VirtualDisplay",
             screenWidth,
@@ -122,16 +132,18 @@ class MediaProjectionCapturer(
             null,
             handler
         )
-        _isReady.value = true
+        if (!released.get()) {
+            _isReady.value = true
+        }
         Log.i(TAG, "VirtualDisplay active: ${screenWidth}x${screenHeight} @ ${densityDpi}dpi")
     }
 
     override suspend fun captureSingleFrame(): Bitmap? = withContext(Dispatchers.Default) {
-        if (!_isReady.value) return@withContext null
+        if (released.get() || !_isReady.value) return@withContext null
 
-        // Wait briefly if the very first frame hasn't arrived yet
+        // Wait up to 600ms if the initial frame or post-overlay-hide frame hasn't landed yet
         var retries = 0
-        while (retries < 15 && _isReady.value) {
+        while (retries < 24 && !released.get() && _isReady.value) {
             val hasFrame = synchronized(imageLock) { latestImage != null }
             if (hasFrame) break
             delay(25)
@@ -139,6 +151,7 @@ class MediaProjectionCapturer(
         }
 
         synchronized(imageLock) {
+            if (released.get() || !_isReady.value) return@synchronized null
             // Pull one last time if an even fresher image just landed in the queue
             try {
                 val fresher = imageReader?.acquireLatestImage()
@@ -156,10 +169,10 @@ class MediaProjectionCapturer(
     }
 
     override suspend fun captureBandBitmap(yStart: Int, yEnd: Int): BandBitmap? = withContext(Dispatchers.Default) {
-        if (!_isReady.value) return@withContext null
+        if (released.get() || !_isReady.value) return@withContext null
 
         var retries = 0
-        while (retries < 10 && _isReady.value) {
+        while (retries < 12 && !released.get() && _isReady.value) {
             val hasFrame = synchronized(imageLock) { latestImage != null }
             if (hasFrame) break
             delay(16)
@@ -167,6 +180,7 @@ class MediaProjectionCapturer(
         }
 
         synchronized(imageLock) {
+            if (released.get() || !_isReady.value) return@synchronized null
             try {
                 val fresher = imageReader?.acquireLatestImage()
                 if (fresher != null) {
@@ -260,13 +274,21 @@ class MediaProjectionCapturer(
             }
             latestImage?.close()
             latestImage = null
-            lastImageTimestampMs = 0L
+            // Keep lastImageTimestampMs intact so clearing a pre-hide frame never tricks callers
+            // into thinking the VirtualDisplay itself stalled!
         }
     }
 
     override suspend fun tryRecoverSurface(): Boolean = withContext(Dispatchers.Default) {
-        if (!_isReady.value) return@withContext false
+        if (released.get() || !_isReady.value) return@withContext false
         val vd = virtualDisplay ?: return@withContext false
+        val now = SystemClock.elapsedRealtime()
+        if (lastRecoveryAttemptMs > 0L && now - lastRecoveryAttemptMs < MIN_RECOVERY_INTERVAL_MS) {
+            // Cooldown prevents rapid setSurface() thrashing on HyperOS / Android 14-16 SurfaceFlinger
+            return@withContext synchronized(imageLock) { latestImage != null }
+        }
+        if (!recovering.compareAndSet(false, true)) return@withContext false
+        lastRecoveryAttemptMs = now
         Log.w(TAG, "Attempting VirtualDisplay ImageReader surface recovery (lastFrameAgeMs=$lastFrameAgeMs)")
         try {
             val newReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 4)
@@ -279,7 +301,7 @@ class MediaProjectionCapturer(
                 } ?: return@setOnImageAvailableListener
 
                 synchronized(imageLock) {
-                    if (!_isReady.value) {
+                    if (released.get() || r !== imageReader) {
                         incoming.close()
                         return@synchronized
                     }
@@ -291,14 +313,17 @@ class MediaProjectionCapturer(
 
             val oldReader: ImageReader?
             synchronized(imageLock) {
+                if (released.get()) {
+                    newReader.close()
+                    return@withContext false
+                }
                 oldReader = imageReader
                 latestImage?.close()
                 latestImage = null
-                lastImageTimestampMs = 0L
                 imageReader = newReader
             }
-            // Swap the live surface onto the existing VirtualDisplay (Android 14/15/16 safe without re-consent!)
-            vd.resize(screenWidth, screenHeight, densityDpi)
+            // Swap the live surface directly onto the existing VirtualDisplay WITHOUT calling
+            // redundant vd.resize(sameW, sameH, sameDpi) which breaks HyperOS SurfaceFlinger mirrors!
             vd.setSurface(newReader.surface)
             try {
                 oldReader?.setOnImageAvailableListener(null, null)
@@ -306,9 +331,9 @@ class MediaProjectionCapturer(
             } catch (_: Exception) {
             }
 
-            // Wait up to 480ms for a fresh compositor frame to land on the recovered surface
+            // Wait up to 600ms for a fresh compositor frame to land on the recovered surface
             var waited = 0
-            while (waited < 16 && _isReady.value) {
+            while (waited < 20 && !released.get() && _isReady.value) {
                 if (synchronized(imageLock) { latestImage != null }) {
                     Log.i(TAG, "VirtualDisplay surface recovery succeeded in ${waited * 30}ms")
                     return@withContext true
@@ -321,6 +346,8 @@ class MediaProjectionCapturer(
         } catch (e: Exception) {
             Log.e(TAG, "VirtualDisplay surface recovery failed", e)
             false
+        } finally {
+            recovering.set(false)
         }
     }
 
@@ -337,18 +364,30 @@ class MediaProjectionCapturer(
     }
 
     private fun cleanupVirtualDisplay() {
-        virtualDisplay?.release()
+        try {
+            virtualDisplay?.release()
+        } catch (_: Exception) {
+        }
         virtualDisplay = null
-        imageReader?.setOnImageAvailableListener(null, null)
+        val readerToClose: ImageReader?
         synchronized(imageLock) {
             latestImage?.close()
             latestImage = null
+            readerToClose = imageReader
+            imageReader = null
         }
-        imageReader?.close()
-        imageReader = null
+        try {
+            readerToClose?.setOnImageAvailableListener(null, null)
+            readerToClose?.close()
+        } catch (_: Exception) {
+        }
     }
 
     override fun release() {
+        if (!released.compareAndSet(false, true)) {
+            _isReady.value = false
+            return
+        }
         _isReady.value = false
         try {
             mediaProjection.unregisterCallback(projectionCallback)
@@ -364,6 +403,7 @@ class MediaProjectionCapturer(
 
     companion object {
         private const val TAG = "MediaProjCapturer"
+        private const val MIN_RECOVERY_INTERVAL_MS = 10_000L
 
         /**
          * Fast sparse check (< 0.05ms) detecting all-black / privacy-blanked MediaProjection frames

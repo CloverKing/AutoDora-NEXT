@@ -74,8 +74,29 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         val data = result.data
         if (result.resultCode == Activity.RESULT_OK && data != null) {
+            val prevCapturer = ScreenCaptureSession.capturer.value
+            ScreenCaptureSession.clearInitError()
             MediaProjectionForegroundService.start(this, result.resultCode, data)
-            Toast.makeText(this, lctx().getString(R.string.toast_capture_ready), Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                // Wait for MediaProjectionForegroundService to initialize the BRAND-NEW VirtualDisplay
+                // before showing honest ready/error feedback!
+                var waited = 0
+                while (waited < 40) {
+                    val cur = ScreenCaptureSession.capturer.value
+                    if (cur != null && cur !== prevCapturer && cur.isReady.value) {
+                        Toast.makeText(this@MainActivity, lctx().getString(R.string.toast_capture_ready), Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    val err = ScreenCaptureSession.lastInitError.value
+                    if (!err.isNullOrBlank()) {
+                        Toast.makeText(this@MainActivity, "${lctx().getString(R.string.toast_capture_denied)} ($err)", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    kotlinx.coroutines.delay(40)
+                    waited++
+                }
+                Toast.makeText(this@MainActivity, lctx().getString(R.string.toast_capture_denied), Toast.LENGTH_SHORT).show()
+            }
         } else {
             Toast.makeText(this, lctx().getString(R.string.toast_capture_denied), Toast.LENGTH_SHORT).show()
         }

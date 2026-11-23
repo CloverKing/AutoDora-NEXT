@@ -967,22 +967,30 @@ class OverlayControllerService : Service() {
             val puzzleChipActive = activeWaveChips.any { it.id in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS }
             val burstCount = if (trafficLightChipActive || puzzleChipActive) maxOf(settings.multiFrameCount, 4) else settings.multiFrameCount
             val burstInterval = if (trafficLightChipActive) 85L else 50L
-            // If VirtualDisplay hasn't received a compositor frame for >2s (possible HyperOS/Android 15 stall),
-            // proactively swap in a fresh ImageReader surface before capturing!
-            if (capturer.lastFrameAgeMs > 2_000L) {
-                capturer.tryRecoverSurface()
-            }
+            // Do NOT proactively call tryRecoverSurface() on static screens (lastFrameAgeMs > 2s is normal on LTPO
+            // HyperOS displays whenever screen pixels are still!). Only wake SurfaceFlinger or recover if capture fails.
             var frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
+            if (frames.isEmpty()) {
+                // First gently nudge SurfaceFlinger compositor without touching VirtualDisplay surface
+                controlRoot.postInvalidate()
+                delay(120)
+                frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
+            }
             if (frames.isEmpty()) {
                 if (capturer.tryRecoverSurface()) {
                     frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
                 }
             }
             if (frames.isEmpty()) {
+                // OS silently stalled/revoked this VirtualDisplay without firing onStop(): clear the dead session
+                // immediately so Dashboard truthfully shows "授权" instead of falsely stuck at "3/3 已就绪"!
+                val stillClaimedReady = capturer.isReady.value
+                ScreenCaptureSession.clearIfCurrent(capturer)
+                com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
                 pathOverlayView.visibility = View.VISIBLE
                 setPhase(OverlayPhase.IDLE)
                 refreshPathCanvas()
-                toast(lctx.getString(R.string.toast_capture_denied))
+                toast(lctx.getString(if (stillClaimedReady) R.string.ov_toast_capture_stalled else R.string.toast_capture_denied))
                 return@launch
             }
 
@@ -1000,10 +1008,15 @@ class OverlayControllerService : Service() {
                     }
                 }
                 if (firstBlank) {
+                    // Persistent black frame even after recovery means HyperOS/OS suspended or another recorder
+                    // took over the projection slot — clear the dead session so Dashboard truthfully asks to re-grant!
+                    ScreenCaptureSession.clearIfCurrent(capturer)
+                    com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
                     flashMemoryTracker.clearLock()
                     usedMemorizedSnapshot = false
                     lastRecognition = null
                     invalidateLastSolution()
+                    pathOverlayView.visibility = View.VISIBLE
                     setPhase(OverlayPhase.IDLE)
                     toast(lctx.getString(R.string.ov_toast_capture_blank))
                     return@launch
@@ -1029,29 +1042,33 @@ class OverlayControllerService : Service() {
                 }
 
                 var (geom, isBattleBoard) = evaluateBattleFrame(frames.first())
-                // If battle detection failed and cached frame may be stale, try ONE fresh surface recovery & recapture!
-                if (!isBattleBoard && capturer.tryRecoverSurface()) {
-                    frames.forEach { if (!it.isRecycled) it.recycle() }
-                    frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
-                    if (frames.isNotEmpty()) {
-                        val retryBlank = withContext(Dispatchers.Default) {
-                            com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(frames.first())
+                // If battle detection failed on a non-blank frame (e.g., cached frame slightly pre-transition),
+                // gently nudge SurfaceFlinger and re-read ONE fresh frame WITHOUT touching VirtualDisplay.setSurface()!
+                if (!isBattleBoard) {
+                    controlRoot.postInvalidate()
+                    delay(100)
+                    val freshBmp = capturer.captureSingleFrame()
+                    if (freshBmp != null) {
+                        val freshBlank = withContext(Dispatchers.Default) {
+                            com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(freshBmp)
                         }
-                        if (retryBlank) {
-                            flashMemoryTracker.clearLock()
-                            usedMemorizedSnapshot = false
-                            lastRecognition = null
-                            invalidateLastSolution()
-                            setPhase(OverlayPhase.IDLE)
-                            toast(lctx.getString(R.string.ov_toast_capture_blank))
-                            return@launch
+                        if (!freshBlank) {
+                            val retried = evaluateBattleFrame(freshBmp)
+                            if (retried.second) {
+                                frames.forEach { if (!it.isRecycled) it.recycle() }
+                                frames = mutableListOf(freshBmp)
+                                geom = retried.first
+                                isBattleBoard = true
+                            } else {
+                                if (!freshBmp.isRecycled) freshBmp.recycle()
+                            }
+                        } else {
+                            if (!freshBmp.isRecycled) freshBmp.recycle()
                         }
-                        val retried = evaluateBattleFrame(frames.first())
-                        geom = retried.first
-                        isBattleBoard = retried.second
                     }
                 }
                 if (!isBattleBoard) {
+                    pathOverlayView.visibility = View.VISIBLE
                     flashMemoryTracker.clearLock()
                     usedMemorizedSnapshot = false
                     lastRecognition = null
@@ -1263,12 +1280,17 @@ class OverlayControllerService : Service() {
             setPhase(OverlayPhase.MOVING)
             // Completely hide PathOverlayView & clear memorized overlay BEFORE pre-touch capture
             // so translucent memorized orb badges NEVER pollute preBmp or reveal polling frames!
+            val hadVisibleOverlay = pathOverlayView.visibility == View.VISIBLE && pathOverlayView.hasVisibleDrawing()
             flashMemoryTracker.clearLock()
             usedMemorizedSnapshot = false
             pathOverlayView.visibility = View.INVISIBLE
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false, null, null, false)
-            capturer.clearCachedFrame()
-            delay(85)
+            if (hadVisibleOverlay) {
+                capturer.clearCachedFrame()
+                delay(95)
+            } else {
+                delay(30)
+            }
 
             // Pre-touch geometry & baseline board scan (costs 0ms on the game's turn timer!)
             val preBmp = capturer.captureSingleFrame()
@@ -1722,10 +1744,15 @@ class OverlayControllerService : Service() {
             return
         }
         serviceScope.launch {
+            val hadVisibleOverlay = pathOverlayView.visibility == View.VISIBLE && pathOverlayView.hasVisibleDrawing()
             pathOverlayView.updateState(null, null, emptyList(), null, false, false, false)
             pathOverlayView.visibility = View.INVISIBLE
-            capturer.clearCachedFrame()
-            delay(80)
+            if (hadVisibleOverlay) {
+                capturer.clearCachedFrame()
+                delay(95)
+            } else {
+                delay(30)
+            }
             val bmp = capturer.captureSingleFrame() ?: run {
                 pathOverlayView.visibility = View.VISIBLE
                 refreshPathCanvas()
@@ -1784,9 +1811,8 @@ class OverlayControllerService : Service() {
                 val capturer = ScreenCaptureSession.capturer.value ?: continue
                 if (!capturer.isReady.value) continue
 
-                if (capturer.lastFrameAgeMs > 8_000L) {
-                    capturer.tryRecoverSurface()
-                }
+                // Never call tryRecoverSurface() merely because lastFrameAgeMs > 8s — static screens on
+                // HyperOS/Android 15 legitimately stop pushing SurfaceFlinger frames while VirtualDisplay is healthy!
                 val bmp = capturer.captureSingleFrame() ?: continue
                 try {
                     val isBlank = withContext(Dispatchers.Default) {
@@ -1794,7 +1820,7 @@ class OverlayControllerService : Service() {
                     }
                     if (isBlank) {
                         consecutiveBlankTicks++
-                        if (consecutiveBlankTicks == 3 || (consecutiveBlankTicks > 3 && consecutiveBlankTicks % 15 == 0)) {
+                        if (consecutiveBlankTicks == 4) {
                             capturer.tryRecoverSurface()
                         }
                         continue

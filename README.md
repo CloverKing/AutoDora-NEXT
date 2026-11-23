@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/badge/version-v0.4.5-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.5)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
-[![Tests](https://img.shields.io/badge/Tests-51%20C%2B%2B%20%2B%2058%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
+[![Tests](https://img.shields.io/badge/Tests-51%20C%2B%2B%20%2B%2061%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
 [![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#多语言主题与应用内更新)
 
 ---
@@ -43,7 +43,7 @@
 
 ### 2. 免 Root 零拷贝采集与多帧融合 CV 识盘（`core-capture` + `core-vision`）
 
-- **合规屏幕采集、长时自愈与自动违建探测**：基于 Android 10–16+ `MediaProjection` 前台服务零拷贝取帧，内置 **长时挂起/黑屏 `VirtualDisplay` Surface 自动自愈**（后台巡检与点击计算均自动检测帧龄卡死并无感重连）、全态血条锚定防误判（支持绿/珊瑚红/粉紫/青蓝血条 **以及 `1/584001` 空血暗槽 + 左侧红心徽章识别**，彻底杜绝空血队误判队伍头像为假 `6×6` 违建或「自动校准」误吸 Boss 血条），并严格过滤暖米色/全高活动横幅防非战斗误判。
+- **合规屏幕采集、防断流热重授与自动违建探测**：基于 Android 10–16+ `MediaProjection` 前台服务零拷贝取帧，彻底修复 HyperOS / Android 14–16 静止画面误触 `vd.resize()` 断流、初始化首帧丢弃与重授权异步 `onStop()` 误杀新会话竞态；系统静默中断时自动同步失效状态并支持概览页一键热重授权（无需强退应用）；配备全态血条锚定防误判（支持绿/珊瑚红/粉紫/青蓝血条 **以及 `1/584001` 空血暗槽 + 左侧红心徽章识别**，彻底杜绝空血队误判队伍头像为假 `6×6` 违建或「自动校准」误吸 Boss 血条），并严格过滤暖米色/全高活动横幅防非战斗误判。
 - **真实游戏标定多帧融合识盘**：
   - 6 属性精准 HSV 分类（自动排除右上角种族徽章与印记象限防偏色）；**7 大种族圆章几何特征识别**（兼容魔族暗底米金环与人类等全种族角标，同时精准过滤心珠右上高光实现 `0` 误报 `心族`）；多帧高光强化星芒、`?` 问号珠、白边护盾珠、**石化符石（`石`）**、**化血 / 全版 30 颗锁定符石（`血`）**、**荆棘符石（`棘`）**、暴风区域、经典金色与现代金属拼图框；**起结有序 V4 识别**（24 角度外环绿芒扫描突破种族角标遮挡、火珠邻格红溢抑制与官方单点绿/红漩涡约束）。
   - 结界地形兼容识别，以及非战斗活动列表（强制校验盘面上方血条隔离带，根除自身半透明记忆圆圈自激反馈循环）、关卡转场、`VICTORY` 结算画面与敌技详情弹窗的自动静默拦截，彻底消除非战斗残留浮动识别层。
@@ -84,7 +84,7 @@
 
 ### 5. 多语言、主题与应用内更新
 
-- **四套资源三语实时热切**：内置 **简体中文 / 繁體中文 / English / 跟随系统**（`539` 项词条 100% 四语言对齐），无需重启应用实时刷新主界面与悬浮窗。
+- **四套资源三语实时热切**：内置 **简体中文 / 繁體中文 / English / 跟随系统**（`540` 项词条 100% 四语言对齐），无需重启应用实时刷新主界面与悬浮窗。
 - **Material You 双主题联动**：支持 **跟随系统 / 明亮 / 黑暗** 三态，主控台与游戏内悬浮栏/调参面板/编排面板同步换肤。
 - **应用内双通道检更与自动安装**：在「设置 → 关于与版本」内置 GitHub 仓库入口与检查更新，采用 **`api.github.com` → `github.com/releases.atom` + `expanded_assets` 免限流自动降级双通道**（彻底规避共享 IP/代理环境下的匿名 API `HTTP 403` 限流）；发现新版本后点击 **「下载并安装」** 直接在 App 内流式下载 GitHub Release 安装包（自动跟随 CDN 重定向、实时 MB/百分比进度条、随时取消、旧缓存自动清理、`PK\x03\x04` 完整校验），下载完成自动通过 `FileProvider` 拉起 Android 系统安装器完成升级（若尚未允许「安装未知应用」，自动引导授权并在返回后无缝续接安装）。
 
@@ -155,7 +155,7 @@ AutoDora-NEXT/
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 3. Android 全模块 JVM 单测（58/58）与 APK 构建
+### 3. Android 全模块 JVM 单测（61/61）与 APK 构建
 
 ```powershell
 # 运行全部模块单元测试并构建 Debug APK

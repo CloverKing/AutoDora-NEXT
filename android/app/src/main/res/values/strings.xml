@@ -490,6 +490,7 @@
     <string name="help_unified_strategy_body">【一站式策略与解盾】\n原「策略」与「解盾」已全面整合到本页：顶部支持快速切换、保存、另存与管理多套预设方案；下方按 6 大功能分区集中展示全部选项并实时生效。\n\n【本波生效解盾】\n勾选下方任意连击、属性、多消、拼图或路径规则后，顶部会自动汇总当前生效项；点击「清空解盾」可一键复位本波临时覆盖。</string>
     <string name="ov_toast_no_board">未检测到战斗盘面，请进入战斗后重试</string>
     <string name="ov_toast_capture_blank">屏幕采集画面黑屏或已被系统暂停，请返回应用重新授权屏幕采集</string>
+    <string name="ov_toast_capture_stalled">屏幕采集会话已被系统中断，请返回应用重新授权屏幕采集</string>
     <string name="ov_toast_need_a11y">请先开启无障碍服务以执行自动转珠</string>
     <string name="ov_toast_puzzle_not_detected">未在盘面识别到拼图框，可在拼图设置选预设形状或在「盘面编排」手动标框</string>
     <string name="ov_toast_traffic_light_not_detected">未在盘面识别到起结有序起终点，可在「盘面编排」手动标绿色漩涡/红色漩涡</string>

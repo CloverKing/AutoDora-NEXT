@@ -16,21 +16,65 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicBoolean
 
 object ScreenCaptureSession {
     private val _capturer = MutableStateFlow<ScreenCapturer?>(null)
     val capturer: StateFlow<ScreenCapturer?> = _capturer.asStateFlow()
 
+    private val _lastInitError = MutableStateFlow<String?>(null)
+    val lastInitError: StateFlow<String?> = _lastInitError.asStateFlow()
+
     val isActive: Boolean get() = _capturer.value?.isReady?.value == true
 
+    @Synchronized
     internal fun setCapturer(cap: ScreenCapturer?) {
-        _capturer.value?.release()
+        val old = _capturer.value
         _capturer.value = cap
+        if (cap != null) {
+            _lastInitError.value = null
+        }
+        if (old != null && old !== cap) {
+            try {
+                old.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 
-    fun clear() {
-        _capturer.value?.release()
+    /**
+     * Releases and clears the active capturer ONLY if it is still [expected].
+     * Prevents an old projection's asynchronous onStop() callback from killing a newly re-authorized session!
+     */
+    @Synchronized
+    fun clearIfCurrent(expected: ScreenCapturer): Boolean {
+        if (_capturer.value !== expected) return false
         _capturer.value = null
+        try {
+            expected.release()
+        } catch (_: Exception) {
+        }
+        return true
+    }
+
+    @Synchronized
+    fun clear() {
+        val old = _capturer.value
+        _capturer.value = null
+        if (old != null) {
+            try {
+                old.release()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun reportInitError(message: String) {
+        _lastInitError.value = message
+    }
+
+    fun clearInitError() {
+        _lastInitError.value = null
     }
 }
 
@@ -76,22 +120,50 @@ class MediaProjectionForegroundService : Service() {
         }
 
         if (resultCode == Activity.RESULT_OK && dataIntent != null) {
-            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            val projection = mpm.getMediaProjection(resultCode, dataIntent)
-            if (projection != null) {
-                val capturer = MediaProjectionCapturer(this, projection) {
-                    ScreenCaptureSession.clear()
+            // Release any prior MediaProjection cleanly BEFORE acquiring the new one so Android 14/15/16
+            // HyperOS never encounters a transient dual-projection conflict!
+            ScreenCaptureSession.clear()
+            ScreenCaptureSession.clearInitError()
+            try {
+                val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                val projection = mpm.getMediaProjection(resultCode, dataIntent)
+                if (projection != null) {
+                    var createdRef: MediaProjectionCapturer? = null
+                    val stoppedDuringInit = AtomicBoolean(false)
+                    val capturer = MediaProjectionCapturer(this, projection) {
+                        val ref = createdRef
+                        if (ref == null) {
+                            stoppedDuringInit.set(true)
+                        } else if (ScreenCaptureSession.clearIfCurrent(ref)) {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                            stopSelf()
+                        }
+                    }
+                    createdRef = capturer
+                    if (stoppedDuringInit.get()) {
+                        capturer.release()
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    } else {
+                        ScreenCaptureSession.setCapturer(capturer)
+                        Log.i(TAG, "MediaProjection session initialized successfully")
+                    }
+                } else {
+                    Log.e(TAG, "getMediaProjection returned null")
+                    ScreenCaptureSession.reportInitError("getMediaProjection returned null")
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
-                ScreenCaptureSession.setCapturer(capturer)
-                Log.i(TAG, "MediaProjection session initialized successfully")
-            } else {
-                Log.e(TAG, "getMediaProjection returned null")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start MediaProjection session", e)
+                ScreenCaptureSession.clear()
+                ScreenCaptureSession.reportInitError(e.localizedMessage ?: e.javaClass.simpleName)
+                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         } else {
             Log.e(TAG, "Invalid MediaProjection resultCode=$resultCode")
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
 

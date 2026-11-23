@@ -490,6 +490,7 @@
     <string name="help_unified_strategy_body">[Unified Strategy &amp; Shields]\nAll Strategy and Shield controls are merged cleanly into one tab. Use the top bar to Load, Save, Save As, or manage presets; all 6 option groups below update in real time.\n\n[Active Wave Shields]\nAny combo, attribute, multi-orb, puzzle, or path shield enabled below is summarized in the top banner. Tap Clear Shields anytime to reset temporary wave overrides.</string>
     <string name="ov_toast_no_board">No battle board detected. Enter a battle and retry.</string>
     <string name="ov_toast_capture_blank">Screen capture returned a blank frame (paused by OS). Please return to the app and re-grant capture permission.</string>
+    <string name="ov_toast_capture_stalled">Screen capture session was interrupted by the OS. Please return to the app and re-grant capture permission.</string>
     <string name="ov_toast_need_a11y">Enable Accessibility Service to run auto-swipe.</string>
     <string name="ov_toast_puzzle_not_detected">No puzzle frame detected on board; pick a preset shape or mark tiles in Board Editor</string>
     <string name="ov_toast_traffic_light_not_detected">No Start-to-End vortex detected; mark Green/Red Vortex in Board Editor</string>

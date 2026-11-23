@@ -35,7 +35,7 @@ flowchart LR
     FullDetect --> DynamicOut["输出动态 BoardGeometry (rect, cols, rows, cellSize)"]
 ```
 
-- **血条锚定防误判与长时自愈**：在 `base.topPx` 上方检测绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，杜绝把队伍 6 个彩色头像误判为第 6 行假违建或「自动校准」误吸 Boss 血条。`MediaProjectionCapturer` 内置帧龄追踪、`isBlankOrBlackFrame` 黑屏/挂起检测与 `tryRecoverSurface()`（无需重授权，后台巡检 `> 8s` 与点击计算 `> 2s` 自动通过 `virtualDisplay.setSurface()` 替换新 `ImageReader` 无感自愈），并在校准偏移时自动回退至 `autoCalibrateFromRealScreen`。
+- **血条锚定防误判与 HyperOS 防断流热重授**：在 `base.topPx` 上方检测绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，杜绝把队伍 6 个彩色头像误判为第 6 行假违建或「自动校准」误吸 Boss 血条。`MediaProjectionCapturer` 与 `ScreenCaptureSession` 通过 `released` 首帧零丢弃门控、静止画面零扰动（移除按帧龄误触 `vd.resize()`/`setSurface()`）、10 秒冷却受控恢复、`clearIfCurrent()` 身份校验防异步 `onStop()` 误杀新会话、失效自动清理并同步主界面状态以及概览页 `allowAlwaysClick` 一键热重授，彻底杜绝 Android 14–16 / HyperOS 假就绪与重授权失效。
 - **实时视觉校准框**：主悬浮栏点 `▦` 随时开启可拖拽四角/四边的半透明校准框，并附带 `上 / 下 / 窄 / 宽 / 高- / 高+ / 自动 / 重置` 像素级微调条，按比例持久化至 DataStore。
 
 ---
@@ -132,7 +132,7 @@ flowchart LR
 | **分页结构** | 3-Tab：**概览 / 策略 / 设置** | 3-Tab：**快捷 / 策略 / 设置** |
 | **抽屉色彩** | 6 色语义色条 + 浅色边框卡片（蓝/靛蓝/青绿/琥珀/绯红/紫） | 与启动页对应模块使用**完全一致的抽屉配色** |
 | **展开模式** | 默认**全部展开**，支持多抽屉同时展开或单独收起 | 调参分页与盘面编排均采用**单抽屉手风琴互斥展开**，防止遮挡游戏盘面 |
-| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You；跟随系统 / 简中 / 繁中 / English（`539` 词条对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
+| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You；跟随系统 / 简中 / 繁中 / English（`540` 词条对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
 | **主悬浮胶囊** | 概览页一键启停；设置紫色抽屉支持 **横排 / 竖排** 与 **靠左 / 靠右** 4 态切换（`floatingBarVertical` + `floatingBarDockRight`） | 圆形 App 图标手柄 + 8 个矢量图标（`✦` `▶` `■` `〰` `▤` `▦` `🎚` `✕`）；支持 **4 态实时热切**（横排靠右时 App 图标居右、主栏向左展开；竖排靠左向右/靠右向左展开面板）、**拖拽松手平滑左右吸边**及 **DataStore 持久化记忆停靠侧与纵坐标** |
 
 ### 5.2 轻量策略库与应用内更新闭环
@@ -204,18 +204,18 @@ flowchart TD
     PathSmooth -.-> ShizukuExec
 ```
 
-### 仓库模块与测试矩阵（当前 `109` 项自动化测试全通过）
+### 仓库模块与测试矩阵（当前 `112` 项自动化测试全通过）
 
 | 模块 | 职责说明 | 自动化测试覆盖 |
 | :--- | :--- | :--- |
 | `solver-core/` | 纯 C++20 求解引擎（CMake，零 Android 依赖） | `test_main.cpp`：**51 / 51** 通过（含独立路径回放核验、荆棘严避与全版锁定渐进消除） |
 | `android/core-model/` | 不可变棋盘/规则模型、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**12 / 12** 通过 |
-| `android/core-capture/` | `MediaProjection` 零拷贝采集与自愈、`AutoGridDetector`（含空血 1-HP 暗槽与活动横幅过滤） | `AutoGridDetectorTest`：**11 / 11** 通过 |
+| `android/core-capture/` | `MediaProjection` 零拷贝采集与防断流热重授、`AutoGridDetector`（含空血 1-HP 暗槽与活动横幅过滤） | `AutoGridDetectorTest` (11) + `ScreenCaptureSessionTest` (3)：**14 / 14** 通过 |
 | `android/core-vision/` | `CvBoardRecognizer`（含 7 种族圆章 V3 / 起结有序 V4 / 石化 / 锁定化血 / 荆棘）、`FlashRevealMemoryTracker`、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**17 / 17** 通过 |
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`、`SwipeSpeedPreset` | `PathInterpolatorTest`：**8 / 8** 通过 |
 | `android/core-data/` | DataStore 设置、Room 策略库、39 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务、单抽屉调参/编排、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (3)：**10 / 10** 通过；四语言词条一致性 **539 / 539** |
+| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务、单抽屉调参/编排、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (3)：**10 / 10** 通过；四语言词条一致性 **540 / 540** |
 
 ---
 
