@@ -1414,7 +1414,10 @@ class OverlayTuningDrawerController(
         val sInvLabel = invertSummaryLabel()
         val s1Summary = buildList {
             if (settings.testModeOnlyDraw) add(s(R.string.ov_preview_confirm))
-            if (settings.holdReplanEnabled) add(s(R.string.ov_hold))
+            if (settings.holdReplanEnabled) {
+                val trig = s(if (settings.holdReplanNudge) R.string.mode_hold_trigger_nudge else R.string.mode_hold_trigger_inplace)
+                add("${s(R.string.ov_hold)}($trig)")
+            }
             if (sInvLabel != null) add(sInvLabel)
             if (settings.allowDiagonalMove) add(s(R.string.ov_diag_move))
             if (settings.humanMode) add(s(R.string.mode_human_title).take(4))
@@ -1500,18 +1503,59 @@ class OverlayTuningDrawerController(
     }
 
     private fun populateHoldAndInvertControls(body: LinearLayout, p: OverlayPalette) {
-        val holdRow = hRow(bottomMarginDp = 5)
-        holdRow.addView(makeToggle(s(R.string.ov_hold), settings.holdReplanEnabled, p, weight = 1.05f) {
-            onUpdateSettings { it.copy(holdReplanEnabled = !it.holdReplanEnabled) }
-        })
-        holdRow.addView(makeToggle(s(R.string.mode_hold_trigger_inplace), !settings.holdReplanNudge, p, weight = 0.95f) {
-            onUpdateSettings { it.copy(holdReplanNudge = false) }
-        }.also { if (!settings.holdReplanEnabled) it.alpha = 0.62f })
-        holdRow.addView(makeToggle(s(R.string.mode_hold_trigger_nudge), settings.holdReplanNudge, p, weight = 1.0f, marginEndDp = 0) {
-            onUpdateSettings { it.copy(holdReplanNudge = true) }
-        }.also { if (!settings.holdReplanEnabled) it.alpha = 0.62f })
-        body.addView(holdRow)
+        // Parent Master Toggle (1:1 hierarchy parity with Launch App Settings)
+        val holdMasterRow = hRow(bottomMarginDp = 4)
+        holdMasterRow.addView(
+            makeToggle(s(R.string.mode_hold_title), settings.holdReplanEnabled, p, weight = 1f, marginEndDp = 0) {
+                onUpdateSettings { it.copy(holdReplanEnabled = !it.holdReplanEnabled) }
+            }
+        )
+        body.addView(holdMasterRow)
 
+        // Nested Indented Bordered Child Card: Hold-Replan Trigger Mode (matches DashboardScreen Surface 1:1!)
+        val subBg = if (p.isDark) Color.rgb(26, 30, 38) else Color.rgb(245, 247, 250)
+        val subBorder = if (settings.holdReplanEnabled) {
+            Color.argb(if (p.isDark) 132 else 115, Color.red(ACCENT_TEAL), Color.green(ACCENT_TEAL), Color.blue(ACCENT_TEAL))
+        } else {
+            p.outline
+        }
+        val holdSubBox = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(subBg, dp(8).toFloat(), subBorder)
+            setPadding(dp(7), dp(5), dp(7), dp(6))
+            alpha = if (settings.holdReplanEnabled) 1.0f else 0.55f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = dp(10)
+                bottomMargin = dp(4)
+            }
+        }
+        holdSubBox.addView(
+            TextView(context).apply {
+                text = s(R.string.mode_hold_trigger_label)
+                textSize = 9.2f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(if (settings.holdReplanEnabled) p.onSurface else p.onSurfaceVariant)
+                setPadding(dp(1), 0, dp(1), dp(4))
+            }
+        )
+        val triggerRow = hRow(bottomMarginDp = 0)
+        triggerRow.addView(
+            makeToggle(s(R.string.mode_hold_trigger_inplace), !settings.holdReplanNudge, p, weight = 1f, marginEndDp = 4) {
+                onUpdateSettings { it.copy(holdReplanNudge = false) }
+            }
+        )
+        triggerRow.addView(
+            makeToggle(s(R.string.mode_hold_trigger_nudge), settings.holdReplanNudge, p, weight = 1f, marginEndDp = 0) {
+                onUpdateSettings { it.copy(holdReplanNudge = true) }
+            }
+        )
+        holdSubBox.addView(triggerRow)
+        body.addView(holdSubBox)
+
+        body.addView(makeSubDivider(p))
         body.addView(makeSubLabel(s(R.string.mode_invert_title), p))
         val invRow = hRow(bottomMarginDp = 0)
         val invertOpts = listOf(
