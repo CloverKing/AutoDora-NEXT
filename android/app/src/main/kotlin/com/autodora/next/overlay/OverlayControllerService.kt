@@ -296,7 +296,8 @@ class OverlayControllerService : Service() {
         board: BoardState,
         fixedStartCell: Int = -1,
         fastMode: Boolean = false,
-        fastMaxStepsCap: Int = 30
+        fastMaxStepsCap: Int = 36,
+        fastMaxTimeMs: Int = 400
     ): RuleConfig {
         val preset = activeTeamPreset()
         val global = settings.toRuleConfig()
@@ -327,21 +328,31 @@ class OverlayControllerService : Service() {
         )
         if (!fastMode) return composed
 
-        // Hold-and-Replan real-time hard budget: MUST apply AFTER RuleComposer.compose so highDifficultyShield
-        // never inflates maxTimeMs back to 800ms or beamWidth to 260+ while the game's turn timer is ticking!
+        // Hold-and-Replan real-time budget driven by user-configurable holdReplanSolveTimeMs (150..3500ms):
+        //  - Short budgets (<= 350ms, e.g. classic 5s stages): tight beam/steps keep total turn safe under 2s.
+        //  - Medium budgets (351..1000ms): unlocks deeper 52-step / 360-beam search.
+        //  - Deep budgets (> 1000ms up to 3500ms, e.g. 10s-25s modern teams): unlocks full configured beam (up to 600)
+        //    and up to 80 steps so Hold-and-Replan matches full-power high-combo & complex-shield solving!
         val hasHardShield = activeWaveChips.isNotEmpty() ||
             composed.puzzle1.enabled || composed.puzzle2.enabled ||
             composed.crossShield.requiredCount > 0 ||
             composed.exactTotalCombo >= 0 || composed.exactFirstWaveCombo >= 0
+        val budgetMs = fastMaxTimeMs.coerceIn(150, 3500)
+        val effectiveTimeMs = if (hasHardShield) maxOf(budgetMs, 220) else budgetMs
+        val beamCap = when {
+            effectiveTimeMs <= 350 -> if (hasHardShield) 240 else 200
+            effectiveTimeMs <= 1000 -> 360
+            else -> 600
+        }
         val cappedSteps = if (composed.exactSteps > 0) {
             composed.maxSteps
         } else {
-            minOf(composed.maxSteps, fastMaxStepsCap.coerceIn(16, 36))
+            minOf(composed.maxSteps, fastMaxStepsCap.coerceIn(20, 80))
         }
         return composed.copy(
             maxSteps = cappedSteps,
-            beamWidth = minOf(composed.beamWidth, if (hasHardShield) 200 else 180),
-            maxTimeMs = if (hasHardShield) 180 else 135,
+            beamWidth = minOf(composed.beamWidth, beamCap),
+            maxTimeMs = effectiveTimeMs,
             topK = 1,
             fixedStartCell = fixedStartCell
         )
@@ -1256,10 +1267,14 @@ class OverlayControllerService : Service() {
                 endHoldMs = 28L,
                 maxStepsPerSegment = 18
             )
-            val maxSwipeStepsForBudget = (1800L / holdSwipeConfig.stepDurationMs.coerceAtLeast(24L))
-                .toInt()
-                .coerceIn(24, 30)
+            val holdSolveTimeMs = settings.holdReplanSolveTimeMs.coerceIn(150L, 3500L)
+            val maxSwipeStepsForBudget = when {
+                holdSolveTimeMs <= 350L -> (1800L / holdSwipeConfig.stepDurationMs.coerceAtLeast(24L)).toInt().coerceIn(26, 36)
+                holdSolveTimeMs <= 1000L -> 52
+                else -> 80
+            }
             val maxRevealWaitMs = settings.holdReplanDelayMs.coerceIn(240L, 900L)
+            val maxHoldWaitMs = maxRevealWaitMs + holdSolveTimeMs + 1200L
             val bandTop = (geom.topPx - geom.cellHeight * 0.15f).toInt().coerceAtLeast(0)
             val bandBot = (geom.bottomPx + geom.cellHeight * 0.15f).toInt().coerceAtMost(screenH)
             val startIdx = startCell.row * geom.cols + startCell.col
@@ -1272,6 +1287,7 @@ class OverlayControllerService : Service() {
                     trigger = trigger,
                     nudgeTarget = nudgeCell,
                     revealDelayMs = 0L, // Smart early-ready poller below replaces blind sleep!
+                    maxHoldWaitMs = maxHoldWaitMs,
                     config = holdSwipeConfig
                 ) { heldCell ->
                     val tReplanStart = System.currentTimeMillis()
@@ -1357,13 +1373,14 @@ class OverlayControllerService : Service() {
                     editedBoard = effectiveBoard
                     usedMemorizedSnapshot = false
 
-                    // Phase 2: Tight real-time C++20 single-start solve (strictly <= 135..180ms!)
+                    // Phase 2: Real-time C++20 single-start solve using user's holdReplanSolveTimeMs (150..3500ms)
                     val tSolveStart = System.currentTimeMillis()
                     val composed = composeEffectiveRuleConfig(
                         board = effectiveBoard,
                         fixedStartCell = heldIdx,
                         fastMode = true,
-                        fastMaxStepsCap = maxSwipeStepsForBudget
+                        fastMaxStepsCap = maxSwipeStepsForBudget,
+                        fastMaxTimeMs = holdSolveTimeMs.toInt()
                     )
                     val token = NativeSolver.createCancelToken()
                     activeCancelToken = token

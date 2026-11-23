@@ -165,6 +165,7 @@ class AutoDoraAccessibilityService : AccessibilityService() {
         trigger: HoldReplanTrigger,
         nudgeTarget: CellCoord?,
         revealDelayMs: Long,
+        maxHoldWaitMs: Long = 2400L,
         config: SwipeConfig,
         onBoardRevealed: suspend (heldCell: CellCoord) -> SolutionPath?
     ): TouchExecutionResult = coroutineScope {
@@ -216,10 +217,11 @@ class AutoDoraAccessibilityService : AccessibilityService() {
             onBoardRevealed(effectiveNudgeCell)
         }
 
-        // 3. Keep finger pressed seamlessly via calm micro-heartbeat strokes (avoids Binder spam while staying responsive!)
+        // 3. Keep finger pressed seamlessly via calm micro-heartbeat strokes (supports up to 3.5s post-reveal solve!)
         var toggle = false
         var heartbeatIdx = 0
-        val maxWaitDeadline = System.currentTimeMillis() + revealDelayMs.coerceAtLeast(0L) + 1800L
+        val effectiveWaitCapMs = maxHoldWaitMs.coerceIn(1800L, 6500L)
+        val maxWaitDeadline = System.currentTimeMillis() + revealDelayMs.coerceAtLeast(0L) + effectiveWaitCapMs
         while (!replanDeferred.isCompleted && !cancelRequested.get() && System.currentTimeMillis() < maxWaitDeadline) {
             val nextPt = if (toggle) {
                 ScreenPoint(heldPt.x + 2.0f, heldPt.y)
@@ -231,8 +233,12 @@ class AutoDoraAccessibilityService : AccessibilityService() {
                 moveTo(curFingerPt.x, curFingerPt.y)
                 lineTo(nextPt.x, nextPt.y)
             }
-            // First hold covers initial flip latency in 1 IPC call (140ms); subsequent heartbeats 75ms for snappy handoff
-            val hbMs = if (heartbeatIdx == 0) 140L else 75L
+            // First hold covers initial flip latency (140ms); quick 85ms beats early; gentle 110ms beats during deep 1..3.5s solves
+            val hbMs = when {
+                heartbeatIdx == 0 -> 140L
+                heartbeatIdx <= 5 -> 85L
+                else -> 110L
+            }
             heartbeatIdx++
             val nextStroke = activeStroke.continueStroke(holdPath, 0L, hbMs, true)
             if (!dispatchSingleStroke(nextStroke, true, nextPt)) {

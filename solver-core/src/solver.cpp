@@ -703,7 +703,9 @@ SolveOutput PuzzleSolver::solve(
         std::array<uint32_t, kMaxCells> startCounts{};
         std::array<uint32_t, kMaxCells> curCounts{};
 
-        const uint32_t maxPerStart = (depth <= 8)
+        // When fixedStartCell >= 0 (Hold-and-Replan), all nodes share the single held start cell;
+        // do NOT apply multi-start per-start cap (otherwise depths 1..8 collapse primary diversity to ~12 nodes!).
+        const uint32_t maxPerStart = (rules.fixedStartCell < 0 && depth <= 8)
             ? std::max<uint32_t>(4, beamWidth / std::max<uint32_t>(8, totalCells / 2))
             : beamWidth;
         const uint32_t maxPerCur = std::max<uint32_t>(6, beamWidth / std::max<uint32_t>(6, totalCells / 3));

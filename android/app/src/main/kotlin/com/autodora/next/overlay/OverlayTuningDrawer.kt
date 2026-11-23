@@ -1371,6 +1371,26 @@ class OverlayTuningDrawerController(
             engBody.addView(makeComputeSeekBar(settings.beamWidth, p, beamLbl) { nb ->
                 onUpdateSettings { it.copy(beamWidth = nb) }
             })
+
+            engBody.addView(makeSubDivider(p))
+            val solveSecLabel = String.format(java.util.Locale.US, "%.2fs", settings.holdReplanSolveTimeMs / 1000.0)
+            engBody.addView(makeSubLabel(s(R.string.ov_hold_solve_hdr_fmt, solveSecLabel), p))
+            val holdSolveRow = hRow(bottomMarginDp = 0)
+            val holdPresets = listOf("0.3s" to 300L, "0.6s" to 600L, "1.2s" to 1200L, "2.0s" to 2000L, "3.5s" to 3500L)
+            holdPresets.forEachIndexed { idx, (lbl, ms) ->
+                holdSolveRow.addView(
+                    makeToggle(
+                        lbl,
+                        settings.holdReplanSolveTimeMs == ms,
+                        p,
+                        weight = 1f,
+                        marginEndDp = if (idx == holdPresets.lastIndex) 0 else 4
+                    ) {
+                        onUpdateSettings { it.copy(holdReplanSolveTimeMs = ms) }
+                    }
+                )
+            }
+            engBody.addView(holdSolveRow)
         }
 
         // Card 1 (Amber): Unified 6-Tier Swipe Speed Presets (2s..7s, matches Launch App Settings Amber card!)

@@ -81,6 +81,7 @@ interface TouchExecutor {
         trigger: HoldReplanTrigger = HoldReplanTrigger.HOLD_IN_PLACE,
         nudgeTarget: CellCoord? = null,
         revealDelayMs: Long = 360L,
+        maxHoldWaitMs: Long = 2400L,
         config: SwipeConfig = SwipeConfig(),
         onBoardRevealed: suspend (heldCell: CellCoord) -> SolutionPath?
     ): TouchExecutionResult

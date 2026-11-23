@@ -50,7 +50,8 @@ data class AppSettings(
     val multiFrameCount: Int = 2,
     val showOrbBadgesOnPath: Boolean = true,    // Show compact recognized orb badges so users verify board accuracy at a glance
     val holdReplanEnabled: Boolean = false,     // Toggle mode: when ON, '行' executes Hold-and-Replan (按住重算)
-    val holdReplanDelayMs: Long = 560L,         // Max wait ceiling for '?' flip reveal (smart early-ready poller exits as soon as board opens!)
+    val holdReplanDelayMs: Long = 560L,         // Max wait ceiling for '?' flip reveal animation (exits early once revealed!)
+    val holdReplanSolveTimeMs: Long = 400L,     // Post-reveal C++20 solve time budget (150..3500ms, default 400ms / max 3.5s)
     val holdReplanNudge: Boolean = true,
     val invertDragX: Boolean = false,
     val invertDragY: Boolean = false,
@@ -101,6 +102,7 @@ class SettingsRepository(private val context: Context) {
 
         val HOLD_REPLAN_ENABLED = booleanPreferencesKey("touch_hold_replan_enabled")
         val HOLD_REPLAN_DELAY_MS = longPreferencesKey("touch_hold_replan_delay_ms")
+        val HOLD_REPLAN_SOLVE_TIME_MS = longPreferencesKey("touch_hold_replan_solve_ms")
         val HOLD_REPLAN_NUDGE = booleanPreferencesKey("touch_hold_replan_nudge")
         val INVERT_DRAG_X = booleanPreferencesKey("touch_invert_drag_x")
         val INVERT_DRAG_Y = booleanPreferencesKey("touch_invert_drag_y")
@@ -129,7 +131,8 @@ class SettingsRepository(private val context: Context) {
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
         showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
         holdReplanEnabled = p[Keys.HOLD_REPLAN_ENABLED] ?: false,
-        holdReplanDelayMs = p[Keys.HOLD_REPLAN_DELAY_MS] ?: 560L,
+        holdReplanDelayMs = (p[Keys.HOLD_REPLAN_DELAY_MS] ?: 560L).coerceIn(240L, 900L),
+        holdReplanSolveTimeMs = (p[Keys.HOLD_REPLAN_SOLVE_TIME_MS] ?: 400L).coerceIn(150L, 3500L),
         holdReplanNudge = p[Keys.HOLD_REPLAN_NUDGE] ?: true,
         invertDragX = p[Keys.INVERT_DRAG_X] ?: false,
         invertDragY = p[Keys.INVERT_DRAG_Y] ?: false,
@@ -165,7 +168,8 @@ class SettingsRepository(private val context: Context) {
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)
             p[Keys.SHOW_ORB_BADGES] = next.showOrbBadgesOnPath
             p[Keys.HOLD_REPLAN_ENABLED] = next.holdReplanEnabled
-            p[Keys.HOLD_REPLAN_DELAY_MS] = next.holdReplanDelayMs.coerceIn(160L, 900L)
+            p[Keys.HOLD_REPLAN_DELAY_MS] = next.holdReplanDelayMs.coerceIn(240L, 900L)
+            p[Keys.HOLD_REPLAN_SOLVE_TIME_MS] = next.holdReplanSolveTimeMs.coerceIn(150L, 3500L)
             p[Keys.HOLD_REPLAN_NUDGE] = next.holdReplanNudge
             p[Keys.INVERT_DRAG_X] = next.invertDragX
             p[Keys.INVERT_DRAG_Y] = next.invertDragY

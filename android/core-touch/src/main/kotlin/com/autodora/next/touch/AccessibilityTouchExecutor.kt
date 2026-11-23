@@ -27,6 +27,7 @@ class AccessibilityTouchExecutor : TouchExecutor {
         trigger: HoldReplanTrigger,
         nudgeTarget: CellCoord?,
         revealDelayMs: Long,
+        maxHoldWaitMs: Long,
         config: SwipeConfig,
         onBoardRevealed: suspend (heldCell: CellCoord) -> SolutionPath?
     ): TouchExecutionResult {
@@ -38,6 +39,7 @@ class AccessibilityTouchExecutor : TouchExecutor {
             trigger = trigger,
             nudgeTarget = nudgeTarget,
             revealDelayMs = revealDelayMs,
+            maxHoldWaitMs = maxHoldWaitMs,
             config = config,
             onBoardRevealed = onBoardRevealed
         )
@@ -79,6 +81,7 @@ class ShizukuTouchExecutor : TouchExecutor {
         trigger: HoldReplanTrigger,
         nudgeTarget: CellCoord?,
         revealDelayMs: Long,
+        maxHoldWaitMs: Long,
         config: SwipeConfig,
         onBoardRevealed: suspend (heldCell: CellCoord) -> SolutionPath?
     ): TouchExecutionResult {

@@ -820,6 +820,43 @@ private fun SettingsTab(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            val solveSecFormatted = String.format(java.util.Locale.US, "%.2fs", settings.holdReplanSolveTimeMs / 1000.0)
+            SliderSettingRow(
+                label = stringResource(R.string.slider_hold_solve_time),
+                valueText = "$solveSecFormatted (${settings.holdReplanSolveTimeMs} $msUnit)",
+                value = settings.holdReplanSolveTimeMs.toFloat().coerceIn(150f, 3500f),
+                valueRange = 150f..3500f,
+                onValueChange = { v ->
+                    onUpdateSettings {
+                        it.copy(holdReplanSolveTimeMs = ((v / 50f).roundToLong() * 50L).coerceIn(150L, 3500L))
+                    }
+                }
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                for ((presetLabel, presetMs) in listOf(
+                    "0.3s" to 300L,
+                    "0.6s" to 600L,
+                    "1.2s" to 1200L,
+                    "2.0s" to 2000L,
+                    "3.5s" to 3500L
+                )) {
+                    CompactChoicePill(
+                        label = presetLabel,
+                        selected = settings.holdReplanSolveTimeMs == presetMs,
+                        onClick = { onUpdateSettings { it.copy(holdReplanSolveTimeMs = presetMs) } },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.slider_hold_solve_time_sub),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             // Pre-Swipe Countdown Native Exposed Dropdown (pre-resolved with localized context so Popup never falls back to system locale!)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

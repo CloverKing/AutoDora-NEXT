@@ -294,7 +294,10 @@
     <string name="support_max_steps">Active: %1$d steps (> 60 auto-extends search budget; tap Stop icon anytime)</string>
     <string name="slider_beam">Solver Compute</string>
     <string name="slider_hold_delay">Hold-Reveal Animation Timeout</string>
-    <string name="slider_hold_delay_sub">Max wait for \'?\' flip animation only (exits early once revealed); post-reveal C++20 solve takes ~0.15s</string>
+    <string name="slider_hold_delay_sub">Max wait for \'?\' flip animation only (exits early once revealed; not solve time)</string>
+    <string name="slider_hold_solve_time">Post-Reveal Solve Time Budget</string>
+    <string name="slider_hold_solve_time_sub">C++20 post-reveal search budget (0.15–3.5s); larger budgets unlock deeper steps &amp; full beam width — match to your team\'s turn timer</string>
+    <string name="ov_hold_solve_hdr_fmt">Post-Reveal Solve Budget (%1$s)</string>
     <string name="slider_countdown">Pre-Swipe Countdown</string>
     <string name="unit_seconds">%1$d s</string>
     <string name="countdown_none">None (Immediate)</string>
@@ -343,7 +346,7 @@
     <string name="help_basic_steps_title">Step Budget &amp; Solver Compute</string>
     <string name="help_basic_steps_body">[Priority: Wave Shields &gt; Strategy &gt; System]\nSettings values are System defaults. Each Strategy can follow System or override Steps &amp; Compute with its own slider. Active Wave Shields always hold the highest priority.\n\n[Step Budget]\nMaximum moves per path (8–300). 30–60 steps fit 6×5 boards; 80–150 fit 6×8 or complex puzzles/crosses.\n\n[Solver Compute]\nControls the full path-search &amp; solution-calculation width per step (40–600).</string>
     <string name="help_engine_settings_title">Solver Engine &amp; Priority Hierarchy</string>
-    <string name="help_engine_settings_body">[Priority: Wave Shields &gt; Strategy &gt; System]\nGlobal Steps and Solver Compute in Settings serve as System defaults. Custom values inside a Strategy override System, and active Wave Shields override both.\n\n• Global Max Steps: default move limit per swipe path (8–300).\n• Solver Compute: full path-search and solution-evaluation beam width per step.\n• Hold-Reveal Animation Timeout: max wait (ms) for hidden \'?\' orbs to flip open (NOT solve time — exits immediately upon reveal, then C++20 solves in 135–180ms so turn timer never expires).\n• Pre-Swipe Countdown: optional countdown seconds before swiping.</string>
+    <string name="help_engine_settings_body">[Priority: Wave Shields &gt; Strategy &gt; System]\nGlobal Steps and Solver Compute in Settings serve as System defaults. Custom values inside a Strategy override System, and active Wave Shields override both.\n\n• Global Max Steps: default move limit per swipe path (8–300).\n• Solver Compute: full path-search and solution-evaluation beam width per step.\n• Hold-Reveal Animation Timeout: max wait (ms) for hidden \'?\' orbs to flip open (NOT solve time — exits immediately upon reveal).\n• Post-Reveal Solve Time Budget: C++20 search budget after the board reveals (0.15–3.5s, default 0.4s); higher budgets automatically unlock deeper steps and full beam width for long-timer teams and hard shields.\n• Pre-Swipe Countdown: optional countdown seconds before swiping.</string>
     <string name="help_goal_policy_title">Matching Goals &amp; Search Policy</string>
     <string name="help_goal_policy_body">[Global Goal]\nGuides overall scoring toward Max Combo, 3/4/5 distinct colors, or 5/6/7/8/9-orb groups.\n\n[Multi-Orb Handling]\n• Max Combo: splits surplus same-color orbs into more combos.\n• Max Orbs: clears as many orbs of that color as possible.\n• Single Group: matches just one group to conserve orbs or steps.\n\n[Insufficient Orbs &amp; Search Style]\n• Match Anyway / Reserve Orbs: decides whether to make a normal 3-match or save orbs when too few exist for a target shape.\n• Best Result: finds the highest-scoring solution within budget.\n• First Match: returns as soon as all hard shields are satisfied.</string>
     <string name="help_elem_matrix_title">Per-Element Rules Matrix</string>
