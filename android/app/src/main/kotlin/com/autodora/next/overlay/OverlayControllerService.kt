@@ -881,9 +881,9 @@ class OverlayControllerService : Service() {
             val puzzleChipActive = activeWaveChips.any { it.id in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS }
             val burstCount = if (trafficLightChipActive || puzzleChipActive) maxOf(settings.multiFrameCount, 4) else settings.multiFrameCount
             val burstInterval = if (trafficLightChipActive) 85L else 50L
-            // If VirtualDisplay hasn't received a compositor frame for >3s (possible HyperOS/Android 15 stall),
+            // If VirtualDisplay hasn't received a compositor frame for >2s (possible HyperOS/Android 15 stall),
             // proactively swap in a fresh ImageReader surface before capturing!
-            if (capturer.lastFrameAgeMs > 3_000L) {
+            if (capturer.lastFrameAgeMs > 2_000L) {
                 capturer.tryRecoverSurface()
             }
             var frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
@@ -1689,6 +1689,9 @@ class OverlayControllerService : Service() {
                 val capturer = ScreenCaptureSession.capturer.value ?: continue
                 if (!capturer.isReady.value) continue
 
+                if (capturer.lastFrameAgeMs > 8_000L) {
+                    capturer.tryRecoverSurface()
+                }
                 val bmp = capturer.captureSingleFrame() ?: continue
                 try {
                     val isBlank = withContext(Dispatchers.Default) {
@@ -1710,8 +1713,15 @@ class OverlayControllerService : Service() {
                             Triple(null, null, 1) // 1 = dark modal covering battle board
                         } else {
                             val g = AutoGridDetector.detect(bmp, settings.calibration)
-                            if (!AutoGridDetector.isBattleBoardPresent(bmp, g)) {
-                                Triple(null, null, 2) // 2 = non-battle screen (Home Map, menus, etc.)
+                            // Strictly check the horizontal HP bar ABOVE the board (never polluted by our own
+                            // translucent orb overlay inside [topPx..bottomPx]!). Without this check, our own
+                            // translucent memorized circles can fool isBattleBoardPresent's corner/radial fallback
+                            // on non-battle Event Banner screens in a self-reinforcing feedback loop!
+                            val hasHp = AutoGridDetector.hasHpBarBarrier(bmp, g)
+                            if (!hasHp && !g.isWeijianExpanded) {
+                                Triple(null, null, 2) // 2 = non-battle screen or left battle (breaks overlay self-feedback!)
+                            } else if (!AutoGridDetector.isBattleBoardPresent(bmp, g)) {
+                                Triple(null, null, 2) // 2 = non-battle screen (Home Map, Event Banners, Menus)
                             } else {
                                 val r = boardRecognizer.recognize(listOf(bmp), g)
                                 val specialDarkCount = r.bloodDrainOrbsDetected + r.petrifiedOrbsDetected

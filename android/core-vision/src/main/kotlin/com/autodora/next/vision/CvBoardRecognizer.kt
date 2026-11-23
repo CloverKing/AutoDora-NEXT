@@ -286,6 +286,24 @@ class CvBoardRecognizer : BoardRecognizer {
         val redVividArr = IntArray(total)
         val redUnionMaskArr = IntArray(total)
         val redTotalHitsArr = IntArray(total)
+        val ringRedQuadsArr = IntArray(total)
+        val ringRedHitsArr = IntArray(total)
+        val isFireOrbArr = BooleanArray(total)
+        val isHeartOrbArr = BooleanArray(total)
+
+        // Precompute 24-angle perimeter ring offsets for detecting rotating green GO rays (even when a Race Badge
+        // covers top-right) and non-Fire/non-Heart red vortex rays under ±8% vertical calibration drift.
+        val ringAngles = 24
+        val cos24 = FloatArray(ringAngles) { a -> cos(2.0 * PI * a / ringAngles).toFloat() }
+        val sin24 = FloatArray(ringAngles) { a -> sin(2.0 * PI * a / ringAngles).toFloat() }
+        val quadBit24 = IntArray(ringAngles) { a ->
+            val qx = if (cos24[a] < 0f) 0 else 1
+            val qy = if (sin24[a] < 0f) 0 else 1
+            1 shl (qx * 2 + qy)
+        }
+        val greenRingRadii = floatArrayOf(0.42f, 0.48f, 0.54f)
+        val redRingRadii = floatArrayOf(0.45f, 0.51f)
+        val coreProbeOffs = arrayOf(0f to 0f, -0.18f to 0f, 0.18f to 0f, 0f to 0.18f, 0f to -0.18f)
 
         for (r in 0 until rows) {
             for (c in 0 until cols) {
@@ -294,14 +312,39 @@ class CvBoardRecognizer : BoardRecognizer {
                 val cy = geometry.cellCenterY(r)
                 val isCorner = (r == 0 || r == rows - 1) && (c == 0 || c == cols - 1)
 
+                // Quick 5-point core probe to identify Fire / Wood / Heart bodies so orb rims never mimic outer rays
+                var coreFire = 0
+                var coreWood = 0
+                var coreHeart = 0
+                val f0 = frames.first()
+                for ((dx, dy) in coreProbeOffs) {
+                    val px = (cx + dx * cw).roundToInt().coerceIn(0, f0.width - 1)
+                    val py = (cy + dy * ch).roundToInt().coerceIn(0, f0.height - 1)
+                    val (chue, csat, cval) = rgbToHsv(f0.getArgb(px, py))
+                    if (csat >= 0.42f && cval >= 0.42f) {
+                        if (chue < 22f || chue >= 346f) coreFire++
+                        else if (chue in 74f..162f) coreWood++
+                        else if (chue in 310f..346f) coreHeart++
+                    }
+                }
+                val isFireOrb = coreFire >= 3
+                val isWoodOrb = coreWood >= 3
+                val isHeartOrb = coreHeart >= 3
+                isFireOrbArr[idx] = isFireOrb
+                isHeartOrbArr[idx] = isHeartOrb
+
                 var maxGreenQuads = 0
                 var maxGreenHits = 0
+                var maxRingGreenHits = 0
+                var unionRingGreenMask = 0
                 var maxWhiteGoRatio = 0f
                 var maxRedQuads = 0
                 var maxRedHits = 0
                 var maxRedVivid = 0
                 var unionRedQuadMask = 0
                 var totalRedHits = 0
+                var maxRingRedHits = 0
+                var unionRingRedMask = 0
 
                 for (f in frames) {
                     val fw = f.width
@@ -337,6 +380,45 @@ class CvBoardRecognizer : BoardRecognizer {
                         }
                     }
 
+                    // 24-angle outer-rim green ray ring (rescues GO under top-right Race Badges & ±8% drift)
+                    var ringGHits = 0
+                    var ringGMask = 0
+                    for (rr in greenRingRadii) {
+                        if (isWoodOrb && rr < 0.47f) continue
+                        for (a in 0 until ringAngles) {
+                            val x = (cx + cos24[a] * rr * cw).roundToInt()
+                            val y = (cy + sin24[a] * rr * ch).roundToInt()
+                            if (x < 0 || x >= fw || y < 0 || y >= fh) continue
+                            val (h, s, v) = rgbToHsv(f.getArgb(x, y))
+                            if (h in 82f..160f && s >= 0.46f && v >= 0.40f) {
+                                ringGHits++
+                                ringGMask = ringGMask or quadBit24[a]
+                            }
+                        }
+                    }
+                    if (ringGHits > maxRingGreenHits) maxRingGreenHits = ringGHits
+                    unionRingGreenMask = unionRingGreenMask or ringGMask
+
+                    // 24-angle outer-rim crimson ray ring for non-Fire/non-Heart interior cells (r > 0 avoids pink HP bar!)
+                    if (!isFireOrb && !isHeartOrb && r > 0) {
+                        var ringRHits = 0
+                        var ringRMask = 0
+                        for (rr in redRingRadii) {
+                            for (a in 0 until ringAngles) {
+                                val x = (cx + cos24[a] * rr * cw).roundToInt()
+                                val y = (cy + sin24[a] * rr * ch).roundToInt()
+                                if (x < 0 || x >= fw || y < 0 || y >= fh) continue
+                                val (h, s, v) = rgbToHsv(f.getArgb(x, y))
+                                if ((h <= 14f || h >= 349f) && s >= 0.72f && v >= 0.45f) {
+                                    ringRHits++
+                                    ringRMask = ringRMask or quadBit24[a]
+                                }
+                            }
+                        }
+                        if (ringRHits > maxRingRedHits) maxRingRedHits = ringRHits
+                        unionRingRedMask = unionRingRedMask or ringRMask
+                    }
+
                     val gQuads = Integer.bitCount(gQuadMask)
                     val rQuads = Integer.bitCount(rQuadMask)
                     if (gQuads > maxGreenQuads || (gQuads == maxGreenQuads && gHits > maxGreenHits)) {
@@ -354,8 +436,8 @@ class CvBoardRecognizer : BoardRecognizer {
                     unionRedQuadMask = unionRedQuadMask or rQuadMask
                     totalRedHits += rHits
 
-                    // Sample center 'GO' white text band whenever green outer corner rays are present
-                    if (gHits >= 2) {
+                    // Sample center 'GO' white text band whenever green outer corner OR ring rays are present
+                    if (gHits >= 2 || ringGHits >= 4) {
                         var wHits = 0
                         var wTot = 0
                         for (ix in 0 until 9) {
@@ -374,36 +456,35 @@ class CvBoardRecognizer : BoardRecognizer {
                     }
                 }
 
+                val ringGQuads = Integer.bitCount(unionRingGreenMask)
                 val isStart = (maxWhiteGoRatio >= 0.25f && maxGreenQuads >= 2 && maxGreenHits >= 3) ||
-                    (isCorner && maxWhiteGoRatio >= 0.42f && maxGreenQuads >= 1 && maxGreenHits >= 2)
+                    (isCorner && maxWhiteGoRatio >= 0.42f && maxGreenQuads >= 1 && maxGreenHits >= 2) ||
+                    (maxWhiteGoRatio >= 0.34f && ringGQuads >= 3 && maxRingGreenHits >= 6)
                 if (isStart) {
-                    startScores.add(idx to (maxGreenQuads * 10f + maxGreenHits + maxWhiteGoRatio * 20f))
+                    startScores.add(idx to (maxGreenQuads * 10f + maxGreenHits + maxWhiteGoRatio * 20f + maxRingGreenHits * 0.6f))
                 } else {
                     redQuadsArr[idx] = maxRedQuads
                     redHitsArr[idx] = maxRedHits
                     redVividArr[idx] = maxRedVivid
                     redUnionMaskArr[idx] = unionRedQuadMask
                     redTotalHitsArr[idx] = totalRedHits
+                    ringRedQuadsArr[idx] = Integer.bitCount(unionRingRedMask)
+                    ringRedHitsArr[idx] = maxRingRedHits
                 }
             }
         }
 
-        // Non-maximum suppression for Start cells (suppress adjacent ray bleed)
-        val chosenStarts = ArrayList<Int>(2)
-        for ((idx, _) in startScores.sortedByDescending { it.second }) {
-            val r = idx / cols
-            val c = idx % cols
-            if (chosenStarts.all { o -> abs(r - o / cols) + abs(c - o % cols) > 1 }) {
-                chosenStarts.add(idx)
-                tileFlags[idx] = tileFlags[idx] or TileFlagBits.START_ALLOWED
-            }
+        // Official ToS 「起結有序」 spawns at most 1 Green GO Start Vortex — pick the single highest-scoring cell!
+        val chosenStart = startScores.maxByOrNull { it.second }?.first
+        if (chosenStart != null) {
+            tileFlags[chosenStart] = tileFlags[chosenStart] or TileFlagBits.START_ALLOWED
         }
 
-        // Score & suppress Red-Burst End cells:
+        // Score & select the single highest-scoring Red-Burst End Vortex:
         //  - Multi-frame quadrant union merges rotating red burst rays across burst frames.
-        //  - Edge rescue requires orthogonal span along the unclipped interior edge (vertical span for left/right
-        //    edge cells; horizontal span for top/bottom edge cells), eliminating single-border bleed from neighbors!
-        val hasConfirmedStart = chosenStarts.isNotEmpty()
+        //  - Edge rescue requires orthogonal span along the unclipped interior edge.
+        //  - Penalizes Fire orbs whose adjacent Fire neighbors bleed red into corner pockets so true Red Vortexes win!
+        val hasConfirmedStart = chosenStart != null
         val endScores = ArrayList<Pair<Int, Float>>()
         for (idx in 0 until total) {
             if ((tileFlags[idx] and TileFlagBits.START_ALLOWED) != 0) continue
@@ -418,6 +499,8 @@ class CvBoardRecognizer : BoardRecognizer {
             val uMask = redUnionMaskArr[idx]
             val uq = Integer.bitCount(uMask)
             val trh = redTotalHitsArr[idx]
+            val rrQ = ringRedQuadsArr[idx]
+            val rrH = ringRedHitsArr[idx]
             val hasLeft = (uMask and 0b0011) != 0
             val hasRight = (uMask and 0b1100) != 0
             val hasTop = (uMask and 0b0101) != 0
@@ -428,24 +511,23 @@ class CvBoardRecognizer : BoardRecognizer {
                 isTopBot -> hasLeft && hasRight
                 else -> false
             }
+            val isRingRescue = hasConfirmedStart && !isFireOrbArr[idx] && !isHeartOrbArr[idx] && r > 0 && rrQ >= 3 && rrH >= 6
             val isEnd = (rq >= 3 && rh >= 4) ||
                 (hasConfirmedStart && uq >= 3 && trh >= 5) ||
-                (hasConfirmedStart && isEdge && uq >= 2 && trh >= 3 && edgeSpanValid)
+                (hasConfirmedStart && isEdge && uq >= 2 && trh >= 3 && edgeSpanValid) ||
+                isRingRescue
             if (isEnd) {
                 val effQ = if (uq >= 3 && trh >= 4) uq else rq
                 val effH = if (uq >= 3 && trh >= 4) trh else rh
-                endScores.add(idx to (effQ * 14f + effH * 2f + rvh))
+                val firePenalty = if (isFireOrbArr[idx]) 25f else 0f
+                val ringBonus = if (isRingRescue) rrQ * 8f + rrH * 1.5f else 0f
+                endScores.add(idx to (effQ * 14f + effH * 2f + rvh + ringBonus - firePenalty))
             }
         }
 
-        val chosenEnds = ArrayList<Int>(2)
-        for ((idx, _) in endScores.sortedByDescending { it.second }) {
-            val r = idx / cols
-            val c = idx % cols
-            if (chosenEnds.all { o -> abs(r - o / cols) + abs(c - o % cols) > 1 }) {
-                chosenEnds.add(idx)
-                tileFlags[idx] = tileFlags[idx] or TileFlagBits.END_REQUIRED
-            }
+        val chosenEnd = endScores.maxByOrNull { it.second }?.first
+        if (chosenEnd != null) {
+            tileFlags[chosenEnd] = tileFlags[chosenEnd] or TileFlagBits.END_REQUIRED
         }
     }
 
@@ -782,11 +864,15 @@ class CvBoardRecognizer : BoardRecognizer {
     }
 
     /**
-     * Detects ToS top-right circular black-and-white Race Badge (种族符石徽章, e.g. 人类/神/魔/龙/兽/妖/机械).
-     * Calibrated against real Xiaomi 15 Human-race orbs AND normal glossy Heart orbs:
-     *  - Samples strictly inside the badge region [0.32r..0.74r] (excluding the outer dark checkerboard corner!)
-     *  - Requires crisp neutral-white ring pixels (v >= 0.82, s <= 0.15, ratio >= 24%) — rejecting pink Heart speculars!
-     *  - Requires dark silhouette pixels overall (>= 20%) AND inside the inner 3x3 badge core (>= 2 hits).
+     * Detects ToS top-right circular Race Badge medallion (种族符石徽章, covering ALL 7 races: 神/魔/人/兽/龙/妖/机械).
+     * Calibrated across real Demon-race boards (v2_00s/v2_86s: 29/30), Human-race boards (mi15_now: 25/30),
+     * AND non-race glossy Heart/Thorn/Normal boards (0/30 false positives!):
+     *  - Samples a 7x7 grid strictly inside the medallion area [0.28r..0.78r]
+     *  - Requires crisp white/warm-ivory icon & outer circular ring pixels (v >= 0.72, s <= 0.28, >= 11%)
+     *    WITH >= 2 white/ivory ring hits in the outer half (ix >= 4 || iy >= 4) — cleanly rejecting normal
+     *    glossy Heart orbs whose outer top-right corner is pitch-black checkerboard with 0 outer white hits!
+     *  - Requires dark circular medallion background (>= 14% overall AND >= 3 hits inside medallion core ix,iy in 1..4)
+     *  - Rejects bright colorful orb bodies (vivid saturation s >= 0.50 && v >= 0.45 must be <= 26%)
      */
     private fun detectTopRightRaceBadge(
         frame: VisionFrame,
@@ -794,12 +880,14 @@ class CvBoardRecognizer : BoardRecognizer {
         cy: Float,
         radius: Float
     ): Boolean {
-        val minOff = radius * 0.32f
-        val maxOff = radius * 0.74f
-        val steps = 5
-        var whiteHits = 0
+        val minOff = radius * 0.28f
+        val maxOff = radius * 0.78f
+        val steps = 7
+        var whiteIvoryHits = 0
+        var outerWhiteHits = 0
         var darkHits = 0
-        var innerDarkHits = 0
+        var medallionDarkHits = 0
+        var vividOrbHits = 0
         var total = 0
         for (iy in 0 until steps) {
             val dy = -(minOff + (maxOff - minOff) * iy / (steps - 1))
@@ -807,17 +895,25 @@ class CvBoardRecognizer : BoardRecognizer {
                 val dx = minOff + (maxOff - minOff) * ix / (steps - 1)
                 val (_, s, v) = rgbToHsv(frame.getArgb((cx + dx).roundToInt(), (cy + dy).roundToInt()))
                 total++
-                if (v >= 0.82f && s <= 0.15f) whiteHits++
+                if (v >= 0.72f && s <= 0.28f) {
+                    whiteIvoryHits++
+                    if (ix >= 4 || iy >= 4) outerWhiteHits++
+                }
                 if (v <= 0.28f) {
                     darkHits++
-                    if (ix in 1..3 && iy in 1..3) innerDarkHits++
+                    if (ix in 1..4 && iy in 1..4) medallionDarkHits++
+                }
+                if (s >= 0.50f && v >= 0.45f) {
+                    vividOrbHits++
                 }
             }
         }
         return total > 0 &&
-            (whiteHits.toFloat() / total) >= 0.24f &&
-            (darkHits.toFloat() / total) >= 0.20f &&
-            innerDarkHits >= 2
+            (whiteIvoryHits.toFloat() / total) >= 0.11f &&
+            outerWhiteHits >= 2 &&
+            (darkHits.toFloat() / total) >= 0.14f &&
+            medallionDarkHits >= 3 &&
+            (vividOrbHits.toFloat() / total) <= 0.26f
     }
 
     /**

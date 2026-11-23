@@ -37,10 +37,10 @@ Whenever performing **any** feature addition, functional optimization, solver/vi
    - `versionName = "$appVersionMajor.$appVersionMinor.$appVersionPatch"` (e.g. `0.3.0`, `0.3.1`, `0.4.0`, `1.0.0`)
    - `versionCode = appVersionMajor * 10000 + appVersionMinor * 100 + appVersionPatch` (e.g. `300`, `301`, `400`, `10000`)
    - Increment `PATCH` on every bugfix release, `MINOR` on new feature milestones, `MAJOR` on breaking/GA milestones.
-2. **Commit after every verified bug fix or feature**:
+2. **Commit & push iterative work on `dev` (NO Release on `dev`)**:
    - Run all C++20 solver tests and Android unit tests before committing.
-   - Verify all relevant documentation files (`README.md`, `docs/*.md`, `ml/README.md`) are updated alongside code changes.
-   - Stage only clean project files (never commit `backups/`, personal paths, or copyrighted game assets) using Conventional Commits (`fix(...):`, `feat(...):`, `docs(...):`, `chore(...):`).
-3. **Push to GitHub and publish a new GitHub Release**:
-   - Push the active branch (`dev`) and annotated tag `v<versionName>` to `origin`.
-   - Build the signed installable APK (`.\android\build-android.ps1 :app:assembleRelease`) and publish a GitHub Release via `gh release create v<versionName> <apk> --title "AutoDora-NEXT v<versionName>" --notes "..."` (use `--prerelease` while `MAJOR == 0`).
+   - Verify all relevant documentation files (`README.md`, `docs/*.md`, `ml/README.md`) and affected clean screenshots (`docs/images/`) are updated alongside code changes.
+   - Stage only clean project files (never commit `backups/`, personal paths, or copyrighted game assets) using Conventional Commits (`fix(...):`, `feat(...):`, `docs(...):`, `chore(...):`), and push commits to `origin/dev`.
+   - **Do NOT create a release tag or publish a GitHub Release while working on `dev`!**
+3. **Publish GitHub Releases ONLY when merging `dev` back into `main` (Mandatory)**:
+   - Only when `dev` is merged back into `main`: finalize the version bump in `android/app/build.gradle.kts`, push `main` and annotated tag `v<versionName>` to `origin`, build the signed installable APK (`.\android\build-android.ps1 :app:assembleRelease`), and publish a GitHub Release via `gh release create v<versionName> <apk> --title "AutoDora-NEXT v<versionName>" --notes "..."` (use `--prerelease` while `MAJOR == 0`).

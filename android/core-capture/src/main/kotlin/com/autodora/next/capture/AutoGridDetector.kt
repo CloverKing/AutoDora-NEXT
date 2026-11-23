@@ -195,8 +195,14 @@ object AutoGridDetector {
             val b = argb and 0xFF
 
             val isGreen = g >= 115 && (g - r) >= 32 && (g - b) >= 32
-            // Accept both classic Coral-Red (R>B+18) AND modern glowing Pink-Magenta (R>=B-12, R-G>=32) ToS HP bars
-            val isCoral = r >= 155 && (r - g) >= 32 && r >= (b - 12)
+            // Accept both classic Coral-Red (H <= 22°) AND modern glowing Pink-Magenta (H >= 295°) ToS HP bars,
+            // strictly rejecting warm golden/beige/orange UI event banners (H in 23°..60°)!
+            val isCoralHue = if (g > b) {
+                (g - b) * 30 <= 11 * (r - b) // H <= 22°
+            } else {
+                r >= b || (r - g) * 12 >= 11 * (b - g) // H >= 295°
+            }
+            val isCoral = r >= 155 && (r - g) >= 32 && r >= (b - 12) && isCoralHue
             val isCyan = b >= 145 && g >= 125 && (b - r) >= 40
             if (isGreen) greenHits++
             else if (isCoral) coralRedHits++
@@ -233,12 +239,108 @@ object AutoGridDetector {
     }
 
     /**
+     * Checks whether horizontal scanline [y] matches an EMPTY / 1-HP ToS player HP bar track
+     * (e.g., 1/584001 self-drain or low-HP teams where the entire bar slot is dark charcoal
+     * across x in [10%..68%] with near-zero vivid orb pixels).
+     */
+    private fun isEmptyHpTrackScanline(
+        frame: PixelFrame,
+        y: Int,
+        scanLeft: Int,
+        scanRight: Int,
+        stepX: Int
+    ): Boolean {
+        var darkHits = 0
+        var vividHits = 0
+        var totalX = 0
+        var x = scanLeft
+        while (x <= scanRight) {
+            totalX++
+            val argb = frame.getArgb(x, y)
+            val r = (argb ushr 16) and 0xFF
+            val g = (argb ushr 8) and 0xFF
+            val b = argb and 0xFF
+            val maxCh = max(r, max(g, b))
+            val minCh = min(r, min(g, b))
+            if (maxCh <= 58 && (maxCh - minCh) <= 26) darkHits++
+            if ((maxCh - minCh) >= 50 && maxCh >= 95) vividHits++
+            x += stepX
+        }
+        return totalX > 0 &&
+            (darkHits.toFloat() / totalX) >= 0.72f &&
+            (vividHits.toFloat() / totalX) <= 0.08f
+    }
+
+    /**
+     * Detects the iconic red/pink Heart medallion anchored at the left end of the ToS Player HP bar
+     * (x in [1.5%..9.5%] of board width, directly above [rowTopPx]), separating a real 1-HP empty
+     * player HP bar from dark non-battle UI / skill modals / Weijian orb rows!
+     */
+    private fun hasLeftHpHeartMedallion(
+        frame: PixelFrame,
+        leftPx: Float,
+        rightPx: Float,
+        rowTopPx: Float,
+        cellH: Float
+    ): Boolean {
+        val boardW = (rightPx - leftPx).coerceAtLeast(60f)
+        val hx0 = (leftPx + boardW * 0.015f).roundToInt().coerceIn(0, frame.width - 1)
+        val hx1 = (leftPx + boardW * 0.095f).roundToInt().coerceIn(hx0, frame.width - 1)
+        val hy0 = (rowTopPx - cellH * 0.32f).roundToInt().coerceIn(0, frame.height - 1)
+        val hy1 = (rowTopPx - cellH * 0.01f).roundToInt().coerceIn(hy0, frame.height - 1)
+        if (hx1 - hx0 < 4 || hy1 - hy0 < 4) return false
+
+        val step = max(1, (hx1 - hx0) / 16)
+        var warmHits = 0
+        var total = 0
+        var y = hy0
+        while (y <= hy1) {
+            var x = hx0
+            while (x <= hx1) {
+                val argb = frame.getArgb(x, y)
+                val r = (argb ushr 16) and 0xFF
+                val g = (argb ushr 8) and 0xFF
+                val b = argb and 0xFF
+                total++
+                // Strictly Red/Coral/Pink heart hue (H <= 22° or H >= 310°), rejecting yellow Light orbs (H~50°)!
+                val isHeartRedHue = if (g > b) {
+                    (g - b) * 30 <= 11 * (r - b)
+                } else {
+                    r >= b || (r - g) * 6 >= 5 * (b - g)
+                }
+                if (r >= 135 && (r - g) >= 42 && (r - b) >= 20 && isHeartRedHue) {
+                    warmHits++
+                }
+                x += step
+            }
+            y += step
+        }
+        return total > 0 && (warmHits.toFloat() / total) >= 0.09f
+    }
+
+    /**
+     * Public helper for overlay background watcher: verifies an authentic horizontal ToS HP bar
+     * strictly ABOVE [geometry.topPx] (never polluted by translucent overlays drawn inside the grid!).
+     */
+    fun hasHpBarBarrier(bitmap: Bitmap, geometry: BoardGeometry): Boolean {
+        val frame = object : PixelFrame {
+            override val width: Int = bitmap.width
+            override val height: Int = bitmap.height
+            override fun getArgb(x: Int, y: Int): Int =
+                bitmap.getPixel(x.coerceIn(0, width - 1), y.coerceIn(0, height - 1))
+        }
+        return hasHpBarBarrier(frame, geometry.leftPx, geometry.rightPx, geometry.topPx, geometry.cellHeight)
+    }
+
+    /**
      * Detects the horizontal Tower of Saviors team HP bar directly above [rowTopPx]
      * (band: [rowTopPx - 0.30*cellH .. rowTopPx - 0.02*cellH]).
-     * Multi-screenshot calibrated across ALL 3 authentic ToS HP-bar styles (including low-HP partial bars!):
-     *  - Classic Coral-Pink / Red HP bar (verified on official 2026 App Store & YouTube gameplay)
-     *  - Bright Green HP bar (full & partial, verified on real Xiaomi 15 & 2026 YouTube Extra 2)
+     * Multi-screenshot calibrated across ALL 4 authentic ToS HP-bar states:
+     *  - Classic Coral-Red & modern Pink-Magenta HP bar (full & partial)
+     *  - Bright Green HP bar (full & partial)
      *  - Cyan / Blue Shielded HP bar
+     *  - Empty / 1-HP dark charcoal HP track paired with the left Heart medallion (prevents false 6x6 Weijian!)
+     * Also enforces a vertical thinness check above the HP band so tall red/green event banners never false-trigger.
      */
     internal fun hasHpBarBarrier(
         frame: PixelFrame,
@@ -251,8 +353,9 @@ object AutoGridDetector {
         val bandBottom = (rowTopPx - cellH * 0.02f).roundToInt().coerceIn(bandTop, frame.height - 1)
         if (bandBottom - bandTop < 3) return false
 
-        val scanLeft = (leftPx + (rightPx - leftPx) * 0.08f).roundToInt().coerceAtLeast(0)
-        val scanRight = (rightPx - (rightPx - leftPx) * 0.08f).roundToInt().coerceAtMost(frame.width - 1)
+        val boardW = (rightPx - leftPx).coerceAtLeast(60f)
+        val scanLeft = (leftPx + boardW * 0.08f).roundToInt().coerceAtLeast(0)
+        val scanRight = (rightPx - boardW * 0.08f).roundToInt().coerceAtMost(frame.width - 1)
         if (scanRight - scanLeft < 30) return false
 
         val stepX = max(2, (scanRight - scanLeft) / 80)
@@ -268,7 +371,58 @@ object AutoGridDetector {
             }
             y += stepY
         }
-        return scannedRows > 0 && hpLikeRows >= max(2, scannedRows / 4)
+        if (scannedRows > 0 && hpLikeRows >= max(2, scannedRows / 4)) {
+            // Vertical thinness guard: a real HP bar sits strictly below the 6 team portraits;
+            // reject full-height solid red/green UI banners that fill the entire portrait band above it!
+            val aboveTop = (rowTopPx - cellH * 0.65f).roundToInt().coerceAtLeast(0)
+            val aboveBot = (rowTopPx - cellH * 0.34f).roundToInt().coerceIn(aboveTop, frame.height - 1)
+            if (aboveBot - aboveTop >= 4) {
+                val aboveStepY = max(1, (aboveBot - aboveTop) / 10)
+                var aboveHits = 0
+                var aboveScanned = 0
+                var ay = aboveTop
+                while (ay <= aboveBot) {
+                    aboveScanned++
+                    if (isHpBarScanline(frame, ay, scanLeft, scanRight, stepX)) {
+                        aboveHits++
+                    }
+                    ay += aboveStepY
+                }
+                if (aboveScanned == 0 || (aboveHits.toFloat() / aboveScanned) < 0.50f) {
+                    return true
+                }
+            } else {
+                return true
+            }
+        }
+
+        // Empty / 1-HP Player HP Bar Track (e.g., 1/584001 teams):
+        // Dark charcoal horizontal slot across x in [10%..68%] paired with left red Heart medallion!
+        val eTop = (rowTopPx - cellH * 0.22f).roundToInt().coerceAtLeast(0)
+        val eBot = (rowTopPx - cellH * 0.02f).roundToInt().coerceIn(eTop, frame.height - 1)
+        val eLeft = (leftPx + boardW * 0.10f).roundToInt().coerceAtLeast(0)
+        val eRight = (leftPx + boardW * 0.68f).roundToInt().coerceAtMost(frame.width - 1)
+        if (eBot - eTop >= 3 && eRight - eLeft >= 24) {
+            val eStepX = max(2, (eRight - eLeft) / 50)
+            val eStepY = max(1, (eBot - eTop) / 12)
+            var emptyRows = 0
+            var eScanned = 0
+            var ey = eTop
+            while (ey <= eBot) {
+                eScanned++
+                if (isEmptyHpTrackScanline(frame, ey, eLeft, eRight, eStepX)) {
+                    emptyRows++
+                }
+                ey += eStepY
+            }
+            if (eScanned > 0 &&
+                emptyRows >= max(4, (eScanned * 0.62f).roundToInt()) &&
+                hasLeftHpHeartMedallion(frame, leftPx, rightPx, rowTopPx, cellH)
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     /**
@@ -482,6 +636,44 @@ object AutoGridDetector {
             val barH = runEnd - curStart + stepY
             if (barH in minBarH..maxBarH) {
                 candidates.add(curStart to runEnd)
+            }
+        }
+
+        // Also scan for Empty / 1-HP dark charcoal HP bar tracks paired with the left red Heart medallion
+        // so tapping '自动' on a 1/584001 team snaps onto the real 6x5 Player HP bar instead of jumping up to a Boss HP bar!
+        // Note: an empty dark HP track merges directly with Row 0's dark top checkerboard seam, so allow up to 0.50*cellSize.
+        val maxEmptyBarH = (cellSize * 0.50f).roundToInt().coerceAtLeast(maxBarH)
+        val eLeft = (w * 0.10f).roundToInt()
+        val eRight = (w * 0.68f).roundToInt()
+        val eStepX = max(2, (eRight - eLeft) / 50)
+        var curEmptyStart = -1
+        var ey = yStart
+        while (ey <= yEnd) {
+            if (isEmptyHpTrackScanline(frame, ey, eLeft, eRight, eStepX)) {
+                if (curEmptyStart < 0) curEmptyStart = ey
+            } else {
+                if (curEmptyStart >= 0) {
+                    val runEnd = ey - stepY
+                    val barH = runEnd - curEmptyStart + stepY
+                    val estBoardTop = (curEmptyStart + cellSize * 0.24f).coerceAtMost(runEnd + cellSize * 0.06f)
+                    if (barH in minBarH..maxEmptyBarH &&
+                        hasLeftHpHeartMedallion(frame, 0f, w.toFloat(), estBoardTop, cellSize)
+                    ) {
+                        candidates.add(curEmptyStart to (estBoardTop - cellSize * 0.06f).roundToInt())
+                    }
+                    curEmptyStart = -1
+                }
+            }
+            ey += stepY
+        }
+        if (curEmptyStart >= 0) {
+            val runEnd = yEnd
+            val barH = runEnd - curEmptyStart + stepY
+            val estBoardTop = (curEmptyStart + cellSize * 0.24f).coerceAtMost(runEnd + cellSize * 0.06f)
+            if (barH in minBarH..maxEmptyBarH &&
+                hasLeftHpHeartMedallion(frame, 0f, w.toFloat(), estBoardTop, cellSize)
+            ) {
+                candidates.add(curEmptyStart to (estBoardTop - cellSize * 0.06f).roundToInt())
             }
         }
 

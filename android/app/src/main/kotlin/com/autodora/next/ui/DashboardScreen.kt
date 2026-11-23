@@ -595,10 +595,11 @@ private fun SettingsTab(
 
     val msUnit = stringResource(R.string.unit_ms)
     val activeSpeed = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
+    val invertActive = settings.invertDragX || settings.invertDragY
     val enabledModesCount = listOf(
         settings.testModeOnlyDraw,
         settings.holdReplanEnabled,
-        settings.holdReplanNudge,
+        invertActive,
         settings.allowDiagonalMove,
         settings.calibration.autoDetectWeijian,
         settings.showOrbBadgesOnPath,
@@ -810,9 +811,14 @@ private fun SettingsTab(
             SliderSettingRow(
                 label = stringResource(R.string.slider_hold_delay),
                 valueText = "${settings.holdReplanDelayMs} $msUnit",
-                value = settings.holdReplanDelayMs.toFloat().coerceIn(160f, 800f),
-                valueRange = 160f..800f,
-                onValueChange = { v -> onUpdateSettings { it.copy(holdReplanDelayMs = (v / 20f).roundToLong() * 20L) } }
+                value = settings.holdReplanDelayMs.toFloat().coerceIn(240f, 900f),
+                valueRange = 240f..900f,
+                onValueChange = { v -> onUpdateSettings { it.copy(holdReplanDelayMs = ((v / 20f).roundToLong() * 20L).coerceIn(240L, 900L)) } }
+            )
+            Text(
+                text = stringResource(R.string.slider_hold_delay_sub),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             // Pre-Swipe Countdown Native Exposed Dropdown (pre-resolved with localized context so Popup never falls back to system locale!)
@@ -890,13 +896,99 @@ private fun SettingsTab(
                     checked = settings.holdReplanEnabled,
                     onCheckedChange = { v -> onUpdateSettings { it.copy(holdReplanEnabled = v) } }
                 )
+                // Nested sub-option under Hold-and-Replan: trigger style (Hold in Place vs Nudge 1 Cell)
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (settings.holdReplanEnabled) {
+                            DrawerAccentColors.Teal.copy(alpha = 0.45f)
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 10.dp, bottom = 6.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.mode_hold_trigger_label),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (settings.holdReplanEnabled) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CompactChoicePill(
+                                label = stringResource(R.string.mode_hold_trigger_inplace),
+                                selected = !settings.holdReplanNudge,
+                                onClick = { onUpdateSettings { it.copy(holdReplanNudge = false) } },
+                                modifier = Modifier.weight(1f)
+                            )
+                            CompactChoicePill(
+                                label = stringResource(R.string.mode_hold_trigger_nudge),
+                                selected = settings.holdReplanNudge,
+                                onClick = { onUpdateSettings { it.copy(holdReplanNudge = true) } },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.mode_hold_trigger_sub),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                SwitchSettingRow(
-                    title = stringResource(R.string.mode_nudge_title),
-                    subtitle = stringResource(R.string.mode_nudge_sub),
-                    checked = settings.holdReplanNudge,
-                    onCheckedChange = { v -> onUpdateSettings { it.copy(holdReplanNudge = v) } }
-                )
+                // 4-State Invert Drag Direction Selector (matches Floating Quick & Settings 1:1)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.mode_invert_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.mode_invert_sub),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val invertOptions = listOf(
+                            Triple(R.string.invert_off, false, false),
+                            Triple(R.string.invert_x, true, false),
+                            Triple(R.string.invert_y, false, true),
+                            Triple(R.string.invert_xy, true, true)
+                        )
+                        for ((lblRes, ix, iy) in invertOptions) {
+                            CompactChoicePill(
+                                label = stringResource(lblRes),
+                                selected = settings.invertDragX == ix && settings.invertDragY == iy,
+                                onClick = { onUpdateSettings { it.copy(invertDragX = ix, invertDragY = iy) } },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 SwitchSettingRow(
                     title = stringResource(R.string.mode_diag_title),

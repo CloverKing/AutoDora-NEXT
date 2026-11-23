@@ -1248,5 +1248,48 @@ class CvBoardRecognizerTest {
             assertEquals(2, rec.thornOrbsDetected)
             assertEquals(0, rec.raceBadgesDetected)
         }
+
+        // 5) Optional real-game Video 2 verification: Heavy Demon-Race + Enchanted + Traffic Light on 1/584001 team!
+        loadImg("../../backups/user_training_media/20261123_banner_emptyhp_race/v2_00s.png")?.let { (vf, g) ->
+            val rec = recognizer.recognizeFrames(listOf(vf), g)
+            val expected00 = parseGrid(
+                "L D G F H D",
+                "D D W D D L",
+                "D W D D G L",
+                "F W D F L F",
+                "D D F H F F"
+            )
+            for (i in 0 until 30) {
+                assertEquals("Video 2 v2_00s (${i / 6},${i % 6}) element mismatch", expected00[i], rec.board.cells[i].element)
+            }
+            assertTrue("Video 2 v2_00s Demon-Race badges must detect >= 25/30 (actual=${rec.raceBadgesDetected})", rec.raceBadgesDetected >= 25)
+            assertEquals("Video 2 v2_00s must detect exactly 1 GO start", 1, rec.trafficLightStartCount)
+            assertEquals("Video 2 v2_00s must detect exactly 1 Red Vortex end", 1, rec.trafficLightEndCount)
+            assertTrue("Video 2 v2_00s start at (3,5)", (rec.board.tileFlags[3 * 6 + 5] and TileFlagBits.START_ALLOWED) != 0)
+            assertTrue("Video 2 v2_00s end at (1,1)", (rec.board.tileFlags[1 * 6 + 1] and TileFlagBits.END_REQUIRED) != 0)
+            assertEquals(0, rec.questionOrbsDetected)
+        }
+
+        loadImg("../../backups/user_training_media/20261123_banner_emptyhp_race/v2_86s.png")?.let { (vf, _) ->
+            // Exact board geometry snapped from Player 1-HP bar (top=683, bot=1163 on 576x1280)
+            val exactG = BoardGeometry(0f, 683f, 576f, 1163f, 6, 5)
+            val rec = recognizer.recognizeFrames(listOf(vf), exactG)
+            val expected86 = parseGrid(
+                "L D W L D W",
+                "L D W L D W",
+                "L D W L D W",
+                "L D W L D W",
+                "L D W L D W"
+            )
+            for (i in 0 until 30) {
+                assertEquals("Video 2 v2_86s (${i / 6},${i % 6}) element mismatch", expected86[i], rec.board.cells[i].element)
+            }
+            assertTrue("Video 2 v2_86s Demon-Race badges must detect >= 25/30 (actual=${rec.raceBadgesDetected})", rec.raceBadgesDetected >= 25)
+            assertEquals("Video 2 v2_86s must detect exactly 1 GO start", 1, rec.trafficLightStartCount)
+            assertEquals("Video 2 v2_86s must detect exactly 1 Red Vortex end", 1, rec.trafficLightEndCount)
+            assertTrue("Video 2 v2_86s start at (2,4)", (rec.board.tileFlags[2 * 6 + 4] and TileFlagBits.START_ALLOWED) != 0)
+            assertTrue("Video 2 v2_86s end at (0,4)", (rec.board.tileFlags[0 * 6 + 4] and TileFlagBits.END_REQUIRED) != 0)
+            assertEquals(0, rec.questionOrbsDetected)
+        }
     }
 }

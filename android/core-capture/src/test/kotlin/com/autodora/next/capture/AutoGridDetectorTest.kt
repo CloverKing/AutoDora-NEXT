@@ -340,4 +340,97 @@ class AutoGridDetectorTest {
             )
         }
     }
+
+    @Test
+    fun `empty 1-HP dark track with left heart locks 6x5 and rejects tall beige event banners`() {
+        val frame = SyntheticFrame(width = 600, height = 1335)
+        val calib = BoardCalibration()
+        val base = calib.toBase6x5Geometry(frame.width, frame.height)
+        val cell = base.cellWidth.toInt()
+
+        // Draw 5 real orb rows + colorful team portraits directly above + Boss Red HP bar way above portraits!
+        frame.drawOrbGrid(0, base.topPx.toInt(), cell, 6, 5)
+        frame.drawOrbGrid(0, (base.topPx - cell * 1.25f).toInt(), cell, 6, 1)
+        // Boss red HP bar 1.55 cells above board top (simulating Video 2 boss floor!)
+        val bossTop = (base.topPx - cell * 1.62f).toInt()
+        val bossBot = (base.topPx - cell * 1.48f).toInt()
+        for (y in bossTop..bossBot) {
+            for (x in 50 until 550) {
+                frame.pixels[y * frame.width + x] = 0xFFE53028.toInt()
+            }
+        }
+        // Empty 1/584001 dark charcoal Player HP track + metallic top border + left red Heart medallion directly above row 0
+        val hpTop = (base.topPx - cell * 0.21f).toInt()
+        val hpBot = (base.topPx - cell * 0.04f).toInt()
+        for (x in 10 until frame.width - 10) {
+            frame.pixels[(hpTop - 2) * frame.width + x] = 0xFFC8B88A.toInt() // Gold portrait frame border above HP bar
+        }
+        for (y in hpTop..hpBot) {
+            for (x in (frame.width * 0.10f).toInt() until (frame.width * 0.72f).toInt()) {
+                frame.pixels[y * frame.width + x] = 0xFF1A1A1E.toInt()
+            }
+            for (x in (frame.width * 0.02f).toInt() until (frame.width * 0.085f).toInt()) {
+                frame.pixels[y * frame.width + x] = 0xFFD93832.toInt()
+            }
+        }
+
+        val detected = AutoGridDetector.detect(frame, calib)
+        assertEquals(6, detected.cols)
+        assertEquals("Empty 1-HP bar must lock 6x5 (no false 6x6 Weijian over portraits)", 5, detected.rows)
+        assertFalse(detected.isWeijianExpanded)
+
+        val snapped = AutoGridDetector.autoCalibrateFromRealScreen(frame)
+        assertNotNull("autoCalibrateFromRealScreen must locate 1-HP Player HP track", snapped)
+        assertEquals(base.topPx, snapped!!.topPx, 6.0f)
+
+        // Tall golden-beige Event Banner covering HP band & portrait band must fail hasHpBarBarrier!
+        val banner = SyntheticFrame(width = 600, height = 1335)
+        for (y in (base.topPx - cell * 0.70f).toInt() until base.topPx.toInt()) {
+            for (x in 20 until 580) {
+                banner.pixels[y * banner.width + x] = 0xFFD8A660.toInt() // Warm beige/gold H≈35°
+            }
+        }
+        assertFalse(
+            "Warm golden/beige event banner must NOT pass hasHpBarBarrier",
+            AutoGridDetector.hasHpBarBarrier(banner, base.leftPx, base.rightPx, base.topPx, base.cellHeight)
+        )
+
+        // Optional local real-frame verification on Video 1 Event Banner & Video 2 1/584001 Empty HP frames
+        val localDir = java.io.File("../../backups/user_training_media/20261123_banner_emptyhp_race")
+        if (localDir.exists()) {
+            fun loadLocal(name: String): PixelFrame? {
+                val f = java.io.File(localDir, name)
+                if (!f.exists()) return null
+                val imageIo = Class.forName("javax.imageio.ImageIO")
+                val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, f)
+                val cls = img.javaClass
+                val iw = cls.getMethod("getWidth").invoke(img) as Int
+                val ih = cls.getMethod("getHeight").invoke(img) as Int
+                val getRgb = cls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                return object : PixelFrame {
+                    override val width = iw
+                    override val height = ih
+                    override fun getArgb(x: Int, y: Int): Int =
+                        getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+                }
+            }
+            loadLocal("v1_banner.png")?.let { bf ->
+                val g = BoardCalibration().toBase6x5Geometry(bf.width, bf.height)
+                assertFalse(
+                    "Real Video 1 Event Banner List must FAIL hasHpBarBarrier",
+                    AutoGridDetector.hasHpBarBarrier(bf, g.leftPx, g.rightPx, g.topPx, g.cellHeight)
+                )
+            }
+            for (v2Name in listOf("v2_00s.png", "v2_86s.png")) {
+                loadLocal(v2Name)?.let { vf ->
+                    val g = AutoGridDetector.detect(vf, BoardCalibration())
+                    assertEquals("Real Video 2 $v2Name (1/584001 HP) must lock 6x5", 5, g.rows)
+                    assertFalse("Real Video 2 $v2Name must NOT trigger false 6x6 Weijian", g.isWeijianExpanded)
+                    val autoG = AutoGridDetector.autoCalibrateFromRealScreen(vf)
+                    assertNotNull("Real Video 2 $v2Name auto-calibrate must find 1-HP Player bar", autoG)
+                    assertEquals("Real Video 2 $v2Name auto-calibrate must snap to real board top (~683px, NOT Boss HP!)", 683f, autoG!!.topPx, 10f)
+                }
+            }
+        }
+    }
 }

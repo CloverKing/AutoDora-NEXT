@@ -294,28 +294,17 @@ class OverlayTuningDrawerController(
             quickBody.addView(actRow)
         }
 
-        // Card 1 (Teal): Battle Assist Modes
-        val invOn = settings.invertDragX || settings.invertDragY
+        // Card 1 (Teal): Battle Assist Modes (1:1 parity with Launch App Settings!)
+        val invLabel = invertSummaryLabel()
         val q1Summary = buildList {
-            if (settings.holdReplanEnabled) add(s(R.string.ov_hold))
-            if (settings.holdReplanNudge) add(s(R.string.mode_nudge_title).take(6))
-            if (invOn) add(s(R.string.ov_invert))
+            if (settings.holdReplanEnabled) {
+                val trig = s(if (settings.holdReplanNudge) R.string.mode_hold_trigger_nudge else R.string.mode_hold_trigger_inplace)
+                add("${s(R.string.ov_hold)}($trig)")
+            }
+            if (invLabel != null) add(invLabel)
         }.joinToString(" · ").ifEmpty { s(R.string.ov_card_none_set) }
-        addAccordionGroupCard(1, s(R.string.section_modes), q1Summary, settings.holdReplanEnabled || settings.holdReplanNudge || invOn, ACCENT_TEAL, p)?.let { modeBody ->
-            val modeRow = hRow(bottomMarginDp = 0)
-            modeRow.addView(makeToggle(s(R.string.ov_hold), settings.holdReplanEnabled, p, weight = 1f) {
-                onUpdateSettings { it.copy(holdReplanEnabled = !it.holdReplanEnabled) }
-            })
-            modeRow.addView(makeToggle(s(R.string.mode_nudge_title), settings.holdReplanNudge, p, weight = 1.25f) {
-                onUpdateSettings { it.copy(holdReplanNudge = !it.holdReplanNudge) }
-            })
-            modeRow.addView(makeToggle(s(R.string.ov_invert), invOn, p, weight = 0.85f, marginEndDp = 0) {
-                onUpdateSettings {
-                    val next = !(it.invertDragX || it.invertDragY)
-                    it.copy(invertDragX = next, invertDragY = next)
-                }
-            })
-            modeBody.addView(modeRow)
+        addAccordionGroupCard(1, s(R.string.section_modes), q1Summary, settings.holdReplanEnabled || invLabel != null, ACCENT_TEAL, p)?.let { modeBody ->
+            populateHoldAndInvertControls(modeBody, p)
         }
 
         // Card 2 (Amber): Unified 6-Tier Swipe Speed Presets (2s..7s)
@@ -1391,13 +1380,16 @@ class OverlayTuningDrawerController(
             populateSpeedPresetSection(spdBody, p)
         }
 
-        // Card 2 (Teal): Interaction & Core Switches (matches Launch App Settings Teal card!)
+        // Card 2 (Teal): Interaction & Core Switches (matches Launch App Settings Teal card 1:1!)
+        val sInvLabel = invertSummaryLabel()
         val s1Summary = buildList {
             if (settings.testModeOnlyDraw) add(s(R.string.ov_preview_confirm))
+            if (settings.holdReplanEnabled) add(s(R.string.ov_hold))
+            if (sInvLabel != null) add(sInvLabel)
             if (settings.allowDiagonalMove) add(s(R.string.ov_diag_move))
             if (settings.humanMode) add(s(R.string.mode_human_title).take(4))
         }.joinToString(" · ").ifEmpty { s(R.string.ov_card_none_set) }
-        addAccordionGroupCard(2, s(R.string.section_modes), s1Summary, settings.testModeOnlyDraw || settings.allowDiagonalMove, ACCENT_TEAL, p)?.let { swBody ->
+        addAccordionGroupCard(2, s(R.string.section_modes), s1Summary, settings.testModeOnlyDraw || settings.holdReplanEnabled || sInvLabel != null || settings.allowDiagonalMove, ACCENT_TEAL, p)?.let { swBody ->
             val swRow1 = hRow(bottomMarginDp = 4)
             swRow1.addView(makeToggle(s(R.string.ov_preview_confirm), settings.testModeOnlyDraw, p, weight = 1f) {
                 onUpdateSettings { it.copy(testModeOnlyDraw = !it.testModeOnlyDraw) }
@@ -1410,7 +1402,7 @@ class OverlayTuningDrawerController(
             })
             swBody.addView(swRow1)
 
-            val swRow2 = hRow(bottomMarginDp = 0)
+            val swRow2 = hRow(bottomMarginDp = 4)
             swRow2.addView(makeToggle(s(R.string.mode_human_title), settings.humanMode, p, weight = 1f) {
                 onUpdateSettings { it.copy(humanMode = !it.humanMode) }
             })
@@ -1418,6 +1410,9 @@ class OverlayTuningDrawerController(
                 onUpdateSettings { it.copy(showEmergencyStop = !it.showEmergencyStop) }
             })
             swBody.addView(swRow2)
+
+            swBody.addView(makeSubDivider(p))
+            populateHoldAndInvertControls(swBody, p)
         }
 
         // Card 3 (Purple): Appearance, Theme & Language (matches Launch App Settings Purple card!)
@@ -1439,6 +1434,54 @@ class OverlayTuningDrawerController(
             }
             appBody.addView(langRow)
         }
+    }
+
+    /**
+     * Unified Hold-and-Replan (Master Toggle + Nested Trigger Mode) and 4-State Invert Control Selector
+     * shared 1:1 between Tab 0 (Quick), Tab 2 (Settings), and Launch App Settings.
+     */
+    private fun invertSummaryLabel(): String? = when {
+        settings.invertDragX && settings.invertDragY -> s(R.string.invert_xy)
+        settings.invertDragX -> s(R.string.invert_x)
+        settings.invertDragY -> s(R.string.invert_y)
+        else -> null
+    }
+
+    private fun populateHoldAndInvertControls(body: LinearLayout, p: OverlayPalette) {
+        val holdRow = hRow(bottomMarginDp = 5)
+        holdRow.addView(makeToggle(s(R.string.ov_hold), settings.holdReplanEnabled, p, weight = 1.05f) {
+            onUpdateSettings { it.copy(holdReplanEnabled = !it.holdReplanEnabled) }
+        })
+        holdRow.addView(makeToggle(s(R.string.mode_hold_trigger_inplace), !settings.holdReplanNudge, p, weight = 0.95f) {
+            onUpdateSettings { it.copy(holdReplanNudge = false) }
+        }.also { if (!settings.holdReplanEnabled) it.alpha = 0.62f })
+        holdRow.addView(makeToggle(s(R.string.mode_hold_trigger_nudge), settings.holdReplanNudge, p, weight = 1.0f, marginEndDp = 0) {
+            onUpdateSettings { it.copy(holdReplanNudge = true) }
+        }.also { if (!settings.holdReplanEnabled) it.alpha = 0.62f })
+        body.addView(holdRow)
+
+        body.addView(makeSubLabel(s(R.string.mode_invert_title), p))
+        val invRow = hRow(bottomMarginDp = 0)
+        val invertOpts = listOf(
+            Triple(R.string.invert_off, false, false),
+            Triple(R.string.invert_x_short, true, false),
+            Triple(R.string.invert_y_short, false, true),
+            Triple(R.string.invert_xy_short, true, true)
+        )
+        invertOpts.forEachIndexed { idx, (lblRes, ix, iy) ->
+            invRow.addView(
+                makeToggle(
+                    s(lblRes),
+                    settings.invertDragX == ix && settings.invertDragY == iy,
+                    p,
+                    weight = 1f,
+                    marginEndDp = if (idx == invertOpts.lastIndex) 0 else 4
+                ) {
+                    onUpdateSettings { it.copy(invertDragX = ix, invertDragY = iy) }
+                }
+            )
+        }
+        body.addView(invRow)
     }
 
     /**
