@@ -139,8 +139,8 @@ flowchart LR
 
 - **Room 策略持久化（`TeamPresetDatabase` + `TeamPresetRepository`）**：
   - 预置策略精简保留 1 套 **「默认策略」**（`builtin_general`），支持无限新建、保存、另存、复制与删除自定义策略。
-- **应用内流式下载与自动安装（`UpdateChecker` + `MainActivity` + `FileProvider`）**：
-  - 通过 GitHub Releases API 拉取最新正式版/预览版信息并进行 SemVer 语义化版本比对；
+- **应用内双通道检更、流式下载与自动安装（`UpdateChecker` + `MainActivity` + `FileProvider`）**：
+  - 优先通过 GitHub Releases API 拉取最新正式版/预览版信息并进行 SemVer 语义化版本比对；遇到共享 IP/代理节点触发匿名 API `HTTP 403`/`429` 限流或请求失败时，自动无缝回退至免限流的 `github.com/.../releases.atom` 订阅源与 `releases/expanded_assets/<tag>` 片段解析最新版本号、更新说明及精准 `.apk` 资产链接（并附规范直链兜底）；
   - 点击 **「下载并安装」** 在 App 内执行协程流式下载：手动跟随最多 6 跳跨域名 302 重定向（覆盖 `objects.githubusercontent.com`）、100ms 节流进度回调（已下载 MB / 总大小 / 百分比）、支持随时取消并清理 `.part` 临时文件、下载前自动清理旧版本缓存、完成后校验 `PK\x03\x04` APK/ZIP 魔数头；
   - 安装包落盘至应用私有 `cacheDir/updates/`，经 `FileProvider` `<cache-path>` 授予临时读权限（Android 10–16 零存储权限需求）自动拉起 `ACTION_VIEW` 系统更新安装弹窗；若尚未开启「安装未知应用」，自动跳转系统授权开关并通过 `ActivityResultLauncher` 在返回后自动续接拉起安装器。
 
@@ -204,7 +204,7 @@ flowchart TD
     PathSmooth -.-> ShizukuExec
 ```
 
-### 仓库模块与测试矩阵（当前 `106` 项自动化测试全通过）
+### 仓库模块与测试矩阵（当前 `109` 项自动化测试全通过）
 
 | 模块 | 职责说明 | 自动化测试覆盖 |
 | :--- | :--- | :--- |
@@ -215,7 +215,7 @@ flowchart TD
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`、`SwipeSpeedPreset` | `PathInterpolatorTest`：**8 / 8** 通过 |
 | `android/core-data/` | DataStore 设置、Room 策略库、39 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务、单抽屉调参/编排、`UpdateChecker` | `UpdateCheckerTest` (4) + `BoardEditorBrushTest` (3)：**7 / 7** 通过；四语言词条一致性 **539 / 539** |
+| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务、单抽屉调参/编排、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (3)：**10 / 10** 通过；四语言词条一致性 **539 / 539** |
 
 ---
 

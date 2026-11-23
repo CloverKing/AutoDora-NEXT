@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/badge/version-v0.4.5-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.5)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
-[![Tests](https://img.shields.io/badge/Tests-51%20C%2B%2B%20%2B%2055%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
+[![Tests](https://img.shields.io/badge/Tests-51%20C%2B%2B%20%2B%2058%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
 [![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#多语言主题与应用内更新)
 
 ---
@@ -86,7 +86,7 @@
 
 - **四套资源三语实时热切**：内置 **简体中文 / 繁體中文 / English / 跟随系统**（`539` 项词条 100% 四语言对齐），无需重启应用实时刷新主界面与悬浮窗。
 - **Material You 双主题联动**：支持 **跟随系统 / 明亮 / 黑暗** 三态，主控台与游戏内悬浮栏/调参面板/编排面板同步换肤。
-- **应用内下载与自动安装**：在「设置 → 关于与版本」内置 GitHub 仓库入口与检查更新；发现新版本后点击 **「下载并安装」** 直接在 App 内流式下载 GitHub Release 安装包（自动跟随 CDN 重定向、实时 MB/百分比进度条、随时取消、旧缓存自动清理、`PK\x03\x04` 完整校验），下载完成自动通过 `FileProvider` 拉起 Android 系统安装器完成升级（若尚未允许「安装未知应用」，自动引导授权并在返回后无缝续接安装）。
+- **应用内双通道检更与自动安装**：在「设置 → 关于与版本」内置 GitHub 仓库入口与检查更新，采用 **`api.github.com` → `github.com/releases.atom` + `expanded_assets` 免限流自动降级双通道**（彻底规避共享 IP/代理环境下的匿名 API `HTTP 403` 限流）；发现新版本后点击 **「下载并安装」** 直接在 App 内流式下载 GitHub Release 安装包（自动跟随 CDN 重定向、实时 MB/百分比进度条、随时取消、旧缓存自动清理、`PK\x03\x04` 完整校验），下载完成自动通过 `FileProvider` 拉起 Android 系统安装器完成升级（若尚未允许「安装未知应用」，自动引导授权并在返回后无缝续接安装）。
 
 ---
 
@@ -155,7 +155,7 @@ AutoDora-NEXT/
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 3. Android 全模块 JVM 单测（55/55）与 APK 构建
+### 3. Android 全模块 JVM 单测（58/58）与 APK 构建
 
 ```powershell
 # 运行全部模块单元测试并构建 Debug APK
