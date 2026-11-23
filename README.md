@@ -2,7 +2,7 @@
 
 > **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
 
-[![Version](https://img.shields.io/badge/version-v0.4.5-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.5)
+[![Version](https://img.shields.io/badge/version-v0.4.6-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.6)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
 [![Tests](https://img.shields.io/badge/Tests-51%20C%2B%2B%20%2B%2061%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
@@ -12,7 +12,7 @@
 
 ## 应用界面一览
 
-> 以下全部截图均直接采集自 Android 16 模拟器运行 `AutoDora-NEXT v0.4.5` 签名正式包（仅展示应用自身界面与演示编排版面，不含第三方游戏版权素材）。
+> 以下全部截图均直接采集自 Android 16 模拟器运行 `AutoDora-NEXT v0.4.6` 签名正式包（仅展示应用自身界面与演示编排版面，不含第三方游戏版权素材）。
 
 ### 主控台（3-Tab Material You 启动页 · 彩色分组抽屉）
 
@@ -131,11 +131,11 @@ AutoDora-NEXT/
 
 - [x] **Phase 1（`v0.1.0`）**：纯 C++20 `3×3~8×8` 64-bit 动态解盘引擎（支持最高 300 步）+ Android 多模块骨架 + JNI 跨平台编译。
 - [x] **Phase 2 & 2.5（`v0.2.x` – `v0.3.x`）**：免 Root 零拷贝 `MediaProjection` + 血条锚定 `6×5`/`6×8` 实图精准标定 + 先露后藏问号记忆 + 免 Root 按住重算续滑 + 经典/现代拼图框、起结有序漩涡、暴风、化血、结界与 VICTORY 过滤 + 逐盾 `✓/✗` 实时判定 + 方向逆转镜像与首步防拐保护。
-- [x] **Phase 3 & 3.5（`v0.4.0` – `v0.4.5` · 当前版本）**：
+- [x] **Phase 3 & 3.5（`v0.4.0` – `v0.4.6` · 当前版本）**：
   - **《神魔百科》98 敌技 + 20 符石状态 + 百科外经典符石（锁定/荆棘）+ 7 大官方种族全量审计与引擎/CV/编排闭环升级**。
   - **Material 3 / Material You 3-Tab 启动页 + 同色系悬浮 3-Tab 单抽屉调参面板 + 4 态磁吸记忆悬浮栏**（横排靠左/横排靠右向左展开/竖排靠左/竖排靠右，松手左右平滑吸边并持久记忆停靠侧与纵坐标）。
   - **5 色单开互斥抽屉 1:1 盘面编排**（仅允许单一抽屉展开防遮挡 + 激活画笔标题徽标、单点互斥绿/红漩涡、多格角色通行/停放、18 项齐整符石状态画笔含荆棘/锁定、独立清除格标、「保存版面 → 主栏计算/执行」工作流）。
-  - **长时采集 Surface 自动自愈** + **空血 `1 HP` 暗槽血条锚定防假违建** + **非战斗悬浮自激拦截** + **全 7 种族圆章 / 起结有序 V4 / 石化 / 全版 30 颗锁定·化血 / 荆棘符石自动 CV 识别** + **双端统一四态颠倒方向操控 & 嵌套按住触发子项 & 可配按住显形后解盘时间（`0.15–3.5s`）** + **6 档统一速度（`2s~7s`）**、**精简 Room 策略库**、**三语热切（539 词条）** 与 **GitHub Releases 应用内流式下载 + FileProvider 自动拉起安装**。
+  - **HyperOS / Android 14–16 屏幕采集防断流与热重授权** + **空血 `1 HP` 暗槽血条锚定防假违建** + **非战斗悬浮自激拦截** + **全 7 种族圆章 / 起结有序 V4 / 石化 / 全版 30 颗锁定·化血 / 荆棘符石自动 CV 识别** + **双端 1:1 统一四态颠倒方向操控 & 嵌套按住触发子卡片 & 可配按住显形后解盘时间（`0.15–3.5s`）** + **6 档统一速度（`2s~7s`）**、**精简 Room 策略库**、**三语热切（540 词条）** 与 **免 403 限流双通道检更 + 应用内流式下载与 `FileProvider` 自动安装**。
 - [ ] **Phase 4（规划中）**：端侧多头轻量 CNN（LiteRT `.tflite` 热加载，攻克黑白符石/复杂联名皮肤/叠加态自动识盘）、纠错样本本地采集飞轮、端侧敌技说明自动解析与可选 Shizuku 触控引擎。
 
 ---
@@ -144,7 +144,7 @@ AutoDora-NEXT/
 
 ### 1. 直接安装预编译 APK
 
-前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.4.5-release.apk`），安装后：
+前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.4.6-release.apk`），安装后：
 1. 在「概览 → 运行权限检查」依次授予 **悬浮窗**、**无障碍自动转珠** 与 **屏幕采集（选择「整个屏幕」）** 三项权限；
 2. 若在 Android 13+ / HyperOS / One UI / ColorOS 遇到无障碍开关受限，按概览页「无障碍受限设置指引」点击「应用详情 → 右上角 `⋮` → 允许受限设置」后即可开启；
 3. 后续版本可直接在 App 内「设置 → 关于与版本 → 检查更新 → 下载并安装」一键原地升级。
