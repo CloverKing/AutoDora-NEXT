@@ -1,51 +1,162 @@
 # AutoDora-NEXT
 
-面向《神魔之塔》（Tower of Saviors）13 年全机制演进与 2026 现代版本、现代 Android 设备（Android 10 ~ Android 17）的**免 Root、全规格棋盘自适应、全自动识盘识盾、问号/按珠变盘双模破局、可组合解盾、端侧 AI 驱动**的新一代智能转珠辅助工程。
+> **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
+
+[![Version](https://img.shields.io/badge/version-v0.4.2-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.2)
+[![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
+[![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
+[![Tests](https://img.shields.io/badge/Tests-49%20C%2B%2B%20%2B%2053%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
+[![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#多语言主题与应用内更新)
+
+---
+
+## 应用界面一览
+
+> 以下全部截图均直接采集自 Android 16 模拟器运行 `AutoDora-NEXT v0.4.2` 签名正式包（仅展示应用自身界面与演示编排版面，不含第三方游戏版权素材）。
+
+### 主控台（3-Tab Material You 启动页 · 彩色分组抽屉）
+
+| 概览（策略摘要 · 权限检查 · 操作指引） | 统一策略工作台（策略库 · 6 色分组抽屉） | 设置（双主题三语 · 6 档速度 · 引擎参数） | 引擎实测 & 应用内下载自动安装 |
+| :---: | :---: | :---: | :---: |
+| <img src="./docs/images/01-overview.png" width="215" alt="概览页" /> | <img src="./docs/images/02-strategy.png" width="215" alt="统一策略工作台" /> | <img src="./docs/images/03-settings.png" width="215" alt="设置与6档速度" /> | <img src="./docs/images/04-about-update.png" width="215" alt="本地测速与应用内更新" /> |
+
+### 游戏内悬浮交互（紧凑矢量胶囊 · 单抽屉调参 · 1:1 盘面编排 · 实时路径预览）
+
+| 游戏内 3-Tab 悬浮调参面板（单抽屉手风琴） | 1:1 盘面编排（5 色分组画笔 + 实时网格） | 路径预览与消珠结果卡片（逐盾 `✓` 判定 + Top-5） |
+| :---: | :---: | :---: |
+| <img src="./docs/images/05-floating-drawer.png" width="265" alt="游戏内3-Tab悬浮调参面板" /> | <img src="./docs/images/06-board-editor.png" width="265" alt="1:1盘面编排面板" /> | <img src="./docs/images/07-path-preview.png" width="265" alt="实时路径预览与结果卡片" /> |
+
+---
+
+## 核心功能详解
+
+### 1. C++20 64-bit 高性能动态解盘内核（`solver-core`）
+
+- **任意规格动态棋盘**：彻底打破 `6×5` 硬编码限制，原生支持 **`3×3` ~ `8×8`**（含标准 `6×5` 与主角/黑金 **`6×8` 违建扩版**），以 `uint64_t` 位掩码在单条 CPU 指令内完成障碍与地形碰撞判定。
+- **超长步数与毫秒级算力**：步数上限支持 **`8 ~ 300` 步**，多线程 Beam Search（算力档位 `32 ~ 800`）单次返回 **Top-5 多样化候选方案**；模拟器实测 `6×5` 盘面约 `90–110ms` 出解、`6×8` 违建盘约 `170ms` 达成 `12+` 连击。
+- **全量对照《神魔百科》98 项敌技 & 20 项符石状态 & 7 大种族**：
+  - **连击类**：高连击、最低总/首连击、首消属性组数（严格排除心珠）、固定总/首连击、奇/偶连击、次批叠珠连击、同属连击、任意 `2~6` 属连击相等、首消相同/不同种类盾（完整支持心符石通用）、禁天降（只能消除首批/寒之气）、0C 空转。
+  - **属性、珠数与种族类**：二/三/四/五属/六色（支持天降叠珠或严格首消）、强化突破、**7 大官方种族符石盾（神/魔/人/兽/龙/妖/机械）**、首消数字盾、首消全版、首消全某属、符石禁咒（模拟层彻底不可消）、反首消叠珠、绝对禁消、回复颠倒、单属性 6 色独立三元组（消法形状 / 保留·一般·优先 / 首消·叠珠·禁消）。
+  - **拼图、形状与直排升华**：单/双拼图（严格不黏连 / 宽松 / 强化 / 指定属）、严格 5 粒单·双·三十字限 / T 字限 / L 字限、2×2 田字、第 `1~6` 直排独立升华（3/4/5 消/整列）。
+  - **20 项符石状态与盘面地形**：风化（避碰或可选撞除）、电击、冻结（未冻高优消）、冰封、石化 & 凝结（每波四邻至多解一重）、化血（全波必消）、爆爆炸弹（零触碰扣血避让）、泡沫（可移动 + 重力追踪四邻破裂）、邪恶能量 / 刺血 / 弱化（避消惩罚或硬禁消）、魔力符石（每消 `+3 Combo` 精确模拟）、流光符石、炼狱之火（绝对禁入）、印记必消 / 保留不消；地形完整覆盖燃烧、灼热（消除扣血可穿行）、黑洞 & 血浴（可穿行但禁止停手）、结界地形（仅首消有效）、碎裂、暴风、瘴气、轨迹燃烧/腐蚀、起结有序（绿/红漩涡）、角色符石通行与停放地形。
+- **无互斥自由组合 + 逐盾实时核验**：所有规则解耦为可叠加的硬约束与软目标，结果卡片逐条回显每项波次盾的 **`✓` 达成 / `✗` 未达成** 状态灯号。
+
+### 2. 免 Root 零拷贝采集与多帧融合 CV 识盘（`core-capture` + `core-vision`）
+
+- **合规屏幕采集与自动违建探测**：基于 Android 10–16+ `MediaProjection` 前台服务零拷贝取帧，通过血条锚定自动区分标准 `6×5` 与向上延伸的 `6×6 / 6×7 / 6×8` 违建盘面，杜绝将队伍角色头像误判为第 6 行；同步提供悬浮拖拽四角/四边视觉校准框。
+- **真实游戏标定多帧融合识盘**：
+  - 6 属性精准 HSV 分类（自动排除右上角种族徽章与印记象限防偏色）、多帧高光强化星芒、`?` 问号珠、白边护盾珠、化血符石、暴风区域、经典金色与现代金属拼图框、起结有序绿色 `GO` 漩涡与红色 8 芒漩涡自动识别。
+  - 结界地形兼容识别，以及非战斗界面、关卡转场、`VICTORY` 结算画面、敌技详情弹窗的自动静默拦截，防止出现残留浮动识别层。
+- **全屏问号珠双模破局**：
+  - **先露后藏记忆快照（`FlashRevealMemoryTracker`）**：后台静默锁定翻面前的清晰盘面，全版变 `?` 后自动透视叠画并直接求解。
+  - **免 Root 按住重算（Hold-and-Replan）**：适配「问号‧转 / 风化‧转 / 烟雾」——无障碍按住（或微移 1 格）保活不抬手 → 显形即刻零拷贝识盘 → 锁定当前按住格极速重算 → 同一根手指无缝续滑全程。
+
+### 3. 免 Root 精准分段手势与 6 档统一速度（`core-touch`）
+
+- **精准连续分段手势**：基于 `AccessibilityService` (`dispatchGesture` + `willContinue`)，将起手按稳、45° 对角斜转、首步防滑拐保护、长路径分段续接与终点停稳拆分为独立分段，杜绝系统匀速压缩导致的丢步或首消偏差。
+- **6 档统一划动速度（启动页 & 悬浮抽屉 1:1 同步）**：
+
+| 档位 | `极速 2s` | `快转 3s` | `敏捷 4s` | `标准 5s` | `舒缓 6s` | `稳健 7s` |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **单格划动耗时** | `24 ms` | `38 ms` | `52 ms` | `68 ms` | `82 ms` | `95 ms` |
+| **适用场景** | 2 秒极速转珠 / 速刷 | 3 秒紧迫限时关 | 中高速日常 / 高帧率机 | 默认均衡（推荐） | 复杂斜转稳健执行 | 低帧率或超稳防断触 |
+
+> **说明**：上方 `2s ~ 7s` 表示适配常规 `25–30` 步盘面的目标转珠时间档位，下方 `xx ms` 为滑动穿过单个棋盘格的时间；亦可在滑杆上 `20–140 ms` 自由微调。
+
+- **操控辅助与安全保护**：支持角色符石从头像列垂直下拉（下拉不计步）、拟人化微抖动、左右/上下镜像颠倒操控破解、默认「试跑确认模式（先画线确认再点执行）」、倒数执行与主栏内嵌红色急停一键中止。
+
+### 4. 紧凑悬浮胶囊、统一彩色抽屉与 1:1 盘面编排（`app` + `core-data`）
+
+- **紧凑矢量悬浮栏**：最左侧为圆形 App 图标手柄（支持拖动贴边、点击折叠/展开），右侧常驻 8 个高辨识度矢量图标：
+  - `✦ 计算` · `▶ 执行` · `■ 急停` · `〰 路径` · `▤ 结果卡片` · `▦ 校准网格` · `🎚 调参抽屉` · `✕ 关闭`
+- **双端统一配色抽屉 + 差异化展开体验**：
+  - **启动页（概览 / 策略 / 设置）**：彩色边框可折叠抽屉，默认全部展开且支持同时多开，一览全局参数。
+  - **游戏内悬浮面板（快捷 / 策略 / 设置）**：与启动页保持完全一致的模块配色，但每个分页采用**单抽屉手风琴互斥展开**（展开一项自动收起其余项），最大化保留游戏画面视野。
+- **1:1 交互式盘面编排**：
+  - 划分 **5 大彩色分组工具箱**（`珠色与珠型` / `种族符石` / `拼图与起结有序` / `符石状态` / `盘面地形`）与置于色框外的独立 **`清除格标`** 工具。
+  - 严格遵循官方机制：`绿色漩涡` 与 `红色漩涡` 保持单点互斥（不会误标多点），`角色通行` 与 `角色停放` 支持多格涂抹。
+  - 编辑完成后点击右上角 **`保存版面`**，关闭编排层后直接点击主悬浮栏的 **`✦ 计算`** 与 **`▶ 执行`** 即可基于编排版面求解与执行（顶部同步展示 `已编排版面 ×` 徽章，随时一键退出编排态）。
+- **轻量 Room 策略库**：出厂精简保留 1 套「默认策略」，支持无限新建、另存、覆盖保存、复制与删除个人作战策略，叠加 `39` 种参数化波次盾 Chip 随时一键清盾。
+
+### 5. 多语言、主题与应用内更新
+
+- **四套资源三语实时热切**：内置 **简体中文 / 繁體中文 / English / 跟随系统**（`514` 项词条 100% 四语言对齐），无需重启应用实时刷新主界面与悬浮窗。
+- **Material You 双主题联动**：支持 **跟随系统 / 明亮 / 黑暗** 三态，主控台与游戏内悬浮栏/调参面板/编排面板同步换肤。
+- **应用内下载与自动安装**：在「设置 → 关于与版本」内置 GitHub 仓库入口与检查更新；发现新版本后点击 **「下载并安装」** 直接在 App 内流式下载 GitHub Release 安装包（自动跟随 CDN 重定向、实时 MB/百分比进度条、随时取消、旧缓存自动清理、`PK\x03\x04` 完整校验），下载完成自动通过 `FileProvider` 拉起 Android 系统安装器完成升级（若尚未允许「安装未知应用」，自动引导授权并在返回后无缝续接安装）。
+
+---
 
 ## 核心文档
 
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)：v2.3 完整系统架构、双模破局设计（记忆快照 + 按珠显形即时重算）与 4 阶段路线图
-- [docs/TOS_COMPLETE_MECHANICS_CATALOG.md](./docs/TOS_COMPLETE_MECHANICS_CATALOG.md)：《神魔之塔》13 年（2013–2026）全机制、敌技、特殊符石、地形与盘面规则全景调研手册
-- [docs/LEGACY_AUTODORA_ANALYSIS.md](./docs/LEGACY_AUTODORA_ANALYSIS.md)：旧版 `AutoDora-V3.4.3.apk` 深度拆解与继承升级清单
+| 文档 | 内容说明 |
+| :--- | :--- |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | **v3.0 系统架构与分阶段规划手册**：动态棋盘、多帧 CV、C++20 求解引擎、悬浮交互、1:1 编排、应用内更新与 Phase 1–4 演进路线图 |
+| [docs/TOS_COMPLETE_MECHANICS_CATALOG.md](./docs/TOS_COMPLETE_MECHANICS_CATALOG.md) | **《神魔之塔》13 年（2013–2026）全机制全景手册**：实时追踪全谱系敌技、特殊符石、地形与队伍机制的当前落地状态 |
+| [docs/enemy_skill_audit.md](./docs/enemy_skill_audit.md) | **《神魔百科 · 敵人技能》98 项全量结构化审计报告**：逐项核验官方正/误示例与引擎落地详情 |
+| [docs/runestone_status_audit.md](./docs/runestone_status_audit.md) | **《神魔百科 · 符石狀態》20 项全量物理核验报告**：逐项对照官方原文修正物理细节与编绘画笔映射 |
+| [docs/LEGACY_AUTODORA_ANALYSIS.md](./docs/LEGACY_AUTODORA_ANALYSIS.md) | 旧版 `AutoDora-V3.4.3.apk` 深度拆解与继承升级对照表 |
+| [ml/README.md](./ml/README.md) | Phase 4 端侧多头轻量 CNN（LiteRT `.tflite`）训练与数据飞轮规划 |
 
-> **标定与测试原则**：所有棋盘几何探测、校准基准与识图调优一律严格以**真实《神魔之塔》游戏截图**为依据（在带 `arm64-v8a` 官方转译的 PC 模拟器中安装官方独立 APK 实测），不使用合成 Mock 图做标定。
+> **标定与合规原则**：所有棋盘几何探测、视觉色域与特化识别标定均严格基于真实《神魔之塔》游戏画面实测验证；仓库内绝不包含任何受版权保护的第三方游戏截图、角色立绘或原始游戏素材。
+
+---
 
 ## 仓库结构
 
-- `solver-core/`：纯 C++20 高性能解盘引擎（CMake，零 Android 依赖，支持任意 `3×3`~`8×8` 动态棋盘规格含 `6×5` 与 `6×8` 违建、最高 **300 步**、64-bit 位掩码与全套现代神魔解盾约束）
-- `android/`：Android 原生多模块工程（Kotlin 2.1 + Jetpack Compose Material 3 / Material You 系统配色 + Hilt + Room + DataStore + NDK/JNI + MediaProjection + AccessibilityService + LiteRT + ML Kit 离线中文 OCR）
-  - `:core-model`：跨层不可变数据模型与两层规则组合器（`TeamBasePreset` + `WaveShieldChip`）
-  - `:solver-jni`：C++20 解盘核心 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`，开启 `-O3` 优化）
-  - `:core-capture`：Android 14/15/16+ 合规 `MediaProjection` 零拷贝前台屏幕采集 + 三色/残血血条锚定与动态棋盘规格探测
-  - `:core-vision`：多帧时间融合 CV 识盘（6 属性 + 强化星芒 + 白边护盾珠 + 全色系问号/种族角标 + 拼图金边 + 暴风/龙卷风区域自动识别）、**常驻 6Hz 全屏问号珠记忆**（先露后藏自动锁定 + 进场全问号自动衔接旧版问号‧转按住微移显形重算）、以及 **全自动敌技识别中枢**（战斗界面图标快识 + 切波自动点右上角齿轮 `⚙` → 自动识别并逐一点开敌技白三角 `▶` 展开说明 → 超屏自动下划 → 多敌切换 → ML Kit 离线中文 OCR + 2026 灰字已无视过滤 → 自动点 `取消` 返回）
-  - `:core-touch`：免 Root `AccessibilityService` 精准分段连续手势（起手按稳/45°斜转/终点停稳独立分段避免 `PathMeasure` 匀速压缩导致丢步与首消 C 偏差）、角色珠垂直下拉、按珠显形心跳续接、UI 自动点击/滚动原语、四档统一速度预设（`极速 2s` / `快转 3s` / `标准 5s` / `稳健 7s`）、方向逆转与急停强制抬手
-  - `:core-data`：DataStore 设置持久化（含明亮/黑暗/随系统三主题、8~300 步上限、按住转开关、自动识敌技开关与双模配置）+ Room 作战策略库（`AutoDoraDatabase` / `TeamPresetRepository`）+ 参数化 `WaveShieldCatalog` / `ActiveStrategyStore`
-  - `:app`：Material 3 4-Tab 启动台（概览 / 策略 / 参数化解盾 / 设置）、系统配色三态悬浮胶囊（`算` / `◀▶` / 统一 `行` / 内嵌 `停` / 仅路径 `线` / 仅网格 `校`）、游戏内 4-Tab 悬浮调参抽屉（解盾 / 属性 / 专属 / 策略）与 1:1 盘面编绘画笔
-- `ml/`：端侧多头轻量 CNN（符石属性/强化/黑白/障碍/拼图/红绿灯）数据工具、训练与 LiteRT (`.tflite`) 导出管线
-- `docs/`：架构规范、13 年神魔全机制全景手册与旧版继承分析报告
+```text
+AutoDora-NEXT/
+├── solver-core/                  # 纯 C++20 高性能解盘引擎（CMake，零 Android 依赖，3×3~8×8，最高 300 步）
+│   ├── include/autodora/         # types.hpp, board.hpp, rules.hpp, simulator.hpp, evaluator.hpp, solver.hpp
+│   ├── src/                      # 精确消除物理模拟、全机制解盾评估、多线程 Beam Search、Top-K 多样化筛选
+│   └── tests/                    # 49 项 C++20 单元测试与多盾/违建/路径回放回归集
+├── android/                      # Android 原生多模块工程（Kotlin 2.1 + Compose M3 + Hilt + Room + DataStore + NDK）
+│   ├── app/                      # 3-Tab 启动台、圆形图标悬浮栏、3-Tab 单抽屉调参面板、1:1 盘面编排、应用内更新器
+│   ├── core-model/               # 跨层不可变模型、两层 RuleComposer、ShieldVerdictEvaluator 逐盾核验器
+│   ├── core-capture/             # MediaProjection 前台零拷贝采集、血条锚定 6×5↔6×8 自动规格探测
+│   ├── core-vision/              # 多帧融合 CvBoardRecognizer、FlashRevealMemoryTracker 全屏问号记忆、Hybrid 推理接口
+│   ├── core-touch/               # 免 Root AccessibilityService 分段手势、角色珠下拉、按住重算续滑、6 档速度与镜像反转
+│   ├── core-data/                # DataStore 设置、Room 策略库、39 项 WaveShieldCatalog、98 敌技 & 20 符石状态目录
+│   └── solver-jni/               # NDK/JNI 桥接（arm64-v8a / armeabi-v7a / x86_64，-O3 优化）
+├── ml/                           # 端侧多头轻量 CNN 训练与 LiteRT 导出管线（Phase 4）
+└── docs/                         # 系统架构、机制全景手册、百科审计规范与应用干净截图（docs/images/）
+```
 
-## 开发进度
+---
 
-- [x] **Phase 1**：纯 C++20 动态网格解盘内核（支持 `3×3~8×8` 与最高 300 步，26/26 单元测试通过）+ Android 多模块骨架 + JNI 跨平台编译
-- [x] **Phase 2 & 2.5（真机/模拟器多图实测闭环）**：免 Root 零拷贝 `MediaProjection` + 6 组多渠道真实截图标定（170/170 实战珠 100% 精准识别、三色/残血血条防假违建、误差 ≤ 1px）+ 先露后藏记忆快照 + 免 Root 按住重算续滑 + 13 年全谱系盾牌与触控方向逆转
-- [x] **Phase 3（交互重构 + 离线 OCR 识盾 + Room 预设库 + 盘面编绘）**：
-  - 启动页重构为 Material 3 4-Tab（概览 / 队伍 / 解盾 / 设置），与悬浮栏同步应用系统 Material You 配色（明亮 / 黑暗 / 随系统）
-  - 「按住转」统一为开关由「行」执行；「线」仅控转珠路径、「校」仅控校准网格；速度四档（`极速 2s` / `快转 3s` / `标准 5s` / `稳健 7s`）双端 1:1 同步与语义色阶
-  - Room 队伍基底预设库（内置 5 套神魔常见队型 + 自由增删改复制）
-  - Google ML Kit 离线中文 OCR 敌技识盾 + 可热更新 `tos_enemy_skill_rules.json` + 2026 灰字已无视自动过滤 + 启动页词条解析测试台
-  - 游戏内 4-Tab 悬浮调参抽屉（盾牌 / 属性 / 专属 / 队伍）+ 1:1 实时盘面编绘画笔（支持手指连涂改珠/标盾并直接重算）
-- [ ] **Phase 4**：真实截图数据集采集 + 端侧多头轻量 CNN 训练与 `.tflite` 热更新推理闭环、可选 Shizuku 触控引擎
+## 开发进度与版本里程碑
 
-## 快速构建与测试
+- [x] **Phase 1（`v0.1.0`）**：纯 C++20 `3×3~8×8` 64-bit 动态解盘引擎（支持最高 300 步）+ Android 多模块骨架 + JNI 跨平台编译。
+- [x] **Phase 2 & 2.5（`v0.2.x` – `v0.3.x`）**：免 Root 零拷贝 `MediaProjection` + 血条锚定 `6×5`/`6×8` 实图精准标定 + 先露后藏问号记忆 + 免 Root 按住重算续滑 + 经典/现代拼图框、起结有序漩涡、暴风、化血、结界与 VICTORY 过滤 + 逐盾 `✓/✗` 实时判定 + 方向逆转镜像与首步防拐保护。
+- [x] **Phase 3 & 3.5（`v0.4.0` – `v0.4.2` · 当前版本）**：
+  - **《神魔百科》98 敌技 + 20 符石状态 + 7 大官方种族全量审计与引擎/编排闭环升级**。
+  - **Material 3 / Material You 3-Tab 启动页 + 同色系悬浮 3-Tab 单抽屉调参面板 + 圆形 App 图标紧凑悬浮栏**。
+  - **5 色分组 1:1 盘面编排**（单点互斥绿/红漩涡、多格角色通行/停放、独立清除格标、「保存版面 → 主栏计算/执行」工作流）。
+  - **6 档统一速度（`2s~7s`）**、**精简 Room 策略库**、**四语言资源三语实时切换（514 词条全对齐）** 与 **GitHub Releases 应用内流式下载 + FileProvider 自动拉起安装**。
+- [ ] **Phase 4（规划中）**：端侧多头轻量 CNN（LiteRT `.tflite` 热加载，攻克黑白符石/复杂联名皮肤/叠加态自动识盘）、纠错样本本地采集飞轮、端侧敌技说明自动解析与可选 Shizuku 触控引擎。
 
-### 1. C++20 解盘引擎单元测试（Windows PC）
+---
+
+## 快速安装、构建与测试
+
+### 1. 直接安装预编译 APK
+
+前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.4.2-release.apk`），安装后：
+1. 在「概览 → 运行权限检查」依次授予 **悬浮窗**、**无障碍自动转珠** 与 **屏幕采集（选择「整个屏幕」）** 三项权限；
+2. 若在 Android 13+ / HyperOS / One UI / ColorOS 遇到无障碍开关受限，按概览页「无障碍受限设置指引」点击「应用详情 → 右上角 `⋮` → 允许受限设置」后即可开启；
+3. 后续版本可直接在 App 内「设置 → 关于与版本 → 检查更新 → 下载并安装」一键原地升级。
+
+### 2. C++20 解盘引擎单元测试（49/49）
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 2. Android 单元测试与 Debug APK 构建
+### 3. Android 全模块 JVM 单测（53/53）与 APK 构建
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File android/build-android.ps1 :core-model:test :core-capture:testDebugUnitTest :core-vision:testDebugUnitTest :core-touch:testDebugUnitTest :app:assembleDebug
+# 运行全部模块单元测试并构建 Debug APK
+powershell -ExecutionPolicy Bypass -File android/build-android.ps1 :core-model:test :core-capture:testDebugUnitTest :core-vision:testDebugUnitTest :core-touch:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug
+
+# 构建签名 Release APK
+powershell -ExecutionPolicy Bypass -File android/build-android.ps1 :app:assembleRelease
 ```
