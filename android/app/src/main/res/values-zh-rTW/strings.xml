@@ -280,6 +280,9 @@
     <string name="lang_zh_cn">简体</string>
     <string name="lang_zh_tw">繁體</string>
     <string name="lang_en">English</string>
+    <string name="floating_bar_layout_title">懸浮列排列方向</string>
+    <string name="floating_bar_horizontal">橫排</string>
+    <string name="floating_bar_vertical">豎排</string>
     <string name="section_speed">滑動速度檔位</string>
     <string name="speed_desc">秒數 = 適配轉珠時間；ms = 單格滑動耗時</string>
     <string name="speed_turbo">極速 2秒</string>

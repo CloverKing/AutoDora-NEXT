@@ -165,6 +165,16 @@ class OverlayTuningDrawerController(
         if (visible) rebuildContent(preserveScroll = true)
     }
 
+    fun setMaxPanelWidth(widthPx: Int, topMarginPx: Int = dp(4)) {
+        val lp = (rootView.layoutParams as? LinearLayout.LayoutParams)
+            ?: LinearLayout.LayoutParams(widthPx, LinearLayout.LayoutParams.WRAP_CONTENT)
+        if (lp.width != widthPx || lp.topMargin != topMarginPx) {
+            lp.width = widthPx
+            lp.topMargin = topMarginPx
+            rootView.layoutParams = lp
+        }
+    }
+
     fun updateData(
         palette: OverlayPalette,
         settings: AppSettings,
@@ -1435,8 +1445,9 @@ class OverlayTuningDrawerController(
             populateHoldAndInvertControls(swBody, p)
         }
 
-        // Card 3 (Purple): Appearance, Theme & Language (matches Launch App Settings Purple card!)
-        val s2Summary = "${LocaleHelper.themeLabel(lctx, settings.themeMode)} · ${LocaleHelper.languageLabel(lctx, settings.language)}"
+        // Card 3 (Purple): Appearance, Theme, Language & Floating Bar Layout (matches Launch App Settings Purple card!)
+        val barLayoutLbl = s(if (settings.floatingBarVertical) R.string.floating_bar_vertical else R.string.floating_bar_horizontal)
+        val s2Summary = "${LocaleHelper.themeLabel(lctx, settings.themeMode)} · ${LocaleHelper.languageLabel(lctx, settings.language)} · $barLayoutLbl"
         addAccordionGroupCard(3, s(R.string.section_appearance), s2Summary, true, ACCENT_PURPLE, p)?.let { appBody ->
             val themeRow = hRow(bottomMarginDp = 4)
             ThemeMode.entries.forEachIndexed { idx, tm ->
@@ -1446,13 +1457,24 @@ class OverlayTuningDrawerController(
             }
             appBody.addView(themeRow)
 
-            val langRow = hRow(bottomMarginDp = 0)
+            val langRow = hRow(bottomMarginDp = 5)
             AppLanguage.entries.forEachIndexed { idx, lang ->
                 langRow.addView(makeToggle(LocaleHelper.languageLabel(lctx, lang), settings.language == lang, p, weight = 1f, marginEndDp = if (idx == AppLanguage.entries.lastIndex) 0 else 4) {
                     onUpdateSettings { it.copy(language = lang) }
                 })
             }
             appBody.addView(langRow)
+
+            appBody.addView(makeSubDivider(p))
+            appBody.addView(makeSubLabel(s(R.string.floating_bar_layout_title), p))
+            val barLayoutRow = hRow(bottomMarginDp = 0)
+            barLayoutRow.addView(makeToggle(s(R.string.floating_bar_horizontal), !settings.floatingBarVertical, p, weight = 1f, marginEndDp = 4) {
+                onUpdateSettings { it.copy(floatingBarVertical = false) }
+            })
+            barLayoutRow.addView(makeToggle(s(R.string.floating_bar_vertical), settings.floatingBarVertical, p, weight = 1f, marginEndDp = 0) {
+                onUpdateSettings { it.copy(floatingBarVertical = true) }
+            })
+            appBody.addView(barLayoutRow)
         }
     }
 

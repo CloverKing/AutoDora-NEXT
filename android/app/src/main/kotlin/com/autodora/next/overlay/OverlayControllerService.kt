@@ -94,9 +94,13 @@ class OverlayControllerService : Service() {
     private lateinit var pathParams: WindowManager.LayoutParams
     private lateinit var controlRoot: LinearLayout
     private lateinit var controlParams: WindowManager.LayoutParams
+    private lateinit var barRow: LinearLayout
+    private lateinit var panelsColumn: LinearLayout
     private lateinit var statusOrbView: FrameLayout
     private lateinit var statusOrbBadge: TextView
     private lateinit var toolbarContainer: LinearLayout
+    private val toolbarButtons = ArrayList<ImageView>()
+    private var verticalBarOnRight = false
 
     // Compact All-Icon Main Bar Controls
     private lateinit var solveIconBtn: ImageView
@@ -179,12 +183,24 @@ class OverlayControllerService : Service() {
                 val solverSettingChanged = settings.allowDiagonalMove != latest.allowDiagonalMove ||
                     settings.maxSteps != latest.maxSteps ||
                     settings.beamWidth != latest.beamWidth
+                val layoutChanged = settings.floatingBarVertical != latest.floatingBarVertical
                 settings = latest
                 if (presetSwitched || previewModeChanged || solverSettingChanged) {
                     invalidateLastSolution()
                 }
+                if (layoutChanged) {
+                    if (latest.floatingBarVertical) {
+                        val barCenterX = controlParams.x + barRow.left + (barRow.width / 2)
+                        verticalBarOnRight = barRow.width > 0 && controlParams.x > dp(48) && barCenterX > screenW / 2
+                    } else {
+                        verticalBarOnRight = false
+                    }
+                }
                 stopIconBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
                 applyOverlayTheme()
+                if (layoutChanged) {
+                    clampControlWindowToScreen()
+                }
                 ensureAlwaysOnBackgroundWatcher()
                 if (calibrationMode) {
                     currentGeometry = latest.calibration.toBase6x5Geometry(screenW, screenH)
@@ -412,15 +428,23 @@ class OverlayControllerService : Service() {
         }
         windowManager.addView(pathOverlayView, pathParams)
 
-        // 2. System-Themed Floating Control Stack
+        // 2. System-Themed Floating Control Stack (supports Horizontal & Vertical Bar Layouts)
         controlRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
 
-        val topRow = LinearLayout(this).apply {
+        barRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        panelsColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -466,7 +490,7 @@ class OverlayControllerService : Service() {
             )
         }
         statusOrbView.addView(statusOrbBadge)
-        topRow.addView(statusOrbView)
+        barRow.addView(statusOrbView)
 
         toolbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -479,17 +503,21 @@ class OverlayControllerService : Service() {
             )
         }
 
+        toolbarButtons.clear()
         // Permanent High-Frequency Vector Icon Bar (compact & touch-friendly, zero cluttered text pills!)
         solveIconBtn = makeIconBtn(R.drawable.ic_ov_solve) { startCaptureAndSolve(autoExecuteAfterSolve = false) }
+        toolbarButtons.add(solveIconBtn)
         toolbarContainer.addView(solveIconBtn)
 
         executeIconBtn = makeIconBtn(R.drawable.ic_ov_play) { handleUnifiedExecute() }
+        toolbarButtons.add(executeIconBtn)
         toolbarContainer.addView(executeIconBtn)
 
         stopIconBtn = makeIconBtn(R.drawable.ic_ov_stop) {
             triggerEmergencyStop()
             toast(lctx.getString(R.string.ov_toast_stopped))
         }
+        toolbarButtons.add(stopIconBtn)
         toolbarContainer.addView(stopIconBtn)
 
         // Trajectory path overlay toggle ('线')
@@ -498,6 +526,7 @@ class OverlayControllerService : Service() {
             refreshMainToggleChips()
             refreshPathCanvas()
         }
+        toolbarButtons.add(pathIconBtn)
         toolbarContainer.addView(pathIconBtn)
 
         // Solution result card visibility toggle ('结')
@@ -506,21 +535,26 @@ class OverlayControllerService : Service() {
             refreshMainToggleChips()
             updateSummaryStrip()
         }
+        toolbarButtons.add(resultIconBtn)
         toolbarContainer.addView(resultIconBtn)
 
         // Board alignment calibration grid toggle ('校')
         calibIconBtn = makeIconBtn(R.drawable.ic_ov_grid) { toggleCalibrationMode() }
+        toolbarButtons.add(calibIconBtn)
         toolbarContainer.addView(calibIconBtn)
 
         // 4-Tab Full-Feature Floating Drawer toggle (快捷 | 策略 | 解盾 | 设置)
         tuneIconBtn = makeIconBtn(R.drawable.ic_ov_tune) { toggleTuningDrawer() }
+        toolbarButtons.add(tuneIconBtn)
         toolbarContainer.addView(tuneIconBtn)
 
         closeIconBtn = makeIconBtn(R.drawable.ic_ov_close, marginEndDp = 0) { stopSelf() }
+        toolbarButtons.add(closeIconBtn)
         toolbarContainer.addView(closeIconBtn)
 
-        topRow.addView(toolbarContainer)
-        controlRoot.addView(topRow)
+        barRow.addView(toolbarContainer)
+        controlRoot.addView(barRow)
+        controlRoot.addView(panelsColumn)
 
         // Active Wave Shield Pills Strip (auto-visible when >=1 shield is active)
         activeShieldScroll = HorizontalScrollView(this).apply {
@@ -539,7 +573,7 @@ class OverlayControllerService : Service() {
             gravity = Gravity.CENTER_VERTICAL
         }
         activeShieldScroll.addView(activeShieldRow)
-        controlRoot.addView(activeShieldScroll)
+        panelsColumn.addView(activeShieldScroll)
 
         // Compact Solution Result Card (controlled by '结' icon; inline ‹ 1/5 › alternative switcher!)
         summaryStrip = LinearLayout(this).apply {
@@ -639,7 +673,7 @@ class OverlayControllerService : Service() {
         }
         groupsScroll.addView(groupsRow)
         summaryStrip.addView(groupsScroll)
-        controlRoot.addView(summaryStrip)
+        panelsColumn.addView(summaryStrip)
 
         // Slim Calibration Bar (visible only when '校' is ON)
         calibrationBar = LinearLayout(this).apply {
@@ -673,7 +707,7 @@ class OverlayControllerService : Service() {
         calibrationBar.addView(calibAutoBtn)
         calibResetBtn = makeChipBtn("重置", padH = 5, marginEndDp = 0) { resetCalibration() }
         calibrationBar.addView(calibResetBtn)
-        controlRoot.addView(calibrationBar)
+        panelsColumn.addView(calibrationBar)
 
         // Interactive Board Editor Brush Bar (Grouped & Wrapped; Save Board -> Solve via Main Floating Bar)
         boardEditor = OverlayBoardEditorController(
@@ -707,9 +741,10 @@ class OverlayControllerService : Service() {
                 refreshPathCanvas()
                 toast(lctx.getString(R.string.ov_toast_board_cleared))
             },
-            onCloseEditor = { setBoardEditorMode(false) }
+            onCloseEditor = { setBoardEditorMode(false) },
+            onPanelHeightChanged = { clampControlWindowToScreen(currentRightAnchorIfPinned()) }
         )
-        controlRoot.addView(boardEditor.rootView)
+        panelsColumn.addView(boardEditor.rootView)
 
         // Full-Feature 3-Tab Unified Floating Drawer (快捷 | 策略 | 设置)
         tuningDrawer = OverlayTuningDrawerController(
@@ -762,7 +797,7 @@ class OverlayControllerService : Service() {
             },
             onClose = { setTuningDrawerOpen(false) }
         )
-        controlRoot.addView(tuningDrawer.rootView)
+        panelsColumn.addView(tuningDrawer.rootView)
 
         controlParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -807,6 +842,7 @@ class OverlayControllerService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!moved) {
+                        val anchorRight = currentRightAnchorIfPinned()
                         toolbarExpanded = !toolbarExpanded
                         toolbarContainer.visibility = if (toolbarExpanded) View.VISIBLE else View.GONE
                         tuningDrawer.setVisible(toolbarExpanded && tuningDrawerOpen)
@@ -820,7 +856,22 @@ class OverlayControllerService : Service() {
                             updateSummaryStrip()
                             refreshActiveShieldStrip()
                         }
-                        clampControlWindowToScreen()
+                        clampControlWindowToScreen(anchorRight)
+                    } else if (settings.floatingBarVertical) {
+                        val barScreenLeft = controlParams.x + barRow.left
+                        val barWidth = barRow.width.coerceAtLeast(dp(36))
+                        val barCenterX = barScreenLeft + barWidth / 2
+                        val nextOnRight = barCenterX > screenW / 2
+                        if (nextOnRight != verticalBarOnRight) {
+                            verticalBarOnRight = nextOnRight
+                            applyFloatingBarLayout()
+                            if (verticalBarOnRight) {
+                                clampControlWindowToScreen(anchorRightEdgePx = barScreenLeft + barWidth)
+                            } else {
+                                controlParams.x = barScreenLeft.coerceIn(0, (screenW - barWidth).coerceAtLeast(0))
+                                clampControlWindowToScreen()
+                            }
+                        }
                     }
                     true
                 }
@@ -1537,6 +1588,7 @@ class OverlayControllerService : Service() {
     }
 
     private fun setCalibrationMode(enabled: Boolean) {
+        val anchorRight = currentRightAnchorIfPinned()
         if (enabled && boardEditorMode) setBoardEditorMode(false)
         if (enabled && tuningDrawerOpen) setTuningDrawerOpen(false)
         calibrationMode = enabled
@@ -1547,7 +1599,7 @@ class OverlayControllerService : Service() {
         }
         refreshMainToggleChips()
         refreshPathCanvas()
-        clampControlWindowToScreen()
+        clampControlWindowToScreen(anchorRight)
     }
 
     private fun toggleBoardEditorMode() {
@@ -1555,6 +1607,7 @@ class OverlayControllerService : Service() {
     }
 
     private fun setBoardEditorMode(enabled: Boolean) {
+        val anchorRight = currentRightAnchorIfPinned()
         if (enabled && calibrationMode) setCalibrationMode(false)
         if (enabled && tuningDrawerOpen) setTuningDrawerOpen(false)
         boardEditorMode = enabled
@@ -1583,7 +1636,7 @@ class OverlayControllerService : Service() {
         refreshMainToggleChips()
         syncDrawerData()
         refreshPathCanvas()
-        clampControlWindowToScreen()
+        clampControlWindowToScreen(anchorRight)
     }
 
     private fun toggleTuningDrawer() {
@@ -1591,13 +1644,14 @@ class OverlayControllerService : Service() {
     }
 
     private fun setTuningDrawerOpen(open: Boolean) {
+        val anchorRight = currentRightAnchorIfPinned()
         if (open && calibrationMode) setCalibrationMode(false)
         if (open && boardEditorMode) setBoardEditorMode(false)
         tuningDrawerOpen = open
         tuningDrawer.setVisible(tuningDrawerOpen && toolbarExpanded)
         refreshMainToggleChips()
         syncDrawerData()
-        clampControlWindowToScreen()
+        clampControlWindowToScreen(anchorRight)
     }
 
     private fun updatePathOverlayTouchability() {
@@ -1878,11 +1932,103 @@ class OverlayControllerService : Service() {
         styleChip(calibResetBtn, p.errorContainer, p.onErrorContainer, null)
 
         boardEditor.applyTheme(p, lctx)
+        applyFloatingBarLayout()
         setPhase(currentPhase)
         refreshMainToggleChips()
         refreshActiveShieldStrip()
         updateSummaryStrip()
         syncDrawerData()
+    }
+
+    private fun applyFloatingBarLayout() {
+        if (!::controlRoot.isInitialized || !::barRow.isInitialized || !::panelsColumn.isInitialized) return
+        val vertical = settings.floatingBarVertical
+        val onRight = vertical && verticalBarOnRight
+
+        val wantFirst: View = if (onRight) panelsColumn else barRow
+        val wantSecond: View = if (onRight) barRow else panelsColumn
+        if (controlRoot.childCount != 2 || controlRoot.getChildAt(0) !== wantFirst || controlRoot.getChildAt(1) !== wantSecond) {
+            controlRoot.removeAllViews()
+            controlRoot.addView(wantFirst)
+            controlRoot.addView(wantSecond)
+        }
+
+        controlRoot.orientation = if (vertical) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        controlRoot.gravity = if (vertical) Gravity.TOP else (Gravity.TOP or Gravity.START)
+
+        barRow.orientation = if (vertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        barRow.gravity = if (vertical) Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
+
+        (statusOrbView.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+            lp.marginEnd = if (vertical) 0 else dp(4)
+            lp.bottomMargin = if (vertical) dp(4) else 0
+            statusOrbView.layoutParams = lp
+        }
+
+        toolbarContainer.orientation = if (vertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        toolbarContainer.gravity = if (vertical) Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
+        if (vertical) {
+            toolbarContainer.setPadding(dp(3), dp(4), dp(3), dp(4))
+        } else {
+            toolbarContainer.setPadding(dp(4), dp(3), dp(4), dp(3))
+        }
+
+        toolbarButtons.forEachIndexed { idx, btn ->
+            val isLast = idx == toolbarButtons.lastIndex
+            (btn.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+                lp.marginEnd = if (vertical || isLast) 0 else dp(3)
+                lp.bottomMargin = if (!vertical || isLast) 0 else dp(3)
+                btn.layoutParams = lp
+            }
+        }
+
+        (panelsColumn.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+            lp.marginStart = if (vertical && !onRight) dp(4) else 0
+            lp.marginEnd = if (onRight) dp(4) else 0
+            lp.topMargin = 0
+            panelsColumn.layoutParams = lp
+        }
+        panelsColumn.gravity = if (onRight) Gravity.END else Gravity.START
+
+        (activeShieldScroll.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+            lp.topMargin = if (vertical) 0 else dp(2)
+            lp.marginStart = if (vertical) 0 else dp(34)
+            activeShieldScroll.layoutParams = lp
+        }
+
+        val sideMaxW = (screenW - dp(58)).coerceAtLeast(dp(240))
+        summaryTitle.maxWidth = if (vertical) {
+            (sideMaxW - dp(92)).coerceAtLeast(dp(136))
+        } else {
+            (screenW * 0.72f).toInt()
+        }
+        (summaryStrip.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+            lp.topMargin = if (vertical) dp(2) else dp(3)
+            lp.marginStart = if (vertical) 0 else dp(4)
+            summaryStrip.layoutParams = lp
+        }
+        (calibrationBar.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+            lp.topMargin = if (vertical) dp(2) else dp(3)
+            lp.marginStart = if (vertical) 0 else dp(4)
+            calibrationBar.layoutParams = lp
+        }
+
+        val editorW = if (vertical) minOf(sideMaxW, dp(356)) else minOf(screenW - dp(16), dp(356))
+        boardEditor.setMaxPanelWidth(
+            widthPx = editorW,
+            topMarginPx = if (vertical) 0 else dp(4),
+            marginStartPx = if (vertical) 0 else dp(4)
+        )
+
+        val drawerW = if (vertical) {
+            minOf(sideMaxW, dp(370))
+        } else {
+            minOf((screenW * 0.92f).toInt(), dp(390))
+        }
+        tuningDrawer.setMaxPanelWidth(
+            widthPx = drawerW,
+            topMarginPx = if (vertical) 0 else dp(4)
+        )
     }
 
     private fun refreshMainToggleChips() {
@@ -1948,10 +2094,12 @@ class OverlayControllerService : Service() {
 
     private fun refreshActiveShieldStrip() {
         if (!::activeShieldRow.isInitialized || !::palette.isInitialized) return
+        val anchorRight = currentRightAnchorIfPinned()
         activeShieldRow.removeAllViews()
         val hasSaved = savedEditedBoard != null
         if ((activeWaveChips.isEmpty() && !hasSaved) || !toolbarExpanded) {
             activeShieldScroll.visibility = View.GONE
+            clampControlWindowToScreen(anchorRight)
             return
         }
         val p = palette
@@ -2014,7 +2162,7 @@ class OverlayControllerService : Service() {
             activeShieldRow.addView(clearAll)
         }
         activeShieldScroll.visibility = View.VISIBLE
-        clampControlWindowToScreen()
+        clampControlWindowToScreen(anchorRight)
     }
 
     private fun syncDrawerData() {
@@ -2036,11 +2184,13 @@ class OverlayControllerService : Service() {
     }
 
     private fun updateSummaryStrip() {
+        val anchorRight = currentRightAnchorIfPinned()
         val out = lastSolveOutput
         val sol = currentSolution()
         val geom = currentGeometry
         if (out == null || sol == null || geom == null || !showResultCard || !toolbarExpanded) {
             summaryStrip.visibility = View.GONE
+            clampControlWindowToScreen(anchorRight)
             return
         }
 
@@ -2153,7 +2303,7 @@ class OverlayControllerService : Service() {
         summaryStrip.visibility = View.VISIBLE
         summaryTitle.requestLayout()
         summaryStrip.requestLayout()
-        clampControlWindowToScreen()
+        clampControlWindowToScreen(anchorRight)
     }
 
     private fun refreshPathCanvas(countdown: String? = null) {
@@ -2258,14 +2408,25 @@ class OverlayControllerService : Service() {
         view.alpha = 1.0f
     }
 
-    private fun clampControlWindowToScreen() {
+    private fun currentRightAnchorIfPinned(): Int? {
+        if (!settings.floatingBarVertical || !verticalBarOnRight) return null
+        val w = controlRoot.width
+        return if (w > 0) (controlParams.x + w).coerceIn(dp(44), screenW) else null
+    }
+
+    private fun clampControlWindowToScreen(anchorRightEdgePx: Int? = null) {
         controlRoot.post {
             val w = controlRoot.width
             val h = controlRoot.height
             if (w <= 0 || h <= 0) return@post
             val maxX = (screenW - w).coerceAtLeast(0)
             val maxY = (screenH - h).coerceAtLeast(0)
-            val clampedX = controlParams.x.coerceIn(0, maxX)
+            val desiredX = if (anchorRightEdgePx != null && settings.floatingBarVertical && verticalBarOnRight) {
+                anchorRightEdgePx - w
+            } else {
+                controlParams.x
+            }
+            val clampedX = desiredX.coerceIn(0, maxX)
             val clampedY = controlParams.y.coerceIn(0, maxY)
             if (clampedX != controlParams.x || clampedY != controlParams.y) {
                 controlParams.x = clampedX

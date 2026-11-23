@@ -280,6 +280,9 @@
     <string name="lang_zh_cn">简体</string>
     <string name="lang_zh_tw">繁體</string>
     <string name="lang_en">English</string>
+    <string name="floating_bar_layout_title">Floating Bar Layout</string>
+    <string name="floating_bar_horizontal">Horizontal</string>
+    <string name="floating_bar_vertical">Vertical</string>
     <string name="section_speed">Swipe Speed Presets</string>
     <string name="speed_desc">Seconds = target turn time; ms = time per grid step</string>
     <string name="speed_turbo">Turbo 2s</string>

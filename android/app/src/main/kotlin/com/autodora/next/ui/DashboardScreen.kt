@@ -618,7 +618,7 @@ private fun SettingsTab(
         ColoredCollapsibleDrawerCard(
             title = stringResource(R.string.section_appearance),
             accentColor = DrawerAccentColors.Purple,
-            summaryText = "${LocaleHelper.themeLabel(context, settings.themeMode)} · ${LocaleHelper.languageLabel(context, settings.language)}",
+            summaryText = "${LocaleHelper.themeLabel(context, settings.themeMode)} · ${LocaleHelper.languageLabel(context, settings.language)} · ${stringResource(if (settings.floatingBarVertical) R.string.floating_bar_vertical else R.string.floating_bar_horizontal)}",
             highlighted = true,
             initialExpanded = true
         ) {
@@ -671,6 +671,40 @@ private fun SettingsTab(
                         Text(
                             LocaleHelper.languageLabel(context, lang),
                             style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Text(
+                text = stringResource(R.string.floating_bar_layout_title),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                val barLayouts = listOf(
+                    Triple(false, R.string.floating_bar_horizontal, Icons.Outlined.MoreHoriz),
+                    Triple(true, R.string.floating_bar_vertical, Icons.Outlined.MoreVert)
+                )
+                barLayouts.forEachIndexed { idx, (isVertical, labelRes, iconVec) ->
+                    SegmentedButton(
+                        selected = settings.floatingBarVertical == isVertical,
+                        onClick = { onUpdateSettings { it.copy(floatingBarVertical = isVertical) } },
+                        shape = SegmentedButtonDefaults.itemShape(idx, barLayouts.size),
+                        icon = {
+                            Icon(
+                                imageVector = iconVec,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    ) {
+                        Text(
+                            stringResource(labelRes),
+                            style = MaterialTheme.typography.labelMedium,
                             maxLines = 1
                         )
                     }

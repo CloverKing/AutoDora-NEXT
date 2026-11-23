@@ -38,12 +38,28 @@ private data class BrushGroupSpec(
     val titleRes: Int,
     val accentColor: Int,
     val rows: List<List<BoardBrush>>
+) {
+    val brushIds: Set<String> = rows.flatten().mapTo(HashSet()) { it.id }
+}
+
+private data class AccordionGroupViews(
+    val index: Int,
+    val spec: BrushGroupSpec,
+    val box: LinearLayout,
+    val headerRow: LinearLayout,
+    val titleView: TextView,
+    val activeBadge: TextView,
+    val chevronView: TextView,
+    val dividerView: View,
+    val bodyContainer: LinearLayout
 )
 
 /**
- * Grouped, Multi-Row Wrapped Brush Palette Panel for the 1:1 Interactive Board Editor (盘面编排).
+ * Grouped, Single-Open Exclusive Colored Accordion Brush Palette Panel for the 1:1 Interactive Board Editor (盘面编排).
  *
- * Groups (5 distinct color-coded sections + standalone 「清除格标」 tool outside all colored boxes):
+ * Groups (5 distinct color-coded exclusive accordion drawers — opening one automatically collapses the other 4
+ * to minimize vertical screen footprint over the puzzle board, matching Strategy drawers 1:1;
+ * plus standalone 「清除格标」 tool outside all colored drawers):
  *  1. Indigo  — 珠色与珠型 (水/火/木/光/暗/心 + 强化+/弱化-)
  *  2. Purple  — 种族符石 (神族/魔族/人类/兽类/龙类/妖精/机械)
  *  3. Amber   — 拼图与起结有序 (拼图, 单点绿色漩涡, 单点红色漩涡, 多格角色通行, 多格角色停放)
@@ -54,13 +70,15 @@ class OverlayBoardEditorController(
     private val context: Context,
     private val onSaveEditedBoard: () -> Unit,
     private val onClearAllMarkers: () -> Unit,
-    private val onCloseEditor: () -> Unit
+    private val onCloseEditor: () -> Unit,
+    private val onPanelHeightChanged: (() -> Unit)? = null
 ) {
     val rootView: LinearLayout
     var activeBrush: BoardBrush = BoardBrush.PaintElement(Element.WATER)
         private set
 
     private var isSavedState: Boolean = false
+    private var expandedGroupIdx: Int? = 0 // Single-open exclusive accordion: default Group 0 (珠色与珠型) open
     private var lctx: Context = context
     private var currentPalette: OverlayPalette? = null
 
@@ -172,8 +190,7 @@ class OverlayBoardEditorController(
     }
 
     private val brushButtons = LinkedHashMap<String, TextView>()
-    private val groupTitleViews = ArrayList<Pair<TextView, BrushGroupSpec>>()
-    private val groupContainers = ArrayList<Pair<LinearLayout, BrushGroupSpec>>()
+    private val accordionGroups = ArrayList<AccordionGroupViews>()
     private val titleLabel: TextView
     private val statusBadge: TextView
     private val hintLabel: TextView
@@ -304,7 +321,6 @@ class OverlayBoardEditorController(
         brushGroups.forEachIndexed { gIdx, group ->
             val groupBox = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(6), dp(3), dp(6), dp(4))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -313,32 +329,76 @@ class OverlayBoardEditorController(
                 }
             }
 
-            // Group title with vertical colored bar
+            // Clickable Colored Accordion Header (matches Strategy drawers 1:1!)
             val gHdr = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(7), dp(5), dp(7), dp(5))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(2) }
+                )
+                setOnClickListener {
+                    // Exclusive single-open accordion: opening one drawer auto-collapses all other drawers!
+                    expandedGroupIdx = if (expandedGroupIdx == gIdx) null else gIdx
+                    refreshAccordionState()
+                    onPanelHeightChanged?.invoke()
+                }
             }
             gHdr.addView(View(context).apply {
                 background = rounded(group.accentColor, dp(2).toFloat(), null)
-                layoutParams = LinearLayout.LayoutParams(dp(3), dp(9)).apply { marginEnd = dp(5) }
+                layoutParams = LinearLayout.LayoutParams(dp(3), dp(12)).apply { marginEnd = dp(6) }
             })
             val gTitle = TextView(context).apply {
                 text = context.getString(group.titleRes)
-                textSize = 9.2f
+                textSize = 9.8f
                 typeface = Typeface.DEFAULT_BOLD
                 setSingleLine(true)
             }
             gHdr.addView(gTitle)
+            gHdr.addView(View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f)
+            })
+            val activeBadge = TextView(context).apply {
+                textSize = 8.8f
+                typeface = Typeface.DEFAULT_BOLD
+                setSingleLine(true)
+                ellipsize = TextUtils.TruncateAt.END
+                maxWidth = dp(96)
+                setPadding(dp(5), dp(1), dp(5), dp(1))
+                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(5) }
+            }
+            gHdr.addView(activeBadge)
+            val chevron = TextView(context).apply {
+                text = if (expandedGroupIdx == gIdx) "▾" else "▸"
+                textSize = 10.5f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(group.accentColor)
+            }
+            gHdr.addView(chevron)
             groupBox.addView(gHdr)
 
-            groupTitleViews.add(gTitle to group)
-            groupContainers.add(groupBox to group)
+            val divider = View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+                visibility = if (expandedGroupIdx == gIdx) View.VISIBLE else View.GONE
+            }
+            groupBox.addView(divider)
 
-            // Wrapped multi-row equal-width grid rows
+            val bodyContainer = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(6), dp(4), dp(6), dp(5))
+                visibility = if (expandedGroupIdx == gIdx) View.VISIBLE else View.GONE
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            // Wrapped multi-row equal-width grid rows inside collapsible body
             group.rows.forEachIndexed { rIdx, rowBrushes ->
                 val row = LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -361,13 +421,39 @@ class OverlayBoardEditorController(
                     brushButtons[brush.id] = btn
                     row.addView(btn)
                 }
-                groupBox.addView(row)
+                bodyContainer.addView(row)
             }
+            groupBox.addView(bodyContainer)
             groupsHost.addView(groupBox)
+
+            accordionGroups.add(
+                AccordionGroupViews(
+                    index = gIdx,
+                    spec = group,
+                    box = groupBox,
+                    headerRow = gHdr,
+                    titleView = gTitle,
+                    activeBadge = activeBadge,
+                    chevronView = chevron,
+                    dividerView = divider,
+                    bodyContainer = bodyContainer
+                )
+            )
         }
 
         scroll.addView(groupsHost)
         rootView.addView(scroll)
+    }
+
+    fun setMaxPanelWidth(widthPx: Int, topMarginPx: Int = dp(4), marginStartPx: Int = dp(4)) {
+        val lp = (rootView.layoutParams as? LinearLayout.LayoutParams)
+            ?: LinearLayout.LayoutParams(widthPx, LinearLayout.LayoutParams.WRAP_CONTENT)
+        if (lp.width != widthPx || lp.topMargin != topMarginPx || lp.marginStart != marginStartPx) {
+            lp.width = widthPx
+            lp.topMargin = topMarginPx
+            lp.marginStart = marginStartPx
+            rootView.layoutParams = lp
+        }
     }
 
     fun applyTheme(palette: OverlayPalette, localizedContext: Context = context) {
@@ -387,28 +473,52 @@ class OverlayBoardEditorController(
         styleBtn(clearAllBtn, palette.errorContainer, palette.onErrorContainer, null)
         styleBtn(exitBtn, palette.chipOffBg, palette.onSurfaceVariant, palette.chipOffStroke)
 
-        for ((titleView, spec) in groupTitleViews) {
-            titleView.text = lctx.getString(spec.titleRes)
-            titleView.setTextColor(spec.accentColor)
-        }
-        for ((box, spec) in groupContainers) {
-            val tintBg = Color.argb(
-                if (palette.isDark) 26 else 14,
-                Color.red(spec.accentColor),
-                Color.green(spec.accentColor),
-                Color.blue(spec.accentColor)
-            )
-            val tintStroke = Color.argb(
-                if (palette.isDark) 96 else 72,
-                Color.red(spec.accentColor),
-                Color.green(spec.accentColor),
-                Color.blue(spec.accentColor)
-            )
-            box.background = rounded(tintBg, dp(8).toFloat(), tintStroke)
-        }
-
         refreshSaveStateChrome()
         refreshBrushStyles()
+    }
+
+    private fun refreshAccordionState() {
+        val p = currentPalette ?: return
+        val cardSurface = if (p.isDark) Color.rgb(34, 38, 46) else Color.WHITE
+        for (grp in accordionGroups) {
+            val accent = grp.spec.accentColor
+            val r = Color.red(accent)
+            val g = Color.green(accent)
+            val b = Color.blue(accent)
+            val isOpen = expandedGroupIdx == grp.index
+            val hasActiveBrush = activeBrush.id in grp.spec.brushIds
+
+            grp.titleView.text = lctx.getString(grp.spec.titleRes)
+            grp.titleView.setTextColor(if (p.isDark) Color.WHITE else p.onSurface)
+            grp.chevronView.text = if (isOpen) "▾" else "▸"
+            grp.chevronView.setTextColor(accent)
+
+            if (hasActiveBrush) {
+                val activeLbl = activeBrush.resolveLabel(lctx)
+                grp.activeBadge.text = "●$activeLbl"
+                grp.activeBadge.visibility = View.VISIBLE
+                val badgeBg = Color.argb(if (p.isDark) 52 else 28, r, g, b)
+                grp.activeBadge.setTextColor(accent)
+                grp.activeBadge.background = rounded(badgeBg, dp(6).toFloat(), null)
+            } else {
+                grp.activeBadge.visibility = View.GONE
+            }
+
+            val borderAlpha = when {
+                isOpen || hasActiveBrush -> if (p.isDark) 172 else 148
+                else -> if (p.isDark) 84 else 64
+            }
+            val headerTint = Color.argb(if (p.isDark) 42 else 22, r, g, b)
+            grp.box.background = rounded(cardSurface, dp(9).toFloat(), Color.argb(borderAlpha, r, g, b))
+            grp.headerRow.background = if (isOpen) {
+                topRounded(headerTint, dp(8).toFloat())
+            } else {
+                rounded(headerTint, dp(8).toFloat(), null)
+            }
+            grp.dividerView.setBackgroundColor(Color.argb(if (p.isDark) 56 else 36, r, g, b))
+            grp.dividerView.visibility = if (isOpen) View.VISIBLE else View.GONE
+            grp.bodyContainer.visibility = if (isOpen) View.VISIBLE else View.GONE
+        }
     }
 
     fun setSavedState(saved: Boolean) {
@@ -481,6 +591,7 @@ class OverlayBoardEditorController(
                 }
             }
         }
+        refreshAccordionState()
     }
 
     fun applyActiveBrush(board: BoardState, row: Int, col: Int): BoardState =
@@ -530,6 +641,12 @@ class OverlayBoardEditorController(
         cornerRadius = radius
         setColor(bg)
         if (stroke != null) setStroke(strokePx, stroke)
+    }
+
+    private fun topRounded(bg: Int, radius: Float) = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
+        setColor(bg)
     }
 
     private fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()
