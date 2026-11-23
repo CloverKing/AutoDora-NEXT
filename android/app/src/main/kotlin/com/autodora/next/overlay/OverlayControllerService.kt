@@ -881,7 +881,17 @@ class OverlayControllerService : Service() {
             val puzzleChipActive = activeWaveChips.any { it.id in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS }
             val burstCount = if (trafficLightChipActive || puzzleChipActive) maxOf(settings.multiFrameCount, 4) else settings.multiFrameCount
             val burstInterval = if (trafficLightChipActive) 85L else 50L
-            val frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
+            // If VirtualDisplay hasn't received a compositor frame for >3s (possible HyperOS/Android 15 stall),
+            // proactively swap in a fresh ImageReader surface before capturing!
+            if (capturer.lastFrameAgeMs > 3_000L) {
+                capturer.tryRecoverSurface()
+            }
+            var frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
+            if (frames.isEmpty()) {
+                if (capturer.tryRecoverSurface()) {
+                    frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
+                }
+            }
             if (frames.isEmpty()) {
                 pathOverlayView.visibility = View.VISIBLE
                 setPhase(OverlayPhase.IDLE)
@@ -891,12 +901,69 @@ class OverlayControllerService : Service() {
             }
 
             try {
-                val (geom, isBattleBoard) = withContext(Dispatchers.Default) {
-                    val firstBmp = frames.first()
-                    val g = AutoGridDetector.detect(firstBmp, settings.calibration)
-                    val inBattle = !FlashRevealMemoryTracker.isDarkModalCoveringBoard(DirectBitmapVisionFrame(firstBmp)) &&
-                        AutoGridDetector.isBattleBoardPresent(firstBmp, g)
-                    g to inBattle
+                // Detect blank/black MediaProjection buffer (e.g. HyperOS long-session suspension or screen-recorder takeover)
+                // and attempt one automatic ImageReader surface recovery before evaluating battle presence!
+                var firstBlank = withContext(Dispatchers.Default) {
+                    com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(frames.first())
+                }
+                if (firstBlank && capturer.tryRecoverSurface()) {
+                    frames.forEach { if (!it.isRecycled) it.recycle() }
+                    frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
+                    firstBlank = frames.isEmpty() || withContext(Dispatchers.Default) {
+                        com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(frames.first())
+                    }
+                }
+                if (firstBlank) {
+                    flashMemoryTracker.clearLock()
+                    usedMemorizedSnapshot = false
+                    lastRecognition = null
+                    invalidateLastSolution()
+                    setPhase(OverlayPhase.IDLE)
+                    toast(lctx.getString(R.string.ov_toast_capture_blank))
+                    return@launch
+                }
+
+                suspend fun evaluateBattleFrame(bmp: android.graphics.Bitmap): Pair<BoardGeometry, Boolean> = withContext(Dispatchers.Default) {
+                    val vFrame = DirectBitmapVisionFrame(bmp)
+                    if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(vFrame)) {
+                        return@withContext AutoGridDetector.detect(bmp, settings.calibration) to false
+                    }
+                    val g = AutoGridDetector.detect(bmp, settings.calibration)
+                    if (AutoGridDetector.isBattleBoardPresent(bmp, g)) {
+                        return@withContext g to true
+                    }
+                    // Fallback: if calibration drifted slightly (e.g. cutout/inset shift after long session),
+                    // auto-snap from HP bar directly before rejecting!
+                    val pFrame = com.autodora.next.capture.BitmapPixelFrame(bmp)
+                    val autoG = AutoGridDetector.autoCalibrateFromRealScreen(pFrame)
+                    if (autoG != null && AutoGridDetector.isBattleBoardPresent(pFrame, autoG)) {
+                        return@withContext autoG to true
+                    }
+                    g to false
+                }
+
+                var (geom, isBattleBoard) = evaluateBattleFrame(frames.first())
+                // If battle detection failed and cached frame may be stale, try ONE fresh surface recovery & recapture!
+                if (!isBattleBoard && capturer.tryRecoverSurface()) {
+                    frames.forEach { if (!it.isRecycled) it.recycle() }
+                    frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
+                    if (frames.isNotEmpty()) {
+                        val retryBlank = withContext(Dispatchers.Default) {
+                            com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(frames.first())
+                        }
+                        if (retryBlank) {
+                            flashMemoryTracker.clearLock()
+                            usedMemorizedSnapshot = false
+                            lastRecognition = null
+                            invalidateLastSolution()
+                            setPhase(OverlayPhase.IDLE)
+                            toast(lctx.getString(R.string.ov_toast_capture_blank))
+                            return@launch
+                        }
+                        val retried = evaluateBattleFrame(frames.first())
+                        geom = retried.first
+                        isBattleBoard = retried.second
+                    }
                 }
                 if (!isBattleBoard) {
                     flashMemoryTracker.clearLock()
@@ -1609,20 +1676,34 @@ class OverlayControllerService : Service() {
         }
     }
 
-    // ==================== Always-On 6Hz Background Watcher (Full-Board Question Orb Memory) ====================
+    // ==================== Always-On ~3Hz Background Watcher (Full-Board Question Orb Memory & Surface Health) ====================
     private fun ensureAlwaysOnBackgroundWatcher() {
         if (backgroundWatchJob?.isActive == true) return
         backgroundWatchJob = serviceScope.launch {
             var consecutiveNonBattleTicks = 0
             var consecutiveMassQuestionTicks = 0
+            var consecutiveBlankTicks = 0
             while (isActive) {
-                delay(165L)
+                delay(340L)
                 if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) continue
                 val capturer = ScreenCaptureSession.capturer.value ?: continue
                 if (!capturer.isReady.value) continue
 
                 val bmp = capturer.captureSingleFrame() ?: continue
                 try {
+                    val isBlank = withContext(Dispatchers.Default) {
+                        com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(bmp)
+                    }
+                    if (isBlank) {
+                        consecutiveBlankTicks++
+                        if (consecutiveBlankTicks == 3 || (consecutiveBlankTicks > 3 && consecutiveBlankTicks % 15 == 0)) {
+                            capturer.tryRecoverSurface()
+                        }
+                        continue
+                    } else {
+                        consecutiveBlankTicks = 0
+                    }
+
                     val (geom, rec, watchStatus) = withContext(Dispatchers.Default) {
                         val frame = DirectBitmapVisionFrame(bmp)
                         if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(frame)) {
@@ -1633,7 +1714,8 @@ class OverlayControllerService : Service() {
                                 Triple(null, null, 2) // 2 = non-battle screen (Home Map, menus, etc.)
                             } else {
                                 val r = boardRecognizer.recognize(listOf(bmp), g)
-                                if (AutoGridDetector.isDimmedTransitionBoard(bmp, g, r.questionOrbsDetected)) {
+                                val specialDarkCount = r.bloodDrainOrbsDetected + r.petrifiedOrbsDetected
+                                if (AutoGridDetector.isDimmedTransitionBoard(bmp, g, r.questionOrbsDetected, specialDarkCount)) {
                                     Triple(null, null, 3) // 3 = dimmed VICTORY / wave-walk transition veil
                                 } else {
                                     Triple(g, r, 0) // 0 = genuine active battle board

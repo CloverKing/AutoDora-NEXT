@@ -11,6 +11,7 @@ import android.media.projection.MediaProjection
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlin.math.max
 
 /**
  * Android 14/15 compliant MediaProjection screen capturer with Zero-Copy Idle Frame Holding:
@@ -49,6 +51,14 @@ class MediaProjectionCapturer(
     private var virtualDisplay: VirtualDisplay? = null
     private val imageLock = Any()
     private var latestImage: Image? = null
+    @Volatile
+    private var lastImageTimestampMs: Long = 0L
+
+    override val lastFrameAgeMs: Long
+        get() {
+            val ts = lastImageTimestampMs
+            return if (ts <= 0L) Long.MAX_VALUE else (SystemClock.elapsedRealtime() - ts).coerceAtLeast(0L)
+        }
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -97,6 +107,7 @@ class MediaProjectionCapturer(
                 }
                 latestImage?.close()
                 latestImage = incoming
+                lastImageTimestampMs = SystemClock.elapsedRealtime()
             }
         }, handler)
 
@@ -134,6 +145,7 @@ class MediaProjectionCapturer(
                 if (fresher != null) {
                     latestImage?.close()
                     latestImage = fresher
+                    lastImageTimestampMs = SystemClock.elapsedRealtime()
                 }
             } catch (_: Exception) {
             }
@@ -160,6 +172,7 @@ class MediaProjectionCapturer(
                 if (fresher != null) {
                     latestImage?.close()
                     latestImage = fresher
+                    lastImageTimestampMs = SystemClock.elapsedRealtime()
                 }
             } catch (_: Exception) {
             }
@@ -247,6 +260,67 @@ class MediaProjectionCapturer(
             }
             latestImage?.close()
             latestImage = null
+            lastImageTimestampMs = 0L
+        }
+    }
+
+    override suspend fun tryRecoverSurface(): Boolean = withContext(Dispatchers.Default) {
+        if (!_isReady.value) return@withContext false
+        val vd = virtualDisplay ?: return@withContext false
+        Log.w(TAG, "Attempting VirtualDisplay ImageReader surface recovery (lastFrameAgeMs=$lastFrameAgeMs)")
+        try {
+            val newReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 4)
+            newReader.setOnImageAvailableListener({ r ->
+                val incoming = try {
+                    r.acquireLatestImage()
+                } catch (e: Exception) {
+                    Log.w(TAG, "acquireLatestImage (recovered) failed: ${e.message}")
+                    null
+                } ?: return@setOnImageAvailableListener
+
+                synchronized(imageLock) {
+                    if (!_isReady.value) {
+                        incoming.close()
+                        return@synchronized
+                    }
+                    latestImage?.close()
+                    latestImage = incoming
+                    lastImageTimestampMs = SystemClock.elapsedRealtime()
+                }
+            }, handler)
+
+            val oldReader: ImageReader?
+            synchronized(imageLock) {
+                oldReader = imageReader
+                latestImage?.close()
+                latestImage = null
+                lastImageTimestampMs = 0L
+                imageReader = newReader
+            }
+            // Swap the live surface onto the existing VirtualDisplay (Android 14/15/16 safe without re-consent!)
+            vd.resize(screenWidth, screenHeight, densityDpi)
+            vd.setSurface(newReader.surface)
+            try {
+                oldReader?.setOnImageAvailableListener(null, null)
+                oldReader?.close()
+            } catch (_: Exception) {
+            }
+
+            // Wait up to 480ms for a fresh compositor frame to land on the recovered surface
+            var waited = 0
+            while (waited < 16 && _isReady.value) {
+                if (synchronized(imageLock) { latestImage != null }) {
+                    Log.i(TAG, "VirtualDisplay surface recovery succeeded in ${waited * 30}ms")
+                    return@withContext true
+                }
+                delay(30L)
+                waited++
+            }
+            Log.w(TAG, "VirtualDisplay surface recovery timed out waiting for frame")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "VirtualDisplay surface recovery failed", e)
+            false
         }
     }
 
@@ -290,5 +364,31 @@ class MediaProjectionCapturer(
 
     companion object {
         private const val TAG = "MediaProjCapturer"
+
+        /**
+         * Fast sparse check (< 0.05ms) detecting all-black / privacy-blanked MediaProjection frames
+         * (e.g., when Android 14/15/16 HyperOS suspends a long-running VirtualDisplay or another
+         * screen recorder takes over the projection slot).
+         */
+        fun isBlankOrBlackFrame(bitmap: Bitmap): Boolean {
+            val w = bitmap.width
+            val h = bitmap.height
+            if (w < 16 || h < 16) return true
+            var dark = 0
+            var total = 0
+            val cols = 8
+            val rows = 10
+            for (ry in 0 until rows) {
+                val y = ((ry + 0.5f) / rows * h).toInt().coerceIn(0, h - 1)
+                for (rx in 0 until cols) {
+                    val x = ((rx + 0.5f) / cols * w).toInt().coerceIn(0, w - 1)
+                    val argb = bitmap.getPixel(x, y)
+                    val mx = max((argb ushr 16) and 0xFF, max((argb ushr 8) and 0xFF, argb and 0xFF))
+                    if (mx <= 8) dark++
+                    total++
+                }
+            }
+            return total > 0 && dark.toFloat() / total >= 0.96f
+        }
     }
 }

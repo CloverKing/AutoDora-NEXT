@@ -1936,6 +1936,79 @@ void testSpecificRaceRunestoneShield() {
             "solved path must eliminate Demon race runestone in Wave 1");
 }
 
+// ============================================================================
+// 50. Thorn Runestone (荊棘符石): Movable/Matchable, Strictly Zero Touch!
+// ============================================================================
+void testThornRunestoneZeroTouchAvoidance() {
+    BoardState b = BoardState::fromString(
+        "WFGLDH"
+        "FGLWHF"
+        "LWDGLH"
+        "GWFLHW"
+        "FLDGWH",
+        6, 5
+    );
+    // Mark 2 Thorn runestones (r=1,c=4) Heart and (r=2,c=3) Light (matching real Image 1!)
+    b.at(1, 4).hazards |= HazardBits::Thorn;
+    b.at(2, 3).hazards |= HazardBits::Thorn;
+    b.rebuildMasks();
+
+    RuleConfig r;
+    r.maxSteps = 22;
+    r.beamWidth = 140;
+    r.maxTimeMs = 450;
+    r.maxBurningTileHurts = 0; // Default zero touch damage
+
+    PuzzleSolver solver;
+    auto out = solver.solve(b, r);
+    require(!out.solutions.empty(), "solver must find a path avoiding Thorn orbs");
+    const auto& sol = out.solutions[0];
+    verifyPathReplay(b, r, sol);
+    require(sol.metrics.burningTileHits == 0, "solver must not touch any Thorn runestone when maxBurningTileHurts==0");
+    require(sol.simulation.totalCombo >= 4, "solver should still achieve solid combo while avoiding Thorn orbs");
+
+    // Verify zero waypoints touched either Thorn orb (start OR intermediate swaps)
+    for (const auto& wp : sol.waypoints) {
+        const bool hitT1 = (wp.row == 1 && wp.col == 4);
+        const bool hitT2 = (wp.row == 2 && wp.col == 3);
+        require(!hitT1 && !hitT2, "waypoint illegally stepped onto a Thorn runestone");
+    }
+}
+
+// ============================================================================
+// 51. Full-Board 30/30 Locked/Blood-Drain (全版鎖定/化血): Maximize Cleared Orbs!
+// ============================================================================
+void testFullBoardLockedBloodDrainProgressiveClear() {
+    BoardState b = BoardState::fromString(
+        "HLHGWH"
+        "HDDWGG"
+        "GFLWWL"
+        "GFHHFG"
+        "WGLWLW",
+        6, 5
+    );
+    // All 30/30 cells locked/blood-drain (matching real Video 3 turn-1 full-board lock!)
+    for (int i = 0; i < 30; ++i) {
+        b.cells[i].hazards |= HazardBits::BloodDrain;
+    }
+    b.rebuildMasks();
+
+    RuleConfig r;
+    r.maxSteps = 26;
+    r.beamWidth = 160;
+    r.maxTimeMs = 450;
+    r.mustClearBloodDrain = true;
+
+    PuzzleSolver solver;
+    auto out = solver.solve(b, r);
+    require(!out.solutions.empty(), "solver must still return strong solutions on 30/30 full-board lock");
+    const auto& sol = out.solutions[0];
+    verifyPathReplay(b, r, sol);
+    require(sol.simulation.totalCombo >= 6, "full-board locked solve should achieve >= 6 combos");
+    require(sol.simulation.bloodDrainRemainingFirstWave <= 12,
+            "full-board locked solve should progressively clear >= 18 locked orbs");
+}
+
 } // namespace
 
 int main() {
@@ -1990,6 +2063,8 @@ int main() {
     runTest("47. Runestone #9 Bomb Touch Avoidance + #17 MagicOrb (+3C/orb)", testBombTouchAvoidanceAndMagicOrbBonus);
     runTest("48. Runestone #12 EvilEnergy & #20 BloodThorn Elimination Avoidance", testEvilEnergyAndBloodThornAvoidance);
     runTest("49. Specific Race Runestone Shield (指定种族符石盾: 神/魔精确区分)", testSpecificRaceRunestoneShield);
+    runTest("50. Thorn Runestone Zero-Touch Avoidance (荊棘符石严避触碰)", testThornRunestoneZeroTouchAvoidance);
+    runTest("51. Full-Board 30/30 Locked/BloodDrain Progressive Clear (全版锁定/化血最大化消除)", testFullBoardLockedBloodDrainProgressiveClear);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;

@@ -144,6 +144,8 @@ class OverlayBoardEditorController(
                 listOf(
                     BoardBrush.ToggleHazard(HazardBits.LUMINOUS, "流光"),
                     BoardBrush.ToggleHazard(HazardBits.PURGATORY_FIRE, "炼狱"),
+                    BoardBrush.ToggleHazard(HazardBits.THORN, "荆棘"),
+                    BoardBrush.ToggleHazard(HazardBits.LOCKED_HURT, "锁定"),
                     BoardBrush.ToggleHazard(HazardBits.PRIORITY, "印记必消"),
                     BoardBrush.ToggleHazard(HazardBits.RESERVE, "保留不消")
                 )

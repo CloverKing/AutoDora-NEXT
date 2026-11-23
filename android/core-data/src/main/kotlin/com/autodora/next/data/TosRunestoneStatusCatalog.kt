@@ -152,6 +152,19 @@ object TosRunestoneStatusCatalog {
             hazardBit = HazardBits.BLOOD_THORN, movable = true,
             touchEffect = RunestoneTouchEffect.NONE, directMatchable = true, elimHarmful = true,
             ruleTextZhTw = "• 每消除刺血符石 ⇒ 扣除召喚師生命力"
+        ),
+        // Extended Classic / Non-Encyclopedia Special Runestones verified via live gameplay & ToS Wiki
+        RunestoneStatusSpec(
+            index = 21, nameZhTw = "鎖定符石", nameZhCn = "锁定符石",
+            hazardBit = HazardBits.LOCKED_HURT, movable = true,
+            touchEffect = RunestoneTouchEffect.NONE, directMatchable = true, mustClear = true,
+            ruleTextZhTw = "• 經典敵技（與 #8 化血共用灰石殼纏繞外觀，百科未單列）：鎖定全版或指定屬性符石\n• 如有鎖定符石未被消除 ⇒ 依敵技觸發敵人回復等額傷害血量 / 扣血 / 引爆等懲罰"
+        ),
+        RunestoneStatusSpec(
+            index = 22, nameZhTw = "荊棘符石", nameZhCn = "荆棘符石",
+            hazardBit = HazardBits.THORN, movable = true,
+            touchEffect = RunestoneTouchEffect.DEALS_DAMAGE, directMatchable = true,
+            ruleTextZhTw = "• 經典敵技（亦稱鋼線符石，百科未單列）：每回合隨機添加於指定數量符石\n• 荊棘符石不能轉化\n• 移動符石時每觸碰 1 次荊棘符石 ⇒ 根據敵人攻擊力扣除召喚師生命力（未觸碰可安全保留或由鄰珠配消）"
         )
     )
 

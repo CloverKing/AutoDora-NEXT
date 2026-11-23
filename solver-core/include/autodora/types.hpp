@@ -114,6 +114,7 @@ constexpr uint32_t Coagulated    = 1u << 23; // 凝结符石 (#5 不可移动/�
 constexpr uint32_t EvilEnergy    = 1u << 24; // 邪恶能量符石 (#12 不可还原/强化, 每消1粒全队减攻)
 constexpr uint32_t MagicOrb      = 1u << 25; // 魔力符石 (#17 每消1粒+3 Combo、2倍攻/回满血)
 constexpr uint32_t BloodThorn    = 1u << 26; // 刺血符石 (#20 每消除扣除召唤师生命力)
+constexpr uint32_t Thorn         = 1u << 27; // 荆棘符石/钢线符石 (可移动可消除, 不能转化, 移动时每触碰1次依敌攻扣血 -> 默认0触碰严避)
 } // namespace HazardBits
 
 // Fixed terrain / shield markers attached to grid coordinate (r, c) (do NOT move with orbs)

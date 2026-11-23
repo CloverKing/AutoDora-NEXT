@@ -1105,4 +1105,148 @@ class CvBoardRecognizerTest {
             assertEquals("Real BloodDrain board must have 0 false question orbs", 0, brec.questionOrbsDetected)
         }
     }
+
+    @Test
+    fun `detects Petrified (#04), Full-Board 30-of-30 Stone-Locked (incl Light), and Thorn runestones with zero false Heart Race badges`() {
+        val recognizer = CvBoardRecognizer()
+
+        fun loadImg(relPath: String): Pair<VisionFrame, BoardGeometry>? {
+            val f = java.io.File(relPath)
+            if (!f.exists()) return null
+            val imageIo = Class.forName("javax.imageio.ImageIO")
+            val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, f)
+            val cls = img.javaClass
+            val iw = cls.getMethod("getWidth").invoke(img) as Int
+            val ih = cls.getMethod("getHeight").invoke(img) as Int
+            val getRgb = cls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            val vf = object : VisionFrame {
+                override val width = iw
+                override val height = ih
+                override fun getArgb(x: Int, y: Int): Int =
+                    getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+            }
+            val gameH = iw * (16f / 9f)
+            val lb = ((ih - gameH) * 0.5f).coerceAtLeast(0f)
+            val botPx = (ih - lb + gameH * 0.004f).coerceAtMost(ih.toFloat())
+            val cSize = iw / 6f
+            val bot = botPx.coerceIn(cSize * 5f, ih.toFloat())
+            val geom = BoardGeometry(0f, (bot - cSize * 5f).coerceAtLeast(0f), iw.toFloat(), bot, 6, 5)
+            return vf to geom
+        }
+
+        // 1) Deterministic synthetic Petrified + Thorn + Locked-Light board test (always runs in CI)
+        val cell = 100
+        val syn = SyntheticBoardFrame(6 * cell, 5 * cell)
+        val palette = mapOf(
+            Element.WATER to 0xFF1E9CFF.toInt(),
+            Element.FIRE to 0xFFFF3020.toInt(),
+            Element.WOOD to 0xFF2EC840.toInt(),
+            Element.LIGHT to 0xFFFFDF20.toInt(),
+            Element.DARK to 0xFF8C32E6.toInt(),
+            Element.HEART to 0xFFFF5CA8.toInt()
+        )
+        for (r in 0 until 5) {
+            for (c in 0 until 6) {
+                val idx = r * 6 + c
+                val x0 = c * cell
+                val y0 = r * cell
+                val cx = x0 + cell / 2
+                val cy = y0 + cell / 2
+                when (idx) {
+                    2 -> {
+                        // Petrified orb: dark slate-navy stone + crimson-orange lava cracks
+                        syn.drawCell(x0, y0, cell, 0xFF1B243A.toInt())
+                        for (dy in -32..32) {
+                            for (dx in -32..32) {
+                                if (hypot(dx.toDouble(), dy.toDouble()) <= 36.0 &&
+                                    ((dx + dy) % 9 in -2..2 || (dx - 2 * dy) % 11 in -1..1)
+                                ) {
+                                    syn.pixels[(cy + dy) * syn.width + (cx + dx)] = 0xFFE63018.toInt()
+                                }
+                            }
+                        }
+                    }
+                    10 -> {
+                        // Thorn Heart orb: bright pink heart + woody-brown horizontal thorn vine across mid-band
+                        syn.drawCell(x0, y0, cell, palette.getValue(Element.HEART))
+                        for (dy in -8..8) {
+                            for (dx in -38..38) {
+                                if (kotlin.math.abs(dy) <= 5 || (dx % 7 == 0 && kotlin.math.abs(dy) <= 8)) {
+                                    syn.pixels[(cy + dy) * syn.width + (cx + dx)] = 0xFF6B421B.toInt()
+                                }
+                            }
+                        }
+                    }
+                    15 -> {
+                        // Locked Light orb: muted dark olive-khaki body
+                        syn.drawCell(x0, y0, cell, 0xFF64582C.toInt())
+                    }
+                    else -> {
+                        syn.drawCell(x0, y0, cell, palette.getValue(Element.MATCHABLE[idx % 6]))
+                    }
+                }
+            }
+        }
+        val synRec = recognizer.recognizeFrames(listOf(syn), BoardGeometry(0f, 0f, 600f, 500f, 6, 5))
+        assertTrue("Synthetic cell 2 must detect PETRIFIED", (synRec.board.cells[2].hazards and HazardBits.PETRIFIED) != 0)
+        assertEquals(1, synRec.petrifiedOrbsDetected)
+        assertEquals("Synthetic cell 10 must preserve HEART element", Element.HEART, synRec.board.cells[10].element)
+        assertTrue("Synthetic cell 10 must detect THORN", (synRec.board.cells[10].hazards and HazardBits.THORN) != 0)
+        assertEquals(1, synRec.thornOrbsDetected)
+        assertEquals("Synthetic cell 15 must classify Locked Light as LIGHT", Element.LIGHT, synRec.board.cells[15].element)
+        assertTrue("Synthetic cell 15 must detect BLOOD_DRAIN/LOCKED", (synRec.board.cells[15].hazards and HazardBits.BLOOD_DRAIN) != 0)
+
+        // 2) Optional real-game frame verification: Video 2 Petrified (#04 石化)
+        loadImg("../../backups/user_training_media/20261123_petrified_locked_thorn/v2_petrified.png")?.let { (vf, g) ->
+            val rec = recognizer.recognizeFrames(listOf(vf), g)
+            val expectedPetrified = setOf(0 to 2, 4 to 2, 4 to 4)
+            for (r in 0 until 5) {
+                for (c in 0 until 6) {
+                    val isP = (rec.board.cellAt(r, c).hazards and HazardBits.PETRIFIED) != 0
+                    assertEquals("Real Video 2 ($r,$c) PETRIFIED mismatch", (r to c) in expectedPetrified, isP)
+                }
+            }
+            assertEquals(3, rec.petrifiedOrbsDetected)
+            assertEquals(0, rec.thornOrbsDetected)
+        }
+
+        // 3) Optional real-game frame verification: Video 3 Full-Board 30/30 Stone-Locked (全版鎖定)
+        loadImg("../../backups/user_training_media/20261123_petrified_locked_thorn/v3_locked_all30.png")?.let { (vf, g) ->
+            val rec = recognizer.recognizeFrames(listOf(vf), g)
+            val expected = arrayOf(
+                arrayOf(Element.HEART, Element.LIGHT, Element.HEART, Element.WOOD, Element.WATER, Element.HEART),
+                arrayOf(Element.HEART, Element.DARK, Element.DARK, Element.WATER, Element.WOOD, Element.WOOD),
+                arrayOf(Element.WOOD, Element.FIRE, Element.LIGHT, Element.WATER, Element.WATER, Element.LIGHT),
+                arrayOf(Element.WOOD, Element.FIRE, Element.HEART, Element.HEART, Element.FIRE, Element.WOOD),
+                arrayOf(Element.WATER, Element.WOOD, Element.LIGHT, Element.WATER, Element.LIGHT, Element.WATER)
+            )
+            for (r in 0 until 5) {
+                for (c in 0 until 6) {
+                    val cs = rec.board.cellAt(r, c)
+                    assertEquals("Real Video 3 ($r,$c) element mismatch", expected[r][c], cs.element)
+                    assertTrue("Real Video 3 ($r,$c) must flag BLOOD_DRAIN/LOCKED", (cs.hazards and HazardBits.BLOOD_DRAIN) != 0)
+                }
+            }
+            assertEquals(30, rec.bloodDrainOrbsDetected)
+            assertEquals(0, rec.questionOrbsDetected)
+        }
+
+        // 4) Optional real-game frame verification: Image 1 Thorn Runestones (荊棘符石) & Zero False Heart Race Badge
+        loadImg("../../backups/user_training_media/20261123_petrified_locked_thorn/img1_thorn.jpg")?.let { (vf, g) ->
+            val rec = recognizer.recognizeFrames(listOf(vf), g)
+            val expectedThorn = setOf(1 to 4, 2 to 3)
+            for (r in 0 until 5) {
+                for (c in 0 until 6) {
+                    val cs = rec.board.cellAt(r, c)
+                    val isTh = (cs.hazards and HazardBits.THORN) != 0
+                    assertEquals("Real Image 1 ($r,$c) THORN mismatch", (r to c) in expectedThorn, isTh)
+                    assertNotEquals("Real Image 1 ($r,$c) must NOT false-trigger RACE badge", Variant.RACE, cs.variant)
+                }
+            }
+            assertEquals(Element.HEART, rec.board.cellAt(1, 4).element)
+            assertEquals(Element.LIGHT, rec.board.cellAt(2, 3).element)
+            assertEquals(2, rec.thornOrbsDetected)
+            assertEquals(0, rec.raceBadgesDetected)
+        }
+    }
 }

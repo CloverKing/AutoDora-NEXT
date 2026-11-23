@@ -463,6 +463,8 @@ class CvBoardRecognizer : BoardRecognizer {
         var lowSatCount = 0
         var low35Count = 0
         var vineCount = 0
+        var slateDarkCount = 0
+        var lavaRedCount = 0
         var maxBrightStarCount = 0
         var allSatSum = 0f
         var allValSum = 0f
@@ -514,6 +516,9 @@ class CvBoardRecognizer : BoardRecognizer {
 
                     if (s < 0.35f) low35Count++
                     if (s < 0.38f && v in 0.16f..0.48f) vineCount++
+                    // Petrified (#04 石化) signature: dark charcoal/navy stone + glowing crimson-orange lava cracks
+                    if (v <= 0.36f || (h in 195f..265f && v <= 0.48f && s <= 0.68f)) slateDarkCount++
+                    if ((h <= 28f || h >= 342f) && s >= 0.55f && v >= 0.40f) lavaRedCount++
                     if (s >= 0.08f && v >= 0.18f) {
                         val hRad = h.toDouble() * PI / 180.0
                         val hw = (s * v).toDouble()
@@ -578,6 +583,8 @@ class CvBoardRecognizer : BoardRecognizer {
         val lowSatRatio = lowSatCount.toFloat() / max(1, sampleCount)
         val low35Ratio = low35Count.toFloat() / max(1, sampleCount)
         val vineRatio = vineCount.toFloat() / max(1, sampleCount)
+        val slateDarkRatio = slateDarkCount.toFloat() / max(1, sampleCount)
+        val lavaRedRatio = lavaRedCount.toFloat() / max(1, sampleCount)
         val allAvgS = allSatSum / max(1, sampleCount)
         val allAvgV = allValSum / max(1, sampleCount)
         val innerAvgV = innerRingValSum / max(1, innerRingCount)
@@ -586,6 +593,22 @@ class CvBoardRecognizer : BoardRecognizer {
         val outerAvgS = outerRingSatSum / max(1, outerRingCount)
         var meanHueDeg = (atan2(hueSinSum, hueCosSum) * 180.0 / PI).toFloat()
         if (meanHueDeg < 0f) meanHueDeg += 360f
+
+        // Dedicated Petrified Runestone (#04 石化符石) Detector:
+        // Verified against real ToS gameplay (dark charcoal/navy stone >= 22% interlaced with glowing crimson-orange
+        // lava cracks >= 18%, overall muted V <= 0.64). Normal Fire orbs have slateDarkRatio == 0.00 & V >= 0.78!
+        val isPetrifiedOrb = !isTrafficLightStart &&
+            slateDarkRatio >= 0.22f &&
+            lavaRedRatio >= 0.18f &&
+            allAvgV <= 0.64f
+        if (isPetrifiedOrb) {
+            return CellState(
+                element = Element.UNKNOWN,
+                variant = Variant.NORMAL,
+                hazards = HazardBits.PETRIFIED,
+                confidence = 0.90f
+            )
+        }
 
         if (bestIdx < 0 || totalSatWeight < 0.5f || lowSatRatio > 0.82f) {
             // Flat pitch-dark modal/menu backdrop (e.g. long-press enemy info popup) has NO bright '?' glyph or orb rim!
@@ -607,13 +630,12 @@ class CvBoardRecognizer : BoardRecognizer {
             )
         }
 
-        // Dedicated Blood-Drain Runestone (化血符石, Encyclopedia #8) Detector:
-        // Verified against real ToS gameplay (化血符石 - 木、心) & official Encyclopedia #8 (化血水):
-        //  1) Blood-Drain Heart turns pale bleached lilac-white outer shell (outS<=0.25, outV 0.52..0.82 > inV)
-        //     around a dusty mauve heart core (inS>=0.14, meanHue ~301°..304°), which previously misclassified as DARK!
-        //  2) Blood-Drain Colored orbs (Wood/Water/Fire/Light/Dark) turn muted stone-greyish wrapped in dark vines
-        //     (allAvgS 0.14..0.35, allAvgV 0.30..0.62, low35Ratio>=0.62, vineRatio>=0.26, innerAvgV<=0.68),
-        //     cleanly separated from normal/Barrier orbs (allAvgV>=0.67, vine<=0.11) & Question orbs (inV>=0.78, vine=0).
+        // Dedicated Blood-Drain & Classic Stone-Locked Runestone (化血符石 #8 / 鎖定符石) Detector:
+        // Both mechanics share ToS's grey stone-vine desaturated shell across all 6 attributes:
+        //  1) Heart: bleached lilac-white outer shell (outS<=0.25, outV 0.52..0.92 > inV) + dusty mauve core (H 296°..346°)
+        //  2) Water/Fire/Wood/Dark: muted stone-greyish body wrapped in dark vines (allAvgS 0.14..0.35, allAvgV 0.28..0.62)
+        //  3) Light: muted dark olive-khaki body (H 22°..74°, allAvgS 0.32..0.66, allAvgV 0.24..0.52, inV<=0.48, outV<=0.54)
+        // Verified 30/30 on real full-board Locked stage & 8/8 on real Blood-Drain stage with 0 false positives!
         val isBloodDrainHeart = !isTrafficLightStart &&
             meanHueDeg in 296f..346f &&
             allAvgS <= 0.30f &&
@@ -630,13 +652,22 @@ class CvBoardRecognizer : BoardRecognizer {
             !isBloodDrainHeart &&
             bestIdx >= 0 &&
             allAvgS in 0.14f..0.35f &&
-            allAvgV in 0.30f..0.62f &&
+            allAvgV in 0.28f..0.62f &&
             innerAvgV <= 0.68f &&
             low35Ratio >= 0.62f &&
-            lowSatRatio <= 0.55f &&
-            vineRatio >= 0.26f
+            lowSatRatio <= 0.58f &&
+            vineRatio >= 0.22f
 
-        if (isBloodDrainHeart || isBloodDrainColored) {
+        val isBloodDrainLight = !isTrafficLightStart &&
+            !isBloodDrainHeart &&
+            !isBloodDrainColored &&
+            bestIdx == Element.LIGHT.code &&
+            allAvgS in 0.32f..0.66f &&
+            allAvgV in 0.24f..0.52f &&
+            innerAvgV <= 0.48f &&
+            outerAvgV <= 0.54f
+
+        if (isBloodDrainHeart || isBloodDrainColored || isBloodDrainLight) {
             return CellState(
                 element = if (isBloodDrainHeart) Element.HEART else Element.fromCode(bestIdx),
                 variant = if (hasRaceBadge) Variant.RACE else Variant.NORMAL,
@@ -682,18 +713,80 @@ class CvBoardRecognizer : BoardRecognizer {
             else -> Variant.NORMAL
         }
 
+        // Dedicated Thorn Runestone (荊棘符石 / 鋼線符石) Detector:
+        // Brown spiky briar vines wrapping horizontally across the middle band of an otherwise normal orb.
+        val isThornOrb = !isTrafficLightStart && detectThornOverlay(frames, cx, cy, radius)
+
         return CellState(
             element = Element.fromCode(bestIdx),
             variant = variant,
-            hazards = HazardBits.NONE,
+            hazards = if (isThornOrb) HazardBits.THORN else HazardBits.NONE,
             confidence = confidence
         )
     }
 
     /**
+     * Real-screenshot calibrated Thorn Runestone (荊棘符石) detector:
+     * Checks the horizontal mid-band strictly inside the orb (|dx| ∈ [0.15..0.78]*r, dy ∈ [-0.15..+0.15]*r)
+     * for woody-brown thorny vines (H ∈ [14°,44°], S ∈ [0.30,0.88], V ∈ [0.12,0.56]) appearing on BOTH
+     * left and right halves (>=10% each, combined >=24%), while confirming top & bottom orb interior
+     * remains bright non-brown (tbBrownRatio <= 0.18, separating Thorn from dark khaki orbs).
+     */
+    private fun detectThornOverlay(
+        frames: List<VisionFrame>,
+        cx: Float,
+        cy: Float,
+        radius: Float
+    ): Boolean {
+        for (f in frames) {
+            var leftHits = 0
+            var leftTot = 0
+            var rightHits = 0
+            var rightTot = 0
+            for (ix in -8..8) {
+                val dx = ix / 10f
+                if (abs(dx) < 0.15f || abs(dx) > 0.78f) continue
+                for (iy in -2..2) {
+                    val dy = iy * 0.075f
+                    val px = (cx + dx * radius).roundToInt()
+                    val py = (cy + dy * radius).roundToInt()
+                    val (h, s, v) = rgbToHsv(f.getArgb(px, py))
+                    if (dx < 0f) leftTot++ else rightTot++
+                    if (h in 14f..44f && s in 0.30f..0.88f && v in 0.12f..0.56f) {
+                        if (dx < 0f) leftHits++ else rightHits++
+                    }
+                }
+            }
+            val leftRatio = leftHits.toFloat() / max(1, leftTot)
+            val rightRatio = rightHits.toFloat() / max(1, rightTot)
+            if (leftRatio < 0.10f || rightRatio < 0.10f || (leftRatio + rightRatio) < 0.24f) continue
+
+            var tbBrown = 0
+            var tbTot = 0
+            val tbDys = floatArrayOf(-0.48f, -0.36f, 0.36f, 0.48f)
+            for (ix in -3..3) {
+                val dx = ix * 0.10f
+                for (dy in tbDys) {
+                    val px = (cx + dx * radius).roundToInt()
+                    val py = (cy + dy * radius).roundToInt()
+                    val (h, s, v) = rgbToHsv(f.getArgb(px, py))
+                    tbTot++
+                    if (h in 14f..48f && s in 0.30f..0.88f && v in 0.12f..0.56f) tbBrown++
+                }
+            }
+            if (tbBrown.toFloat() / max(1, tbTot) <= 0.18f) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
      * Detects ToS top-right circular black-and-white Race Badge (种族符石徽章, e.g. 人类/神/魔/龙/兽/妖/机械).
-     * Verified against real Xiaomi 15 battle screenshot: badge sits around (+0.58r, -0.58r) with >= 20%
-     * bright neutral-white ring pixels (v >= 0.80, s <= 0.26) AND >= 20% deep dark silhouette pixels (v <= 0.28).
+     * Calibrated against real Xiaomi 15 Human-race orbs AND normal glossy Heart orbs:
+     *  - Samples strictly inside the badge region [0.32r..0.74r] (excluding the outer dark checkerboard corner!)
+     *  - Requires crisp neutral-white ring pixels (v >= 0.82, s <= 0.15, ratio >= 24%) — rejecting pink Heart speculars!
+     *  - Requires dark silhouette pixels overall (>= 20%) AND inside the inner 3x3 badge core (>= 2 hits).
      */
     private fun detectTopRightRaceBadge(
         frame: VisionFrame,
@@ -701,11 +794,12 @@ class CvBoardRecognizer : BoardRecognizer {
         cy: Float,
         radius: Float
     ): Boolean {
-        val minOff = radius * 0.28f
-        val maxOff = radius * 0.82f
+        val minOff = radius * 0.32f
+        val maxOff = radius * 0.74f
         val steps = 5
         var whiteHits = 0
         var darkHits = 0
+        var innerDarkHits = 0
         var total = 0
         for (iy in 0 until steps) {
             val dy = -(minOff + (maxOff - minOff) * iy / (steps - 1))
@@ -713,13 +807,17 @@ class CvBoardRecognizer : BoardRecognizer {
                 val dx = minOff + (maxOff - minOff) * ix / (steps - 1)
                 val (_, s, v) = rgbToHsv(frame.getArgb((cx + dx).roundToInt(), (cy + dy).roundToInt()))
                 total++
-                if (v >= 0.80f && s <= 0.26f) whiteHits++
-                if (v <= 0.28f) darkHits++
+                if (v >= 0.82f && s <= 0.15f) whiteHits++
+                if (v <= 0.28f) {
+                    darkHits++
+                    if (ix in 1..3 && iy in 1..3) innerDarkHits++
+                }
             }
         }
         return total > 0 &&
-            (whiteHits.toFloat() / total) >= 0.20f &&
-            (darkHits.toFloat() / total) >= 0.20f
+            (whiteHits.toFloat() / total) >= 0.24f &&
+            (darkHits.toFloat() / total) >= 0.20f &&
+            innerDarkHits >= 2
     }
 
     /**

@@ -312,6 +312,12 @@ class AutoGridDetectorTest {
             AutoGridDetector.isDimmedTransitionBoard(dimmedVictory, baseGeom, questionCount = 30)
         )
 
+        // 3.5) Genuine full-board 30/30 Stone-Locked / Blood-Drain battle board (p90V~0.59, specialDark=30 >= 18) -> FALSE
+        assertFalse(
+            "Genuine full-board 30/30 Stone-Locked / Blood-Drain board must NOT be suppressed as dimmed VICTORY",
+            AutoGridDetector.isDimmedTransitionBoard(dimmedVictory, baseGeom, questionCount = 0, specialDarkOrbCount = 30)
+        )
+
         // 4) Optional real local VICTORY screenshot verification (gitignored dataset)
         val victoryFile = java.io.File("../../backups/user_training_media/20261122_barrier_burning_victory/victory_flash_reveal_bug.jpg")
         if (victoryFile.exists()) {

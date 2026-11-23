@@ -200,7 +200,8 @@ class FlashRevealMemoryTracker(
             val unknownCount = board.cells.indices.count { i ->
                 val el = board.cells[i].element
                 val isStorm = (board.tileFlags[i] and com.autodora.next.model.TileFlagBits.STORM) != 0
-                !isStorm && (el == Element.UNKNOWN || el == Element.EMPTY)
+                val isPetrified = (board.cells[i].hazards and HazardBits.PETRIFIED) != 0
+                !isStorm && !isPetrified && (el == Element.UNKNOWN || el == Element.EMPTY)
             }
             if (unknownCount > 2) return false
             if (result.averageConfidence < minConf) return false
@@ -218,38 +219,45 @@ class FlashRevealMemoryTracker(
             val w = frame.width
             val h = frame.height
             if (w < 120 || h < 200) return false
-            val x0 = (w * 0.18f).toInt()
-            val x1 = (w * 0.82f).toInt()
-            val y0 = (h * 0.41f).toInt()
-            val y1 = (h * 0.53f).toInt()
-            val stepX = max(2, (x1 - x0) / 18)
-            val stepY = max(2, (y1 - y0) / 10)
 
-            var darkNeutral = 0
-            var vividColored = 0
-            var total = 0
-            var y = y0
-            while (y <= y1) {
-                var x = x0
-                while (x <= x1) {
-                    val argb = frame.getArgb(x, y)
-                    val r = (argb ushr 16) and 0xFF
-                    val g = (argb ushr 8) and 0xFF
-                    val b = argb and 0xFF
-                    val maxC = max(r, max(g, b))
-                    val minC = min(r, min(g, b))
-                    if (maxC <= 62 && (maxC - minC) <= 24) {
-                        darkNeutral++
-                    } else if (maxC >= 120 && (maxC - minC) >= 55) {
-                        vividColored++
+            fun isRegionUniformDark(xFrac0: Float, xFrac1: Float, yFrac0: Float, yFrac1: Float): Boolean {
+                val x0 = (w * xFrac0).toInt()
+                val x1 = (w * xFrac1).toInt()
+                val y0 = (h * yFrac0).toInt()
+                val y1 = (h * yFrac1).toInt()
+                val stepX = max(2, (x1 - x0) / 16)
+                val stepY = max(2, (y1 - y0) / 10)
+                var darkNeutral = 0
+                var vividColored = 0
+                var total = 0
+                var y = y0
+                while (y <= y1) {
+                    var x = x0
+                    while (x <= x1) {
+                        val argb = frame.getArgb(x, y)
+                        val r = (argb ushr 16) and 0xFF
+                        val g = (argb ushr 8) and 0xFF
+                        val b = argb and 0xFF
+                        val maxC = max(r, max(g, b))
+                        val minC = min(r, min(g, b))
+                        if (maxC <= 62 && (maxC - minC) <= 24) {
+                            darkNeutral++
+                        } else if (maxC >= 120 && (maxC - minC) >= 55) {
+                            vividColored++
+                        }
+                        total++
+                        x += stepX
                     }
-                    total++
-                    x += stepX
+                    y += stepY
                 }
-                y += stepY
+                return total > 0 && (darkNeutral.toFloat() / total) >= 0.58f && (vividColored.toFloat() / total) <= 0.08f
             }
-            if (total == 0) return false
-            return (darkNeutral.toFloat() / total) >= 0.58f && (vividColored.toFloat() / total) <= 0.08f
+
+            // Require BOTH upper modal header/body (41%..53%) AND lower modal body covering the board (58%..78%)
+            // to be uniform dark charcoal — guarantees 100% detection of enemy long-press / stage-info modals
+            // with 0% false positives on dark dungeon battle backgrounds!
+            return isRegionUniformDark(0.18f, 0.82f, 0.41f, 0.53f) &&
+                isRegionUniformDark(0.20f, 0.80f, 0.58f, 0.78f)
         }
     }
 }

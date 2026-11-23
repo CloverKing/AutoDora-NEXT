@@ -481,6 +481,20 @@ class PathOverlayView(context: Context) : View(context) {
                     textPaint.textSize = tagR
                     canvas.drawText("暴风", (left + right) * 0.5f, top + tagR + 8f, textPaint)
                 }
+                if ((cell.hazards and HazardBits.PETRIFIED) != 0) {
+                    fillPaint.color = Color.argb(60, 48, 36, 44)
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, fillPaint)
+                    gridBorderPaint.color = Color.argb(230, 230, 74, 25)
+                    gridBorderPaint.strokeWidth = 4.5f
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
+                    val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
+                    val tagW = tagH * 1.12f
+                    fillPaint.color = Color.argb(230, 191, 54, 12)
+                    canvas.drawRoundRect(right - tagW - 6f, bottom - tagH - 6f, right - 6f, bottom - 6f, 6f, 6f, fillPaint)
+                    textPaint.color = Color.WHITE
+                    textPaint.textSize = tagH * 0.68f
+                    canvas.drawText("石", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                }
                 if ((cell.hazards and HazardBits.BLOOD_DRAIN) != 0) {
                     gridBorderPaint.color = Color.argb(210, 211, 47, 47)
                     gridBorderPaint.strokeWidth = 4f
@@ -492,6 +506,30 @@ class PathOverlayView(context: Context) : View(context) {
                     textPaint.color = Color.WHITE
                     textPaint.textSize = tagH * 0.68f
                     canvas.drawText("血", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                }
+                if ((cell.hazards and HazardBits.LOCKED_HURT) != 0) {
+                    gridBorderPaint.color = Color.argb(215, 255, 160, 0)
+                    gridBorderPaint.strokeWidth = 4f
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
+                    val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
+                    val tagW = tagH * 1.12f
+                    fillPaint.color = Color.argb(225, 230, 81, 0)
+                    canvas.drawRoundRect(right - tagW - 6f, bottom - tagH - 6f, right - 6f, bottom - 6f, 6f, 6f, fillPaint)
+                    textPaint.color = Color.WHITE
+                    textPaint.textSize = tagH * 0.68f
+                    canvas.drawText("锁", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
+                }
+                if ((cell.hazards and HazardBits.THORN) != 0) {
+                    gridBorderPaint.color = Color.argb(225, 141, 110, 99)
+                    gridBorderPaint.strokeWidth = 4.5f
+                    canvas.drawRoundRect(left + 5f, top + 5f, right - 5f, bottom - 5f, 10f, 10f, gridBorderPaint)
+                    val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
+                    val tagW = tagH * 1.12f
+                    fillPaint.color = Color.argb(230, 93, 64, 55)
+                    canvas.drawRoundRect(right - tagW - 6f, bottom - tagH - 6f, right - 6f, bottom - 6f, 6f, 6f, fillPaint)
+                    textPaint.color = Color.WHITE
+                    textPaint.textSize = tagH * 0.68f
+                    canvas.drawText("棘", right - tagW * 0.5f - 6f, bottom - tagH * 0.22f - 6f, textPaint)
                 }
                 if (cell.variant == Variant.RACE) {
                     val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
@@ -625,11 +663,12 @@ class PathOverlayView(context: Context) : View(context) {
         if ((hazards and HazardBits.FOAM) != 0) parts.add("泡")
         if ((hazards and HazardBits.EVIL_ENERGY) != 0) parts.add("邪")
         if ((hazards and HazardBits.BLOOD_THORN) != 0) parts.add("刺")
+        if ((hazards and HazardBits.THORN) != 0) parts.add("棘")
         if ((hazards and HazardBits.MAGIC_ORB) != 0) parts.add("魔")
         if ((hazards and HazardBits.LUMINOUS) != 0) parts.add("光")
         if ((hazards and HazardBits.PRIORITY) != 0) parts.add("必")
         if ((hazards and HazardBits.RESERVE) != 0) parts.add("留")
-        if ((hazards and HazardBits.LOCKED) != 0) parts.add("锁")
+        if ((hazards and (HazardBits.LOCKED or HazardBits.LOCKED_HURT)) != 0) parts.add("锁")
         return parts.take(3).joinToString("")
     }
 

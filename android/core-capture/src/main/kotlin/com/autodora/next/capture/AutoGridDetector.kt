@@ -195,7 +195,8 @@ object AutoGridDetector {
             val b = argb and 0xFF
 
             val isGreen = g >= 115 && (g - r) >= 32 && (g - b) >= 32
-            val isCoral = r >= 155 && (r - g) >= 32 && (r - b) >= 18
+            // Accept both classic Coral-Red (R>B+18) AND modern glowing Pink-Magenta (R>=B-12, R-G>=32) ToS HP bars
+            val isCoral = r >= 155 && (r - g) >= 32 && r >= (b - 12)
             val isCyan = b >= 145 && g >= 125 && (b - r) >= 40
             if (isGreen) greenHits++
             else if (isCoral) coralRedHits++
@@ -376,24 +377,35 @@ object AutoGridDetector {
      * with a translucent black veil (~45-55% brightness -> 90th-percentile orb center V < 0.72f), while most
      * orbs remain recognizable colored runes rather than flipping to a genuine full-board '?' screen (>=60% '?').
      */
-    fun isDimmedTransitionBoard(bitmap: Bitmap, geometry: BoardGeometry, questionCount: Int): Boolean {
+    fun isDimmedTransitionBoard(
+        bitmap: Bitmap,
+        geometry: BoardGeometry,
+        questionCount: Int,
+        specialDarkOrbCount: Int = 0
+    ): Boolean {
         val frame = object : PixelFrame {
             override val width: Int = bitmap.width
             override val height: Int = bitmap.height
             override fun getArgb(x: Int, y: Int): Int =
                 bitmap.getPixel(x.coerceIn(0, width - 1), y.coerceIn(0, height - 1))
         }
-        return isDimmedTransitionBoard(frame, geometry, questionCount)
+        return isDimmedTransitionBoard(frame, geometry, questionCount, specialDarkOrbCount)
     }
 
-    fun isDimmedTransitionBoard(frame: PixelFrame, geometry: BoardGeometry, questionCount: Int): Boolean {
+    fun isDimmedTransitionBoard(
+        frame: PixelFrame,
+        geometry: BoardGeometry,
+        questionCount: Int,
+        specialDarkOrbCount: Int = 0
+    ): Boolean {
         val cols = geometry.cols
         val rows = geometry.rows
         val total = cols * rows
         if (total < 9) return false
-        // Genuine full-board '?' Question stages (>=60% '?' orbs) are naturally dark slate-blue — never treat as dimmed VICTORY!
-        val massQuestionThreshold = max(18, (total * 0.60f).roundToInt())
-        if (questionCount >= massQuestionThreshold) return false
+        // Genuine full-board '?' Question stages OR full-board Locked/Blood-Drain/Petrified boards (>=60%)
+        // are naturally dark/desaturated — never treat them as dimmed VICTORY / wave-transition veils!
+        val massThreshold = max(18, (total * 0.60f).roundToInt())
+        if (questionCount + specialDarkOrbCount >= massThreshold) return false
 
         val cw = geometry.cellWidth
         val ch = geometry.cellHeight

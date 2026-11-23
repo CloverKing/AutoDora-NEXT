@@ -19,7 +19,12 @@ data class RecognitionResult(
     val raceBadgesDetected: Int = 0,
     val stormCellsDetected: Int = 0,
     val trafficLightStartCount: Int = 0,
-    val trafficLightEndCount: Int = 0
+    val trafficLightEndCount: Int = 0,
+    val petrifiedOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.PETRIFIED) != 0 },
+    val bloodDrainOrbsDetected: Int = board.cells.count {
+        (it.hazards and (HazardBits.BLOOD_DRAIN or HazardBits.LOCKED_HURT)) != 0
+    },
+    val thornOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.THORN) != 0 }
 )
 
 /**

@@ -84,6 +84,7 @@ object HazardBits {
     const val EVIL_ENERGY = 1 shl 24
     const val MAGIC_ORB = 1 shl 25
     const val BLOOD_THORN = 1 shl 26
+    const val THORN = 1 shl 27
 }
 
 object TileFlagBits {
