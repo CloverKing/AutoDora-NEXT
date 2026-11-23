@@ -1,7 +1,7 @@
 # 《神魔之塔》13 年全机制、敌技、特殊符石与盘面规则全景调研手册（2013–2026）
 
 > **调研与核验渠道**：游戏内官方 **《神魔百科》全量 98 项敵人技能 + 20 项符石狀態**（详表见 [enemy_skill_audit.md](./enemy_skill_audit.md) 与 [runestone_status_audit.md](./runestone_status_audit.md)）、Tower of Saviors Fandom 繁中维基（`tos.fandom.com/zh`）、官方版本更新公告与实战录像标定。  
-> **同步基线**：状态栏已按 **`AutoDora-NEXT dev (v0.4.6+)`**（51 项 C++20 引擎单测 + 63 项 Android JVM 单测全通过，含 18 项 CV 自动识别与全 6 色笛卡尔积回归矩阵）的真实落地情况全面刷新。
+> **同步基线**：状态栏已按 **`AutoDora-NEXT v0.4.7`**（51 项 C++20 引擎单测 + 63 项 Android JVM 单测全通过，含 18 项 CV 自动识别与全 6 色笛卡尔积回归矩阵）的真实落地情况全面刷新。
 
 ---
 
