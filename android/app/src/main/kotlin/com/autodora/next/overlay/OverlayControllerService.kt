@@ -2035,28 +2035,29 @@ class OverlayControllerService : Service() {
                         consecutiveBlankTicks = 0
                     }
 
+                    val hasLockedMemoryOverlay = flashMemoryTracker.currentLockedSnapshot() != null || usedMemorizedSnapshot
                     val (geom, rec, watchStatus) = withContext(Dispatchers.Default) {
                         val frame = DirectBitmapVisionFrame(bmp)
                         if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(frame)) {
                             Triple(null, null, 1) // 1 = dark modal covering battle board
                         } else {
                             var g = AutoGridDetector.detect(bmp, settings.calibration)
-                            // Strictly check the horizontal HP bar ABOVE the board (never polluted by our own
-                            // translucent orb overlay inside [topPx..bottomPx]!). Without this check, our own
-                            // translucent memorized circles can fool isBattleBoardPresent's corner/radial fallback
-                            // on non-battle Event Banner screens in a self-reinforcing feedback loop!
+                            // When a translucent full-board memorized '?' overlay is painted on top of the grid,
+                            // enforce the HP bar ABOVE the board to prevent our own 30 colored memory circles
+                            // from fooling isBattleBoardPresent's orb-grid fallback on Event Banner screens.
+                            // On live battles without memory circles, match startCaptureAndSolve()'s exact
+                            // isBattleBoardPresent() check so a valid calculated path is NEVER wiped by unusual HP bars!
                             var hasHp = AutoGridDetector.hasHpBarBarrier(bmp, g)
                             if (!hasHp && !g.isWeijianExpanded) {
-                                // Match startCaptureAndSolve()'s auto-calibration fallback when calibration drifted slightly
                                 val pFrame = com.autodora.next.capture.BitmapPixelFrame(bmp)
                                 val autoG = AutoGridDetector.autoCalibrateFromRealScreen(pFrame)
-                                if (autoG != null && AutoGridDetector.hasHpBarBarrier(bmp, autoG)) {
+                                if (autoG != null && AutoGridDetector.isBattleBoardPresent(pFrame, autoG)) {
                                     g = autoG
-                                    hasHp = true
+                                    hasHp = AutoGridDetector.hasHpBarBarrier(bmp, autoG)
                                 }
                             }
-                            if (!hasHp && !g.isWeijianExpanded) {
-                                Triple(null, null, 2) // 2 = non-battle screen or left battle (breaks overlay self-feedback!)
+                            if (hasLockedMemoryOverlay && !hasHp && !g.isWeijianExpanded) {
+                                Triple(null, null, 2) // 2 = non-battle screen or left battle (breaks memory-circle self-feedback!)
                             } else if (!AutoGridDetector.isBattleBoardPresent(bmp, g)) {
                                 Triple(null, null, 2) // 2 = non-battle screen (Home Map, Event Banners, Menus)
                             } else {

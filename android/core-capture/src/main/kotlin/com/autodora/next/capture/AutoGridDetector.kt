@@ -252,9 +252,9 @@ object AutoGridDetector {
     }
 
     /**
-     * Checks whether horizontal scanline [y] matches an EMPTY / 1-HP ToS player HP bar track
-     * (e.g., 1/584001 self-drain or low-HP teams where the entire bar slot is dark charcoal
-     * across x in [10%..68%] with near-zero vivid orb pixels).
+     * Checks whether horizontal scanline [y] matches an EMPTY or VERY-LOW-HP (0%..25%) ToS player HP bar track
+     * (e.g., 1/584001 empty HP or 20608/517091 4% critical HP where the track across x in [10%..68%] is dark
+     * charcoal with optional HP-colored fill stub/danger digits and near-zero foreign vivid orb pixels).
      */
     private fun isEmptyHpTrackScanline(
         frame: PixelFrame,
@@ -264,7 +264,8 @@ object AutoGridDetector {
         stepX: Int
     ): Boolean {
         var darkHits = 0
-        var vividHits = 0
+        var trackOrHpHits = 0
+        var foreignVividHits = 0
         var totalX = 0
         var x = scanLeft
         while (x <= scanRight) {
@@ -275,13 +276,25 @@ object AutoGridDetector {
             val b = argb and 0xFF
             val maxCh = max(r, max(g, b))
             val minCh = min(r, min(g, b))
-            if (maxCh <= 58 && (maxCh - minCh) <= 26) darkHits++
-            if ((maxCh - minCh) >= 50 && maxCh >= 95) vividHits++
+            val isGreen = g >= 115 && (g - r) >= 32 && (g - b) >= 32
+            val isCoralHue = if (g > b) {
+                (g - b) * 30 <= 11 * (r - b)
+            } else {
+                r >= b || (r - g) * 12 >= 11 * (b - g)
+            }
+            val isCoral = r >= 138 && (r - g) >= 32 && r >= (b - 12) && isCoralHue
+            val isCyan = b >= 145 && g >= 125 && (b - r) >= 40
+            val isHpColor = isGreen || isCoral || isCyan
+            val isDark = maxCh <= 68 && (maxCh - minCh) <= 28
+            if (isDark) darkHits++
+            if (isDark || isHpColor) trackOrHpHits++
+            if (!isHpColor && (maxCh - minCh) >= 50 && maxCh >= 95) foreignVividHits++
             x += stepX
         }
         return totalX > 0 &&
-            (darkHits.toFloat() / totalX) >= 0.72f &&
-            (vividHits.toFloat() / totalX) <= 0.08f
+            (darkHits.toFloat() / totalX) >= 0.58f &&
+            (trackOrHpHits.toFloat() / totalX) >= 0.78f &&
+            (foreignVividHits.toFloat() / totalX) <= 0.08f
     }
 
     /**
@@ -429,7 +442,7 @@ object AutoGridDetector {
                 ey += eStepY
             }
             if (eScanned > 0 &&
-                emptyRows >= max(4, (eScanned * 0.62f).roundToInt()) &&
+                emptyRows >= max(3, (eScanned * 0.45f).roundToInt()) &&
                 hasLeftHpHeartMedallion(frame, leftPx, rightPx, rowTopPx, cellH)
             ) {
                 return true
@@ -532,7 +545,7 @@ object AutoGridDetector {
         if (hasHp && ((darkCornerRatio >= 0.32f && (posContrastRatio >= 0.20f || vividCenterRatio >= 0.15f)) || posContrastRatio >= 0.45f)) {
             return true
         }
-        return darkCornerRatio >= 0.62f &&
+        return darkCornerRatio >= 0.48f &&
             posContrastRatio >= 0.72f &&
             meanRadial >= 0.30f &&
             vividCenterRatio >= 0.65f

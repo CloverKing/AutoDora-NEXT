@@ -38,7 +38,7 @@ flowchart LR
 - **双模免 Root 屏幕采集（兼容系统录屏）与血条锚定防误判**：
   - **无障碍截屏模式（`AccessibilityScreenCapturer`，Android 11+ 默认推荐）**：基于 `AccessibilityService.takeScreenshot()` 按需直采实时合成帧，**完全不占用系统独占的 `MediaProjection` 录屏通道**，小米 15 / HyperOS 等机型开启本应用后系统自带录屏全程正常可用，且免每次启动弹窗授权、无久放黑屏掉权限问题；内置 `370ms` 防限流节拍器、2 帧半周期闪烁融合封顶与 `850ms` 非阻塞后台问号记忆监听。
   - **高速录屏采集模式（`MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`，可选 / Android 10 回退）**：底层采用 OpenGL ES 2.0 / EGL 1.4 `SurfaceTexture`（`GL_TEXTURE_EXTERNAL_OES`）单 `VirtualDisplay` 零拷贝双路分发——CV 识盘时按需 0.4ms GPU 渲染至 `ImageReader`，录屏开启时以 `THREAD_PRIORITY_DISPLAY` 定频直推硬件 `MediaCodec`（真机硬编 `60fps / 8Mbps`，软件编码回退 `30fps / 6Mbps`，1s GOP、0-based PTS 重基，零 CPU 拷贝与软件缩放，完整收录游戏画面与全部悬浮识别层/路径/结果卡片），经 Scoped `MediaStore.Video.Media` 免存储权限直存系统相册（`Movies/AutoDora-NEXT/AutoDora_YYYYMMDD_HHmmss.mp4`），并在切回无障碍截屏、停服或系统 `onStop()` 时先自动收尾存片再释放录屏通道。
-  - **全态血条锚定防假违建**：在 `base.topPx` 上方检测绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带、**`5%–30%` 低血亮红危急数字血条（不把右侧红字误判为异色珠体）**，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，同时在 `isBattleBoardPresent()` 要求有效对比度/亮珠中心防纯黑弹窗透心误过。
+  - **全态血条锚定防假违建**：在 `base.topPx` 上方无缝覆盖 **`0%–100%`** 全态血条——绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带、**`1%–30%` 极低/低血亮红危急数字血条（同色系血量残条与右侧红字均不误计为异色珠体）**，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，同时在 `isBattleBoardPresent()` 兼容密集路径与左上角珠色徽章遮角（`darkCornerRatio >= 0.48` 联立高对比度与亮珠中心校验），并仅在全屏问号记忆圆圈覆盖态启用严格血条隔离，彻底消除计算后 1 秒路径被巡检误清现象。
 - **实时视觉校准框**：主悬浮栏点 `▦` 随时开启可拖拽四角/四边的半透明校准框，并附带 `上 / 下 / 窄 / 宽 / 高- / 高+ / 自动 / 重置` 像素级微调条，按比例持久化至 DataStore。
 
 ---

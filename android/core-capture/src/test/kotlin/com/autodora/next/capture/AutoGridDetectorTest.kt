@@ -465,6 +465,33 @@ class AutoGridDetectorTest {
             "Live 10% low-HP battle board must pass isBattleBoardPresent",
             AutoGridDetector.isBattleBoardPresent(frame, base)
         )
+
+        // Also test 4% critical-HP bar ("20608/517091"): tiny red sliver at x in [8%..12%], dark track [12%..62%],
+        // red danger digits [62%..92%], and left red heart medallion [2%..8.5%] — zero crack between 1-HP and 10%-HP!
+        val critFrame = SyntheticFrame(width = 576, height = 1280)
+        critFrame.drawOrbGrid(0, base.topPx.toInt(), cell, 6, 5)
+        for (y in hpTop..hpBot) {
+            for (x in (critFrame.width * 0.02f).toInt()..(critFrame.width * 0.085f).toInt()) {
+                critFrame.pixels[y * critFrame.width + x] = 0xFFD93832.toInt() // Left red Heart medallion
+            }
+            for (x in (critFrame.width * 0.085f).toInt()..(critFrame.width * 0.92f).toInt()) {
+                val frac = x.toFloat() / critFrame.width
+                critFrame.pixels[y * critFrame.width + x] = when {
+                    frac <= 0.125f -> 0xFFD83430.toInt() // 4% red HP sliver
+                    frac <= 0.62f -> 0xFF181616.toInt() // Empty dark charcoal HP track
+                    (x / 3) % 2 == 0 -> 0xFFE23834.toInt() // Red danger digits "20608/517091"
+                    else -> 0xFF1E1A1A.toInt()
+                }
+            }
+        }
+        assertTrue(
+            "4% critical-HP bar (20608/517091) must PASS hasHpBarBarrier without falling between empty & 10% checks",
+            AutoGridDetector.hasHpBarBarrier(critFrame, base.leftPx, base.rightPx, base.topPx, base.cellHeight)
+        )
+        assertTrue(
+            "Live 4% critical-HP battle board must pass isBattleBoardPresent",
+            AutoGridDetector.isBattleBoardPresent(critFrame, base)
+        )
     }
 
     @Test
