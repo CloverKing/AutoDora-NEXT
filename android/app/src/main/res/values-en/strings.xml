@@ -600,10 +600,20 @@
     <string name="capture_mode_a11y">Accessibility (Recorder-Safe)</string>
     <string name="capture_mode_a11y_short">Accessibility</string>
     <string name="capture_mode_media">Fast Screen Cast</string>
-    <string name="capture_mode_sub">Accessibility capture never blocks the built-in screen recorder and requires no repeated consent dialogs; Fast Screen Cast supports faster bursts but occupies the system recorder slot</string>
+    <string name="capture_mode_sub">Accessibility capture never blocks the built-in screen recorder and requires no repeated consent dialogs; Fast Screen Cast supports faster bursts and includes one-tap recording saved to Gallery</string>
     <string name="perm_capture_a11y_sub">Accessibility capture active (coexists with system screen recording; ready once Accessibility is on)</string>
     <string name="perm_capture_media_sub">Fast Screen Cast: keep "Entire screen" selected in the system dialog (blocks system screen recording)</string>
     <string name="ov_toast_a11y_shot_need_regrant">Accessibility screenshot not active yet; toggle this app Off and On in Accessibility settings</string>
     <string name="ov_toast_capture_need_a11y">Enable Accessibility Auto-Swipe first to use Accessibility capture</string>
     <string name="ov_toast_media_released">Switched to Accessibility capture; system screen recorder is now free to use</string>
+
+    <!-- Built-in Screen Recording (Fast Screen Cast mode) -->
+    <string name="btn_record_start">Start Recording (Save to Gallery)</string>
+    <string name="btn_record_stop_fmt">Stop Recording · %1$s</string>
+    <string name="btn_record_saving">Saving to Gallery…</string>
+    <string name="toast_record_started">Recording started — video will save to Gallery when stopped</string>
+    <string name="toast_record_saved_fmt">Saved to Gallery: %1$s</string>
+    <string name="toast_record_failed_fmt">Recording failed: %1$s</string>
+    <string name="toast_record_need_perm">Grant Screen Capture permission first to start recording</string>
+    <string name="ov_record_btn">Rec</string>
 </resources>

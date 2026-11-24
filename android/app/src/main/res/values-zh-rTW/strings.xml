@@ -600,10 +600,20 @@
     <string name="capture_mode_a11y">無障礙截圖（相容錄影）</string>
     <string name="capture_mode_a11y_short">無障礙截圖</string>
     <string name="capture_mode_media">高速錄影擷取</string>
-    <string name="capture_mode_sub">無障礙截圖不佔用系統錄影，小米等機型可邊用邊錄影且免每次授權；高速錄影支援更快多幀連拍，但開啟期間系統錄影會被佔用</string>
+    <string name="capture_mode_sub">無障礙截圖不佔用系統錄影，小米等機型可邊用邊錄影且免每次授權；高速錄影支援更快多幀連拍，並內建一鍵錄影儲存到系統相簿</string>
     <string name="perm_capture_a11y_sub">目前為無障礙截圖（與系統錄影共存，開啟無障礙即自動就緒）</string>
     <string name="perm_capture_media_sub">高速錄影擷取：系統彈窗請保持選擇「整個螢幕」（會佔用系統錄影）</string>
     <string name="ov_toast_a11y_shot_need_regrant">無障礙截圖尚未生效，請在系統無障礙設定中關閉並重新開啟本應用</string>
     <string name="ov_toast_capture_need_a11y">請先開啟「無障礙自動轉珠」權限以啟用無障礙截圖</string>
     <string name="ov_toast_media_released">已切換為無障礙截圖並釋放錄影通道，系統錄影現可正常使用</string>
+
+    <!-- Built-in Screen Recording (Fast Screen Cast mode) -->
+    <string name="btn_record_start">開始錄影（儲存至相簿）</string>
+    <string name="btn_record_stop_fmt">停止錄影 · %1$s</string>
+    <string name="btn_record_saving">正在儲存至相簿…</string>
+    <string name="toast_record_started">已開始錄影，停止後將自動儲存至系統相簿</string>
+    <string name="toast_record_saved_fmt">錄影已儲存至系統相簿：%1$s</string>
+    <string name="toast_record_failed_fmt">錄影儲存失敗：%1$s</string>
+    <string name="toast_record_need_perm">請先授予「螢幕擷取權限」後再開始錄影</string>
+    <string name="ov_record_btn">錄影</string>
 </resources>

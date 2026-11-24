@@ -38,8 +38,11 @@ import com.autodora.next.R
 import com.autodora.next.capture.AutoGridDetector
 import com.autodora.next.capture.BoardCalibration
 import com.autodora.next.capture.CaptureRouter
+import com.autodora.next.capture.RecordingSaveOutcome
 import com.autodora.next.capture.ScreenCaptureSession
 import com.autodora.next.capture.ScreenCapturer
+import com.autodora.next.capture.ScreenRecordingSession
+import com.autodora.next.capture.ScreenRecordingState
 import com.autodora.next.data.*
 import com.autodora.next.jni.NativeCancelToken
 import com.autodora.next.jni.NativeSolver
@@ -115,7 +118,9 @@ class OverlayControllerService : Service() {
     private lateinit var resultIconBtn: ImageView
     private lateinit var calibIconBtn: ImageView
     private lateinit var tuneIconBtn: ImageView
+    private lateinit var recordIconBtn: ImageView
     private lateinit var closeIconBtn: ImageView
+    private var currentRecordingState: ScreenRecordingState = ScreenRecordingState.Idle
 
     // Active wave shields strip
     private lateinit var activeShieldScroll: HorizontalScrollView
@@ -216,7 +221,7 @@ class OverlayControllerService : Service() {
                     dockChanged -> {
                         snapToDockEdge(latest.floatingBarDockRight, animate = true)
                     }
-                    verticalChanged || (latest.floatingBarDockRight && (previewModeChanged || emergencyBtnChanged)) -> {
+                    verticalChanged || (latest.floatingBarDockRight && (previewModeChanged || emergencyBtnChanged || captureModeChanged)) -> {
                         snapToDockEdge(latest.floatingBarDockRight, animate = false)
                     }
                 }
@@ -225,6 +230,12 @@ class OverlayControllerService : Service() {
                     currentGeometry = latest.calibration.toBase6x5Geometry(screenW, screenH)
                     refreshPathCanvas()
                 }
+            }
+        }
+        serviceScope.launch {
+            ScreenRecordingSession.state.collectLatest { st ->
+                currentRecordingState = st
+                refreshMainToggleChips()
             }
         }
         serviceScope.launch {
@@ -582,6 +593,11 @@ class OverlayControllerService : Service() {
         tuneIconBtn = makeIconBtn(R.drawable.ic_ov_tune) { toggleTuningDrawer() }
         toolbarButtons.add(tuneIconBtn)
         toolbarContainer.addView(tuneIconBtn)
+
+        // Built-in MP4 Screen Recorder toggle (visible ONLY in Fast Screen Cast / MediaProjection mode!)
+        recordIconBtn = makeIconBtn(R.drawable.ic_ov_record) { toggleBuiltInRecording() }
+        toolbarButtons.add(recordIconBtn)
+        toolbarContainer.addView(recordIconBtn)
 
         closeIconBtn = makeIconBtn(R.drawable.ic_ov_close, marginEndDp = 0) { stopSelf() }
         toolbarButtons.add(closeIconBtn)
@@ -2347,7 +2363,88 @@ class OverlayControllerService : Service() {
             styleIconBtn(tuneIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
         }
 
+        // Built-in MP4 Screen Recorder toggle (ONLY visible in Fast Screen Cast / MediaProjection mode!)
+        if (::recordIconBtn.isInitialized) {
+            val showRec = CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.MEDIA_PROJECTION
+            recordIconBtn.visibility = if (showRec) View.VISIBLE else View.GONE
+            if (showRec) {
+                when (currentRecordingState) {
+                    is ScreenRecordingState.Recording -> {
+                        recordIconBtn.setImageResource(R.drawable.ic_ov_stop)
+                        recordIconBtn.isEnabled = true
+                        recordIconBtn.isClickable = true
+                        styleIconBtn(
+                            recordIconBtn,
+                            bgColor = Color.rgb(211, 47, 47),
+                            iconTint = Color.WHITE,
+                            strokeColor = Color.WHITE,
+                            enabled = true
+                        )
+                    }
+                    is ScreenRecordingState.Saving -> {
+                        recordIconBtn.setImageResource(R.drawable.ic_ov_record)
+                        recordIconBtn.isEnabled = false
+                        recordIconBtn.isClickable = false
+                        styleIconBtn(
+                            recordIconBtn,
+                            bgColor = p.chipOffBg,
+                            iconTint = p.onSurfaceVariant,
+                            strokeColor = p.chipOffStroke,
+                            enabled = false
+                        )
+                    }
+                    is ScreenRecordingState.Idle -> {
+                        recordIconBtn.setImageResource(R.drawable.ic_ov_record)
+                        recordIconBtn.isEnabled = true
+                        recordIconBtn.isClickable = true
+                        val recBg = if (p.isDark) Color.rgb(66, 28, 34) else Color.rgb(255, 235, 238)
+                        val recFg = if (p.isDark) Color.rgb(255, 118, 124) else Color.rgb(211, 47, 47)
+                        val recStroke = if (p.isDark) Color.rgb(156, 56, 66) else Color.rgb(229, 115, 115)
+                        styleIconBtn(
+                            recordIconBtn,
+                            bgColor = recBg,
+                            iconTint = recFg,
+                            strokeColor = recStroke,
+                            enabled = true
+                        )
+                    }
+                }
+            }
+        }
+
         styleIconBtn(closeIconBtn, bgColor = p.chipOffBg, iconTint = p.onSurfaceVariant, strokeColor = p.chipOffStroke)
+    }
+
+    private fun toggleBuiltInRecording() {
+        when (ScreenRecordingSession.state.value) {
+            is ScreenRecordingState.Saving -> return
+            is ScreenRecordingState.Recording -> {
+                serviceScope.launch {
+                    when (val outcome = ScreenRecordingSession.stopAndSave()) {
+                        is RecordingSaveOutcome.Saved -> {
+                            toast(lctx.getString(R.string.toast_record_saved_fmt, outcome.displayName))
+                        }
+                        is RecordingSaveOutcome.Failed -> {
+                            toast(lctx.getString(R.string.toast_record_failed_fmt, outcome.reason))
+                        }
+                        null -> Unit
+                    }
+                }
+            }
+            is ScreenRecordingState.Idle -> {
+                val cap = ScreenCaptureSession.capturer.value
+                if (cap == null || !cap.isReady.value) {
+                    toast(lctx.getString(R.string.toast_record_need_perm))
+                    return
+                }
+                if (ScreenRecordingSession.start(this, cap)) {
+                    toast(lctx.getString(R.string.toast_record_started))
+                } else {
+                    val reason = (ScreenRecordingSession.lastOutcome.value as? RecordingSaveOutcome.Failed)?.reason ?: "unknown"
+                    toast(lctx.getString(R.string.toast_record_failed_fmt, reason))
+                }
+            }
+        }
     }
 
     private fun refreshActiveShieldStrip() {

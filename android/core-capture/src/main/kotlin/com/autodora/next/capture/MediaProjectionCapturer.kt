@@ -35,7 +35,7 @@ class MediaProjectionCapturer(
     context: Context,
     private val mediaProjection: MediaProjection,
     private val onProjectionStopped: (() -> Unit)? = null
-) : ScreenCapturer {
+) : ScreenCapturer, RecordingFrameSource {
 
     private val appContext = context.applicationContext
     private val _isReady = MutableStateFlow(false)
@@ -52,6 +52,7 @@ class MediaProjectionCapturer(
     private var virtualDisplay: VirtualDisplay? = null
     private val imageLock = Any()
     private var latestImage: Image? = null
+    private var latestFrameSeq: Long = 0L
     private val released = AtomicBoolean(false)
     private val recovering = AtomicBoolean(false)
     @Volatile
@@ -70,6 +71,8 @@ class MediaProjectionCapturer(
             if (!released.compareAndSet(false, true)) return
             Log.w(TAG, "MediaProjection stopped by system or user")
             _isReady.value = false
+            // Auto-finalize and save any active built-in recording so no footage is ever lost!
+            ScreenRecordingSession.stopAndSaveAsync()
             cleanupVirtualDisplay()
             onProjectionStopped?.invoke()
         }
@@ -115,6 +118,7 @@ class MediaProjectionCapturer(
                 }
                 latestImage?.close()
                 latestImage = incoming
+                latestFrameSeq++
                 lastImageTimestampMs = SystemClock.elapsedRealtime()
             }
         }, handler)
@@ -158,6 +162,7 @@ class MediaProjectionCapturer(
                 if (fresher != null) {
                     latestImage?.close()
                     latestImage = fresher
+                    latestFrameSeq++
                     lastImageTimestampMs = SystemClock.elapsedRealtime()
                 }
             } catch (_: Exception) {
@@ -165,6 +170,66 @@ class MediaProjectionCapturer(
 
             val img = latestImage ?: return@synchronized null
             return@synchronized imageToBitmap(img)
+        }
+    }
+
+    /**
+     * Zero-churn frame copy for [BuiltInScreenRecorder]: reuses [reusable] across frames to eliminate
+     * per-frame 10MB Bitmap allocations during 30fps recording and avoids copying pixels when unchanged.
+     */
+    override fun copyLatestFrameForRecording(reusable: Bitmap?, lastSeq: Long): RecordingFrameCopy {
+        if (released.get() || !_isReady.value) {
+            return RecordingFrameCopy(reusable, lastSeq, screenWidth, screenHeight, changed = false)
+        }
+        synchronized(imageLock) {
+            if (released.get() || !_isReady.value) {
+                return RecordingFrameCopy(reusable, lastSeq, screenWidth, screenHeight, changed = false)
+            }
+            try {
+                val fresher = imageReader?.acquireLatestImage()
+                if (fresher != null) {
+                    latestImage?.close()
+                    latestImage = fresher
+                    latestFrameSeq++
+                    lastImageTimestampMs = SystemClock.elapsedRealtime()
+                }
+            } catch (_: Exception) {
+            }
+
+            val img = latestImage
+                ?: return RecordingFrameCopy(reusable, lastSeq, screenWidth, screenHeight, changed = false)
+            if (latestFrameSeq == lastSeq && reusable != null && !reusable.isRecycled) {
+                return RecordingFrameCopy(reusable, lastSeq, screenWidth, screenHeight, changed = false)
+            }
+            return try {
+                val plane = img.planes[0]
+                val buffer = plane.buffer
+                buffer.rewind()
+                val pixelStride = plane.pixelStride
+                val rowStride = plane.rowStride
+                val rowPadding = rowStride - pixelStride * screenWidth
+                val paddedWidth = screenWidth + rowPadding / pixelStride
+                var copyH = screenHeight
+                // On some Qualcomm GPU buffers the final row omits trailing rowStride padding; trim 1px if needed.
+                if (paddedWidth > screenWidth && paddedWidth * copyH * 4 > buffer.remaining() && copyH > 2) {
+                    copyH -= 1
+                }
+
+                val target = if (reusable != null && !reusable.isRecycled &&
+                    reusable.width == paddedWidth && reusable.height == copyH
+                ) {
+                    reusable
+                } else {
+                    reusable?.let { if (!it.isRecycled) it.recycle() }
+                    Bitmap.createBitmap(paddedWidth, copyH, Bitmap.Config.ARGB_8888)
+                }
+                target.copyPixelsFromBuffer(buffer)
+                buffer.rewind()
+                RecordingFrameCopy(target, latestFrameSeq, screenWidth, copyH, changed = true)
+            } catch (e: Exception) {
+                Log.w(TAG, "copyLatestFrameForRecording failed: ${e.message}")
+                RecordingFrameCopy(reusable, lastSeq, screenWidth, screenHeight, changed = false)
+            }
         }
     }
 

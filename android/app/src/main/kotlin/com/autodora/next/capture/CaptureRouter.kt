@@ -63,6 +63,9 @@ object CaptureRouter {
     }
 
     fun releaseMediaProjectionIfRunning(context: Context) {
+        if (ScreenRecordingSession.isRecording) {
+            ScreenRecordingSession.stopAndSaveAsync()
+        }
         if (ScreenCaptureSession.capturer.value != null) {
             ScreenCaptureSession.clear()
             MediaProjectionForegroundService.stop(context.applicationContext)

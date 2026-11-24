@@ -24,7 +24,10 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.autodora.next.capture.CaptureRouter
 import com.autodora.next.capture.MediaProjectionForegroundService
+import com.autodora.next.capture.RecordingSaveOutcome
 import com.autodora.next.capture.ScreenCaptureSession
+import com.autodora.next.capture.ScreenRecordingSession
+import com.autodora.next.capture.ScreenRecordingState
 import com.autodora.next.data.*
 import com.autodora.next.jni.NativeSolver
 import com.autodora.next.model.*
@@ -56,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private val updateCheckState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
     private var updateDownloadJob: Job? = null
     private var pendingInstallApk: File? = null
+    private var pendingStartRecordingAfterGrant: Boolean = false
     private var currentLanguage: AppLanguage = AppLanguage.SYSTEM
 
     private fun lctx(): Context = LocaleHelper.localizedContext(this, currentLanguage)
@@ -85,20 +89,29 @@ class MainActivity : ComponentActivity() {
                 while (waited < 40) {
                     val cur = ScreenCaptureSession.capturer.value
                     if (cur != null && cur !== prevCapturer && cur.isReady.value) {
-                        Toast.makeText(this@MainActivity, lctx().getString(R.string.toast_capture_ready), Toast.LENGTH_SHORT).show()
+                        val shouldStartRec = pendingStartRecordingAfterGrant
+                        pendingStartRecordingAfterGrant = false
+                        if (shouldStartRec && ScreenRecordingSession.start(this@MainActivity, cur)) {
+                            Toast.makeText(this@MainActivity, lctx().getString(R.string.toast_record_started), Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this@MainActivity, lctx().getString(R.string.toast_capture_ready), Toast.LENGTH_SHORT).show()
+                        }
                         return@launch
                     }
                     val err = ScreenCaptureSession.lastInitError.value
                     if (!err.isNullOrBlank()) {
+                        pendingStartRecordingAfterGrant = false
                         Toast.makeText(this@MainActivity, "${lctx().getString(R.string.toast_capture_denied)} ($err)", Toast.LENGTH_LONG).show()
                         return@launch
                     }
                     kotlinx.coroutines.delay(40)
                     waited++
                 }
+                pendingStartRecordingAfterGrant = false
                 Toast.makeText(this@MainActivity, lctx().getString(R.string.toast_capture_denied), Toast.LENGTH_SHORT).show()
             }
         } else {
+            pendingStartRecordingAfterGrant = false
             Toast.makeText(this, lctx().getString(R.string.toast_capture_denied), Toast.LENGTH_SHORT).show()
         }
     }
@@ -143,6 +156,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     val overlayRunning by OverlayServiceState.isRunning.collectAsState()
+                    val recordingState by ScreenRecordingSession.state.collectAsState()
                     val presets by teamPresetRepository.observePresets().collectAsState(initial = emptyList())
                     val activeWaveChips by ActiveStrategyStore.activeChips.collectAsState()
                     val benchReport by benchmarkReportState.collectAsState()
@@ -160,6 +174,7 @@ class MainActivity : ComponentActivity() {
                         settings = settings,
                         presets = presets,
                         activeWaveChips = activeWaveChips,
+                        recordingState = recordingState,
                         benchmarkReport = benchReport,
                         isBenchmarking = isBench,
                         updateCheckState = updateState,
@@ -175,6 +190,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onRequestNotifications = { requestNotificationPermission() },
                         onToggleOverlayService = { toggleOverlayService() },
+                        onToggleScreenRecording = { toggleScreenRecording() },
                         onRunNativeBenchmark = { runOnDeviceBenchmark() },
                         onOpenGitHub = { openExternalUrl(UpdateChecker.GITHUB_REPO_URL) },
                         onCheckForUpdates = { checkForUpdates() },
@@ -275,6 +291,49 @@ class MainActivity : ComponentActivity() {
             mpm.createScreenCaptureIntent()
         }
         mediaProjectionLauncher.launch(intent)
+    }
+
+    private fun toggleScreenRecording() {
+        val ctx = lctx()
+        when (ScreenRecordingSession.state.value) {
+            is ScreenRecordingState.Saving -> return
+            is ScreenRecordingState.Recording -> {
+                lifecycleScope.launch {
+                    when (val outcome = ScreenRecordingSession.stopAndSave()) {
+                        is RecordingSaveOutcome.Saved -> {
+                            Toast.makeText(
+                                this@MainActivity,
+                                ctx.getString(R.string.toast_record_saved_fmt, outcome.displayName),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        is RecordingSaveOutcome.Failed -> {
+                            Toast.makeText(
+                                this@MainActivity,
+                                ctx.getString(R.string.toast_record_failed_fmt, outcome.reason),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        null -> Unit
+                    }
+                }
+            }
+            is ScreenRecordingState.Idle -> {
+                val cap = ScreenCaptureSession.capturer.value
+                if (cap == null || !cap.isReady.value) {
+                    pendingStartRecordingAfterGrant = true
+                    Toast.makeText(this, ctx.getString(R.string.toast_record_need_perm), Toast.LENGTH_SHORT).show()
+                    requestMediaProjectionPermission()
+                    return
+                }
+                if (ScreenRecordingSession.start(this, cap)) {
+                    Toast.makeText(this, ctx.getString(R.string.toast_record_started), Toast.LENGTH_SHORT).show()
+                } else {
+                    val reason = (ScreenRecordingSession.lastOutcome.value as? RecordingSaveOutcome.Failed)?.reason ?: "unknown"
+                    Toast.makeText(this, ctx.getString(R.string.toast_record_failed_fmt, reason), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun toggleOverlayService() {
