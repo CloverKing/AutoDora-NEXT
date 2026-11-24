@@ -35,7 +35,10 @@ flowchart LR
     FullDetect --> DynamicOut["输出动态 BoardGeometry (rect, cols, rows, cellSize)"]
 ```
 
-- **血条锚定防误判与 HyperOS 防断流热重授 / 零陈旧帧门控**：在 `base.topPx` 上方检测绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，杜绝把队伍 6 个彩色头像误判为第 6 行假违建或「自动校准」误吸 Boss 血条。`MediaProjectionCapturer` 与 `ScreenCaptureSession` 通过 `released` 首帧零丢弃门控、静止画面零扰动（移除按帧龄误触 `vd.resize()`/`setSurface()`）、10 秒冷却受控恢复、`clearIfCurrent()` 身份校验防异步 `onStop()` 误杀新会话、失效自动清理并同步主界面状态以及概览页 `allowAlwaysClick` 一键热重授，彻底杜绝 Android 14–16 / HyperOS 假就绪与重授权失效；同时在 `startCaptureAndSolve` / `startHoldAndReplanExecution` / 编排识盘触发前**强制执行 `clearCachedFrame()` + 合成刷新门控**（后台监听同步跳过 `lastFrameAgeMs > 4000ms` 的陈旧帧），杜绝录屏冲突或系统静默暂停虚拟屏时误用上一回合旧盘面解盘导致滑屏结果与计算不符。
+- **双模免 Root 屏幕采集（兼容系统录屏）与血条锚定防误判**：
+  - **无障碍截屏模式（`AccessibilityScreenCapturer`，Android 11+ 默认推荐）**：基于 `AccessibilityService.takeScreenshot()` 按需直采实时合成帧，**完全不占用系统独占的 `MediaProjection` 录屏通道**，小米 15 / HyperOS 等机型开启本应用后系统自带录屏全程正常可用，且免每次启动弹窗授权、无久放黑屏掉权限问题；内置 `370ms` 防限流节拍器、2 帧半周期闪烁融合封顶与 `850ms` 非阻塞后台问号记忆监听。
+  - **高速录屏采集模式（`MediaProjectionCapturer`，可选 / Android 10 回退）**：支持 `50ms` 高频多帧连拍与 `25ms` 按住重算轮询；在切换回无障碍截屏或停止悬浮助手（`OverlayControllerService.onDestroy()`）时自动释放 `MediaProjectionForegroundService` 立即归还系统录屏通道；完整保留 `released` 首帧零丢弃门控、静止画面零扰动、`clearIfCurrent()` 身份校验、概览页热重授与 `clearCachedFrame()` 零陈旧帧门控。
+  - **全态血条锚定防假违建**：在 `base.topPx` 上方检测绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，杜绝把队伍 6 个彩色头像误判为第 6 行假违建或「自动校准」误吸 Boss 血条。
 - **实时视觉校准框**：主悬浮栏点 `▦` 随时开启可拖拽四角/四边的半透明校准框，并附带 `上 / 下 / 窄 / 宽 / 高- / 高+ / 自动 / 重置` 像素级微调条，按比例持久化至 DataStore。
 
 ---
@@ -138,7 +141,7 @@ flowchart LR
 | **分页结构** | 3-Tab：**概览 / 策略 / 设置** | 3-Tab：**快捷 / 策略 / 设置** |
 | **抽屉色彩** | 6 色语义色条 + 浅色边框卡片（蓝/靛蓝/青绿/琥珀/绯红/紫） | 与启动页对应模块使用**完全一致的抽屉配色** |
 | **展开模式** | 默认**全部展开**，支持多抽屉同时展开或单独收起 | 调参分页与盘面编排均采用**单抽屉手风琴互斥展开**，防止遮挡游戏盘面 |
-| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`557` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
+| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`567` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
 | **主悬浮胶囊** | 概览页一键启停；设置紫色抽屉支持 **横排 / 竖排** 与 **靠左 / 靠右** 4 态切换（`floatingBarVertical` + `floatingBarDockRight`） | 圆形 App 图标手柄 + 8 个矢量图标（`✦` `▶` `■` `〰` `▤` `▦` `🎚` `✕`）；支持 **4 态实时热切**（横排靠右时 App 图标居右、主栏向左展开；竖排靠左向右/靠右向左展开面板）、**拖拽松手平滑左右吸边**及 **DataStore 持久化记忆停靠侧与纵坐标** |
 
 ### 5.2 单一自动保存策略与应用内更新闭环
@@ -210,18 +213,18 @@ flowchart TD
     PathSmooth -.-> ShizukuExec
 ```
 
-### 仓库模块与测试矩阵（当前 `114` 项自动化测试全通过）
+### 仓库模块与测试矩阵（当前 `117` 项自动化测试全通过）
 
 | 模块 | 职责说明 | 自动化测试覆盖 |
 | :--- | :--- | :--- |
 | `solver-core/` | 纯 C++20 求解引擎（CMake，零 Android 依赖） | `test_main.cpp`：**51 / 51** 通过（含独立路径回放核验、荆棘严避与全版锁定渐进消除） |
 | `android/core-model/` | 不可变棋盘/规则模型、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**12 / 12** 通过 |
-| `android/core-capture/` | `MediaProjection` 零拷贝采集与防断流热重授、`AutoGridDetector`（含空血 1-HP 暗槽与活动横幅过滤） | `AutoGridDetectorTest` (11) + `ScreenCaptureSessionTest` (3)：**14 / 14** 通过 |
+| `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjection` 双模采集与热重授、`AutoGridDetector`（含空血 1-HP 暗槽与活动横幅过滤） | `AutoGridDetectorTest` (11) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3)：**17 / 17** 通过 |
 | `android/core-vision/` | `CvBoardRecognizer`（18 项实测 0 误报状态/地形 CV + 全 6 色笛卡尔积去色偏回归）、`FlashRevealMemoryTracker`、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**19 / 19** 通过（含 48 格全 6 色笛卡尔积回归矩阵） |
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`、`SwipeSpeedPreset` | `PathInterpolatorTest`：**8 / 8** 通过 |
 | `android/core-data/` | DataStore 设置、Room 实时策略持久化、39 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务、单抽屉调参/编排（打开自动识盘）、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (3)：**10 / 10** 通过；四语言词条一致性 **557 / 557** |
+| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务、单抽屉调参/编排（打开自动识盘）、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (3)：**10 / 10** 通过；四语言词条一致性 **567 / 567** |
 
 ---
 

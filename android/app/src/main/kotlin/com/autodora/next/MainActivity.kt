@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import com.autodora.next.capture.CaptureRouter
 import com.autodora.next.capture.MediaProjectionForegroundService
 import com.autodora.next.capture.ScreenCaptureSession
 import com.autodora.next.data.*
@@ -130,6 +131,17 @@ class MainActivity : ComponentActivity() {
                     val a11yConnected by AccessibilityServiceBridge.isConnected.collectAsState()
                     val capturer by ScreenCaptureSession.capturer.collectAsState()
                     val mediaReady by (capturer?.isReady ?: remember { MutableStateFlow(false) }).collectAsState()
+                    val effectiveCaptureMode = CaptureRouter.effectiveMode(settings.captureMode)
+                    val captureReady = if (effectiveCaptureMode == CaptureMode.ACCESSIBILITY) {
+                        a11yConnected
+                    } else {
+                        mediaReady
+                    }
+                    LaunchedEffect(effectiveCaptureMode) {
+                        if (effectiveCaptureMode == CaptureMode.ACCESSIBILITY && ScreenCaptureSession.capturer.value != null) {
+                            CaptureRouter.releaseMediaProjectionIfRunning(this@MainActivity)
+                        }
+                    }
                     val overlayRunning by OverlayServiceState.isRunning.collectAsState()
                     val presets by teamPresetRepository.observePresets().collectAsState(initial = emptyList())
                     val activeWaveChips by ActiveStrategyStore.activeChips.collectAsState()
@@ -141,7 +153,7 @@ class MainActivity : ComponentActivity() {
                         health = PermissionHealthState(
                             overlayGranted = overlayGranted,
                             accessibilityConnected = a11yConnected,
-                            mediaProjectionReady = mediaReady,
+                            mediaProjectionReady = captureReady,
                             notificationsGranted = notifGranted,
                             overlayRunning = overlayRunning
                         ),
@@ -154,7 +166,13 @@ class MainActivity : ComponentActivity() {
                         onRequestOverlay = { requestOverlayPermission() },
                         onOpenAccessibility = { openAccessibilitySettings() },
                         onOpenAppDetails = { openAppDetailsSettings() },
-                        onRequestMediaProjection = { requestMediaProjectionPermission() },
+                        onRequestMediaProjection = {
+                            if (effectiveCaptureMode == CaptureMode.ACCESSIBILITY) {
+                                openAccessibilitySettings()
+                            } else {
+                                requestMediaProjectionPermission()
+                            }
+                        },
                         onRequestNotifications = { requestNotificationPermission() },
                         onToggleOverlayService = { toggleOverlayService() },
                         onRunNativeBenchmark = { runOnDeviceBenchmark() },
@@ -165,7 +183,19 @@ class MainActivity : ComponentActivity() {
                         onInstallReadyApk = { path -> installApkOrRequestPermission(File(path)) },
                         onOpenUpdateUrl = { url -> openExternalUrl(url) },
                         onUpdateSettings = { transform ->
-                            lifecycleScope.launch { settingsRepository.update(transform) }
+                            val wasMediaRunning = ScreenCaptureSession.capturer.value != null
+                            lifecycleScope.launch {
+                                val next = transform(settings)
+                                settingsRepository.update(transform)
+                                if (CaptureRouter.effectiveMode(next.captureMode) == CaptureMode.ACCESSIBILITY && wasMediaRunning) {
+                                    CaptureRouter.releaseMediaProjectionIfRunning(this@MainActivity)
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        lctx().getString(R.string.ov_toast_media_released),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
                         },
                         onSavePreset = { preset, isBuiltIn ->
                             lifecycleScope.launch {

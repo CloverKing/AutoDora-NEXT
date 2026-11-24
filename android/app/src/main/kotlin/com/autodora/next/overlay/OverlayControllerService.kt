@@ -37,7 +37,9 @@ import androidx.core.app.NotificationCompat
 import com.autodora.next.R
 import com.autodora.next.capture.AutoGridDetector
 import com.autodora.next.capture.BoardCalibration
+import com.autodora.next.capture.CaptureRouter
 import com.autodora.next.capture.ScreenCaptureSession
+import com.autodora.next.capture.ScreenCapturer
 import com.autodora.next.data.*
 import com.autodora.next.jni.NativeCancelToken
 import com.autodora.next.jni.NativeSolver
@@ -191,7 +193,16 @@ class OverlayControllerService : Service() {
                     settings.beamWidth != latest.beamWidth
                 val verticalChanged = settings.floatingBarVertical != latest.floatingBarVertical
                 val dockChanged = settings.floatingBarDockRight != latest.floatingBarDockRight
+                val captureModeChanged = settings.captureMode != latest.captureMode
                 settings = latest
+                if (CaptureRouter.effectiveMode(latest.captureMode) == CaptureMode.ACCESSIBILITY &&
+                    ScreenCaptureSession.capturer.value != null
+                ) {
+                    CaptureRouter.releaseMediaProjectionIfRunning(this@OverlayControllerService)
+                    if (captureModeChanged && !isFirstEmission) {
+                        toast(lctx.getString(R.string.ov_toast_media_released))
+                    }
+                }
                 if (presetSwitched || previewModeChanged || solverSettingChanged) {
                     invalidateLastSolution()
                 }
@@ -262,9 +273,23 @@ class OverlayControllerService : Service() {
         triggerEmergencyStop()
         serviceScope.cancel()
         removeOverlayViews()
+        // Always release MediaProjection when stopping the floating assistant so system Screen Recorder
+        // (e.g., HyperOS / Xiaomi 15) is immediately unlocked even if the user chose Fast Screen Cast mode!
+        CaptureRouter.releaseMediaProjectionIfRunning(this)
         OverlayServiceState.setRunning(false)
         super.onDestroy()
     }
+
+    private fun activeCapturer(): ScreenCapturer? =
+        CaptureRouter.resolveActiveCapturer(this, settings.captureMode)
+
+    private fun captureNotReadyMessage(): String = lctx.getString(
+        if (CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY) {
+            R.string.ov_toast_capture_need_a11y
+        } else {
+            R.string.toast_capture_denied
+        }
+    )
 
     private fun resolvePhysicalScreenSize() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -930,9 +955,9 @@ class OverlayControllerService : Service() {
             return
         }
 
-        val capturer = ScreenCaptureSession.capturer.value
+        val capturer = activeCapturer()
         if (capturer == null || !capturer.isReady.value) {
-            toast(lctx.getString(R.string.toast_capture_denied))
+            toast(captureNotReadyMessage())
             return
         }
 
@@ -962,27 +987,36 @@ class OverlayControllerService : Service() {
             // Do NOT proactively call tryRecoverSurface() on static screens (lastFrameAgeMs > 2s is normal on LTPO
             // HyperOS displays whenever screen pixels are still!). Only wake SurfaceFlinger or recover if capture fails.
             var frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
-            if (frames.isEmpty()) {
+            if (frames.isEmpty() && !capturer.lastPermissionError) {
                 // First gently nudge SurfaceFlinger compositor without touching VirtualDisplay surface
                 controlRoot.postInvalidate()
                 delay(120)
                 frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
             }
-            if (frames.isEmpty()) {
+            if (frames.isEmpty() && !capturer.isAccessibilityBased) {
                 if (capturer.tryRecoverSurface()) {
                     frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
                 }
             }
             if (frames.isEmpty()) {
-                // OS silently stalled/revoked this VirtualDisplay without firing onStop(): clear the dead session
-                // immediately so Dashboard truthfully shows "授权" instead of falsely stuck at "3/3 已就绪"!
-                val stillClaimedReady = capturer.isReady.value
-                ScreenCaptureSession.clearIfCurrent(capturer)
-                com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
+                val msgRes = if (capturer.isAccessibilityBased) {
+                    if (capturer.lastPermissionError) {
+                        R.string.ov_toast_a11y_shot_need_regrant
+                    } else {
+                        R.string.ov_toast_capture_need_a11y
+                    }
+                } else {
+                    // OS silently stalled/revoked this VirtualDisplay without firing onStop(): clear the dead session
+                    // immediately so Dashboard truthfully shows "授权" instead of falsely stuck at "3/3 已就绪"!
+                    val stillClaimedReady = capturer.isReady.value
+                    ScreenCaptureSession.clearIfCurrent(capturer)
+                    com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
+                    if (stillClaimedReady) R.string.ov_toast_capture_stalled else R.string.toast_capture_denied
+                }
                 pathOverlayView.visibility = View.VISIBLE
                 setPhase(OverlayPhase.IDLE)
                 refreshPathCanvas()
-                toast(lctx.getString(if (stillClaimedReady) R.string.ov_toast_capture_stalled else R.string.toast_capture_denied))
+                toast(lctx.getString(msgRes))
                 return@launch
             }
 
@@ -992,7 +1026,7 @@ class OverlayControllerService : Service() {
                 var firstBlank = withContext(Dispatchers.Default) {
                     com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(frames.first())
                 }
-                if (firstBlank && capturer.tryRecoverSurface()) {
+                if (firstBlank && !capturer.isAccessibilityBased && capturer.tryRecoverSurface()) {
                     frames.forEach { if (!it.isRecycled) it.recycle() }
                     frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
                     firstBlank = frames.isEmpty() || withContext(Dispatchers.Default) {
@@ -1000,10 +1034,12 @@ class OverlayControllerService : Service() {
                     }
                 }
                 if (firstBlank) {
-                    // Persistent black frame even after recovery means HyperOS/OS suspended or another recorder
-                    // took over the projection slot — clear the dead session so Dashboard truthfully asks to re-grant!
-                    ScreenCaptureSession.clearIfCurrent(capturer)
-                    com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
+                    if (!capturer.isAccessibilityBased) {
+                        // Persistent black frame even after recovery means HyperOS/OS suspended or another recorder
+                        // took over the projection slot — clear the dead session so Dashboard truthfully asks to re-grant!
+                        ScreenCaptureSession.clearIfCurrent(capturer)
+                        com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
+                    }
                     flashMemoryTracker.clearLock()
                     usedMemorizedSnapshot = false
                     lastRecognition = null
@@ -1258,9 +1294,9 @@ class OverlayControllerService : Service() {
     // ==================== Ultra-Fast No-Root Hold-and-Replan Execution (按住重算 / 全屏问号珠) ====================
     private fun startHoldAndReplanExecution(forceNudge: Boolean = false) {
         if (currentPhase != OverlayPhase.IDLE) return
-        val capturer = ScreenCaptureSession.capturer.value
+        val capturer = activeCapturer()
         if (capturer == null || !capturer.isReady.value) {
-            toast(lctx.getString(R.string.toast_capture_denied))
+            toast(captureNotReadyMessage())
             return
         }
         if (!touchExecutor.isAvailable.value) {
@@ -1368,7 +1404,12 @@ class OverlayControllerService : Service() {
                 holdSolveTimeMs <= 1000L -> 52
                 else -> 80
             }
-            val maxRevealWaitMs = settings.holdReplanDelayMs.coerceIn(240L, 900L)
+            val baseRevealWaitMs = settings.holdReplanDelayMs.coerceIn(240L, 900L)
+            val maxRevealWaitMs = if (capturer.isAccessibilityBased) {
+                maxOf(baseRevealWaitMs, 760L)
+            } else {
+                baseRevealWaitMs
+            }
             val maxHoldWaitMs = maxRevealWaitMs + holdSolveTimeMs + 1200L
             val bandTop = (geom.topPx - geom.cellHeight * 0.15f).toInt().coerceAtLeast(0)
             val bandBot = (geom.bottomPx + geom.cellHeight * 0.15f).toInt().coerceAtMost(screenH)
@@ -1698,10 +1739,10 @@ class OverlayControllerService : Service() {
      */
     private fun scanLiveBoardForEditor(clearSavedFirst: Boolean, explicitTrigger: Boolean) {
         if (currentPhase != OverlayPhase.IDLE) return
-        val capturer = ScreenCaptureSession.capturer.value
+        val capturer = activeCapturer()
         if (capturer == null || !capturer.isReady.value) {
             if (explicitTrigger) {
-                toast(lctx.getString(R.string.toast_capture_denied))
+                toast(captureNotReadyMessage())
             }
             return
         }
@@ -1717,20 +1758,27 @@ class OverlayControllerService : Service() {
             controlRoot.postInvalidate()
             try {
                 delay(95L)
-                val scanCount = minOf(settings.multiFrameCount, 3).coerceAtLeast(2)
+                val scanCount = if (capturer.isAccessibilityBased) 1 else minOf(settings.multiFrameCount, 3).coerceAtLeast(2)
                 var captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
-                if (captured.isEmpty()) {
+                if (captured.isEmpty() && !capturer.lastPermissionError) {
                     controlRoot.postInvalidate()
                     delay(120L)
                     captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
                 }
-                if (captured.isEmpty() && capturer.tryRecoverSurface()) {
+                if (captured.isEmpty() && !capturer.isAccessibilityBased && capturer.tryRecoverSurface()) {
                     captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
                 }
                 frames.addAll(captured)
                 if (frames.isEmpty()) {
                     if (explicitTrigger) {
-                        toast(lctx.getString(R.string.ov_toast_capture_stalled))
+                        val msgRes = if (capturer.isAccessibilityBased && capturer.lastPermissionError) {
+                            R.string.ov_toast_a11y_shot_need_regrant
+                        } else if (capturer.isAccessibilityBased) {
+                            R.string.ov_toast_capture_need_a11y
+                        } else {
+                            R.string.ov_toast_capture_stalled
+                        }
+                        toast(lctx.getString(msgRes))
                     }
                     return@launch
                 }
@@ -1863,9 +1911,9 @@ class OverlayControllerService : Service() {
     }
 
     private fun runAutoCalibration() {
-        val capturer = ScreenCaptureSession.capturer.value
+        val capturer = activeCapturer()
         if (capturer == null || !capturer.isReady.value) {
-            toast("自动校准需要先授权屏幕采集")
+            toast(captureNotReadyMessage())
             return
         }
         serviceScope.launch {
@@ -1881,6 +1929,9 @@ class OverlayControllerService : Service() {
             val bmp = capturer.captureSingleFrame() ?: run {
                 pathOverlayView.visibility = View.VISIBLE
                 refreshPathCanvas()
+                if (capturer.isAccessibilityBased && capturer.lastPermissionError) {
+                    toast(lctx.getString(R.string.ov_toast_a11y_shot_need_regrant))
+                }
                 return@launch
             }
             try {
@@ -1931,22 +1982,27 @@ class OverlayControllerService : Service() {
             var consecutiveMassQuestionTicks = 0
             var consecutiveBlankTicks = 0
             while (isActive) {
-                delay(340L)
+                val loopDelayMs = if (CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY) {
+                    900L
+                } else {
+                    340L
+                }
+                delay(loopDelayMs)
                 if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) continue
-                val capturer = ScreenCaptureSession.capturer.value ?: continue
+                val capturer = activeCapturer() ?: continue
                 if (!capturer.isReady.value) continue
 
                 // Ignore stale frames (> 4s old) in background watcher so a stalled/frozen VirtualDisplay
                 // never feeds an old previous-wave board into FlashRevealMemoryTracker!
                 if (capturer.lastFrameAgeMs > 4_000L) continue
-                val bmp = capturer.captureSingleFrame() ?: continue
+                val bmp = capturer.captureBackgroundFrame() ?: continue
                 try {
                     val isBlank = withContext(Dispatchers.Default) {
                         com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(bmp)
                     }
                     if (isBlank) {
                         consecutiveBlankTicks++
-                        if (consecutiveBlankTicks == 4) {
+                        if (consecutiveBlankTicks == 4 && !capturer.isAccessibilityBased) {
                             capturer.tryRecoverSurface()
                         }
                         continue

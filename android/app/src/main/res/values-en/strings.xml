@@ -594,4 +594,16 @@
     <string name="shape_l">L</string>
     <string name="shape_t">T</string>
     <string name="shape_sq2x2">2×2</string>
+
+    <!-- Dual Screen Capture Mode (Recorder-Safe Accessibility vs High-Speed Cast) -->
+    <string name="capture_mode_title">Screen Capture Mode</string>
+    <string name="capture_mode_a11y">Accessibility (Recorder-Safe)</string>
+    <string name="capture_mode_a11y_short">Accessibility</string>
+    <string name="capture_mode_media">Fast Screen Cast</string>
+    <string name="capture_mode_sub">Accessibility capture never blocks the built-in screen recorder and requires no repeated consent dialogs; Fast Screen Cast supports faster bursts but occupies the system recorder slot</string>
+    <string name="perm_capture_a11y_sub">Accessibility capture active (coexists with system screen recording; ready once Accessibility is on)</string>
+    <string name="perm_capture_media_sub">Fast Screen Cast: keep "Entire screen" selected in the system dialog (blocks system screen recording)</string>
+    <string name="ov_toast_a11y_shot_need_regrant">Accessibility screenshot not active yet; toggle this app Off and On in Accessibility settings</string>
+    <string name="ov_toast_capture_need_a11y">Enable Accessibility Auto-Swipe first to use Accessibility capture</string>
+    <string name="ov_toast_media_released">Switched to Accessibility capture; system screen recorder is now free to use</string>
 </resources>

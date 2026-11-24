@@ -594,4 +594,16 @@
     <string name="shape_l">L形</string>
     <string name="shape_t">T形</string>
     <string name="shape_sq2x2">田字</string>
+
+    <!-- Dual Screen Capture Mode (Recorder-Safe Accessibility vs High-Speed Cast) -->
+    <string name="capture_mode_title">屏幕采集方式</string>
+    <string name="capture_mode_a11y">无障碍截屏（兼容录屏）</string>
+    <string name="capture_mode_a11y_short">无障碍截屏</string>
+    <string name="capture_mode_media">高速录屏采集</string>
+    <string name="capture_mode_sub">无障碍截屏不占用系统录屏，小米等机型可边用边录屏且免每次授权；高速录屏支持更快多帧连拍，但开启期间系统录屏会被占用</string>
+    <string name="perm_capture_a11y_sub">当前为无障碍截屏（与系统录屏共存，开启无障碍即自动就绪）</string>
+    <string name="perm_capture_media_sub">高速录屏采集：系统弹窗请保持选择「整个屏幕」（会占用系统录屏）</string>
+    <string name="ov_toast_a11y_shot_need_regrant">无障碍截屏未生效，请在系统无障碍设置中关闭并重新开启本应用</string>
+    <string name="ov_toast_capture_need_a11y">请先开启「无障碍自动转珠」权限以启用无障碍截屏</string>
+    <string name="ov_toast_media_released">已切换为无障碍截屏并释放录屏通道，系统录屏现可正常使用</string>
 </resources>

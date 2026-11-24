@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.autodora.next.BuildConfig
 import com.autodora.next.R
+import com.autodora.next.capture.CaptureRouter
 import com.autodora.next.data.*
 import com.autodora.next.model.*
 import com.autodora.next.touch.SwipeSpeedPreset
@@ -204,6 +205,7 @@ fun DashboardScreen(
                     onRequestMediaProjection = onRequestMediaProjection,
                     onRequestNotifications = onRequestNotifications,
                     onToggleOverlayService = onToggleOverlayService,
+                    onUpdateSettings = onUpdateSettings,
                     onNavigateTab = { activeTab = it }
                 )
 
@@ -261,6 +263,7 @@ private fun OverviewTab(
     onRequestMediaProjection: () -> Unit,
     onRequestNotifications: () -> Unit,
     onToggleOverlayService: () -> Unit,
+    onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onNavigateTab: (HomeTab) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -393,14 +396,38 @@ private fun OverviewTab(
                     onAction = onOpenAccessibility
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val useA11yCapture = CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY
                 PermissionItemRow(
                     title = stringResource(R.string.perm_capture_title),
-                    subtitle = stringResource(R.string.perm_capture_sub),
+                    subtitle = stringResource(
+                        if (useA11yCapture) R.string.perm_capture_a11y_sub else R.string.perm_capture_media_sub
+                    ),
                     granted = health.mediaProjectionReady,
-                    actionLabel = stringResource(R.string.perm_grant),
+                    actionLabel = stringResource(if (useA11yCapture) R.string.perm_enable else R.string.perm_grant),
                     allowAlwaysClick = true,
                     onAction = onRequestMediaProjection
                 )
+                if (CaptureRouter.isAccessibilityCaptureSupported()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CompactChoicePill(
+                            label = stringResource(R.string.capture_mode_a11y),
+                            selected = useA11yCapture,
+                            onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.ACCESSIBILITY) } },
+                            modifier = Modifier.weight(1.3f)
+                        )
+                        CompactChoicePill(
+                            label = stringResource(R.string.capture_mode_media),
+                            selected = !useA11yCapture,
+                            onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.MEDIA_PROJECTION) } },
+                            modifier = Modifier.weight(0.9f)
+                        )
+                    }
+                }
                 if (!health.notificationsGranted) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     PermissionItemRow(
@@ -1147,6 +1174,44 @@ private fun SettingsTab(
                     checked = settings.showEmergencyStop,
                     onCheckedChange = { v -> onUpdateSettings { it.copy(showEmergencyStop = v) } }
                 )
+                if (CaptureRouter.isAccessibilityCaptureSupported()) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    val useA11yCap = CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.capture_mode_title),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CompactChoicePill(
+                                label = stringResource(R.string.capture_mode_a11y),
+                                selected = useA11yCap,
+                                onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.ACCESSIBILITY) } },
+                                modifier = Modifier.weight(1.3f)
+                            )
+                            CompactChoicePill(
+                                label = stringResource(R.string.capture_mode_media),
+                                selected = !useA11yCap,
+                                onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.MEDIA_PROJECTION) } },
+                                modifier = Modifier.weight(0.9f)
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.capture_mode_sub),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
 
