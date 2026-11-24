@@ -2,7 +2,7 @@
 
 > **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
 
-[![Version](https://img.shields.io/badge/version-v0.4.8-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.8)
+[![Version](https://img.shields.io/badge/version-v0.4.9-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.9)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
 [![Tests](https://img.shields.io/badge/Tests-51%20C%2B%2B%20%2B%2073%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
@@ -12,7 +12,7 @@
 
 ## 应用界面一览
 
-> 以下全部截图均直接采集自 Android 16 模拟器运行 `AutoDora-NEXT v0.4.8` 签名正式包（仅展示应用自身界面与演示编排版面，不含第三方游戏版权素材）。
+> 以下全部截图均直接采集自 Android 16 模拟器运行 `AutoDora-NEXT v0.4.9` 签名正式包（仅展示应用自身界面与演示编排版面，不含第三方游戏版权素材）。
 
 ### 主控台（3-Tab Material You 启动页 · 彩色分组抽屉）
 
@@ -137,7 +137,7 @@ AutoDora-NEXT/
 
 - [x] **Phase 1（`v0.1.0`）**：纯 C++20 `3×3~8×8` 64-bit 动态解盘引擎（支持最高 300 步）+ Android 多模块骨架 + JNI 跨平台编译。
 - [x] **Phase 2 & 2.5（`v0.2.x` – `v0.3.x`）**：免 Root 零拷贝 `MediaProjection` + 血条锚定 `6×5`/`6×8` 实图精准标定 + 先露后藏问号记忆 + 免 Root 按住重算续滑 + 经典/现代拼图框、起结有序漩涡、暴风、化血、结界与 VICTORY 过滤 + 逐盾 `✓/✗` 实时判定 + 方向逆转镜像与首步防拐保护。
-- [x] **Phase 3 & 3.5（`v0.4.0` – `v0.4.8` · 当前版本）**：
+- [x] **Phase 3 & 3.5（`v0.4.0` – `v0.4.9` · 当前版本）**：
   - **全量 98 敌技 + 22 符石状态（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）+ 7 大官方种族审计与引擎/CV/编排闭环升级**。
   - **Material 3 / Material You 3-Tab 启动页 + 同色系悬浮 3-Tab 单抽屉调参面板 + 4 态磁吸记忆悬浮栏**（横排靠左/横排靠右向左展开/竖排靠左/竖排靠右，松手左右平滑吸边并持久记忆停靠侧与纵坐标）。
   - **5 色单开互斥抽屉 1:1 盘面编排（打开即自动识盘 + 一键「重新识盘」）**（仅允许单一抽屉展开防遮挡 + 激活画笔标题徽标、单点互斥绿/红漩涡、多格角色通行/停放、18 项齐整符石状态画笔含荆棘/锁定、独立清除格标、「保存版面 → 主栏计算/执行」工作流）。
@@ -150,7 +150,7 @@ AutoDora-NEXT/
 
 ### 1. 直接安装预编译 APK
 
-前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.4.8-release.apk`），安装后：
+前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.4.9-release.apk`），安装后：
 1. 在「概览 → 运行权限检查」依次授予 **悬浮窗**、**无障碍自动转珠** 与 **屏幕采集（选择「整个屏幕」）** 三项权限；
 2. 若在 Android 13+ / HyperOS / One UI / ColorOS 遇到无障碍开关受限，按概览页「无障碍受限设置指引」点击「应用详情 → 右上角 `⋮` → 允许受限设置」后即可开启；
 3. 后续版本可直接在 App 内「设置 → 关于与版本 → 检查更新 → 下载并安装」一键原地升级。
