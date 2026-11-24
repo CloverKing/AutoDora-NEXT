@@ -194,6 +194,7 @@ class OverlayControllerService : Service() {
                 val presetSwitched = settings.activePresetId != latest.activePresetId
                 val previewModeChanged = settings.testModeOnlyDraw != latest.testModeOnlyDraw
                 val emergencyBtnChanged = settings.showEmergencyStop != latest.showEmergencyStop
+                val recordBtnChanged = settings.showFloatingRecordButton != latest.showFloatingRecordButton
                 val solverSettingChanged = settings.allowDiagonalMove != latest.allowDiagonalMove ||
                     settings.maxSteps != latest.maxSteps ||
                     settings.beamWidth != latest.beamWidth
@@ -226,7 +227,7 @@ class OverlayControllerService : Service() {
                     dockChanged -> {
                         snapToDockEdge(latest.floatingBarDockRight, animate = true)
                     }
-                    verticalChanged || (latest.floatingBarDockRight && (previewModeChanged || emergencyBtnChanged || captureModeChanged)) -> {
+                    verticalChanged || (latest.floatingBarDockRight && (previewModeChanged || emergencyBtnChanged || captureModeChanged || recordBtnChanged)) -> {
                         snapToDockEdge(latest.floatingBarDockRight, animate = false)
                     }
                 }
@@ -2382,9 +2383,10 @@ class OverlayControllerService : Service() {
             styleIconBtn(tuneIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
         }
 
-        // Built-in MP4 Screen Recorder toggle (ONLY visible in Fast Screen Cast / MediaProjection mode!)
+        // Built-in MP4 Screen Recorder toggle (ONLY visible in Fast Screen Cast mode when enabled in Settings!)
         if (::recordIconBtn.isInitialized) {
-            val showRec = CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.MEDIA_PROJECTION
+            val showRec = CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.MEDIA_PROJECTION &&
+                settings.showFloatingRecordButton
             recordIconBtn.visibility = if (showRec) View.VISIBLE else View.GONE
             if (showRec) {
                 when (currentRecordingState) {

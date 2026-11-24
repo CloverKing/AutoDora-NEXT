@@ -616,4 +616,6 @@
     <string name="toast_record_failed_fmt">录屏保存失败：%1$s</string>
     <string name="toast_record_need_perm">请先授予「屏幕采集权限」后再开始录屏</string>
     <string name="ov_record_btn">录屏</string>
+    <string name="mode_floating_record_title">悬浮栏显示录屏按钮</string>
+    <string name="mode_floating_record_sub">仅在「高速录屏采集」模式下生效；关闭后主悬浮栏更紧凑，仍可在概览页启停录屏</string>
 </resources>

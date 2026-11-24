@@ -616,4 +616,6 @@
     <string name="toast_record_failed_fmt">錄影儲存失敗：%1$s</string>
     <string name="toast_record_need_perm">請先授予「螢幕擷取權限」後再開始錄影</string>
     <string name="ov_record_btn">錄影</string>
+    <string name="mode_floating_record_title">懸浮欄顯示錄影按鈕</string>
+    <string name="mode_floating_record_sub">僅在「高速錄影擷取」模式下生效；關閉後主懸浮欄更緊湊，仍可在概覽頁啟停錄影</string>
 </resources>

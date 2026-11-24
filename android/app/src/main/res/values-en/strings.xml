@@ -616,4 +616,6 @@
     <string name="toast_record_failed_fmt">Recording failed: %1$s</string>
     <string name="toast_record_need_perm">Grant Screen Capture permission first to start recording</string>
     <string name="ov_record_btn">Rec</string>
+    <string name="mode_floating_record_title">Floating Bar Record Button</string>
+    <string name="mode_floating_record_sub">Applies in Fast Screen Cast mode; turn off for a more compact bar while still recording from Overview</string>
 </resources>

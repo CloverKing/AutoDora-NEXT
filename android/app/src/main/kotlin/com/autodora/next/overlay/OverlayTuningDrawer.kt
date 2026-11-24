@@ -1498,6 +1498,21 @@ class OverlayTuningDrawerController(
                 )
                 swBody.addView(capRow)
             }
+            val recToggleRow = hRow(bottomMarginDp = 0).apply {
+                (layoutParams as LinearLayout.LayoutParams).topMargin = dp(4)
+            }
+            recToggleRow.addView(
+                makeToggle(
+                    s(R.string.mode_floating_record_title),
+                    settings.showFloatingRecordButton,
+                    p,
+                    weight = 1f,
+                    marginEndDp = 0
+                ) {
+                    onUpdateSettings { it.copy(showFloatingRecordButton = !it.showFloatingRecordButton) }
+                }
+            )
+            swBody.addView(recToggleRow)
         }
 
         // Card 3 (Purple): Appearance, Theme, Language & Floating Bar Layout/Dock (matches Launch App Settings Purple card!)

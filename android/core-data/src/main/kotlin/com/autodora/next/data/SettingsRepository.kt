@@ -62,6 +62,7 @@ data class AppSettings(
     val testModeOnlyDraw: Boolean = true,       // Default safe Test Mode: draw preview first, tap Execute to swipe!
     val countdownSeconds: Int = 0,              // Optional 0..3s countdown before swipe
     val showEmergencyStop: Boolean = true,
+    val showFloatingRecordButton: Boolean = true,
     val stepDurationMs: Long = 68L,
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
@@ -117,6 +118,7 @@ class SettingsRepository(private val context: Context) {
         val TEST_MODE_ONLY_DRAW = booleanPreferencesKey("ux_test_mode_draw")
         val COUNTDOWN_SECONDS = intPreferencesKey("ux_countdown_sec")
         val SHOW_EMERGENCY_STOP = booleanPreferencesKey("ux_show_emergency")
+        val SHOW_FLOATING_RECORD_BUTTON = booleanPreferencesKey("ux_show_floating_record_btn")
         val STEP_DURATION_MS = longPreferencesKey("touch_step_ms")
         val HUMAN_MODE = booleanPreferencesKey("touch_human_mode")
         val MULTI_FRAME_COUNT = intPreferencesKey("vision_multi_frames")
@@ -153,6 +155,7 @@ class SettingsRepository(private val context: Context) {
         testModeOnlyDraw = p[Keys.TEST_MODE_ONLY_DRAW] ?: true,
         countdownSeconds = p[Keys.COUNTDOWN_SECONDS] ?: 0,
         showEmergencyStop = p[Keys.SHOW_EMERGENCY_STOP] ?: true,
+        showFloatingRecordButton = p[Keys.SHOW_FLOATING_RECORD_BUTTON] ?: true,
         stepDurationMs = p[Keys.STEP_DURATION_MS] ?: 68L,
         humanMode = p[Keys.HUMAN_MODE] ?: false,
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
@@ -195,6 +198,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.TEST_MODE_ONLY_DRAW] = next.testModeOnlyDraw
             p[Keys.COUNTDOWN_SECONDS] = next.countdownSeconds.coerceIn(0, 3)
             p[Keys.SHOW_EMERGENCY_STOP] = next.showEmergencyStop
+            p[Keys.SHOW_FLOATING_RECORD_BUTTON] = next.showFloatingRecordButton
             p[Keys.STEP_DURATION_MS] = next.stepDurationMs.coerceIn(20L, 140L)
             p[Keys.HUMAN_MODE] = next.humanMode
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)

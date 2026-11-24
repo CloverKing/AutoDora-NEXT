@@ -707,7 +707,8 @@ private fun SettingsTab(
         settings.calibration.autoDetectWeijian,
         settings.showOrbBadgesOnPath,
         settings.humanMode,
-        settings.showEmergencyStop
+        settings.showEmergencyStop,
+        settings.showFloatingRecordButton
     ).count { it }
 
     Column(
@@ -1293,6 +1294,13 @@ private fun SettingsTab(
                         )
                     }
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SwitchSettingRow(
+                    title = stringResource(R.string.mode_floating_record_title),
+                    subtitle = stringResource(R.string.mode_floating_record_sub),
+                    checked = settings.showFloatingRecordButton,
+                    onCheckedChange = { v -> onUpdateSettings { it.copy(showFloatingRecordButton = v) } }
+                )
             }
         }
 
