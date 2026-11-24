@@ -309,16 +309,21 @@ object LocaleHelper {
 
     fun targetShapeLabel(ctx: Context, shape: TargetShape): String = when (shape) {
         TargetShape.ANY -> ctx.getString(R.string.shape_default)
+        TargetShape.SPLIT_3 -> ctx.getString(R.string.shape_split3)
         TargetShape.COUNT_2 -> ctx.getString(R.string.shape_2)
         TargetShape.COUNT_4 -> ctx.getString(R.string.shape_4)
         TargetShape.COUNT_5 -> ctx.getString(R.string.shape_5)
-        TargetShape.ROW -> ctx.getString(R.string.shape_row)
         TargetShape.COUNT_6 -> ctx.getString(R.string.shape_6)
         TargetShape.COUNT_7 -> ctx.getString(R.string.shape_7)
         TargetShape.COUNT_8 -> ctx.getString(R.string.shape_8)
         TargetShape.COUNT_9 -> ctx.getString(R.string.shape_9)
+        TargetShape.ROW -> ctx.getString(R.string.shape_row)
+        TargetShape.COLUMN -> ctx.getString(R.string.shape_col)
+        TargetShape.CROSS -> ctx.getString(R.string.shape_cross)
+        TargetShape.L_SHAPE -> ctx.getString(R.string.shape_l)
+        TargetShape.T_SHAPE -> ctx.getString(R.string.shape_t)
+        TargetShape.SQUARE_2X2 -> ctx.getString(R.string.shape_sq2x2)
         TargetShape.CLEAR_ALL -> ctx.getString(R.string.shape_all)
-        else -> ctx.getString(R.string.shape_default)
     }
 
     fun elementPriorityLabel(ctx: Context, prio: ElementPriority): String = when (prio) {

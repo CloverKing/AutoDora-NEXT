@@ -33,9 +33,7 @@ class OverlayTuningDrawerController(
     private val onToggleWaveChip: (WaveShieldChip) -> Unit,
     private val onUpsertWaveChip: (WaveShieldChip) -> Unit,
     private val onClearWaveChips: () -> Unit,
-    private val onSelectPreset: (String) -> Unit,
-    private val onSaveActivePreset: () -> Unit,
-    private val onDuplicateActivePreset: () -> Unit,
+    private val onResetStrategy: () -> Unit,
     private val onUpdateActivePresetConfig: ((RuleConfig) -> RuleConfig) -> Unit,
     private val onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     private val onClose: () -> Unit
@@ -51,14 +49,13 @@ class OverlayTuningDrawerController(
     private var lctx: Context = context
     private var palette: OverlayPalette? = null
     private var settings: AppSettings = AppSettings()
-    private var presets: List<TeamPresetRecord> = emptyList()
     private var activePreset: TeamBasePreset = TeamPresetRepository.defaultBuiltInPresets().first()
     private var activeChips: List<WaveShieldChip> = emptyList()
     private var boardEditorOpen: Boolean = false
     private var hasSavedBoard: Boolean = false
 
     // Exclusive single-open accordion expansion per tab (expanding one auto-collapses the others in that tab!)
-    private var presetPickerExpanded = false
+    private var expandedShapeElemIdx: Int? = null
     private val expandedCardByTab = mutableMapOf<Int, Int?>(
         0 to 0, // Tab 0 (Quick): Card 0 open
         1 to 0, // Tab 1 (Strategy): Card 0 open
@@ -178,7 +175,6 @@ class OverlayTuningDrawerController(
     fun updateData(
         palette: OverlayPalette,
         settings: AppSettings,
-        presets: List<TeamPresetRecord>,
         activePreset: TeamBasePreset,
         activeChips: List<WaveShieldChip>,
         boardEditorOpen: Boolean = false,
@@ -187,7 +183,6 @@ class OverlayTuningDrawerController(
         this.lctx = LocaleHelper.localizedContext(context, settings.language)
         this.palette = palette
         this.settings = settings
-        this.presets = presets
         this.activePreset = activePreset
         this.activeChips = activeChips
         this.boardEditorOpen = boardEditorOpen
@@ -330,79 +325,57 @@ class OverlayTuningDrawerController(
         val cfg = activePreset.baseConfig
         val byId = activeChips.associateBy { it.id }
         val activeIds = byId.keys
-        val list = presets.ifEmpty {
-            TeamPresetRepository.defaultBuiltInPresets().map { TeamPresetRecord(it, true, 0L) }
-        }
-        val activeRec = list.firstOrNull { it.preset.id == settings.activePresetId } ?: list.first()
-        val presetDisplayName = LocaleHelper.displayPresetName(lctx, activeRec.preset, activeRec.isBuiltIn)
+        val goalLabel = LocaleHelper.goalSummary(lctx, cfg)
 
-        // ---------- Sticky Compact Preset Save/Load & Enemy-Match Header Card ----------
+        // ---------- Sticky Compact Active Strategy & Wave-Shield Header Card (Dark & Light High-Contrast) ----------
+        val topBg = if (p.isDark) Color.rgb(34, 30, 48) else Color.rgb(242, 236, 255)
+        val topStroke = if (p.isDark) Color.argb(185, 148, 124, 224) else Color.argb(120, 123, 31, 162)
+        val topTitleFg = if (p.isDark) Color.rgb(234, 226, 255) else Color.rgb(52, 24, 118)
         val topCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(p.primaryContainer, dp(10).toFloat(), p.primary)
+            background = roundedBg(topBg, dp(10).toFloat(), topStroke)
             setPadding(dp(8), dp(6), dp(8), dp(6))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(8) }
         }
-        val topBar = hRow(bottomMarginDp = if (presetPickerExpanded || activeChips.isNotEmpty()) 5 else 0)
-        val pickerChevron = if (presetPickerExpanded) "▴" else "▾"
-        topBar.addView(makeChip("$presetDisplayName $pickerChevron", padH = 7, weight = 1.6f) {
-            presetPickerExpanded = !presetPickerExpanded
-            rebuildContent(preserveScroll = true)
-        }.also {
-            it.ellipsize = TextUtils.TruncateAt.END
-            styleChip(it, if (p.isDark) Color.rgb(36, 44, 62) else Color.WHITE, p.primary, p.primary)
+        val topBar = hRow(bottomMarginDp = if (activeChips.isNotEmpty()) 5 else 0)
+        topBar.addView(TextView(context).apply {
+            text = "${s(R.string.unified_strategy_bar_title)} · $goalLabel"
+            textSize = 10.5f
+            typeface = Typeface.DEFAULT_BOLD
+            setSingleLine(true)
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(topTitleFg)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
         })
-        topBar.addView(makeChip(s(R.string.ov_preset_save_short), padH = 6, weight = 0.55f) {
-            onSaveActivePreset()
-        }.also { styleChip(it, p.primary, p.onPrimary, null) })
-        topBar.addView(makeChip(s(R.string.ov_preset_save_as_short), padH = 6, weight = 0.65f, marginEndDp = if (activeChips.isNotEmpty()) 4 else 0) {
-            onDuplicateActivePreset()
-        }.also { styleChip(it, p.secondaryContainer, p.onSecondaryContainer, p.outline) })
+        topBar.addView(makeChip(s(R.string.btn_reset_strategy), padH = 7, marginEndDp = if (activeChips.isNotEmpty()) 4 else 0) {
+            expandedShapeElemIdx = null
+            onResetStrategy()
+        }.also { styleChip(it, p.chipOffBg, p.onSurface, p.outline) })
         if (activeChips.isNotEmpty()) {
-            topBar.addView(makeChip(s(R.string.ov_clear_enemy_short, activeChips.size), padH = 5, weight = 0.85f, marginEndDp = 0) {
+            val clrBg = if (p.isDark) Color.rgb(92, 30, 38) else Color.rgb(255, 228, 232)
+            val clrFg = if (p.isDark) Color.rgb(255, 206, 212) else Color.rgb(198, 40, 40)
+            topBar.addView(makeChip(s(R.string.ov_clear_enemy_short, activeChips.size), padH = 6, marginEndDp = 0) {
                 onClearWaveChips()
-            }.also { styleChip(it, p.errorContainer, p.onErrorContainer, null) })
+            }.also { styleChip(it, clrBg, clrFg, null) })
         }
         topCard.addView(topBar)
-
-        if (presetPickerExpanded) {
-            val presetScroll = HorizontalScrollView(context).apply {
-                isHorizontalScrollBarEnabled = false
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = if (activeChips.isNotEmpty()) dp(4) else 0 }
-            }
-            val presetRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-            list.forEachIndexed { idx, rec ->
-                val sel = rec.preset.id == settings.activePresetId
-                presetRow.addView(
-                    makeToggle(
-                        LocaleHelper.displayPresetName(lctx, rec.preset, rec.isBuiltIn),
-                        sel,
-                        p,
-                        marginEndDp = if (idx == list.lastIndex) 0 else 4
-                    ) {
-                        presetPickerExpanded = false
-                        onSelectPreset(rec.preset.id)
-                    }
-                )
-            }
-            presetScroll.addView(presetRow)
-            topCard.addView(presetScroll)
-        }
 
         if (activeChips.isNotEmpty()) {
             val chipScroll = HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false }
             val chipRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            val pillBg = if (p.isDark) Color.rgb(52, 46, 76) else Color.WHITE
+            val pillFg = if (p.isDark) Color.rgb(242, 238, 255) else Color.rgb(49, 27, 146)
+            val pillStroke = if (p.isDark) Color.argb(170, 179, 157, 219) else ACCENT_PURPLE
             for (c in activeChips) {
                 chipRow.addView(makeChip("${LocaleHelper.formatWaveChipLabel(lctx, c)} ×", padH = 6) {
                     onToggleWaveChip(c)
                 }.also {
-                    styleChip(it, if (p.isDark) Color.rgb(34, 48, 72) else Color.WHITE, p.primary, p.primary)
+                    styleChip(it, pillBg, pillFg, pillStroke)
                 })
             }
             chipScroll.addView(chipRow)
@@ -969,9 +942,31 @@ class OverlayTuningDrawerController(
             body.addView(raceRow)
         }
 
-        // Sub-group E: 6x4 Per-Element Rules Matrix
+        // Sub-group E: 6x4 Per-Element Rules Matrix + One-Tap Reset All + Inline 4x4 Shape Picker
         body.addView(makeSubDivider(p))
-        body.addView(makeSubLabel(s(R.string.section_elem_matrix), p))
+        val customMatrixCnt = cfg.elementRules.count {
+            it.targetShape != TargetShape.ANY || it.priority != ElementPriority.NORMAL || it.timing != MatchTiming.ANY || it.minMatchCount != 3
+        }
+        val matrixHdrRow = hRow(bottomMarginDp = 3)
+        matrixHdrRow.addView(TextView(context).apply {
+            text = s(R.string.section_elem_matrix)
+            textSize = 9.5f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.onSurfaceVariant)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        matrixHdrRow.addView(makeChip(s(R.string.btn_reset_matrix), padH = 6, marginEndDp = 0) {
+            if (customMatrixCnt > 0) {
+                expandedShapeElemIdx = null
+                onUpdateActivePresetConfig { cur -> cur.copy(elementRules = List(6) { ElementRule() }) }
+            }
+        }.also {
+            it.textSize = 9f
+            it.alpha = if (customMatrixCnt > 0) 1f else 0.48f
+            styleChip(it, p.chipOffBg, if (customMatrixCnt > 0) p.primary else p.onSurfaceVariant, p.outline)
+        })
+        body.addView(matrixHdrRow)
+
         val hdrRow = hRow(bottomMarginDp = 3)
         listOf(
             s(R.string.col_hdr_elem) to 0.65f, s(R.string.col_hdr_shape) to 1.05f,
@@ -985,20 +980,20 @@ class OverlayTuningDrawerController(
         }
         body.addView(hdrRow)
 
-        val shapeCycle = listOf(
-            TargetShape.ANY, TargetShape.COUNT_2, TargetShape.COUNT_4, TargetShape.COUNT_5,
-            TargetShape.ROW, TargetShape.COUNT_6, TargetShape.COUNT_7, TargetShape.COUNT_8,
-            TargetShape.COUNT_9, TargetShape.CLEAR_ALL
+        val shapeOrder = listOf(
+            TargetShape.ANY, TargetShape.SPLIT_3, TargetShape.COUNT_2, TargetShape.COUNT_4,
+            TargetShape.COUNT_5, TargetShape.COUNT_6, TargetShape.COUNT_7, TargetShape.COUNT_8,
+            TargetShape.COUNT_9, TargetShape.ROW, TargetShape.COLUMN, TargetShape.CROSS,
+            TargetShape.L_SHAPE, TargetShape.T_SHAPE, TargetShape.SQUARE_2X2, TargetShape.CLEAR_ALL
         )
         for (e in 0..5) {
             val er = cfg.elementRules.getOrElse(e) { ElementRule() }
-            val row = hRow(bottomMarginDp = if (e == 5) 0 else 3)
+            val isShapeOpen = expandedShapeElemIdx == e
+            val row = hRow(bottomMarginDp = if (e == 5 && !isShapeOpen) 0 else 3)
             row.addView(makeElementBtn(e, true, p, weight = 0.65f, marginEndDp = 4) {})
-            row.addView(makeToggle(LocaleHelper.targetShapeLabel(lctx, er.targetShape), er.targetShape != TargetShape.ANY, p, weight = 1.05f) {
-                onUpdateActivePresetConfig { cur ->
-                    val nxt = shapeCycle[(shapeCycle.indexOf(er.targetShape) + 1).coerceAtLeast(0) % shapeCycle.size]
-                    cur.copy(elementRules = cur.elementRules.toMutableList().also { it[e] = er.copy(targetShape = nxt) })
-                }
+            row.addView(makeToggle(LocaleHelper.targetShapeLabel(lctx, er.targetShape), er.targetShape != TargetShape.ANY || isShapeOpen, p, weight = 1.05f) {
+                expandedShapeElemIdx = if (isShapeOpen) null else e
+                rebuildContent(preserveScroll = true)
             })
             row.addView(makeToggle(LocaleHelper.elementPriorityLabel(lctx, er.priority), er.priority != ElementPriority.NORMAL, p, weight = 0.9f) {
                 onUpdateActivePresetConfig { cur ->
@@ -1014,11 +1009,39 @@ class OverlayTuningDrawerController(
             })
             row.addView(makeToggle(s(R.string.min_match_fmt, er.minMatchCount), er.minMatchCount != 3, p, weight = 0.8f, marginEndDp = 0) {
                 onUpdateActivePresetConfig { cur ->
-                    val nxt = when (er.minMatchCount) { 3 -> 2; 2 -> 4; else -> 3 }
+                    val nxt = when (er.minMatchCount) { 3 -> 2; 2 -> 1; 1 -> 4; 4 -> 5; else -> 3 }
                     cur.copy(elementRules = cur.elementRules.toMutableList().also { it[e] = er.copy(minMatchCount = nxt) })
                 }
             })
             body.addView(row)
+
+            // Inline compact 4x4 Shape Picker expanded directly under the clicked row
+            if (isShapeOpen) {
+                val pickerBox = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    val boxBg = if (p.isDark) Color.rgb(26, 31, 40) else Color.rgb(245, 248, 252)
+                    background = roundedBg(boxBg, dp(8).toFloat(), LocaleHelper.elementBadgeArgb(e))
+                    setPadding(dp(5), dp(5), dp(5), dp(5))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = if (e == 5) 0 else dp(4) }
+                }
+                val rows4 = shapeOrder.chunked(4)
+                rows4.forEachIndexed { rIdx, rowShapes ->
+                    val shRow = hRow(bottomMarginDp = if (rIdx == rows4.lastIndex) 0 else 3)
+                    rowShapes.forEachIndexed { cIdx, sh ->
+                        shRow.addView(makeToggle(LocaleHelper.targetShapeLabel(lctx, sh), sh == er.targetShape, p, weight = 1f, marginEndDp = if (cIdx == rowShapes.lastIndex) 0 else 3) {
+                            expandedShapeElemIdx = null
+                            onUpdateActivePresetConfig { cur ->
+                                cur.copy(elementRules = cur.elementRules.toMutableList().also { it[e] = er.copy(targetShape = sh) })
+                            }
+                        })
+                    }
+                    pickerBox.addView(shRow)
+                }
+                body.addView(pickerBox)
+            }
         }
     }
 
@@ -1724,8 +1747,9 @@ class OverlayTuningDrawerController(
             }
         }
         // Colored vertical left accent strip
+        val accentFg = accentFgFor(accentColor, p.isDark)
         hdr.addView(View(context).apply {
-            background = roundedBg(accentColor, dp(2).toFloat(), null)
+            background = roundedBg(accentFg, dp(2).toFloat(), null)
             layoutParams = LinearLayout.LayoutParams(dp(3), dp(14)).apply { marginEnd = dp(6) }
         })
         // Group title
@@ -1753,8 +1777,8 @@ class OverlayTuningDrawerController(
             maxWidth = dp(170)
             setPadding(dp(6), dp(2), dp(6), dp(2))
             if (highlighted) {
-                setTextColor(accentColor)
-                background = roundedBg(Color.argb(if (p.isDark) 52 else 28, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)), dp(6).toFloat(), null)
+                setTextColor(accentFg)
+                background = roundedBg(Color.argb(if (p.isDark) 64 else 28, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)), dp(6).toFloat(), null)
             } else {
                 setTextColor(p.onSurfaceVariant)
             }
@@ -1767,7 +1791,7 @@ class OverlayTuningDrawerController(
             text = if (isOpen) "▾" else "▸"
             textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(accentColor)
+            setTextColor(accentFg)
         })
         card.addView(hdr)
 
@@ -1906,5 +1930,18 @@ class OverlayTuningDrawerController(
         private val ACCENT_CRIMSON = Color.rgb(211, 47, 47)
         private val ACCENT_BLUE = Color.rgb(25, 118, 210)
         private val ACCENT_PURPLE = Color.rgb(123, 31, 162)
+
+        private fun accentFgFor(accent: Int, isDark: Boolean): Int {
+            if (!isDark) return accent
+            return when (accent) {
+                ACCENT_INDIGO -> Color.rgb(174, 184, 255)
+                ACCENT_TEAL -> Color.rgb(128, 203, 196)
+                ACCENT_AMBER -> Color.rgb(255, 204, 128)
+                ACCENT_CRIMSON -> Color.rgb(255, 171, 145)
+                ACCENT_BLUE -> Color.rgb(144, 202, 249)
+                ACCENT_PURPLE -> Color.rgb(223, 176, 255)
+                else -> Color.rgb(224, 230, 255)
+            }
+        }
     }
 }

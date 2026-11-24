@@ -167,43 +167,25 @@ class MainActivity : ComponentActivity() {
                         onUpdateSettings = { transform ->
                             lifecycleScope.launch { settingsRepository.update(transform) }
                         },
-                        onSelectPreset = { id ->
-                            lifecycleScope.launch {
-                                settingsRepository.update { it.copy(activePresetId = id) }
-                            }
-                        },
                         onSavePreset = { preset, isBuiltIn ->
                             lifecycleScope.launch {
                                 teamPresetRepository.savePreset(preset, isBuiltIn = isBuiltIn)
                             }
                         },
-                        onSaveAsNewPreset = { name, desc, cfg ->
+                        onResetStrategy = {
                             lifecycleScope.launch {
-                                val newId = "custom_${java.util.UUID.randomUUID().toString().take(8)}"
+                                val current = presets.firstOrNull { it.preset.id == settings.activePresetId }
+                                    ?: presets.firstOrNull()
+                                    ?: TeamPresetRecord(TeamPresetRepository.defaultBuiltInPresets().first(), true, 0L)
                                 teamPresetRepository.savePreset(
-                                    TeamBasePreset(id = newId, name = name, description = desc, baseConfig = cfg),
-                                    isBuiltIn = false
+                                    current.preset.copy(baseConfig = RuleConfig()),
+                                    isBuiltIn = current.isBuiltIn
                                 )
-                                settingsRepository.update { it.copy(activePresetId = newId) }
-                            }
-                        },
-                        onDuplicatePreset = { source ->
-                            lifecycleScope.launch {
-                                val newId = teamPresetRepository.duplicatePreset(source)
-                                settingsRepository.update { it.copy(activePresetId = newId) }
                                 Toast.makeText(
                                     this@MainActivity,
-                                    lctx().getString(R.string.toast_preset_duplicated),
+                                    lctx().getString(R.string.toast_strategy_reset),
                                     Toast.LENGTH_SHORT
                                 ).show()
-                            }
-                        },
-                        onDeletePreset = { id ->
-                            lifecycleScope.launch {
-                                teamPresetRepository.deleteCustomPreset(id)
-                                if (settings.activePresetId == id) {
-                                    settingsRepository.update { it.copy(activePresetId = TeamPresetRepository.ID_GENERAL) }
-                                }
                             }
                         },
                         onToggleWaveChip = { chip -> ActiveStrategyStore.toggleChip(chip) },
@@ -318,8 +300,7 @@ class MainActivity : ComponentActivity() {
                             R.string.bench_line_65,
                             s65?.totalCombo ?: 0,
                             s65?.stepCount ?: 0,
-                            out65.elapsedMs.toInt(),
-                            out65.statesEvaluated
+                            out65.elapsedMs.toInt()
                         )
                     )
                     append(
@@ -327,8 +308,7 @@ class MainActivity : ComponentActivity() {
                             R.string.bench_line_68,
                             s68?.totalCombo ?: 0,
                             s68?.stepCount ?: 0,
-                            out68.elapsedMs.toInt(),
-                            out68.statesEvaluated
+                            out68.elapsedMs.toInt()
                         )
                     )
                 }

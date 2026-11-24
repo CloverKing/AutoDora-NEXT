@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -28,13 +29,12 @@ import androidx.compose.ui.window.DialogProperties
 import com.autodora.next.R
 import com.autodora.next.data.*
 import com.autodora.next.model.*
-import java.util.UUID
 
 /**
- * Unified Strategy & Enemy-Shield Workbench (统一策略面板):
- *  - Replaces the separate Strategy List tab & Shields tab with ONE cohesive, deduplicated configuration page.
- *  - Top compact Preset Bar supports Load / Manage, Save, and Save As (named presets).
- *  - Organizes all team & shield parameters cleanly into 6 grouped cards below.
+ * Single-Strategy & Enemy-Shield Workbench (策略与解盾面板):
+ *  - Operates directly on the single live active strategy (auto-saved on every edit, with 1-tap Reset).
+ *  - High-contrast Light & Dark active wave shields banner.
+ *  - 6 color-coded collapsible cards matching the floating overlay drawer 1:1.
  */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -43,11 +43,8 @@ internal fun UnifiedStrategyTab(
     presets: List<TeamPresetRecord>,
     activeWaveChips: List<WaveShieldChip>,
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
-    onSelectPreset: (String) -> Unit,
     onSavePreset: (TeamBasePreset, Boolean) -> Unit,
-    onSaveAsNewPreset: (String, String, RuleConfig) -> Unit,
-    onDuplicatePreset: (TeamBasePreset) -> Unit,
-    onDeletePreset: (String) -> Unit,
+    onResetStrategy: () -> Unit,
     onToggleWaveChip: (WaveShieldChip) -> Unit,
     onClearWaveChips: () -> Unit,
     onShowHelp: (String, String) -> Unit
@@ -59,15 +56,12 @@ internal fun UnifiedStrategyTab(
     val activeRecord = items.firstOrNull { it.preset.id == settings.activePresetId } ?: items.first()
     val activePreset = activeRecord.preset
     val cfg = activePreset.baseConfig
-    val displayName = LocaleHelper.displayPresetName(ctx, activePreset, activeRecord.isBuiltIn)
-    val displayDesc = LocaleHelper.displayPresetDesc(ctx, activePreset, activeRecord.isBuiltIn)
 
     fun updateCfg(transform: (RuleConfig) -> RuleConfig) {
         onSavePreset(activePreset.copy(baseConfig = transform(cfg)), activeRecord.isBuiltIn)
     }
 
-    var showPresetManager by remember { mutableStateOf(false) }
-    var showSaveAsDialog by remember { mutableStateOf(false) }
+    var shapePickerElementIdx by remember { mutableStateOf<Int?>(null) }
 
     var stepsText by remember(activePreset.id) { mutableStateOf(cfg.maxSteps.toString()) }
     LaunchedEffect(cfg.maxSteps) {
@@ -185,11 +179,14 @@ internal fun UnifiedStrategyTab(
 
     val shapeOrder = remember {
         listOf(
-            TargetShape.ANY, TargetShape.COUNT_2, TargetShape.COUNT_4, TargetShape.COUNT_5,
-            TargetShape.ROW, TargetShape.COUNT_6, TargetShape.COUNT_7, TargetShape.COUNT_8,
-            TargetShape.COUNT_9, TargetShape.CLEAR_ALL
+            TargetShape.ANY, TargetShape.SPLIT_3, TargetShape.COUNT_2, TargetShape.COUNT_4,
+            TargetShape.COUNT_5, TargetShape.COUNT_6, TargetShape.COUNT_7, TargetShape.COUNT_8,
+            TargetShape.COUNT_9, TargetShape.ROW, TargetShape.COLUMN, TargetShape.CROSS,
+            TargetShape.L_SHAPE, TargetShape.T_SHAPE, TargetShape.SQUARE_2X2, TargetShape.CLEAR_ALL
         )
     }
+
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     Column(
         modifier = Modifier
@@ -198,44 +195,54 @@ internal fun UnifiedStrategyTab(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ==================== Top Compact Preset Save / Load Bar ====================
-        ElevatedCard(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer
-            )
+        // ==================== Top Compact Active Strategy Header (Single Auto-Saved Strategy) ====================
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+            border = BorderStroke(
+                width = 1.dp,
+                color = DrawerAccentColors.Indigo.copy(alpha = if (isDark) 0.55f else 0.30f)
+            ),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text(
+                        text = stringResource(R.string.unified_strategy_bar_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.unified_strategy_bar_sub),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
+                    OutlinedButton(
+                        onClick = onResetStrategy,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Outlined.RestartAlt, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(3.dp))
                         Text(
-                            text = stringResource(R.string.overview_current_strategy),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
+                            text = stringResource(R.string.btn_reset_strategy),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1
                         )
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (displayDesc.isNotBlank()) {
-                            Text(
-                                text = displayDesc,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
                     }
                     HelpCircleButton(
                         onClick = {
@@ -246,53 +253,25 @@ internal fun UnifiedStrategyTab(
                         }
                     )
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { showPresetManager = true },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1.3f).height(34.dp)
-                    ) {
-                        Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.preset_bar_load), style = MaterialTheme.typography.labelMedium, maxLines = 1)
-                    }
-                    FilledTonalButton(
-                        onClick = {
-                            onSavePreset(activePreset, activeRecord.isBuiltIn)
-                            Toast.makeText(ctx, ctx.getString(R.string.toast_preset_saved), Toast.LENGTH_SHORT).show()
-                        },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(0.9f).height(34.dp)
-                    ) {
-                        Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(3.dp))
-                        Text(stringResource(R.string.preset_bar_save), style = MaterialTheme.typography.labelMedium, maxLines = 1)
-                    }
-                    OutlinedButton(
-                        onClick = { showSaveAsDialog = true },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(0.9f).height(34.dp)
-                    ) {
-                        Icon(Icons.Outlined.SaveAs, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(3.dp))
-                        Text(stringResource(R.string.preset_bar_save_as), style = MaterialTheme.typography.labelMedium, maxLines = 1)
-                    }
-                }
             }
         }
 
-        // ==================== Active Wave Shields Banner ====================
+        // ==================== Active Wave Shields Banner (Dark & Light High-Contrast) ====================
         if (activeWaveChips.isNotEmpty()) {
-            ElevatedCard(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                )
+            val bannerBg = if (isDark) Color(0xFF221E2E) else Color(0xFFF3EEFF)
+            val bannerBorder = if (isDark) Color(0xFF8E74D8).copy(alpha = 0.72f) else DrawerAccentColors.Purple.copy(alpha = 0.42f)
+            val bannerTitleColor = if (isDark) Color(0xFFEAE2FF) else Color(0xFF4A148C)
+            val clearBg = if (isDark) Color(0xFF5A1D24) else Color(0xFFFFE5E8)
+            val clearFg = if (isDark) Color(0xFFFFCFD4) else Color(0xFFC62828)
+            val chipBg = if (isDark) Color(0xFF332D49) else Color(0xFFE5DBFF)
+            val chipFg = if (isDark) Color(0xFFF5F1FF) else Color(0xFF311B92)
+            val chipBorder = if (isDark) Color(0xFFB39DDB).copy(alpha = 0.65f) else Color(0xFF7B1FA2).copy(alpha = 0.45f)
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = bannerBg,
+                border = BorderStroke(1.25.dp, bannerBorder),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
@@ -306,18 +285,20 @@ internal fun UnifiedStrategyTab(
                         Text(
                             text = stringResource(R.string.unified_enemy_banner_title, activeWaveChips.size),
                             style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
+                            fontWeight = FontWeight.Bold,
+                            color = bannerTitleColor
                         )
-                        TextButton(
+                        Surface(
                             onClick = onClearWaveChips,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            modifier = Modifier.height(28.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            color = clearBg
                         ) {
                             Text(
-                                stringResource(R.string.unified_enemy_banner_clear),
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.labelMedium
+                                text = stringResource(R.string.unified_enemy_banner_clear),
+                                color = clearFg,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
                     }
@@ -329,10 +310,22 @@ internal fun UnifiedStrategyTab(
                             InputChip(
                                 selected = true,
                                 onClick = { onToggleWaveChip(chip) },
+                                colors = InputChipDefaults.inputChipColors(
+                                    selectedContainerColor = chipBg,
+                                    selectedLabelColor = chipFg,
+                                    selectedTrailingIconColor = chipFg
+                                ),
+                                border = InputChipDefaults.inputChipBorder(
+                                    enabled = true,
+                                    selected = true,
+                                    selectedBorderColor = chipBorder,
+                                    selectedBorderWidth = 1.dp
+                                ),
                                 label = {
                                     Text(
                                         LocaleHelper.formatWaveChipLabel(ctx, chip),
-                                        style = MaterialTheme.typography.labelMedium
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Medium
                                     )
                                 },
                                 trailingIcon = {
@@ -1353,8 +1346,35 @@ internal fun UnifiedStrategyTab(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // 3f. 6x4 Per-Element Strategy Rules Matrix
-                Text(stringResource(R.string.section_elem_matrix), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 3f. 6x4 Per-Element Strategy Rules Matrix + One-Tap Reset All
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = stringResource(R.string.section_elem_matrix),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            updateCfg { cur -> cur.copy(elementRules = List(6) { ElementRule() }) }
+                            Toast.makeText(ctx, ctx.getString(R.string.toast_matrix_reset), Toast.LENGTH_SHORT).show()
+                        },
+                        enabled = customMatrixCount > 0,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Outlined.RestartAlt, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            text = stringResource(R.string.btn_reset_matrix),
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1386,10 +1406,7 @@ internal fun UnifiedStrategyTab(
                         CompactChoicePill(
                             label = LocaleHelper.targetShapeLabel(ctx, er.targetShape),
                             selected = er.targetShape != TargetShape.ANY,
-                            onClick = {
-                                val nxt = shapeOrder[(shapeOrder.indexOf(er.targetShape) + 1).coerceAtLeast(0) % shapeOrder.size]
-                                updateCfg { cur -> cur.copy(elementRules = cur.elementRules.toMutableList().also { it[e] = er.copy(targetShape = nxt) }) }
-                            },
+                            onClick = { shapePickerElementIdx = e },
                             modifier = Modifier.weight(1.1f)
                         )
                         CompactChoicePill(
@@ -1423,7 +1440,7 @@ internal fun UnifiedStrategyTab(
                             label = stringResource(R.string.min_match_fmt, er.minMatchCount),
                             selected = er.minMatchCount != 3,
                             onClick = {
-                                val nxt = when (er.minMatchCount) { 3 -> 2; 2 -> 4; else -> 3 }
+                                val nxt = when (er.minMatchCount) { 3 -> 2; 2 -> 1; 1 -> 4; 4 -> 5; else -> 3 }
                                 updateCfg { cur -> cur.copy(elementRules = cur.elementRules.toMutableList().also { it[e] = er.copy(minMatchCount = nxt) }) }
                             },
                             modifier = Modifier.weight(0.85f)
@@ -1724,35 +1741,19 @@ internal fun UnifiedStrategyTab(
         Spacer(Modifier.height(8.dp))
     }
 
-    // ==================== Preset Load / Manage Dialog ====================
-    if (showPresetManager) {
-        StrategyPresetManagerDialog(
-            presets = items,
-            activePresetId = settings.activePresetId,
-            onDismiss = { showPresetManager = false },
-            onSelect = { id, label ->
-                onSelectPreset(id)
-                Toast.makeText(ctx, ctx.getString(R.string.toast_preset_loaded, label), Toast.LENGTH_SHORT).show()
-                showPresetManager = false
-            },
-            onDuplicate = { src ->
-                onDuplicatePreset(src)
-                showPresetManager = false
-            },
-            onDelete = onDeletePreset
-        )
-    }
-
-    // ==================== Save As New Named Preset Dialog ====================
-    if (showSaveAsDialog) {
-        SaveAsPresetDialog(
-            initialName = "$displayName 2",
-            initialDesc = displayDesc,
-            onDismiss = { showSaveAsDialog = false },
-            onConfirm = { newName, newDesc ->
-                onSaveAsNewPreset(newName, newDesc, cfg)
-                Toast.makeText(ctx, ctx.getString(R.string.toast_preset_saved_as), Toast.LENGTH_SHORT).show()
-                showSaveAsDialog = false
+    // ==================== 4x4 Target Shape Picker Dialog ====================
+    shapePickerElementIdx?.let { eIdx ->
+        val curRule = cfg.elementRules.getOrElse(eIdx) { ElementRule() }
+        TargetShapePickerDialog(
+            elemIndex = eIdx,
+            currentShape = curRule.targetShape,
+            shapes = shapeOrder,
+            onDismiss = { shapePickerElementIdx = null },
+            onSelect = { chosen ->
+                updateCfg { cur ->
+                    cur.copy(elementRules = cur.elementRules.toMutableList().also { it[eIdx] = curRule.copy(targetShape = chosen) })
+                }
+                shapePickerElementIdx = null
             }
         )
     }
@@ -1789,15 +1790,17 @@ private fun CompactSwitchLine(title: String, checked: Boolean, onCheckedChange: 
 }
 
 @Composable
-private fun StrategyPresetManagerDialog(
-    presets: List<TeamPresetRecord>,
-    activePresetId: String,
+private fun TargetShapePickerDialog(
+    elemIndex: Int,
+    currentShape: TargetShape,
+    shapes: List<TargetShape>,
     onDismiss: () -> Unit,
-    onSelect: (String, String) -> Unit,
-    onDuplicate: (TeamBasePreset) -> Unit,
-    onDelete: (String) -> Unit
+    onSelect: (TargetShape) -> Unit
 ) {
     val ctx = LocalContext.current
+    val badgeColor = Color(LocaleHelper.elementBadgeArgb(elemIndex))
+    val elemName = LocaleHelper.elementLabel(ctx, elemIndex)
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -1807,169 +1810,62 @@ private fun StrategyPresetManagerDialog(
             LocalConfiguration provides ctx.resources.configuration
         ) {
             Surface(
-                modifier = Modifier.fillMaxWidth(0.92f).heightIn(max = 580.dp),
-                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.fillMaxWidth(0.90f),
+                shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 tonalElevation = 6.dp
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = ctx.getString(R.string.preset_dialog_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        TextButton(onClick = onDismiss) { Text(ctx.getString(R.string.btn_close)) }
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Column(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .verticalScroll(rememberScrollState())
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        for (rec in presets) {
-                            val p = rec.preset
-                            val isActive = p.id == activePresetId
-                            val name = LocaleHelper.displayPresetName(ctx, p, rec.isBuiltIn)
-                            val desc = LocaleHelper.displayPresetDesc(ctx, p, rec.isBuiltIn)
-                            ElevatedCard(
-                                onClick = { onSelect(p.id, name) },
-                                shape = RoundedCornerShape(14.dp),
-                                colors = if (isActive) {
-                                    CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                                } else {
-                                    CardDefaults.elevatedCardColors()
-                                }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = badgeColor,
+                                modifier = Modifier.size(28.dp)
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = name,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        if (isActive) {
-                                            Badge(containerColor = MaterialTheme.colorScheme.primary) {
-                                                Text(ctx.getString(R.string.badge_active), color = MaterialTheme.colorScheme.onPrimary)
-                                            }
-                                        }
-                                    }
-                                    if (desc.isNotBlank()) {
-                                        Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        if (!isActive) {
-                                            Button(
-                                                onClick = { onSelect(p.id, name) },
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                                modifier = Modifier.height(30.dp)
-                                            ) {
-                                                Text(ctx.getString(R.string.btn_enable), style = MaterialTheme.typography.labelSmall)
-                                            }
-                                        }
-                                        OutlinedButton(
-                                            onClick = { onDuplicate(p.copy(name = name, description = desc)) },
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(30.dp)
-                                        ) {
-                                            Text(ctx.getString(R.string.btn_duplicate), style = MaterialTheme.typography.labelSmall)
-                                        }
-                                        if (p.id != TeamPresetRepository.ID_GENERAL) {
-                                            Spacer(Modifier.weight(1f))
-                                            TextButton(
-                                                onClick = { onDelete(p.id) },
-                                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                            ) {
-                                                Text(ctx.getString(R.string.btn_delete), style = MaterialTheme.typography.labelSmall)
-                                            }
-                                        }
-                                    }
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(elemName, color = Color.White, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                                 }
                             }
+                            Text(
+                                text = ctx.getString(R.string.matrix_shape_picker_title, elemName),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        TextButton(
+                            onClick = onDismiss,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(ctx.getString(R.string.btn_close))
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SaveAsPresetDialog(
-    initialName: String,
-    initialDesc: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit
-) {
-    val ctx = LocalContext.current
-    var name by remember { mutableStateOf(initialName) }
-    var desc by remember { mutableStateOf(initialDesc) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        CompositionLocalProvider(
-            LocalContext provides ctx,
-            LocalConfiguration provides ctx.resources.configuration
-        ) {
-            Surface(
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 6.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = ctx.getString(R.string.preset_save_as_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text(ctx.getString(R.string.field_strategy_name)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = desc,
-                        onValueChange = { desc = it },
-                        label = { Text(ctx.getString(R.string.field_strategy_desc)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = onDismiss) { Text(ctx.getString(R.string.btn_cancel)) }
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                val finalName = name.trim().ifBlank { ctx.getString(R.string.custom_strategy_default) }
-                                onConfirm(finalName, desc.trim())
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (rowShapes in shapes.chunked(4)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                for (sh in rowShapes) {
+                                    CompactChoicePill(
+                                        label = LocaleHelper.targetShapeLabel(ctx, sh),
+                                        selected = sh == currentShape,
+                                        onClick = { onSelect(sh) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
-                        ) {
-                            Text(ctx.getString(R.string.btn_save_strategy))
                         }
                     }
                 }

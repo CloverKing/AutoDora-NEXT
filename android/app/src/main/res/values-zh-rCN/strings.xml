@@ -2,7 +2,7 @@
 <resources>
     <!-- App & Navigation -->
     <string name="app_name">AutoDora-NEXT</string>
-    <string name="app_subtitle">无障碍智能转珠 · 本地高速引擎 · 动态盘面</string>
+    <string name="app_subtitle">无障碍智能转珠 · 本地高速算路 · 动态盘面</string>
     <string name="status_running">助手运行中</string>
     <string name="status_stopped">未启动</string>
     <string name="tab_overview">概览</string>
@@ -14,7 +14,7 @@
 
     <!-- Overview Tab -->
     <string name="overview_current_strategy">当前作战策略</string>
-    <string name="overview_switch_strategy">切换策略</string>
+    <string name="overview_switch_strategy">配置策略</string>
     <string name="overview_pill_steps">步数上限 %1$d 步</string>
     <string name="overview_pill_speed">速度 %1$s</string>
     <string name="overview_pill_shields">波次盾 %1$d</string>
@@ -33,9 +33,9 @@
     <string name="perm_grant">授权</string>
     <string name="perm_enable">去开启</string>
     <string name="guide_title">悬浮胶囊操作说明</string>
-    <string name="guide_line_1">• 顶部图标栏：计算、执行、路径、结果卡片、校准网格、急停与三分页完整调参抽屉，常驻更紧凑。</string>
-    <string name="guide_line_2">• 试跑确认开启时，须先点计算生成路径后才启用执行；关闭试跑确认时，计算图标隐藏，点执行即自动算路并转珠。</string>
-    <string name="guide_line_3">• 全屏问号珠增强：自动静默记忆先露后藏盘面；按住重算模式显形即算，全链路极速续滑不超时。</string>
+    <string name="guide_line_1">• 悬浮图标栏：点击图标可一键计算、执行、急停、开关路径预览、查看结果卡片、校准网格或打开调参抽屉；拖动悬浮球松手自动吸附屏幕左/右边缘。</string>
+    <string name="guide_line_2">• 试跑确认开启时，先点计算预览路线，确认后再点执行转珠；关闭试跑确认时，点执行直接算路并自动转珠。</string>
+    <string name="guide_line_3">• 全屏问号珠辅助：自动记忆先露后藏的清晰盘面；需要按住才显形的关卡可开启「按住转」，显形后自动续滑完成转珠。</string>
     <string name="hyperos_title">无障碍受限设置指引</string>
     <string name="hyperos_app_details">应用详情</string>
     <string name="action_expand">展开</string>
@@ -173,7 +173,7 @@
     <string name="section_active_shields">本波已挂载解盾</string>
     <string name="active_shields_fmt">已生效 %1$d 项</string>
     <string name="btn_clear">清空</string>
-    <string name="active_shields_empty">当前未挂载临时波次盾。可点击下方模块手动配置，或开启自动识别敌技。</string>
+    <string name="active_shields_empty">当前未启用临时波次盾，可在下方按需勾选叠加。</string>
 
     <!-- Shields Tab: 1. Combo Shield -->
     <string name="section_combo_shield">连击盾</string>
@@ -303,7 +303,7 @@
     <string name="slider_hold_delay">按住显形等待上限</string>
     <string name="slider_hold_delay_sub">仅限等待问号珠翻开动画的超时上限（轮询显形即提前结束，非算路耗时）</string>
     <string name="slider_hold_solve_time">按住显形后解盘时间上限</string>
-    <string name="slider_hold_solve_time_sub">翻开后本地 C++20 深度算路时间预算（0.15～3.5 秒）；时间越长自动放宽步数与算力上限，请结合队伍转珠秒数设定防超时</string>
+    <string name="slider_hold_solve_time_sub">盘面显形后分配给算路的思考时间（0.15～3.5 秒）；时间越长可探索更深步数与更优路线，请结合队伍转珠秒数设定</string>
     <string name="ov_hold_solve_hdr_fmt">按住显形后解盘时间（当前 %1$s）</string>
     <string name="slider_countdown">执行前倒数</string>
     <string name="unit_seconds">%1$d 秒</string>
@@ -341,23 +341,23 @@
     <string name="mode_human_sub">滑动轨迹中段加入轻微速度与坐标扰动</string>
     <string name="mode_stop_title">悬浮主栏内嵌急停按钮</string>
     <string name="mode_stop_sub">算路或划珠期间可随时一键中止</string>
-    <string name="section_benchmark">本地引擎性能测试</string>
-    <string name="bench_title">本地求解引擎性能验证</string>
-    <string name="bench_sub">实测 6×5 标准盘与 6×8 违建盘算路耗时</string>
+    <string name="section_benchmark">解盘速度测试</string>
+    <string name="bench_title">本机算路速度实测</string>
+    <string name="bench_sub">实测 6×5 标准盘与 6×8 扩版盘面的算路耗时</string>
     <string name="btn_bench_run">开始测试</string>
     <string name="btn_bench_running">测试中…</string>
 
     <!-- Detailed Contextual Help Dialogs (?) -->
-    <string name="help_strategy_library_title">作战策略库说明</string>
-    <string name="help_strategy_library_body">【功能作用】\n作战策略用于定义整场副本中通用的消珠习惯、队长技特性与解盘算力预算，与“解盾”中针对单个敌人的临时规则相互叠加生效。\n\n【适用场景】\n• 常规队：直接使用「默认策略」。\n• 二消队 / 特定珠数队长：另存为新策略并配置「最低消」与「消珠形态」。\n• 直排升华 / 角色符石起手 / 违建扩版：在对应抽屉中启用后另存为专属策略，不需要的策略可在加载管理中删除。</string>
+    <string name="help_strategy_library_title">策略配置说明</string>
+    <string name="help_strategy_library_body">【功能说明】\n策略用于设定日常消珠习惯、单属性规则、直排升华与队长特性，与本波敌技解盾规则实时叠加生效。所有修改自动保存，点击「恢复默认」可一键复位。</string>
     <string name="help_basic_steps_title">策略步数与解盘算力说明</string>
-    <string name="help_basic_steps_body">【层级优先级：解盾级 &gt; 策略级 &gt; 系统级】\n设置页中的步数上限与解盘算力属于「系统级默认值」；策略内可勾选「跟随系统」或拖动滑块/修改步数切换为「策略级覆盖」；本波解盾（如限 15 步、高难复合盾）拥有最高优先级。\n\n【步数上限】\n限制单次转珠路径的最大步数（8～300 步）。常规 6×5 盘面建议 30～60 步；6×8 违建或高难拼图/多十字建议 80～150 步。\n\n【解盘算力】\n控制整套路径搜索与解法评估的计算宽度（40～600）：每推进 1 步都会对候选路线进行模拟消除、破盾判定与综合评分。</string>
+    <string name="help_basic_steps_body">【优先级：波次解盾 &gt; 策略覆盖 &gt; 系统默认】\n设置页中的步数上限与解盘算力为系统默认值；在本区可保持「跟随系统」或修改数值进行策略覆盖；勾选限步盾或步数盾时，以本波解盾为最高优先级。\n\n【步数上限】\n限制单次转珠路径的最大步数（8～300 步）。常规 6×5 盘面建议 30～60 步；6×8 扩版或复杂拼图/多十字建议 80～150 步。\n\n【解盘算力】\n控制每一步同时探索的候选路线数量（40～600）：数值越高越容易找到高连击或高难破盾路线，但计算耗时略增。</string>
     <string name="help_engine_settings_title">解盘引擎与优先级说明</string>
-    <string name="help_engine_settings_body">【配置优先级：解盾级 &gt; 策略级 &gt; 系统级】\n设置页中的步数上限、解盘算力等属于系统级默认值；若当前作战策略设置了独立步数或算力，则以策略级为准；若本波挂载了限步盾等敌技，则以解盾级为最高优先级。\n\n• 最大步数上限：全局默认允许的最大移动步数（8～300 步）。\n• 解盘算力：控制本地求解引擎每一步同时展开、模拟消除并评分的候选路线宽度（包含路径搜索与解法计算的全部算力）。\n• 按住显形等待上限：开启「按住转」后等待问号珠翻开动画的最长超时毫秒数（非算路时间，轮询显形即刻提前退出）。\n• 按住显形后解盘时间上限：盘面显形后分配给本地 C++20 引擎深度求解的时间预算（0.15～3.5 秒，默认 0.4 秒）；预算越高自动放宽步数与算力上限，长秒数队伍或复杂解盾可调至 1.2～3.5 秒。\n• 执行前倒数：点击执行后延迟指定秒数再开始划珠。</string>
+    <string name="help_engine_settings_body">【优先级：波次解盾 &gt; 策略覆盖 &gt; 系统默认】\n本区参数作为全局默认值生效；若策略页单独覆盖了步数或算力，则以策略页为准；若本波启用了限步盾/步数盾，则以解盾规则为最高优先级。\n\n• 最大步数上限：全局默认允许的最大转珠步数（8～300 步）。\n• 解盘算力：控制算路时每步探索的候选路线数量，数值越高解盘越强但耗时略增。\n• 按住显形等待上限：开启「按住转」后等待问号珠翻开动画的最长超时时间（显形即提前结束，不计入算路时间）。\n• 按住显形后解盘时间上限：盘面显形后分配给算路的思考时间（0.15～3.5 秒，默认 0.4 秒）；时间越长可探索更长步数与更优路线，长秒数队伍或复杂解盾可适当调高。\n• 执行前倒数：点击执行后延迟指定秒数再开始划珠。</string>
     <string name="help_goal_policy_title">全局目标与多珠消除策略说明</string>
     <string name="help_goal_policy_body">【全局消珠目标】\n设定整体求解偏好，例如追求最高连击、三/四/五色均衡，或优先凑单色/多色五珠、六珠、七珠、八珠、九珠触发队长倍率与强化珠。\n\n【多珠消除方式】\n• 最高连击：同色珠多于 3 颗时优先切开冲高连击。\n• 消最多珠：优先把该色珠尽量消完。\n• 消除一组：仅保留一组消除，节省步数或留珠。\n\n【不足处理与求解倾向】\n• 不足照常消除 / 不足保留存珠：当版面某色珠数达不到目标形态时决定照常 3 消还是留珠给下回合。\n• 最佳解：在预算内寻找综合评分最高解。\n• 最快达标：一旦找到满足全部硬盾的路线即提前返回。</string>
     <string name="help_elem_matrix_title">单属性规则矩阵说明</string>
-    <string name="help_elem_matrix_body">对水、火、木、光、暗、心 6 种属性分别设定 4 项规则（点击单元格循环切换）：\n\n1. 消珠形态：默认（随全局）、2珠、4～9珠、横排、全消。\n2. 优先权：普通、优先（重点消除）、保留（尽量留珠不消）。\n3. 消除时机：任意、首消（必须首批消除）、叠珠（避开首消改为天降次批）、禁消（严禁消除）。\n4. 最低消：适配队长技的 2 消、标准 3 消或 4 消。\n\n【队长技兼属相连】\n若队长技带「心兼全属」「光暗互连」等效果，请务必勾选，否则引擎算出的首批连击数会与游戏实战不一致。</string>
+    <string name="help_elem_matrix_body">对水、火、木、光、暗、心 6 种属性分别设定 4 项规则（点击右上角「全矩阵重置」可一键恢复全部默认）：\n\n1. 消珠形态（点击弹出选择器）：默认、切3、2珠、4～9珠、横排、直排、十字、L形、T形、田字、全消。\n2. 优先权：普通、优先（重点消除）、保留（尽量留珠不消）。\n3. 消除时机：任意、首消（必须首批消除）、叠珠（避开首消改为次批叠消）、禁消（严禁消除）。\n4. 最低消：支持 1～5 消，适配一消、二消、标准三消以及四/五消起消队长技。\n\n【队长技兼属相连】\n若队长技带「心兼全属」「光暗互连」等效果，请同步勾选以保证连击计算与实战一致。</string>
     <string name="help_columns_title">直排升华说明</string>
     <string name="help_columns_body">【功能作用】\n为第 1～6 直行分别设定直排消珠颗数（关 / 3珠 / 4珠 / 5珠），引擎会优先在对应列凑出竖排消除。\n\n【适用场景】\n触发角色直排升华剑、直排心回血，或应对指定直行消除敌技。</string>
     <string name="help_start_char_title">起手位置与角色符石说明</string>
@@ -365,15 +365,15 @@
     <string name="help_strategy_switches_title">进阶策略开关说明</string>
     <string name="help_strategy_switches_body">• 强制切珠：尽量把同色珠拆成多组 3 消以冲高连击。\n• 只计首批连击：评分时忽略天降叠珠连击，适合禁天降或稳健求首消连击的副本。\n• 允许斜消：开启八向相连即可消除（仅限拥有斜消队长技的队伍，常规队请保持关闭）。\n• 强化/种族优先：同等条件下优先把强化珠或种族珠纳入消除。\n• 允许撞击风化珠：默认严避风化珠；仅在需要故意撞掉风化珠解状态时开启。</string>
     <string name="help_active_shields_title">本波已挂载解盾说明</string>
-    <string name="help_active_shields_body">集中展示当前波次生效的全部临时解盾规则（含手动勾选与自动识别挂载项）。\n点击任意标签可单独移除；点击右上角「清空」可一键复位至无临时盾状态。</string>
+    <string name="help_active_shields_body">集中展示当前波次已启用的全部临时解盾规则。\n点击任意标签可单独取消；点击右上角「清空解盾」可一键复位。</string>
     <string name="help_combo_shield_title">连击盾规则与组合说明</string>
-    <string name="help_combo_shield_body">【基础连击盾（按游戏真实判定互斥选择）】\n• 总连击下限（≥ N）：对应常规连击盾/追击盾，首批与天降次批均计入。\n• 首消连击下限（≥ N）：仅计算首批消除的连击数，天降不计入。\n• 指定总连击（= N）：最终总连击数须恰好等于目标值，引擎会自动避开高天降风险结构。\n• 指定首消连击（= N）：对应「固定连击盾」，首批连击数须恰好等于目标值，天降不计入。\n• 零连击空转：全程不产生任何消除，用于空转拖回合或应对零连击反击盾（启用时自动清空冲突的结构规则）。\n• 奇数 / 偶数连击：要求连击数为奇数或偶数，可独立切换「仅计首批」或「计总连击」。\n\n【结构附加条件（可与非零连击盾自由叠加）】\n• 首消同属同连击：首批消除的所有属性各自连击数必须相同。\n• 次批叠珠连击：要求首批消除后，通过叠珠落下在第二批产生至少 N 组连击。\n• 同属多组首消：要求单一属性（可指定颜色或任意色）在首批消出至少 N 组。\n• 两属同等连击：要求指定的两种属性在首批各自至少消 1 组且连击数相等（如光暗同等盾）。</string>
+    <string name="help_combo_shield_body">【基础连击盾（按游戏真实判定互斥选择）】\n• 总连击下限（≥ N）：首批与天降次批均计入。\n• 首消连击下限（≥ N）：仅计算首批消除的连击数，天降不计入。\n• 首消属性组数（≥ N）：仅计首批水火木光暗属性连击，不计心珠。\n• 指定总连击（= N）：最终总连击数须恰好等于目标值，自动避开高天降风险结构。\n• 指定首消连击（= N）：首批连击数须恰好等于目标值。\n• 首消同种 / 首消异种：首批按同属或不同属消出指定组数（心符石通用）。\n• 零连击空转：全程不产生任何消除，用于空转拖回合或应对零连击盾。\n• 奇数 / 偶数连击：要求连击数为奇数或偶数，可切换「仅计首批」或「计总连击」。\n\n【结构附加条件（可与非零连击盾自由叠加）】\n• 首消同属同连击：首批消除的所有属性各自连击数相同。\n• 禁天降（仅首批）：仅计算首批消除，模拟禁天降关卡。\n• 次批叠珠连击：要求首批消除后在第二批通过叠珠产生至少 N 组连击。\n• 同属多组首消：要求单一属性（可指定颜色或任意色）在首批消出至少 N 组。\n• 多属同等连击：要求所选的 2～6 种属性在首批各自至少消 1 组且连击数相等。</string>
     <string name="help_elem_count_title">属性与数量盾规则说明</string>
-    <string name="help_elem_count_body">【属性数量盾与指定必消属性】\n• 属性数量盾（≥ 2～6 属）：要求本回合至少消除指定种数的不同属性（不限具体颜色）。切换属性数量时，下方已选的指定颜色会自动清空以防规则冲突。\n• 指定必消属性：要求必须消除选中的每一种颜色，并可独立开关「要求所选属性为强化符石」（如五属强化盾、指定水火强化盾）。\n\n【属性消除限制（同色自动互斥）】\n• 反首消叠珠：严禁首批消除所选颜色，但允许叠珠在次批消除。\n• 全禁消：首批与次批均严禁消除所选颜色（会自动取消该色的必消勾选）。\n• 首消全清：必须将盘面上所选颜色的符石在首批全部消光。\n\n【首消颗数与特殊符石盾】\n• 数字盾：首批消除总颗数必须恰好等于设定值（与首消全版互斥）。\n• 首消全版：首批清空盘面上全部可消符石。\n• 强化符石首消：不限属性颜色，要求首批至少消除一颗强化符石（经典强化盾）。\n• 种族符石首消：要求首批至少消除一颗种族符石（神/魔/人/兽/龙/妖/机械符石盾）。\n• 角色符石首消：要求起手/拉出的角色符石纳入首批消除。\n• 避消弱化符石：严禁消除带弱化状态的符石（应对弱化围城降攻）。\n• 光晕符石首消：优先并要求首批清除盘面上的光晕/耀眼符石。\n（注：电击、冻结、化血、炸弹、受伤锁定、泡沫等负面障碍珠由引擎识别后自动必清，无需手动勾选。）</string>
+    <string name="help_elem_count_body">【属性数量盾与指定必消属性】\n• 属性数量盾（≥ 2～6 属）：要求本回合至少消除指定种数的不同属性（不限颜色）。\n• 指定必消属性：要求必须消除选中的每一种颜色，并可按属性独立勾选「强化符石（+）」。\n\n【属性消除限制（同色自动互斥）】\n• 反首消叠珠：严禁首批消除所选颜色，允许次批叠珠消除。\n• 全禁消：首批与次批均严禁消除所选颜色。\n• 首消全清：首批将盘面上所选颜色的符石全部消光。\n• 符石禁咒：标记受禁咒影响而无法消除的属性。\n\n【首消颗数与特殊符石盾】\n• 数字盾：首批消除总颗数必须恰好等于设定值（与首消全版互斥）。\n• 首消全版：首批清空盘面上全部可消符石。\n• 强化符石首消：要求首批至少消除一颗强化符石。\n• 种族符石首消：要求首批消除种族符石，可进一步指定神/魔/人/兽/龙/妖/机械具体种族。\n• 角色符石首消：要求角色符石纳入首批消除。\n• 避消弱化/邪能/刺血：严禁消除带弱化、邪恶能量或刺血状态的符石。\n• 流光符石首消：要求首批清除盘面上的流光符石。\n（注：电击、冻结、化血、炸弹、锁定、泡沫等障碍珠在识别或编排后会自动必清，无需重复勾选。）</string>
     <string name="help_puzzle_shape_title">拼图盾与形状盾说明</string>
     <string name="help_puzzle_shape_body">【拼图盾（官方金框区域）】\n• 普通拼图：拼图金框内全部填满同色消除即可，允许外部有同色符石黏连。\n• 严格拼图（限）：金框内必须同色消除，且严禁金框外相邻格存在同色黏连。\n• 强化与属性：可独立勾选「包含强化符石」及指定拼图颜色。\n• 拼图形状来源：默认自动识别画面金框；若画面特效遮挡或需离线试算，可直接选用预设形状模板。\n\n【独立形状盾（非拼图区域）】\n• 十字盾：支持单/双/三十字；多十字可开启「要求不同属性」，并可直接指定 1～3 种十字属性颜色（例如水+火双十字）。减少十字数量时会自动清空超出数量的颜色选择。\n• L形盾 / T形盾 / 田字 2×2 盾 / 全直排 ≥ 4 消：在首批消除中构筑对应几何形状。</string>
     <string name="help_path_hazard_title">路径、地形与步数盾说明</string>
-    <string name="help_path_hazard_body">• 轨迹燃烧保护：用于燃烧路径敌技，可设定轨迹尾迹长度（全程或 6 格）与最大允许碰撞次数。\n• 限 N 步内：硬性限制本波转珠步数上限。\n• 轨迹腐蚀自避：严禁路径重复踩踏已经走过的格子。\n• 一步一伤省步：大幅提高步数惩罚权重，在破盾前提下用最少步数完成。\n• 角色珠通行与停放：优先规划经过通行格并停放在终点的路线。\n• 违建长步爆发：为 6×8 扩版临时放宽步数与算力预算。</string>
+    <string name="help_path_hazard_body">• 轨迹燃烧保护：用于燃烧路径敌技，可设定轨迹尾迹长度（全程或 6 格）与最大允许碰撞次数。\n• 起结有序：自动识别盘面绿色漩涡起点与红色漩涡终点，亦可在「盘面编排」手动标定。\n• 限 N 步内 / 步数盾：限制最大步数或指定起止步数区间。\n• 轨迹腐蚀自避：严禁路径重复踩踏已经走过的格子。\n• 一步一伤省步：在破盾前提下用最少步数完成转珠。\n• 角色珠通行与停放：规划经过角色通行格并停放在停放格的路线。\n• 违建长步爆发：为 6×8 扩版临时放宽步数与算力预算。</string>
 
     <!-- Floating Overlay Compact Labels -->
     <string name="ov_solve">算</string>
@@ -424,8 +424,8 @@
     <string name="toast_preset_duplicated">已复制并启用新策略</string>
     <string name="toast_overlay_perm_needed">请先授予「悬浮窗权限」</string>
     <string name="toast_overlay_started">悬浮助手已启动，请切换到《神魔之塔》</string>
-    <string name="bench_line_65">✓ 6×5 盘面：%1$d 连击 (%2$d 步) · 耗时 %3$d 毫秒 · 评估 %4$d 局面</string>
-    <string name="bench_line_68">✓ 6×8 违建：%1$d 连击 (%2$d 步) · 耗时 %3$d 毫秒 · 评估 %4$d 局面</string>
+    <string name="bench_line_65">✓ 6×5 标准盘：%1$d 连击（%2$d 步）· 耗时 %3$d 毫秒</string>
+    <string name="bench_line_68">✓ 6×8 扩版盘：%1$d 连击（%2$d 步）· 耗时 %3$d 毫秒</string>
 
     <!-- v2 Grouped Global Goals, Per-Color Enchanted, 3-Tier Precedence & Icon Floating HUD -->
     <string name="goal_group_high_combo">高连击</string>
@@ -446,8 +446,8 @@
     <string name="elem_req_ench_row">各属性独立强化符石</string>
     <string name="budget_follow_system">跟随系统</string>
     <string name="budget_override_strategy">策略覆盖</string>
-    <string name="priority_tier_hint_settings">系统级默认值 · 优先级：敌技规则 &gt; 策略配置 &gt; 系统默认</string>
-    <string name="priority_tier_hint_strategy">统一策略与解盾 · 敌技识别后自动勾选对应选项与参数</string>
+    <string name="priority_tier_hint_settings">系统默认配置 · 优先级：波次解盾 &gt; 策略覆盖 &gt; 系统默认</string>
+    <string name="priority_tier_hint_strategy">当前策略与波次解盾实时联动生效</string>
     <string name="priority_tier_hint_shields">当前策略与敌技参数实时联动生效</string>
     <string name="ov_tab_quick">快捷</string>
     <string name="ov_tab_settings">设置</string>
@@ -486,8 +486,8 @@
     <string name="ov_preset_save_short">存</string>
     <string name="ov_preset_save_as_short">另存</string>
     <string name="ov_clear_enemy_short">清敌技(%1$d)</string>
-    <string name="help_unified_strategy_title">统一策略面板说明</string>
-    <string name="help_unified_strategy_body">【一站式策略与解盾】\n原「策略」与「解盾」已全面整合到本页：顶部支持快速切换、保存、另存与管理多套预设方案；下方按 6 大功能分区集中展示全部选项并实时生效。\n\n【本波生效解盾】\n勾选下方任意连击、属性、多消、拼图或路径规则后，顶部会自动汇总当前生效项；点击「清空解盾」可一键复位本波临时覆盖。</string>
+    <string name="help_unified_strategy_title">策略与解盾说明</string>
+    <string name="help_unified_strategy_body">【全局策略与波次解盾】\n本页按 6 大功能分区集中配置日常消珠策略与各类敌技解盾规则，所有修改自动保存并实时生效；点击顶部「恢复默认」可将策略参数复位为标准 3 消高连击配置。\n\n【本波已启用解盾】\n勾选下方任意连击、属性、多消、拼图或路径规则后，顶部会自动汇总当前生效项；点击单个标签可取消，点击「清空解盾」可一键清除全部临时波次盾。</string>
     <string name="ov_toast_no_board">未检测到战斗盘面，请进入战斗后重试</string>
     <string name="ov_toast_capture_blank">屏幕采集画面黑屏或已被系统暂停，请返回应用重新授权屏幕采集</string>
     <string name="ov_toast_capture_stalled">屏幕采集会话已被系统中断，请返回应用重新授权屏幕采集</string>
@@ -503,7 +503,7 @@
     <string name="ov_verdict_missing_start">缺起点</string>
     <string name="ov_verdict_missing_frame">未识框</string>
     <string name="section_about">关于与版本</string>
-    <string name="about_version_fmt">版本号 v%1$s (Build %2$d)</string>
+    <string name="about_version_fmt">当前版本 v%1$s</string>
 
     <!-- v3.4 Official 98-Skill Encyclopedia Upgrades -->
     <string name="combo_type_min_first_elem">首消属性</string>
@@ -578,4 +578,20 @@
     <string name="about_update_install_failed">拉起系统安装器失败：%1$s</string>
     <string name="about_update_error_fmt">更新失败：%1$s</string>
     <string name="about_open_link_failed">无法打开浏览器链接</string>
+
+    <!-- Single-Strategy Simplification & Full 16-Shape Per-Element Matrix -->
+    <string name="overview_config_strategy">配置策略</string>
+    <string name="unified_strategy_bar_title">当前作战策略</string>
+    <string name="unified_strategy_bar_sub">所有修改自动保存并实时生效</string>
+    <string name="btn_reset_strategy">恢复默认</string>
+    <string name="btn_reset_matrix">全矩阵重置</string>
+    <string name="toast_strategy_reset">已恢复默认策略</string>
+    <string name="toast_matrix_reset">单属性规则矩阵已恢复默认</string>
+    <string name="matrix_shape_picker_title">%1$s · 选择消珠形态</string>
+    <string name="shape_split3">切3</string>
+    <string name="shape_col">直排</string>
+    <string name="shape_cross">十字</string>
+    <string name="shape_l">L形</string>
+    <string name="shape_t">T形</string>
+    <string name="shape_sq2x2">田字</string>
 </resources>

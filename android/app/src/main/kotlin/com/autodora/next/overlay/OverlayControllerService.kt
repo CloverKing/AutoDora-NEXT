@@ -767,30 +767,15 @@ class OverlayControllerService : Service() {
                 ActiveStrategyStore.clearAll()
                 toast(lctx.getString(R.string.btn_clear))
             },
-            onSelectPreset = { id ->
-                serviceScope.launch {
-                    settingsRepository.update { it.copy(activePresetId = id) }
-                    val rec = presetRecords.firstOrNull { it.preset.id == id }
-                    if (rec != null) toast(LocaleHelper.displayPresetName(lctx, rec.preset, rec.isBuiltIn))
-                }
-            },
-            onSaveActivePreset = {
+            onResetStrategy = {
                 serviceScope.launch {
                     val cur = activeTeamPreset()
                     val rec = presetRecords.firstOrNull { it.preset.id == cur.id }
-                    teamPresetRepository.savePreset(cur, isBuiltIn = rec?.isBuiltIn ?: false)
-                    toast(lctx.getString(R.string.toast_preset_saved))
-                }
-            },
-            onDuplicateActivePreset = {
-                serviceScope.launch {
-                    val cur = activeTeamPreset()
-                    val rec = presetRecords.firstOrNull { it.preset.id == cur.id }
-                    val displayName = LocaleHelper.displayPresetName(lctx, cur, rec?.isBuiltIn ?: false)
-                    val displayDesc = LocaleHelper.displayPresetDesc(lctx, cur, rec?.isBuiltIn ?: false)
-                    val newId = teamPresetRepository.duplicatePreset(cur.copy(name = displayName, description = displayDesc))
-                    settingsRepository.update { it.copy(activePresetId = newId) }
-                    toast(lctx.getString(R.string.toast_preset_saved_as))
+                    teamPresetRepository.savePreset(
+                        cur.copy(baseConfig = RuleConfig()),
+                        isBuiltIn = rec?.isBuiltIn ?: false
+                    )
+                    toast(lctx.getString(R.string.toast_strategy_reset))
                 }
             },
             onUpdateActivePresetConfig = { transform ->
@@ -2387,7 +2372,6 @@ class OverlayControllerService : Service() {
         tuningDrawer.updateData(
             palette = palette,
             settings = settings,
-            presets = presetRecords,
             activePreset = activeTeamPreset(),
             activeChips = activeWaveChips,
             boardEditorOpen = boardEditorMode,

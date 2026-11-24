@@ -2,7 +2,7 @@
 <resources>
     <!-- App & Navigation (Pure English · Tower of Saviors Terminology) -->
     <string name="app_name">AutoDora-NEXT</string>
-    <string name="app_subtitle">Smart Auto-Solver · Native Engine · Dynamic Board</string>
+    <string name="app_subtitle">Smart Auto-Solver · Fast Local Engine · Dynamic Board</string>
     <string name="status_running">Running</string>
     <string name="status_stopped">Stopped</string>
     <string name="tab_overview">Home</string>
@@ -14,7 +14,7 @@
 
     <!-- Overview Tab -->
     <string name="overview_current_strategy">Active Strategy</string>
-    <string name="overview_switch_strategy">Switch</string>
+    <string name="overview_switch_strategy">Configure</string>
     <string name="overview_pill_steps">Max %1$d Steps</string>
     <string name="overview_pill_speed">Speed %1$s</string>
     <string name="overview_pill_shields">Shields %1$d</string>
@@ -33,9 +33,9 @@
     <string name="perm_grant">Grant</string>
     <string name="perm_enable">Enable</string>
     <string name="guide_title">Floating Capsule Guide</string>
-    <string name="guide_line_1">• Top Icon Bar: Solve, Go, Path, Result card, Grid calibration, Stop, and the unified 3-tab drawer.</string>
-    <string name="guide_line_2">• Preview ON: Run stays disabled until Solve computes a path. Preview OFF: Solve hides and Run solves + swipes immediately.</string>
-    <string name="guide_line_3">• Full-Board Question Orbs: silently memorizes flash-reveal boards; Hold-and-Replan detects reveal early and solves fast within turn time.</string>
+    <string name="guide_line_1">• Floating Icon Bar: one-tap Solve, Go, Stop, Path preview, Result card, Grid calibration, and tuning drawer; drag the orb to snap to either screen edge.</string>
+    <string name="guide_line_2">• With Preview ON, tap Solve to preview the path first, then tap Go to swipe. With Preview OFF, tapping Go solves and swipes immediately.</string>
+    <string name="guide_line_3">• Full-Board Question Orbs: automatically memorizes flash-reveal boards; enable Hold-and-Replan for stages that reveal after holding or nudging.</string>
     <string name="hyperos_title">Restricted Accessibility Guide</string>
     <string name="hyperos_app_details">App Info</string>
     <string name="action_expand">Expand</string>
@@ -52,7 +52,7 @@
     <string name="preset_char_name">Character Orb Starter</string>
     <string name="preset_char_desc">Slot 1 Character Orb vertical pull · Fits Char-Orb pass/end terrain</string>
     <string name="preset_weijian_name">6×8 Expanded Long-Step</string>
-    <string name="preset_weijian_desc">6×8 board optimized · Up to 100 steps with wide search beam</string>
+    <string name="preset_weijian_desc">6×8 board optimized · Up to 100 steps with high solver compute</string>
 
     <!-- Strategies Tab & Strategy Editor -->
     <string name="strategies_title">Strategy Profiles</string>
@@ -157,7 +157,7 @@
     <string name="switch_prefer_race">Prioritize Race Runestones</string>
     <string name="switch_hit_weathered">Allow Hitting Weathered Runestones</string>
     <string name="tag_steps_fmt">Max %1$d steps</string>
-    <string name="tag_beam_fmt">Width %1$d</string>
+    <string name="tag_beam_fmt">Compute %1$d</string>
     <string name="tag_first_result">Fast</string>
     <string name="tag_split_three">Split-3</string>
     <string name="tag_first_only">1st-Wave</string>
@@ -173,7 +173,7 @@
     <string name="section_active_shields">Active Wave Shields</string>
     <string name="active_shields_fmt">%1$d Active</string>
     <string name="btn_clear">Clear</string>
-    <string name="active_shields_empty">No temporary wave shields active. Configure below or enable Auto-Detect.</string>
+    <string name="active_shields_empty">No temporary wave shields active. Toggle any rules below as needed.</string>
 
     <!-- Shields Tab: 1. Combo Shield -->
     <string name="section_combo_shield">Combo Shield</string>
@@ -303,7 +303,7 @@
     <string name="slider_hold_delay">Hold-Reveal Animation Timeout</string>
     <string name="slider_hold_delay_sub">Max wait for \'?\' flip animation only (exits early once revealed; not solve time)</string>
     <string name="slider_hold_solve_time">Post-Reveal Solve Time Budget</string>
-    <string name="slider_hold_solve_time_sub">C++20 post-reveal search budget (0.15–3.5s); larger budgets unlock deeper steps &amp; full beam width — match to your team\'s turn timer</string>
+    <string name="slider_hold_solve_time_sub">Search time budget after the board reveals (0.15–3.5s); longer budgets explore deeper routes — match to your team\'s turn timer</string>
     <string name="ov_hold_solve_hdr_fmt">Post-Reveal Solve Budget (%1$s)</string>
     <string name="slider_countdown">Pre-Swipe Countdown</string>
     <string name="unit_seconds">%1$d s</string>
@@ -341,23 +341,23 @@
     <string name="mode_human_sub">Subtle speed &amp; coordinate variance along mid-path</string>
     <string name="mode_stop_title">Inline Emergency Stop Button</string>
     <string name="mode_stop_sub">Abort solving or swiping anytime in 1 tap</string>
-    <string name="section_benchmark">Local Engine Benchmark</string>
-    <string name="bench_title">Native Solver Verification</string>
-    <string name="bench_sub">Benchmark 6×5 standard &amp; 6×8 expanded boards locally</string>
+    <string name="section_benchmark">Solver Speed Test</string>
+    <string name="bench_title">On-Device Speed Test</string>
+    <string name="bench_sub">Measure solve time on 6×5 standard and 6×8 expanded boards</string>
     <string name="btn_bench_run">Run Test</string>
     <string name="btn_bench_running">Running…</string>
 
     <!-- Detailed Contextual Help Dialogs (?) -->
-    <string name="help_strategy_library_title">Strategy Profiles Guide</string>
-    <string name="help_strategy_library_body">[Purpose]\nStrategy profiles define your dungeon-wide matching goals, leader skill traits, and solver budget. Temporary enemy shields stack on top of your active strategy.\n\n[Scenarios]\n• General teams: use Default Strategy directly.\n• 2-Match or shape-based leaders: Save As a new profile and customize Min-Match and Shape.\n• Column Amelioration, Character Orb starter, or 6×8 expanded boards: configure inside the drawer and Save As your custom profile; unused profiles can be deleted in Load / Manage.</string>
+    <string name="help_strategy_library_title">Strategy Guide</string>
+    <string name="help_strategy_library_body">[Overview]\nConfigure daily matching goals, per-element rules, column ameliorations, and leader traits here. All changes auto-save and stack with active wave shields; tap Reset anytime to restore defaults.</string>
     <string name="help_basic_steps_title">Step Budget &amp; Solver Compute</string>
-    <string name="help_basic_steps_body">[Priority: Wave Shields &gt; Strategy &gt; System]\nSettings values are System defaults. Each Strategy can follow System or override Steps &amp; Compute with its own slider. Active Wave Shields always hold the highest priority.\n\n[Step Budget]\nMaximum moves per path (8–300). 30–60 steps fit 6×5 boards; 80–150 fit 6×8 or complex puzzles/crosses.\n\n[Solver Compute]\nControls the full path-search &amp; solution-calculation width per step (40–600).</string>
+    <string name="help_basic_steps_body">[Priority: Wave Shields &gt; Strategy Override &gt; System]\nSettings defines system defaults. Keep Follow System or adjust values here to override; active step shields always take highest priority.\n\n[Step Limit]\nMaximum moves per path (8–300). 30–60 steps suit 6×5 boards; 80–150 suit 6×8 or complex puzzles/crosses.\n\n[Solver Compute]\nControls how many candidate routes are explored per step (40–600). Higher values find stronger combos and hard-shield paths at slightly longer solve time.</string>
     <string name="help_engine_settings_title">Solver Engine &amp; Priority Hierarchy</string>
-    <string name="help_engine_settings_body">[Priority: Wave Shields &gt; Strategy &gt; System]\nGlobal Steps and Solver Compute in Settings serve as System defaults. Custom values inside a Strategy override System, and active Wave Shields override both.\n\n• Global Max Steps: default move limit per swipe path (8–300).\n• Solver Compute: full path-search and solution-evaluation beam width per step.\n• Hold-Reveal Animation Timeout: max wait (ms) for hidden \'?\' orbs to flip open (NOT solve time — exits immediately upon reveal).\n• Post-Reveal Solve Time Budget: C++20 search budget after the board reveals (0.15–3.5s, default 0.4s); higher budgets automatically unlock deeper steps and full beam width for long-timer teams and hard shields.\n• Pre-Swipe Countdown: optional countdown seconds before swiping.</string>
+    <string name="help_engine_settings_body">[Priority: Wave Shields &gt; Strategy Override &gt; System]\nGlobal Steps and Solver Compute here act as system defaults. Strategy overrides take precedence, and active wave shields take highest priority.\n\n• Global Max Steps: default move limit per swipe path (8–300).\n• Solver Compute: number of candidate routes explored per step; higher values find stronger paths at slightly longer solve time.\n• Hold-Reveal Animation Timeout: max wait (ms) for hidden \'?\' orbs to flip open (exits early once revealed; not solve time).\n• Post-Reveal Solve Time Budget: search time budget after the board reveals (0.15–3.5s, default 0.4s); larger budgets explore deeper routes for long-timer teams or hard shields.\n• Pre-Swipe Countdown: optional countdown seconds before swiping.</string>
     <string name="help_goal_policy_title">Matching Goals &amp; Search Policy</string>
     <string name="help_goal_policy_body">[Global Goal]\nGuides overall scoring toward Max Combo, 3/4/5 distinct colors, or 5/6/7/8/9-orb groups.\n\n[Multi-Orb Handling]\n• Max Combo: splits surplus same-color orbs into more combos.\n• Max Orbs: clears as many orbs of that color as possible.\n• Single Group: matches just one group to conserve orbs or steps.\n\n[Insufficient Orbs &amp; Search Style]\n• Match Anyway / Reserve Orbs: decides whether to make a normal 3-match or save orbs when too few exist for a target shape.\n• Best Result: finds the highest-scoring solution within budget.\n• First Match: returns as soon as all hard shields are satisfied.</string>
     <string name="help_elem_matrix_title">Per-Element Rules Matrix</string>
-    <string name="help_elem_matrix_body">Configure 4 rules independently for Water, Fire, Wood, Light, Dark, and Heart (tap any cell to cycle):\n\n1. Shape: Auto, 2+, 4+..9+, Row, or Clear All.\n2. Priority: Normal, High (prioritize matching), or Keep (save orbs).\n3. Timing: Any, 1st (must match Wave 1), Stack (forbid Wave 1, allow cascade), or Ban (forbid all).\n4. Min: leader minimum match count (2, 3, or 4).\n\n[Leader Attribute Link]\nEnable Heart+All, Light+Dark, or W+F+G if your leader links attributes so the solver\'s 1st-wave combo count matches in-game rules exactly.</string>
+    <string name="help_elem_matrix_body">Configure 4 rules independently for Water, Fire, Wood, Light, Dark, and Heart (tap Reset All to restore every row to defaults):\n\n1. Shape (tap to pick): Auto, Split 3, 2+, 4+..9+, Row, Col, Cross, L, T, 2×2, or Clear All.\n2. Priority: Normal, High (prioritize matching), or Keep (save orbs).\n3. Timing: Any, 1st (must match Wave 1), Stack (forbid Wave 1, allow cascade), or Ban (forbid all).\n4. Min: minimum run length from 1-Match to 5-Match for special leaders.\n\n[Leader Attribute Link]\nEnable Heart+All, Light+Dark, or W+F+G when your leader links attributes so combo counts match in-game rules.</string>
     <string name="help_columns_title">Column Amelioration Guide</string>
     <string name="help_columns_body">[Purpose]\nSets vertical match length targets (Off / 3 / 4 / 5 orbs) for columns 1–6.\n\n[Scenarios]\nTriggers vertical Sword/Heart ameliorations or satisfies column-match enemy shields.</string>
     <string name="help_start_char_title">Start Position &amp; Character Orb</string>
@@ -365,15 +365,15 @@
     <string name="help_strategy_switches_title">Advanced Strategy Switches</string>
     <string name="help_strategy_switches_body">• Force Split 3-Orb Groups: splits groups into 3-orb combos for higher count.\n• First-Wave Combos Only: scores Wave 1 only without relying on cascades.\n• Allow 8-Direction Diagonal Matches: enables diagonal matching for leaders with that skill.\n• Prioritize Enchanted / Race: prefers clearing Enchanted or Race runestones.\n• Allow Hitting Weathered: disables weathered avoidance when intentionally clearing weathered states.</string>
     <string name="help_active_shields_title">Active Wave Shields</string>
-    <string name="help_active_shields_body">Displays all temporary wave shields currently active (both manual and auto-detected).\nTap any pill to remove it, or tap Clear to reset all temporary wave shields.</string>
+    <string name="help_active_shields_body">Displays all temporary wave shields currently active.\nTap any pill to remove it, or tap Clear Shields to clear all temporary wave rules.</string>
     <string name="help_combo_shield_title">Combo Shield Rules &amp; Modifiers</string>
-    <string name="help_combo_shield_body">[Primary Combo Rule (Mutually Exclusive)]\n• Min Total (≥ N): counts Wave 1 plus cascades (standard combo shields).\n• Min 1st-Wave (≥ N): counts Wave 1 combos only (cascades ignored).\n• Exact Total (= N): final total combos must equal N; solver avoids skyfall risk.\n• Exact 1st-Wave (= N): Wave 1 combos must equal exactly N (fixed combo shields).\n• Zero Combo: makes 0 matches to pass a turn safely (clears conflicting structural modifiers).\n• Odd / Even Combo: requires odd or even combos, selectable between 1st Wave Only and Total Combos.\n\n[Structural Modifiers (Composable with non-zero shields)]\n• Equal 1st Combos / Attr: every matched attribute in Wave 1 must have the same combo count.\n• 2nd Wave Cascade: requires at least N cascade combos in Wave 2.\n• Same-Attr Groups: requires at least N Wave-1 combos of one attribute (optional specific color).\n• Equal Pair: requires two chosen attributes to match equally in Wave 1 (at least 1 each).</string>
+    <string name="help_combo_shield_body">[Primary Combo Rule (Mutually Exclusive)]\n• Min Total (≥ N): counts Wave 1 plus cascades.\n• Min 1st-Wave (≥ N): counts Wave 1 combos only.\n• 1st Elem Groups (≥ N): counts Wave 1 elemental combos only (excludes Heart).\n• Exact Total (= N): final total combos must equal N while avoiding skyfall risk.\n• Exact 1st-Wave (= N): Wave 1 combos must equal N.\n• 1st Same / 1st Distinct: Wave 1 matches of the same or distinct kinds (Heart wildcard).\n• Zero Combo: makes 0 matches to pass a turn safely.\n• Odd / Even Combo: requires odd or even combos (selectable 1st Wave or Total).\n\n[Structural Modifiers (Stackable)]\n• Equal 1st Combos / Attr: every matched attribute in Wave 1 has the same combo count.\n• No Cascade (W1): disables Wave 2+ cascades.\n• 2nd Wave Cascade: requires at least N cascade combos in Wave 2.\n• Same-Attr Groups: requires at least N Wave-1 groups of one attribute.\n• Multi-Attr Equal: requires 2–6 selected attributes to match equally in Wave 1.</string>
     <string name="help_elem_count_title">Attribute &amp; Orb-Count Rules</string>
-    <string name="help_elem_count_body">[Min Distinct vs Required Attributes]\n• Min Distinct (≥ 2–6): matches at least N different attributes of any color. Changing this count clears specific required colors below to prevent mismatches.\n• Required Attributes: matches every selected color, with an independent Enchanted toggle.\n\n[Attribute Restrictions (Mutually Exclusive per Color)]\n• Anti-1st Stack: forbids Wave-1 match while allowing Wave-2 cascade.\n• Forbid All: forbids matching in any wave (automatically clears required status for that color).\n• Clear All 1st: clears every orb of the selected color in Wave 1.\n\n[Orb Count &amp; Special Runestones]\n• Exact Orbs: matches an exact Wave-1 orb total (mutually exclusive with Full-Board Clear).\n• Full-Board 1st Clear: eliminates every matchable orb on Wave 1.\n• Enchanted Rune 1st: eliminates any Enchanted runestone in Wave 1 (classic Enchanted Shield).\n• Race Rune 1st: eliminates at least one Race runestone in Wave 1.\n• Character Rune 1st: includes the held/pulled Character Runestone in a Wave-1 match.\n• Avoid Weakened: forbids eliminating Weakened runestones to preserve attack.\n• Luminous Rune 1st: clears Luminous runestones in Wave 1.\n(Note: Electrified, Frozen, Blood-Drain, Bomb, Locked-Hurt, and Foam hazards are cleared automatically once detected on the board.)</string>
+    <string name="help_elem_count_body">[Min Distinct &amp; Required Attributes]\n• Min Distinct (≥ 2–6): matches at least N different attributes of any color.\n• Required Attributes: matches every selected color, with per-color Enchanted (+) toggles.\n\n[Attribute Restrictions]\n• Anti-1st Stack: forbids Wave-1 matches while allowing Wave-2 cascades.\n• Forbid All: forbids matching in any wave.\n• Clear All 1st: clears every orb of the selected color in Wave 1.\n• Unmatchable: marks attributes sealed by unmatchable debuffs.\n\n[Orb Count &amp; Special Runestones]\n• Exact Orbs: matches an exact Wave-1 orb total.\n• Full-Board 1st Clear: clears every matchable orb on Wave 1.\n• Enchanted Rune 1st: eliminates at least one Enchanted runestone in Wave 1.\n• Race Rune 1st: eliminates a Race runestone, with optional 7-race filter.\n• Character Rune 1st: includes the Character Runestone in a Wave-1 match.\n• Avoid Weak/Evil/Thorn: forbids eliminating Weakened, Evil Energy, or Blood-Thorn runestones.\n• Luminous Rune 1st: clears Luminous runestones in Wave 1.\n(Electrified, Frozen, Blood-Drain, Bomb, Locked, and Foam hazards are handled automatically once detected or marked.)</string>
     <string name="help_puzzle_shape_title">Puzzle &amp; Shape Shield Rules</string>
     <string name="help_puzzle_shape_body">[Puzzle Shield]\n• Normal Puzzle: fills the golden puzzle frame with same-color matches; external same-color orbs may touch.\n• Strict Puzzle: fills the frame with NO external same-color orbs touching the boundary.\n• Enchanted &amp; Attribute: independently require Enchanted runestones or a specific color inside the puzzle.\n• Shape Source: defaults to Auto-Detect Frame, or pick a preset shape template when effects obscure the frame.\n\n[Standalone Shape Shields]\n• Cross Shield: 1/2/3 crosses; multi-cross supports Distinct Colors and lets you pick 1–3 specific cross colors (e.g. Water + Fire dual cross). Reducing cross count resets excess colors automatically.\n• L-Shape / T-Shape / 2×2 Square / All Cols ≥ 4: builds the target geometric match in Wave 1.</string>
     <string name="help_path_hazard_title">Path, Terrain &amp; Step Shields</string>
-    <string name="help_path_hazard_body">• Burning Trail Protection: configures trail length (Full or 6 cells) and max allowed trail hits.\n• Wave Step Limit: hard cap on path length for this wave.\n• Trail Corrosion: forbids revisiting any cell already traversed.\n• Minimize Steps: strongly penalizes step count for step-damage stages.\n• Char-Orb Terrain: prioritizes passing and ending on Character-Orb markers.\n• 6×8 Long-Step: extends step and beam budget for expanded boards.</string>
+    <string name="help_path_hazard_body">• Burning Trail Protection: configures trail length (Full or 6 cells) and max allowed hits.\n• Start-to-End: auto-detects green start and red end vortexes (or mark manually in Board Editor).\n• Step Limit / Step Range: caps maximum steps or enforces an exact [min–max] step window.\n• Trail Corrosion: forbids revisiting any cell already traversed.\n• Minimize Steps: finds the shortest path that satisfies active shields.\n• Char-Orb Terrain: routes through Character-Orb pass tiles and ends on stop tiles.\n• 6×8 Long-Step: extends step and compute budget for 6×8 expanded boards.</string>
 
     <!-- Floating Overlay Compact Labels -->
     <string name="ov_solve">Solve</string>
@@ -424,8 +424,8 @@
     <string name="toast_preset_duplicated">Strategy duplicated &amp; activated</string>
     <string name="toast_overlay_perm_needed">Please grant \"Display over other apps\" first</string>
     <string name="toast_overlay_started">Floating assistant started. Switch to Tower of Saviors.</string>
-    <string name="bench_line_65">✓ 6×5 Board: %1$d combos (%2$d steps) · %3$d ms · %4$d states</string>
-    <string name="bench_line_68">✓ 6×8 Expanded: %1$d combos (%2$d steps) · %3$d ms · %4$d states</string>
+    <string name="bench_line_65">✓ 6×5 Board: %1$d combos (%2$d steps) · %3$d ms</string>
+    <string name="bench_line_68">✓ 6×8 Expanded: %1$d combos (%2$d steps) · %3$d ms</string>
 
     <!-- v2 Grouped Global Goals, Per-Color Enchanted, 3-Tier Precedence & Icon Floating HUD -->
     <string name="goal_group_high_combo">Max Combo</string>
@@ -446,8 +446,8 @@
     <string name="elem_req_ench_row">Per-Color Enchanted Toggle</string>
     <string name="budget_follow_system">Follow System</string>
     <string name="budget_override_strategy">Strategy Override</string>
-    <string name="priority_tier_hint_settings">System defaults · Priority: Enemy Rules &gt; Strategy &gt; System</string>
-    <string name="priority_tier_hint_strategy">Unified Strategy &amp; Shields · Auto-matched enemy rules activate matching controls directly</string>
+    <string name="priority_tier_hint_settings">System defaults · Priority: Wave Shields &gt; Strategy Override &gt; System</string>
+    <string name="priority_tier_hint_strategy">Strategy settings and wave shields apply together in real time</string>
     <string name="priority_tier_hint_shields">Active strategy and enemy rules apply together in real time</string>
     <string name="ov_tab_quick">Quick</string>
     <string name="ov_tab_settings">Settings</string>
@@ -486,8 +486,8 @@
     <string name="ov_preset_save_short">Save</string>
     <string name="ov_preset_save_as_short">New</string>
     <string name="ov_clear_enemy_short">Clr(%1$d)</string>
-    <string name="help_unified_strategy_title">Unified Strategy Guide</string>
-    <string name="help_unified_strategy_body">[Unified Strategy &amp; Shields]\nAll Strategy and Shield controls are merged cleanly into one tab. Use the top bar to Load, Save, Save As, or manage presets; all 6 option groups below update in real time.\n\n[Active Wave Shields]\nAny combo, attribute, multi-orb, puzzle, or path shield enabled below is summarized in the top banner. Tap Clear Shields anytime to reset temporary wave overrides.</string>
+    <string name="help_unified_strategy_title">Strategy &amp; Shields Guide</string>
+    <string name="help_unified_strategy_body">[Global Strategy &amp; Wave Shields]\nConfigure daily matching rules and per-wave enemy shields across 6 organized sections. All edits save automatically and take effect immediately; tap Reset at the top to restore standard defaults.\n\n[Active Wave Shields]\nAny combo, attribute, multi-orb, puzzle, or path rule enabled below is summarized in the top banner. Tap a pill to remove it, or tap Clear Shields to clear all temporary wave rules.</string>
     <string name="ov_toast_no_board">No battle board detected. Enter a battle and retry.</string>
     <string name="ov_toast_capture_blank">Screen capture returned a blank frame (paused by OS). Please return to the app and re-grant capture permission.</string>
     <string name="ov_toast_capture_stalled">Screen capture session was interrupted by the OS. Please return to the app and re-grant capture permission.</string>
@@ -503,7 +503,7 @@
     <string name="ov_verdict_missing_start">No Start</string>
     <string name="ov_verdict_missing_frame">No Frame</string>
     <string name="section_about">About &amp; Version</string>
-    <string name="about_version_fmt">Version v%1$s (Build %2$d)</string>
+    <string name="about_version_fmt">Version v%1$s</string>
 
     <!-- v3.4 Official 98-Skill Encyclopedia Upgrades -->
     <string name="combo_type_min_first_elem">1st Elem</string>
@@ -578,4 +578,20 @@
     <string name="about_update_install_failed">Failed to launch installer: %1$s</string>
     <string name="about_update_error_fmt">Update failed: %1$s</string>
     <string name="about_open_link_failed">Unable to open link in browser</string>
+
+    <!-- Single-Strategy Simplification & Full 16-Shape Per-Element Matrix -->
+    <string name="overview_config_strategy">Configure</string>
+    <string name="unified_strategy_bar_title">Active Strategy</string>
+    <string name="unified_strategy_bar_sub">All changes auto-save and apply immediately</string>
+    <string name="btn_reset_strategy">Reset</string>
+    <string name="btn_reset_matrix">Reset All</string>
+    <string name="toast_strategy_reset">Strategy reset to defaults</string>
+    <string name="toast_matrix_reset">Element matrix reset to defaults</string>
+    <string name="matrix_shape_picker_title">%1$s · Target Shape</string>
+    <string name="shape_split3">Split 3</string>
+    <string name="shape_col">Col</string>
+    <string name="shape_cross">Cross</string>
+    <string name="shape_l">L</string>
+    <string name="shape_t">T</string>
+    <string name="shape_sq2x2">2×2</string>
 </resources>

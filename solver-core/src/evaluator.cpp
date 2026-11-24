@@ -1199,6 +1199,7 @@ EvalResult evaluateCandidate(
                 case TargetShape::Count8: return 8;
                 case TargetShape::Count9: return 9;
                 case TargetShape::Row:    return 6;
+                case TargetShape::Column: return 5;
                 case TargetShape::Cross:  return 5;
                 case TargetShape::LShape: return 5;
                 case TargetShape::TShape: return 5;
@@ -1218,6 +1219,10 @@ EvalResult evaluateCandidate(
                 switch (er.targetShape) {
                     case TargetShape::Split3:
                         soft += (g.orbCount == 3) ? 14.0 : -8.0 * static_cast<double>(g.orbCount - 3);
+                        break;
+                    case TargetShape::Count2:
+                        if (g.orbCount == 2) soft += 28.0;
+                        else if (g.orbCount > 2) soft += 10.0;
                         break;
                     case TargetShape::Count4:
                     case TargetShape::Count5:

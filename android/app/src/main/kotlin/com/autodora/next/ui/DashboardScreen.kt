@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.outlined.FormatAlignRight
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.autodora.next.BuildConfig
 import com.autodora.next.R
 import com.autodora.next.data.*
@@ -80,11 +82,8 @@ fun DashboardScreen(
     onInstallReadyApk: (String) -> Unit = {},
     onOpenUpdateUrl: (String) -> Unit = {},
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
-    onSelectPreset: (String) -> Unit,
     onSavePreset: (TeamBasePreset, Boolean) -> Unit,
-    onSaveAsNewPreset: (String, String, RuleConfig) -> Unit,
-    onDuplicatePreset: (TeamBasePreset) -> Unit,
-    onDeletePreset: (String) -> Unit,
+    onResetStrategy: () -> Unit,
     onToggleWaveChip: (WaveShieldChip) -> Unit,
     onClearWaveChips: () -> Unit
 ) {
@@ -94,11 +93,8 @@ fun DashboardScreen(
 
     val activePresetRecord = presets.firstOrNull { it.preset.id == settings.activePresetId }
         ?: presets.firstOrNull()
-    val activePresetName = if (activePresetRecord != null) {
-        LocaleHelper.displayPresetName(ctx, activePresetRecord.preset, activePresetRecord.isBuiltIn)
-    } else {
-        stringResource(R.string.preset_general_name)
-    }
+    val activeCfg = activePresetRecord?.preset?.baseConfig ?: RuleConfig()
+    val activeGoalSummary = LocaleHelper.goalSummary(ctx, activeCfg)
 
     Scaffold(
         topBar = {
@@ -200,7 +196,7 @@ fun DashboardScreen(
                 HomeTab.OVERVIEW -> OverviewTab(
                     health = health,
                     settings = settings,
-                    activePresetName = activePresetName,
+                    activeGoalSummary = activeGoalSummary,
                     activeWaveChips = activeWaveChips,
                     onRequestOverlay = onRequestOverlay,
                     onOpenAccessibility = onOpenAccessibility,
@@ -216,11 +212,8 @@ fun DashboardScreen(
                     presets = presets,
                     activeWaveChips = activeWaveChips,
                     onUpdateSettings = onUpdateSettings,
-                    onSelectPreset = onSelectPreset,
                     onSavePreset = onSavePreset,
-                    onSaveAsNewPreset = onSaveAsNewPreset,
-                    onDuplicatePreset = onDuplicatePreset,
-                    onDeletePreset = onDeletePreset,
+                    onResetStrategy = onResetStrategy,
                     onToggleWaveChip = onToggleWaveChip,
                     onClearWaveChips = onClearWaveChips,
                     onShowHelp = { title, body -> helpPopup = title to body }
@@ -260,7 +253,7 @@ fun DashboardScreen(
 private fun OverviewTab(
     health: PermissionHealthState,
     settings: AppSettings,
-    activePresetName: String,
+    activeGoalSummary: String,
     activeWaveChips: List<WaveShieldChip>,
     onRequestOverlay: () -> Unit,
     onOpenAccessibility: () -> Unit,
@@ -286,11 +279,11 @@ private fun OverviewTab(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. Indigo Drawer: Current Strategy & Overlay Control
+        // 1. Indigo Drawer: Active Strategy & Overlay Control
         ColoredCollapsibleDrawerCard(
             title = stringResource(R.string.overview_current_strategy),
             accentColor = DrawerAccentColors.Indigo,
-            summaryText = activePresetName,
+            summaryText = activeGoalSummary,
             highlighted = health.overlayRunning,
             initialExpanded = true,
             contentPadding = PaddingValues(14.dp)
@@ -301,7 +294,7 @@ private fun OverviewTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = activePresetName,
+                    text = activeGoalSummary,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
@@ -311,7 +304,7 @@ private fun OverviewTab(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        stringResource(R.string.overview_switch_strategy),
+                        stringResource(R.string.overview_config_strategy),
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
@@ -1228,8 +1221,7 @@ private fun SettingsTab(
                     Text(
                         text = stringResource(
                             R.string.about_version_fmt,
-                            BuildConfig.VERSION_NAME,
-                            BuildConfig.VERSION_CODE
+                            BuildConfig.VERSION_NAME
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1575,6 +1567,20 @@ internal object DrawerAccentColors {
     val Crimson = Color(0xFFD32F2F)
     val Blue = Color(0xFF1976D2)
     val Purple = Color(0xFF7B1FA2)
+
+    /** High-contrast foreground tint for summary badges & chevrons in Dark Mode. */
+    fun foreground(accent: Color, isDark: Boolean): Color {
+        if (!isDark) return accent
+        return when (accent) {
+            Indigo -> Color(0xFFAEB8FF)
+            Teal -> Color(0xFF80CBC4)
+            Amber -> Color(0xFFFFCC80)
+            Crimson -> Color(0xFFFFAB91)
+            Blue -> Color(0xFF90CAF9)
+            Purple -> Color(0xFFDFB0FF)
+            else -> Color(0xFFE0E6FF)
+        }
+    }
 }
 
 /**
@@ -1596,14 +1602,15 @@ internal fun ColoredCollapsibleDrawerCard(
 ) {
     var expanded by rememberSaveable(title) { mutableStateOf(initialExpanded) }
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val accentFg = DrawerAccentColors.foreground(accentColor, isDark)
     val borderColor = if (expanded || highlighted) {
         accentColor.copy(alpha = if (isDark) 0.65f else 0.52f)
     } else {
         MaterialTheme.colorScheme.outlineVariant
     }
-    val headerTint = accentColor.copy(alpha = if (isDark) 0.18f else 0.10f)
-    val dividerColor = accentColor.copy(alpha = if (isDark) 0.24f else 0.16f)
-    val summaryBg = accentColor.copy(alpha = if (isDark) 0.22f else 0.12f)
+    val headerTint = accentColor.copy(alpha = if (isDark) 0.20f else 0.10f)
+    val dividerColor = accentColor.copy(alpha = if (isDark) 0.28f else 0.16f)
+    val summaryBg = accentColor.copy(alpha = if (isDark) 0.28f else 0.12f)
     val cardBg = if (isDark) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface
 
     Surface(
@@ -1628,7 +1635,7 @@ internal fun ColoredCollapsibleDrawerCard(
                         .width(4.dp)
                         .height(16.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(accentColor)
+                        .background(accentFg)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -1650,7 +1657,7 @@ internal fun ColoredCollapsibleDrawerCard(
                             text = summaryText,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (highlighted) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (highlighted) accentFg else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
@@ -1668,7 +1675,7 @@ internal fun ColoredCollapsibleDrawerCard(
                     text = if (expanded) "▾" else "▸",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = accentColor
+                    color = accentFg
                 )
             }
 
@@ -1904,5 +1911,105 @@ private fun SliderSettingRow(
             onValueChange = onValueChange,
             valueRange = valueRange
         )
+    }
+}
+
+@Composable
+internal fun LocalizedHelpDialog(
+    title: String,
+    body: String,
+    dismissLabel: String,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(10.dp))
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = body,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    FilledTonalButton(onClick = onDismiss) {
+                        Text(dismissLabel)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun HelpCircleButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(28.dp)
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+@Composable
+internal fun CompactChoicePill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    activeContainer: Color = MaterialTheme.colorScheme.primaryContainer,
+    activeContent: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    activeBorder: Color? = MaterialTheme.colorScheme.primary
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) activeContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(
+            width = if (selected) 1.25.dp else 1.dp,
+            color = if (selected) (activeBorder ?: activeContainer) else MaterialTheme.colorScheme.outlineVariant
+        ),
+        modifier = modifier.heightIn(min = 34.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) activeContent else MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
