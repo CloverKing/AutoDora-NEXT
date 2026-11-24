@@ -4,8 +4,8 @@ import com.autodora.next.model.HazardBits
 import com.autodora.next.model.Variant
 
 /**
- * Structured Tower of Saviors Official Runestone Status Catalog (神魔百科 → 符石狀態 1/20 .. 20/20).
- * Generated from audited official in-game specifications (`docs/runestone_status_encyclopedia_spec.json`).
+ * Structured Tower of Saviors Runestone Status Catalog (22 items: official encyclopedia 1..20 + 2 classic non-encyclopedia runestones 21..22).
+ * Generated from audited official in-game specifications (`docs/runestone_status_encyclopedia_spec.json`) and live gameplay verification.
  * Enables deterministic lookup from Traditional/Simplified status names or HazardBits to exact solver physics.
  */
 enum class RunestoneTouchEffect {
