@@ -174,6 +174,7 @@ object AutoGridDetector {
     ): Boolean {
         val span = (scanRight - scanLeft).coerceAtLeast(1)
         val leftCut = scanLeft + (span * 0.24f).roundToInt()
+        val midCut = scanLeft + (span * 0.62f).roundToInt()
 
         var greenHits = 0
         var coralRedHits = 0
@@ -182,8 +183,10 @@ object AutoGridDetector {
 
         var leftHpHits = 0
         var leftTotal = 0
+        var midDarkHits = 0
+        var midTotal = 0
         var rightDarkHits = 0
-        var rightVividHits = 0
+        var rightNonHpVividHits = 0
         var rightTotal = 0
 
         var x = scanLeft
@@ -202,23 +205,29 @@ object AutoGridDetector {
             } else {
                 r >= b || (r - g) * 12 >= 11 * (b - g) // H >= 295°
             }
-            val isCoral = r >= 155 && (r - g) >= 32 && r >= (b - 12) && isCoralHue
+            val isCoral = r >= 138 && (r - g) >= 32 && r >= (b - 12) && isCoralHue
             val isCyan = b >= 145 && g >= 125 && (b - r) >= 40
+            val isHpColor = isGreen || isCoral || isCyan
             if (isGreen) greenHits++
             else if (isCoral) coralRedHits++
             else if (isCyan) cyanHits++
 
             if (x <= leftCut) {
                 leftTotal++
-                if (isGreen || isCoral || isCyan) leftHpHits++
+                if (isHpColor) leftHpHits++
             } else {
                 rightTotal++
                 val maxCh = max(r, max(g, b))
                 val minCh = min(r, min(g, b))
-                // Empty HP track is a dark charcoal slot (allow white monochrome HP text on far right)
+                // Empty HP track is a dark charcoal slot (allow white/red monochrome HP digits on far right)
                 if (maxCh <= 85) rightDarkHits++
-                // Vivid colored pixels indicate an orb row (e.g. Weijian 6x6..6x8), NEVER an empty HP track!
-                if ((maxCh - minCh) >= 50 && maxCh >= 95) rightVividHits++
+                if (x <= midCut) {
+                    midTotal++
+                    if (maxCh <= 85) midDarkHits++
+                }
+                // Foreign vivid colored pixels (non-HP-color blue/yellow/purple orbs) indicate a Weijian orb row,
+                // whereas low-HP red danger numbers (e.g. red "51709/517091" on the right) share isCoral and must NOT reject!
+                if (!isHpColor && (maxCh - minCh) >= 50 && maxCh >= 95) rightNonHpVividHits++
             }
             x += stepX
         }
@@ -231,17 +240,21 @@ object AutoGridDetector {
             return true
         }
 
-        // Low-HP partial player HP bar (e.g. 15%..30% remaining HP on left, dark empty track with ZERO vivid orbs on right)
+        // Low-HP partial player HP bar (5%..30% remaining HP on left, solid dark empty track in middle/right,
+        // tolerating glowing red danger digits "51709/517091" on the right with near-zero foreign vivid orbs!)
         val leftRatio = if (leftTotal > 0) leftHpHits.toFloat() / leftTotal else 0f
+        val midDarkRatio = if (midTotal > 0) midDarkHits.toFloat() / midTotal else 0f
         val rightDarkRatio = if (rightTotal > 0) rightDarkHits.toFloat() / rightTotal else 0f
-        val rightVividRatio = if (rightTotal > 0) rightVividHits.toFloat() / rightTotal else 1f
-        return leftRatio >= 0.42f && rightDarkRatio >= 0.45f && rightVividRatio <= 0.12f
+        val rightNonHpVividRatio = if (rightTotal > 0) rightNonHpVividHits.toFloat() / rightTotal else 1f
+        return leftRatio >= 0.22f &&
+            (rightDarkRatio >= 0.45f || midDarkRatio >= 0.58f) &&
+            rightNonHpVividRatio <= 0.12f
     }
 
     /**
-     * Checks whether horizontal scanline [y] matches an EMPTY / 1-HP ToS player HP bar track
-     * (e.g., 1/584001 self-drain or low-HP teams where the entire bar slot is dark charcoal
-     * across x in [10%..68%] with near-zero vivid orb pixels).
+     * Checks whether horizontal scanline [y] matches an EMPTY or VERY-LOW-HP (0%..25%) ToS player HP bar track
+     * (e.g., 1/584001 empty HP or 20608/517091 4% critical HP where the track across x in [10%..68%] is dark
+     * charcoal with optional HP-colored fill stub/danger digits and near-zero foreign vivid orb pixels).
      */
     private fun isEmptyHpTrackScanline(
         frame: PixelFrame,
@@ -251,7 +264,8 @@ object AutoGridDetector {
         stepX: Int
     ): Boolean {
         var darkHits = 0
-        var vividHits = 0
+        var trackOrHpHits = 0
+        var foreignVividHits = 0
         var totalX = 0
         var x = scanLeft
         while (x <= scanRight) {
@@ -262,13 +276,25 @@ object AutoGridDetector {
             val b = argb and 0xFF
             val maxCh = max(r, max(g, b))
             val minCh = min(r, min(g, b))
-            if (maxCh <= 58 && (maxCh - minCh) <= 26) darkHits++
-            if ((maxCh - minCh) >= 50 && maxCh >= 95) vividHits++
+            val isGreen = g >= 115 && (g - r) >= 32 && (g - b) >= 32
+            val isCoralHue = if (g > b) {
+                (g - b) * 30 <= 11 * (r - b)
+            } else {
+                r >= b || (r - g) * 12 >= 11 * (b - g)
+            }
+            val isCoral = r >= 138 && (r - g) >= 32 && r >= (b - 12) && isCoralHue
+            val isCyan = b >= 145 && g >= 125 && (b - r) >= 40
+            val isHpColor = isGreen || isCoral || isCyan
+            val isDark = maxCh <= 68 && (maxCh - minCh) <= 28
+            if (isDark) darkHits++
+            if (isDark || isHpColor) trackOrHpHits++
+            if (!isHpColor && (maxCh - minCh) >= 50 && maxCh >= 95) foreignVividHits++
             x += stepX
         }
         return totalX > 0 &&
-            (darkHits.toFloat() / totalX) >= 0.72f &&
-            (vividHits.toFloat() / totalX) <= 0.08f
+            (darkHits.toFloat() / totalX) >= 0.58f &&
+            (trackOrHpHits.toFloat() / totalX) >= 0.78f &&
+            (foreignVividHits.toFloat() / totalX) <= 0.08f
     }
 
     /**
@@ -416,7 +442,7 @@ object AutoGridDetector {
                 ey += eStepY
             }
             if (eScanned > 0 &&
-                emptyRows >= max(4, (eScanned * 0.62f).roundToInt()) &&
+                emptyRows >= max(3, (eScanned * 0.45f).roundToInt()) &&
                 hasLeftHpHeartMedallion(frame, leftPx, rightPx, rowTopPx, cellH)
             ) {
                 return true
@@ -516,10 +542,10 @@ object AutoGridDetector {
         val vividCenterRatio = vividCenters.toFloat() / total
 
         val hasHp = hasHpBarBarrier(frame, geometry.leftPx, geometry.rightPx, geometry.topPx, ch)
-        if (hasHp && (darkCornerRatio >= 0.32f || posContrastRatio >= 0.45f)) {
+        if (hasHp && ((darkCornerRatio >= 0.32f && (posContrastRatio >= 0.20f || vividCenterRatio >= 0.15f)) || posContrastRatio >= 0.45f)) {
             return true
         }
-        return darkCornerRatio >= 0.62f &&
+        return darkCornerRatio >= 0.48f &&
             posContrastRatio >= 0.72f &&
             meanRadial >= 0.30f &&
             vividCenterRatio >= 0.65f

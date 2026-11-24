@@ -2,9 +2,11 @@ package com.autodora.next.touch
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Build
 import android.util.Log
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import com.autodora.next.model.BoardGeometry
 import com.autodora.next.model.CellCoord
@@ -17,13 +19,33 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+
+enum class AccessibilityScreenshotFailure {
+    NONE,
+    API_UNSUPPORTED,
+    SERVICE_DISCONNECTED,
+    NO_PERMISSION,
+    RATE_LIMITED,
+    SECURE_WINDOW,
+    INTERNAL_ERROR
+}
+
+data class AccessibilityScreenshotResult(
+    val bitmap: Bitmap? = null,
+    val failure: AccessibilityScreenshotFailure = AccessibilityScreenshotFailure.NONE
+)
 
 object AccessibilityServiceBridge {
     private val serviceRef = AtomicReference<AutoDoraAccessibilityService?>(null)
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
+    val isScreenshotSupported: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
     internal fun attach(service: AutoDoraAccessibilityService) {
         serviceRef.set(service)
@@ -37,14 +59,28 @@ object AccessibilityServiceBridge {
     }
 
     internal fun current(): AutoDoraAccessibilityService? = serviceRef.get()
+
+    suspend fun takeScreenshotResult(): AccessibilityScreenshotResult {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return AccessibilityScreenshotResult(null, AccessibilityScreenshotFailure.API_UNSUPPORTED)
+        }
+        val svc = serviceRef.get()
+            ?: return AccessibilityScreenshotResult(null, AccessibilityScreenshotFailure.SERVICE_DISCONNECTED)
+        return svc.takeScreenshotResult()
+    }
 }
 
 /**
- * No-Root AccessibilityService executing smooth continuous gesture strokes for Tower of Saviors.
+ * No-Root AccessibilityService executing smooth continuous gesture strokes for Tower of Saviors,
+ * and on Android 11+ (API 30+) also providing MediaProjection-free on-demand screenshots so
+ * system screen recorders (e.g. HyperOS / Xiaomi 15) can run simultaneously without conflicts.
  */
 class AutoDoraAccessibilityService : AccessibilityService() {
 
     private val cancelRequested = AtomicBoolean(false)
+    private val screenshotExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "AutoDoraA11yShot").apply { isDaemon = true }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -53,7 +89,7 @@ class AutoDoraAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Gesture-only service; no heavy event processing needed
+        // Gesture & on-demand screenshot service; no heavy event processing needed
     }
 
     override fun onInterrupt() {
@@ -63,7 +99,76 @@ class AutoDoraAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         cancelRequested.set(true)
         AccessibilityServiceBridge.detach(this)
+        try {
+            screenshotExecutor.shutdownNow()
+        } catch (_: Exception) {
+        }
         super.onDestroy()
+    }
+
+    /**
+     * Captures a single live compositor frame via Android 11+ [takeScreenshot] without occupying
+     * the system's exclusive MediaProjection slot. Returns a CPU-readable ARGB_8888 Bitmap.
+     */
+    suspend fun takeScreenshotResult(timeoutMs: Long = 1800L): AccessibilityScreenshotResult {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return AccessibilityScreenshotResult(null, AccessibilityScreenshotFailure.API_UNSUPPORTED)
+        }
+        val deferred = CompletableDeferred<AccessibilityScreenshotResult>()
+        try {
+            takeScreenshot(
+                Display.DEFAULT_DISPLAY,
+                screenshotExecutor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(screenshot: ScreenshotResult) {
+                        val hb = screenshot.hardwareBuffer
+                        val cs = screenshot.colorSpace
+                        val swBitmap = try {
+                            val hw = Bitmap.wrapHardwareBuffer(hb, cs)
+                            try {
+                                hw?.copy(Bitmap.Config.ARGB_8888, false)
+                            } finally {
+                                hw?.recycle()
+                            }
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "Failed converting HardwareBuffer screenshot", t)
+                            null
+                        } finally {
+                            try {
+                                hb.close()
+                            } catch (_: Exception) {
+                            }
+                        }
+                        if (swBitmap != null) {
+                            deferred.complete(AccessibilityScreenshotResult(swBitmap, AccessibilityScreenshotFailure.NONE))
+                        } else {
+                            deferred.complete(AccessibilityScreenshotResult(null, AccessibilityScreenshotFailure.INTERNAL_ERROR))
+                        }
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        val reason = when (errorCode) {
+                            ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> AccessibilityScreenshotFailure.NO_PERMISSION
+                            ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> AccessibilityScreenshotFailure.RATE_LIMITED
+                            ERROR_TAKE_SCREENSHOT_INVALID_WINDOW -> AccessibilityScreenshotFailure.SECURE_WINDOW
+                            else -> AccessibilityScreenshotFailure.INTERNAL_ERROR
+                        }
+                        if (reason != AccessibilityScreenshotFailure.RATE_LIMITED) {
+                            Log.w(TAG, "takeScreenshot failed: errorCode=$errorCode ($reason)")
+                        }
+                        deferred.complete(AccessibilityScreenshotResult(null, reason))
+                    }
+                }
+            )
+        } catch (se: SecurityException) {
+            Log.w(TAG, "takeScreenshot SecurityException (canTakeScreenshot not yet granted)", se)
+            return AccessibilityScreenshotResult(null, AccessibilityScreenshotFailure.NO_PERMISSION)
+        } catch (t: Throwable) {
+            Log.w(TAG, "takeScreenshot exception", t)
+            return AccessibilityScreenshotResult(null, AccessibilityScreenshotFailure.INTERNAL_ERROR)
+        }
+        return withTimeoutOrNull(timeoutMs) { deferred.await() }
+            ?: AccessibilityScreenshotResult(null, AccessibilityScreenshotFailure.INTERNAL_ERROR)
     }
 
     fun requestEmergencyStop() {

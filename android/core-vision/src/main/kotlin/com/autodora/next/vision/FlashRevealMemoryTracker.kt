@@ -221,7 +221,13 @@ class FlashRevealMemoryTracker(
             val h = frame.height
             if (w < 120 || h < 200) return false
 
-            fun isRegionUniformDark(xFrac0: Float, xFrac1: Float, yFrac0: Float, yFrac1: Float): Boolean {
+            data class RegionDarkStats(
+                val darkNeutralRatio: Float,
+                val pureBlackRatio: Float,
+                val vividColoredRatio: Float
+            )
+
+            fun measureDarkRegion(xFrac0: Float, xFrac1: Float, yFrac0: Float, yFrac1: Float): RegionDarkStats {
                 val x0 = (w * xFrac0).toInt()
                 val x1 = (w * xFrac1).toInt()
                 val y0 = (h * yFrac0).toInt()
@@ -229,6 +235,7 @@ class FlashRevealMemoryTracker(
                 val stepX = max(2, (x1 - x0) / 16)
                 val stepY = max(2, (y1 - y0) / 10)
                 var darkNeutral = 0
+                var pureBlack = 0
                 var vividColored = 0
                 var total = 0
                 var y = y0
@@ -243,6 +250,9 @@ class FlashRevealMemoryTracker(
                         val minC = min(r, min(g, b))
                         if (maxC <= 62 && (maxC - minC) <= 24) {
                             darkNeutral++
+                            if (maxC <= 45 && (maxC - minC) <= 22) {
+                                pureBlack++
+                            }
                         } else if (maxC >= 120 && (maxC - minC) >= 55) {
                             vividColored++
                         }
@@ -251,14 +261,31 @@ class FlashRevealMemoryTracker(
                     }
                     y += stepY
                 }
-                return total > 0 && (darkNeutral.toFloat() / total) >= 0.58f && (vividColored.toFloat() / total) <= 0.08f
+                if (total <= 0) return RegionDarkStats(0f, 0f, 1f)
+                return RegionDarkStats(
+                    darkNeutralRatio = darkNeutral.toFloat() / total,
+                    pureBlackRatio = pureBlack.toFloat() / total,
+                    vividColoredRatio = vividColored.toFloat() / total
+                )
             }
 
-            // Require BOTH upper modal header/body (41%..53%) AND lower modal body covering the board (58%..78%)
-            // to be uniform dark charcoal — guarantees 100% detection of enemy long-press / stage-info modals
-            // with 0% false positives on dark dungeon battle backgrounds!
-            return isRegionUniformDark(0.18f, 0.82f, 0.41f, 0.53f) &&
-                isRegionUniformDark(0.20f, 0.80f, 0.58f, 0.78f)
+            // 1) Dual-region enemy skill / stage info modal:
+            //    Upper header/title band (41%..53%) tolerates golden attribute icons & yellow 【技能】 titles
+            //    (vivid <= 0.28f) on top of >= 55% dark modal background, paired with dark lower body (58%..78%).
+            val upper = measureDarkRegion(0.18f, 0.82f, 0.41f, 0.53f)
+            val lower = measureDarkRegion(0.20f, 0.80f, 0.58f, 0.78f)
+            if (upper.darkNeutralRatio >= 0.55f && upper.vividColoredRatio <= 0.28f &&
+                lower.darkNeutralRatio >= 0.58f && lower.vividColoredRatio <= 0.12f
+            ) {
+                return true
+            }
+
+            // 2) Pitch-black board-covering modal body (54%..84%):
+            //    Even if a compact popup begins below the portraits, >= 58% pure-black neutral pixels
+            //    with <= 8% vivid pixels cleanly separates text modals from real 30/30 '?' or locked orb boards
+            //    (where slate-blue '?' orbs and stone-locked orbs keep pureBlack <= 0.30).
+            val boardBody = measureDarkRegion(0.16f, 0.84f, 0.54f, 0.84f)
+            return boardBody.pureBlackRatio >= 0.58f && boardBody.vividColoredRatio <= 0.08f
         }
     }
 }

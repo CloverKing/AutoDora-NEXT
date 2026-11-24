@@ -1,6 +1,6 @@
 # AutoDora-NEXT v3.0 系统架构、功能设计与演进规划
 
-> **当前基线版本**：`v0.4.7`（`versionCode = 407`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
+> **当前基线版本**：`v0.4.9`（`versionCode = 409`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
 > **项目定位**：面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备的**免 Root、全规格动态棋盘自适应、可自由组合解盾、问号/按珠变盘双模破局、1:1 实时盘面编排、C++20 端侧高速引擎驱动**的新一代智能转珠辅助工程。  
 > **设计基线**：全面继承并升级旧版 [AutoDora-V3.4.3](./LEGACY_AUTODORA_ANALYSIS.md) 经实战验证的悬浮窗交互、调参与「问号‧转/风化‧转」按珠重算精华；完整对照 [《神魔之塔》13 年全机制全景调研手册](./TOS_COMPLETE_MECHANICS_CATALOG.md)、[98 项官方敌技审计报告](./enemy_skill_audit.md) 与 [22 项符石状态核验报告](./runestone_status_audit.md)（官方百科 20 项 + 百科外经典 2 项）。  
 > **标定与合规原则**：所有棋盘几何探测、校准基准与视觉特征阈值均严格以**真实《神魔之塔》游戏画面**实测标定；仓库仅包含工程代码、结构化技术规范与应用自身纯净截图，严禁提交任何第三方版权游戏素材。
@@ -35,7 +35,10 @@ flowchart LR
     FullDetect --> DynamicOut["输出动态 BoardGeometry (rect, cols, rows, cellSize)"]
 ```
 
-- **血条锚定防误判与 HyperOS 防断流热重授 / 零陈旧帧门控**：在 `base.topPx` 上方检测绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，杜绝把队伍 6 个彩色头像误判为第 6 行假违建或「自动校准」误吸 Boss 血条。`MediaProjectionCapturer` 与 `ScreenCaptureSession` 通过 `released` 首帧零丢弃门控、静止画面零扰动（移除按帧龄误触 `vd.resize()`/`setSurface()`）、10 秒冷却受控恢复、`clearIfCurrent()` 身份校验防异步 `onStop()` 误杀新会话、失效自动清理并同步主界面状态以及概览页 `allowAlwaysClick` 一键热重授，彻底杜绝 Android 14–16 / HyperOS 假就绪与重授权失效；同时在 `startCaptureAndSolve` / `startHoldAndReplanExecution` / 编排识盘触发前**强制执行 `clearCachedFrame()` + 合成刷新门控**（后台监听同步跳过 `lastFrameAgeMs > 4000ms` 的陈旧帧），杜绝录屏冲突或系统静默暂停虚拟屏时误用上一回合旧盘面解盘导致滑屏结果与计算不符。
+- **双模免 Root 屏幕采集（兼容系统录屏）与血条锚定防误判**：
+  - **无障碍截屏模式（`AccessibilityScreenCapturer`，Android 11+ 默认推荐）**：基于 `AccessibilityService.takeScreenshot()` 按需直采实时合成帧，**完全不占用系统独占的 `MediaProjection` 录屏通道**，小米 15 / HyperOS 等机型开启本应用后系统自带录屏全程正常可用，且免每次启动弹窗授权、无久放黑屏掉权限问题；内置 `370ms` 防限流节拍器、2 帧半周期闪烁融合封顶与 `850ms` 非阻塞后台问号记忆监听。
+  - **高速录屏采集模式（`MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`，可选 / Android 10 回退）**：底层采用 OpenGL ES 2.0 / EGL 1.4 `SurfaceTexture`（`GL_TEXTURE_EXTERNAL_OES`）单 `VirtualDisplay` 零拷贝双路分发——CV 识盘时按需 0.4ms GPU 渲染至 `ImageReader`，录屏开启时以 `THREAD_PRIORITY_DISPLAY` 定频直推硬件 `MediaCodec`（真机硬编 `60fps / 8Mbps`，软件编码回退 `30fps / 6Mbps`，1s GOP、0-based PTS 重基，零 CPU 拷贝与软件缩放，完整收录游戏画面与全部悬浮识别层/路径/结果卡片），经 Scoped `MediaStore.Video.Media` 免存储权限直存系统相册（`Movies/AutoDora-NEXT/AutoDora_YYYYMMDD_HHmmss.mp4`），并在切回无障碍截屏、停服或系统 `onStop()` 时先自动收尾存片再释放录屏通道。
+  - **全态血条锚定防假违建**：在 `base.topPx` 上方无缝覆盖 **`0%–100%`** 全态血条——绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带、**`1%–30%` 极低/低血亮红危急数字血条（同色系血量残条与右侧红字均不误计为异色珠体）**，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，同时在 `isBattleBoardPresent()` 兼容密集路径与左上角珠色徽章遮角（`darkCornerRatio >= 0.48` 联立高对比度与亮珠中心校验），并仅在全屏问号记忆圆圈覆盖态启用严格血条隔离，彻底消除计算后 1 秒路径被巡检误清现象。
 - **实时视觉校准框**：主悬浮栏点 `▦` 随时开启可拖拽四角/四边的半透明校准框，并附带 `上 / 下 / 窄 / 宽 / 高- / 高+ / 自动 / 重置` 像素级微调条，按比例持久化至 DataStore。
 
 ---
@@ -138,8 +141,8 @@ flowchart LR
 | **分页结构** | 3-Tab：**概览 / 策略 / 设置** | 3-Tab：**快捷 / 策略 / 设置** |
 | **抽屉色彩** | 6 色语义色条 + 浅色边框卡片（蓝/靛蓝/青绿/琥珀/绯红/紫） | 与启动页对应模块使用**完全一致的抽屉配色** |
 | **展开模式** | 默认**全部展开**，支持多抽屉同时展开或单独收起 | 调参分页与盘面编排均采用**单抽屉手风琴互斥展开**，防止遮挡游戏盘面 |
-| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`557` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
-| **主悬浮胶囊** | 概览页一键启停；设置紫色抽屉支持 **横排 / 竖排** 与 **靠左 / 靠右** 4 态切换（`floatingBarVertical` + `floatingBarDockRight`） | 圆形 App 图标手柄 + 8 个矢量图标（`✦` `▶` `■` `〰` `▤` `▦` `🎚` `✕`）；支持 **4 态实时热切**（横排靠右时 App 图标居右、主栏向左展开；竖排靠左向右/靠右向左展开面板）、**拖拽松手平滑左右吸边**及 **DataStore 持久化记忆停靠侧与纵坐标** |
+| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`577` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
+| **主悬浮胶囊** | 概览页一键启停与高速录屏模式内置录屏按钮；设置支持控制 **悬浮栏是否显示录屏按钮** 以及 **横排 / 竖排** 与 **靠左 / 靠右** 4 态切换（`floatingBarVertical` + `floatingBarDockRight`） | 圆形 App 图标手柄 + 8 个常驻矢量图标（`✦` `▶` `■` `〰` `▤` `▦` `🎚` `✕`）+ 高速录屏模式下可配置增显 **`● 录屏`** 图标（双端实时同步录屏状态与显示开关）；支持 **4 态实时热切**（横排靠右时 App 图标居右、主栏向左展开；竖排靠左向右/靠右向左展开面板）、**拖拽松手平滑左右吸边**及 **DataStore 持久化记忆停靠侧与纵坐标** |
 
 ### 5.2 单一自动保存策略与应用内更新闭环
 
@@ -210,18 +213,18 @@ flowchart TD
     PathSmooth -.-> ShizukuExec
 ```
 
-### 仓库模块与测试矩阵（当前 `114` 项自动化测试全通过）
+### 仓库模块与测试矩阵（当前 `124` 项自动化测试全通过）
 
 | 模块 | 职责说明 | 自动化测试覆盖 |
 | :--- | :--- | :--- |
 | `solver-core/` | 纯 C++20 求解引擎（CMake，零 Android 依赖） | `test_main.cpp`：**51 / 51** 通过（含独立路径回放核验、荆棘严避与全版锁定渐进消除） |
 | `android/core-model/` | 不可变棋盘/规则模型、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**12 / 12** 通过 |
-| `android/core-capture/` | `MediaProjection` 零拷贝采集与防断流热重授、`AutoGridDetector`（含空血 1-HP 暗槽与活动横幅过滤） | `AutoGridDetectorTest` (11) + `ScreenCaptureSessionTest` (3)：**14 / 14** 通过 |
-| `android/core-vision/` | `CvBoardRecognizer`（18 项实测 0 误报状态/地形 CV + 全 6 色笛卡尔积去色偏回归）、`FlashRevealMemoryTracker`、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**19 / 19** 通过（含 48 格全 6 色笛卡尔积回归矩阵） |
-| `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`、`SwipeSpeedPreset` | `PathInterpolatorTest`：**8 / 8** 通过 |
+| `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`（单 VirtualDisplay GPU 零拷贝 60fps 录屏直存系统相册）、`AutoGridDetector`（含低血亮红数字血条、空血 1-HP 暗槽与纯黑弹窗防误过） | `AutoGridDetectorTest` (13) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3) + `BuiltInScreenRecorderTest` (3)：**22 / 22** 通过 |
+| `android/core-vision/` | `CvBoardRecognizer`（18 项实测 0 误报状态/地形 CV + 全 6 色笛卡尔积去色偏回归）、`FlashRevealMemoryTracker`（含金色标题栏敌技弹窗拦截）、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**20 / 20** 通过（含 48 格全 6 色笛卡尔积回归矩阵） |
+| `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`（含精准分段预计转珠耗时计算）、`SwipeSpeedPreset` | `PathInterpolatorTest`：**9 / 9** 通过 |
 | `android/core-data/` | DataStore 设置、Room 实时策略持久化、39 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务、单抽屉调参/编排（打开自动识盘）、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (3)：**10 / 10** 通过；四语言词条一致性 **557 / 557** |
+| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务（含高速录屏双端内置录屏按钮与可配显示开关）、单抽屉调参/编排（打开自动识盘）、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (3)：**10 / 10** 通过；四语言词条一致性 **577 / 577** |
 
 ---
 
@@ -231,5 +234,5 @@ flowchart TD
 | :--- | :---: | :--- |
 | **Phase 1：纯 C++20 动态内核 + 多模块骨架** | `v0.1.0` | **已完成** — `3×3~8×8` 64-bit 位掩码求解器、最高 300 步、Android 7 模块工程与 JNI 三架构编译。 |
 | **Phase 2 & 2.5：免 Root 全链路 + 真图高精度标定** | `v0.2.x` – `v0.3.x` | **已完成** — 零拷贝 `MediaProjection`、血条防假违建、先露后藏记忆快照、免 Root 按住重算续滑、拼图/红绿灯/暴风/化血/结界识别、非战斗/VICTORY 过滤、方向逆转与逐盾 `✓/✗` 判定。 |
-| **Phase 3 & 3.5：百科全量审计 + 统一交互 + 全 6 色特殊符石 CV 与长时稳定** | `v0.4.0` – `v0.4.8`（当前） | **已完成** — 全量 98 敌技 + 22 符石状态（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）+ 7 大官方种族全链路升级；HyperOS / Android 14–16 屏幕采集防断流、零陈旧帧门控（`clearCachedFrame()` + 合成刷新根除滑屏错位）与热重授权、全态血条防假违建（含 `1/584001` 空血暗槽 + 红心徽章）与非战斗悬浮自激拦截；18 项异常状态/地形自动 CV 识别与全 6 色笛卡尔积去色偏（电击双相+底色还原、颜色无关晶格冻结/冰封、炸弹、邪能、炼狱、燃烧/血浴/碎裂、7 种族圆章 V3、起结有序 V4、石化、全版 30 颗锁定·化血、荆棘 + 跨机制冲突隔离）；精准 45° 斜转 `1.414×` 弧长计时；3-Tab Material You 启动页与同色系单抽屉悬浮面板；双端 1:1 统一四态颠倒方向操控、嵌套按住触发子卡片与可配按住显形后解盘时间（`0.15–3.5s`）；4 态磁吸记忆悬浮胶囊；5 色单开互斥抽屉 1:1 盘面编排（打开自动识盘 + 一键「重新识盘」）；6 档统一速度（`2s~7s`）；单一自动保存作战策略（一键恢复默认）+ 16 形态×`1~5消` 单属性规则矩阵（一键全矩阵重置）+ 暗色模式高对比度适配；三语纯终态文案热切（557 词条）；免 403 限流双通道检更 + 应用内流式下载与 `FileProvider` 自动安装。 |
+| **Phase 3 & 3.5：百科全量审计 + 统一交互 + 全 6 色特殊符石 CV 与长时稳定** | `v0.4.0` – `v0.4.9`（当前） | **已完成** — 全量 98 敌技 + 22 符石状态（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）+ 7 大官方种族全链路升级；双模屏幕采集（Android 11+ 默认无障碍截屏兼容系统录屏 + 可选高速录屏采集自动释放 + 单 VirtualDisplay OpenGL ES 2.0 零拷贝内置 60fps H.264 MP4 录屏直存系统相册，启动页/悬浮栏双端实时联动且支持在设置中控制悬浮栏录屏按钮显隐）；结果详情卡片升级 `⚡x.xx秒` 计算耗时 + `👆x.xx秒` 精准预计实际转珠时长（切速度即时联动）；HyperOS / Android 14–16 屏幕采集防断流、零陈旧帧门控与热重授权、`0%–100%` 全态血条防假违建（含 `1%–30%` 极低/低血亮红数字危急血条与 `1/584001` 空血暗槽 + 密集路径/珠标遮角兼容）、金色标题栏敌技详情弹窗拦截与非战斗悬浮自激拦截；18 项异常状态/地形自动 CV 识别与全 6 色笛卡尔积去色偏；精准 45° 斜转 `1.414×` 弧长计时；3-Tab Material You 启动页与同色系单抽屉悬浮面板；双端 1:1 统一四态颠倒方向操控、嵌套按住触发子卡片与可配按住显形后解盘时间（`0.15–3.5s`）；4 态磁吸记忆悬浮胶囊；5 色单开互斥抽屉 1:1 盘面编排（打开自动识盘 + 一键「重新识盘」）；6 档统一速度（`2s~7s`）；单一自动保存作战策略 + 16 形态×`1~5消` 单属性规则矩阵 + 暗色模式高对比度适配；三语纯终态文案热切（577 词条）；免 403 限流双通道检更 + 应用内流式下载与 `FileProvider` 自动安装。 |
 | **Phase 4：端侧多头 AI 识盘 + 敌技自动解析 + Shizuku 扩展** | `v0.5.x` – `v1.0.0`（规划中） | **规划中** — ① 悬浮纠错一键样本采集与 ZIP 数据飞轮；② `ml/` 多头轻量 CNN 训练与 LiteRT (`.tflite`) 端侧热加载（攻克黑白符石、合作皮肤、7 种族角标与 22 项符石状态全自动识别，目标整盘推理 `< 20ms`）；③ 端侧离线敌技说明自动解析（结合官方三态灰字无视过滤自动勾选波次盾）；④ 可选 Shizuku 特权触控引擎；⑤ 稳定版 `v1.0.0` 正式发布。 |

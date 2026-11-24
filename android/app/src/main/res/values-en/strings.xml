@@ -454,7 +454,7 @@
     <string name="ov_result_btn">Result</string>
     <string name="ov_toast_need_solve">Preview mode is ON: tap Solve first</string>
     <string name="ov_toast_stopped">Stopped</string>
-    <string name="ov_summary_fmt">%1$d×%2$d · 1st:%3$d/Tot:%4$dC · %5$d moves · %6$dms</string>
+    <string name="ov_summary_fmt">%1$d×%2$d · 1st:%3$d/%4$dC · %5$dst · ⚡%6$ss · 👆%7$ss</string>
 
     <!-- v3 Unified Strategy Workbench & Auto Long-Press Enemy Scan -->
     <string name="preset_bar_load">Load / Manage</string>
@@ -594,4 +594,28 @@
     <string name="shape_l">L</string>
     <string name="shape_t">T</string>
     <string name="shape_sq2x2">2×2</string>
+
+    <!-- Dual Screen Capture Mode (Recorder-Safe Accessibility vs High-Speed Cast) -->
+    <string name="capture_mode_title">Screen Capture Mode</string>
+    <string name="capture_mode_a11y">Accessibility (Recorder-Safe)</string>
+    <string name="capture_mode_a11y_short">Accessibility</string>
+    <string name="capture_mode_media">Fast Screen Cast</string>
+    <string name="capture_mode_sub">Accessibility capture never blocks the built-in screen recorder and requires no repeated consent dialogs; Fast Screen Cast supports faster bursts and includes one-tap recording saved to Gallery</string>
+    <string name="perm_capture_a11y_sub">Accessibility capture active (coexists with system screen recording; ready once Accessibility is on)</string>
+    <string name="perm_capture_media_sub">Fast Screen Cast: keep "Entire screen" selected in the system dialog (blocks system screen recording)</string>
+    <string name="ov_toast_a11y_shot_need_regrant">Accessibility screenshot not active yet; toggle this app Off and On in Accessibility settings</string>
+    <string name="ov_toast_capture_need_a11y">Enable Accessibility Auto-Swipe first to use Accessibility capture</string>
+    <string name="ov_toast_media_released">Switched to Accessibility capture; system screen recorder is now free to use</string>
+
+    <!-- Built-in Screen Recording (Fast Screen Cast mode) -->
+    <string name="btn_record_start">Start Recording (Save to Gallery)</string>
+    <string name="btn_record_stop_fmt">Stop Recording · %1$s</string>
+    <string name="btn_record_saving">Saving to Gallery…</string>
+    <string name="toast_record_started">Recording started — video will save to Gallery when stopped</string>
+    <string name="toast_record_saved_fmt">Saved to Gallery: %1$s</string>
+    <string name="toast_record_failed_fmt">Recording failed: %1$s</string>
+    <string name="toast_record_need_perm">Grant Screen Capture permission first to start recording</string>
+    <string name="ov_record_btn">Rec</string>
+    <string name="mode_floating_record_title">Floating Bar Record Button</string>
+    <string name="mode_floating_record_sub">Applies in Fast Screen Cast mode; turn off for a more compact bar while still recording from Overview</string>
 </resources>

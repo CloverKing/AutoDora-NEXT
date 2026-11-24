@@ -35,9 +35,22 @@ enum class AppLanguage(val tag: String, val nativeLabel: String) {
     }
 }
 
+enum class CaptureMode {
+    /** Android 11+ AccessibilityService.takeScreenshot(): coexists cleanly with Xiaomi/HyperOS system screen recording. */
+    ACCESSIBILITY,
+    /** Classic MediaProjection VirtualDisplay: faster burst polling, but occupies Android's exclusive screen-recording slot. */
+    MEDIA_PROJECTION;
+
+    companion object {
+        fun fromOrdinalSafe(ord: Int?): CaptureMode =
+            entries.getOrNull(ord ?: 0) ?: ACCESSIBILITY
+    }
+}
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val language: AppLanguage = AppLanguage.SYSTEM,
+    val captureMode: CaptureMode = CaptureMode.ACCESSIBILITY,
     val floatingBarVertical: Boolean = false,
     val floatingBarDockRight: Boolean = false,
     val floatingBarPosXRatio: Float = -1f,       // <0 = auto edge snap; 0..1 = remembered left (or right if dockRight) ratio
@@ -49,6 +62,7 @@ data class AppSettings(
     val testModeOnlyDraw: Boolean = true,       // Default safe Test Mode: draw preview first, tap Execute to swipe!
     val countdownSeconds: Int = 0,              // Optional 0..3s countdown before swipe
     val showEmergencyStop: Boolean = true,
+    val showFloatingRecordButton: Boolean = true,
     val stepDurationMs: Long = 68L,
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
@@ -85,6 +99,7 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val THEME_MODE = intPreferencesKey("ui_theme_mode")
         val APP_LANGUAGE = intPreferencesKey("ui_app_language")
+        val CAPTURE_MODE = intPreferencesKey("capture_mode")
         val FLOATING_BAR_VERTICAL = booleanPreferencesKey("ux_floating_bar_vertical")
         val FLOATING_BAR_DOCK_RIGHT = booleanPreferencesKey("ux_floating_bar_dock_right")
         val FLOATING_BAR_POS_X_RATIO = floatPreferencesKey("ux_floating_bar_pos_x_ratio")
@@ -103,6 +118,7 @@ class SettingsRepository(private val context: Context) {
         val TEST_MODE_ONLY_DRAW = booleanPreferencesKey("ux_test_mode_draw")
         val COUNTDOWN_SECONDS = intPreferencesKey("ux_countdown_sec")
         val SHOW_EMERGENCY_STOP = booleanPreferencesKey("ux_show_emergency")
+        val SHOW_FLOATING_RECORD_BUTTON = booleanPreferencesKey("ux_show_floating_record_btn")
         val STEP_DURATION_MS = longPreferencesKey("touch_step_ms")
         val HUMAN_MODE = booleanPreferencesKey("touch_human_mode")
         val MULTI_FRAME_COUNT = intPreferencesKey("vision_multi_frames")
@@ -120,6 +136,7 @@ class SettingsRepository(private val context: Context) {
     private fun readFromPrefs(p: Preferences): AppSettings = AppSettings(
         themeMode = ThemeMode.fromOrdinalSafe(p[Keys.THEME_MODE]),
         language = AppLanguage.fromOrdinalSafe(p[Keys.APP_LANGUAGE]),
+        captureMode = CaptureMode.fromOrdinalSafe(p[Keys.CAPTURE_MODE]),
         floatingBarVertical = p[Keys.FLOATING_BAR_VERTICAL] ?: false,
         floatingBarDockRight = p[Keys.FLOATING_BAR_DOCK_RIGHT] ?: false,
         floatingBarPosXRatio = p[Keys.FLOATING_BAR_POS_X_RATIO] ?: -1f,
@@ -138,6 +155,7 @@ class SettingsRepository(private val context: Context) {
         testModeOnlyDraw = p[Keys.TEST_MODE_ONLY_DRAW] ?: true,
         countdownSeconds = p[Keys.COUNTDOWN_SECONDS] ?: 0,
         showEmergencyStop = p[Keys.SHOW_EMERGENCY_STOP] ?: true,
+        showFloatingRecordButton = p[Keys.SHOW_FLOATING_RECORD_BUTTON] ?: true,
         stepDurationMs = p[Keys.STEP_DURATION_MS] ?: 68L,
         humanMode = p[Keys.HUMAN_MODE] ?: false,
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
@@ -159,6 +177,7 @@ class SettingsRepository(private val context: Context) {
             val next = transform(current)
             p[Keys.THEME_MODE] = next.themeMode.ordinal
             p[Keys.APP_LANGUAGE] = next.language.ordinal
+            p[Keys.CAPTURE_MODE] = next.captureMode.ordinal
             p[Keys.FLOATING_BAR_VERTICAL] = next.floatingBarVertical
             p[Keys.FLOATING_BAR_DOCK_RIGHT] = next.floatingBarDockRight
             p[Keys.FLOATING_BAR_POS_X_RATIO] = if (next.floatingBarPosXRatio < 0f) -1f else next.floatingBarPosXRatio.coerceIn(0f, 1f)
@@ -179,6 +198,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.TEST_MODE_ONLY_DRAW] = next.testModeOnlyDraw
             p[Keys.COUNTDOWN_SECONDS] = next.countdownSeconds.coerceIn(0, 3)
             p[Keys.SHOW_EMERGENCY_STOP] = next.showEmergencyStop
+            p[Keys.SHOW_FLOATING_RECORD_BUTTON] = next.showFloatingRecordButton
             p[Keys.STEP_DURATION_MS] = next.stepDurationMs.coerceIn(20L, 140L)
             p[Keys.HUMAN_MODE] = next.humanMode
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)

@@ -38,6 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.autodora.next.BuildConfig
 import com.autodora.next.R
+import com.autodora.next.capture.CaptureRouter
+import com.autodora.next.capture.RecordingFormatUtils
+import com.autodora.next.capture.ScreenRecordingState
 import com.autodora.next.data.*
 import com.autodora.next.model.*
 import com.autodora.next.touch.SwipeSpeedPreset
@@ -65,6 +68,7 @@ fun DashboardScreen(
     settings: AppSettings,
     presets: List<TeamPresetRecord>,
     activeWaveChips: List<WaveShieldChip>,
+    recordingState: ScreenRecordingState = ScreenRecordingState.Idle,
     benchmarkReport: String?,
     isBenchmarking: Boolean,
     updateCheckState: UpdateCheckState = UpdateCheckState.Idle,
@@ -74,6 +78,7 @@ fun DashboardScreen(
     onRequestMediaProjection: () -> Unit,
     onRequestNotifications: () -> Unit,
     onToggleOverlayService: () -> Unit,
+    onToggleScreenRecording: () -> Unit = {},
     onRunNativeBenchmark: () -> Unit,
     onOpenGitHub: () -> Unit = {},
     onCheckForUpdates: () -> Unit = {},
@@ -198,12 +203,15 @@ fun DashboardScreen(
                     settings = settings,
                     activeGoalSummary = activeGoalSummary,
                     activeWaveChips = activeWaveChips,
+                    recordingState = recordingState,
                     onRequestOverlay = onRequestOverlay,
                     onOpenAccessibility = onOpenAccessibility,
                     onOpenAppDetails = onOpenAppDetails,
                     onRequestMediaProjection = onRequestMediaProjection,
                     onRequestNotifications = onRequestNotifications,
                     onToggleOverlayService = onToggleOverlayService,
+                    onToggleScreenRecording = onToggleScreenRecording,
+                    onUpdateSettings = onUpdateSettings,
                     onNavigateTab = { activeTab = it }
                 )
 
@@ -255,12 +263,15 @@ private fun OverviewTab(
     settings: AppSettings,
     activeGoalSummary: String,
     activeWaveChips: List<WaveShieldChip>,
+    recordingState: ScreenRecordingState,
     onRequestOverlay: () -> Unit,
     onOpenAccessibility: () -> Unit,
     onOpenAppDetails: () -> Unit,
     onRequestMediaProjection: () -> Unit,
     onRequestNotifications: () -> Unit,
     onToggleOverlayService: () -> Unit,
+    onToggleScreenRecording: () -> Unit,
+    onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onNavigateTab: (HomeTab) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -393,14 +404,111 @@ private fun OverviewTab(
                     onAction = onOpenAccessibility
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val useA11yCapture = CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY
                 PermissionItemRow(
                     title = stringResource(R.string.perm_capture_title),
-                    subtitle = stringResource(R.string.perm_capture_sub),
+                    subtitle = stringResource(
+                        if (useA11yCapture) R.string.perm_capture_a11y_sub else R.string.perm_capture_media_sub
+                    ),
                     granted = health.mediaProjectionReady,
-                    actionLabel = stringResource(R.string.perm_grant),
+                    actionLabel = stringResource(if (useA11yCapture) R.string.perm_enable else R.string.perm_grant),
                     allowAlwaysClick = true,
                     onAction = onRequestMediaProjection
                 )
+                if (CaptureRouter.isAccessibilityCaptureSupported()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CompactChoicePill(
+                            label = stringResource(R.string.capture_mode_a11y),
+                            selected = useA11yCapture,
+                            onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.ACCESSIBILITY) } },
+                            modifier = Modifier.weight(1.3f)
+                        )
+                        CompactChoicePill(
+                            label = stringResource(R.string.capture_mode_media),
+                            selected = !useA11yCapture,
+                            onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.MEDIA_PROJECTION) } },
+                            modifier = Modifier.weight(0.9f)
+                        )
+                    }
+                }
+                if (!useA11yCapture) {
+                    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                    var recElapsedMs by remember(recordingState) {
+                        mutableLongStateOf(
+                            if (recordingState is ScreenRecordingState.Recording) {
+                                (android.os.SystemClock.elapsedRealtime() - recordingState.startedAtElapsedMs).coerceAtLeast(0L)
+                            } else 0L
+                        )
+                    }
+                    LaunchedEffect(recordingState) {
+                        if (recordingState is ScreenRecordingState.Recording) {
+                            while (true) {
+                                recElapsedMs = (android.os.SystemClock.elapsedRealtime() - recordingState.startedAtElapsedMs).coerceAtLeast(0L)
+                                kotlinx.coroutines.delay(500L)
+                            }
+                        }
+                    }
+                    val isRec = recordingState is ScreenRecordingState.Recording
+                    val isSaving = recordingState is ScreenRecordingState.Saving
+                    val recBg = when {
+                        isRec -> if (isDark) Color(0xFF6B1D24) else Color(0xFFD32F2F)
+                        isSaving -> MaterialTheme.colorScheme.surfaceContainerHigh
+                        else -> if (isDark) Color(0xFF3A1D22) else Color(0xFFFFEBEE)
+                    }
+                    val recFg = when {
+                        isRec -> Color.White
+                        isSaving -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> if (isDark) Color(0xFFFFB4B8) else Color(0xFFC62828)
+                    }
+                    val recBorder = when {
+                        isRec -> if (isDark) Color(0xFFFF6B72) else Color(0xFFB71C1C)
+                        else -> if (isDark) Color(0xFF7D343B) else Color(0xFFE57373)
+                    }
+                    Surface(
+                        onClick = onToggleScreenRecording,
+                        enabled = !isSaving,
+                        shape = RoundedCornerShape(10.dp),
+                        color = recBg,
+                        border = BorderStroke(1.dp, recBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp, bottom = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(
+                                        color = if (isRec) Color.White else if (isDark) Color(0xFFFF6B72) else Color(0xFFD32F2F),
+                                        shape = if (isRec) RoundedCornerShape(2.dp) else CircleShape
+                                    )
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = when {
+                                    isSaving -> stringResource(R.string.btn_record_saving)
+                                    isRec -> stringResource(
+                                        R.string.btn_record_stop_fmt,
+                                        RecordingFormatUtils.formatDuration(recElapsedMs)
+                                    )
+                                    else -> stringResource(R.string.btn_record_start)
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = recFg
+                            )
+                        }
+                    }
+                }
                 if (!health.notificationsGranted) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     PermissionItemRow(
@@ -599,7 +707,8 @@ private fun SettingsTab(
         settings.calibration.autoDetectWeijian,
         settings.showOrbBadgesOnPath,
         settings.humanMode,
-        settings.showEmergencyStop
+        settings.showEmergencyStop,
+        settings.showFloatingRecordButton
     ).count { it }
 
     Column(
@@ -1146,6 +1255,51 @@ private fun SettingsTab(
                     subtitle = stringResource(R.string.mode_stop_sub),
                     checked = settings.showEmergencyStop,
                     onCheckedChange = { v -> onUpdateSettings { it.copy(showEmergencyStop = v) } }
+                )
+                if (CaptureRouter.isAccessibilityCaptureSupported()) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    val useA11yCap = CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.capture_mode_title),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            CompactChoicePill(
+                                label = stringResource(R.string.capture_mode_a11y),
+                                selected = useA11yCap,
+                                onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.ACCESSIBILITY) } },
+                                modifier = Modifier.weight(1.3f)
+                            )
+                            CompactChoicePill(
+                                label = stringResource(R.string.capture_mode_media),
+                                selected = !useA11yCap,
+                                onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.MEDIA_PROJECTION) } },
+                                modifier = Modifier.weight(0.9f)
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.capture_mode_sub),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SwitchSettingRow(
+                    title = stringResource(R.string.mode_floating_record_title),
+                    subtitle = stringResource(R.string.mode_floating_record_sub),
+                    checked = settings.showFloatingRecordButton,
+                    onCheckedChange = { v -> onUpdateSettings { it.copy(showFloatingRecordButton = v) } }
                 )
             }
         }

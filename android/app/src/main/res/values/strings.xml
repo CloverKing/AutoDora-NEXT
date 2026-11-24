@@ -454,7 +454,7 @@
     <string name="ov_result_btn">结果</string>
     <string name="ov_toast_need_solve">试跑确认已开启，请先点击计算生成路线</string>
     <string name="ov_toast_stopped">已急停中止</string>
-    <string name="ov_summary_fmt">%1$d×%2$d · 首%3$d/总%4$d连 · %5$d步 · %6$d毫秒</string>
+    <string name="ov_summary_fmt">%1$d×%2$d · 首%3$d/总%4$d连 · %5$d步 · ⚡%6$s秒 · 👆%7$s秒</string>
 
     <!-- v3 Unified Strategy Workbench & Auto Long-Press Enemy Scan -->
     <string name="preset_bar_load">加载 / 管理</string>
@@ -594,4 +594,28 @@
     <string name="shape_l">L形</string>
     <string name="shape_t">T形</string>
     <string name="shape_sq2x2">田字</string>
+
+    <!-- Dual Screen Capture Mode (Recorder-Safe Accessibility vs High-Speed Cast) -->
+    <string name="capture_mode_title">屏幕采集方式</string>
+    <string name="capture_mode_a11y">无障碍截屏（兼容录屏）</string>
+    <string name="capture_mode_a11y_short">无障碍截屏</string>
+    <string name="capture_mode_media">高速录屏采集</string>
+    <string name="capture_mode_sub">无障碍截屏不占用系统录屏，小米等机型可边用边录屏且免每次授权；高速录屏支持更快多帧连拍，并内置一键录屏保存到系统相册</string>
+    <string name="perm_capture_a11y_sub">当前为无障碍截屏（与系统录屏共存，开启无障碍即自动就绪）</string>
+    <string name="perm_capture_media_sub">高速录屏采集：系统弹窗请保持选择「整个屏幕」（会占用系统录屏）</string>
+    <string name="ov_toast_a11y_shot_need_regrant">无障碍截屏未生效，请在系统无障碍设置中关闭并重新开启本应用</string>
+    <string name="ov_toast_capture_need_a11y">请先开启「无障碍自动转珠」权限以启用无障碍截屏</string>
+    <string name="ov_toast_media_released">已切换为无障碍截屏并释放录屏通道，系统录屏现可正常使用</string>
+
+    <!-- Built-in Screen Recording (Fast Screen Cast mode) -->
+    <string name="btn_record_start">开始录屏（保存至相册）</string>
+    <string name="btn_record_stop_fmt">停止录屏 · %1$s</string>
+    <string name="btn_record_saving">正在保存至相册…</string>
+    <string name="toast_record_started">已开始录屏，停止后将自动保存至系统相册</string>
+    <string name="toast_record_saved_fmt">录屏已保存至系统相册：%1$s</string>
+    <string name="toast_record_failed_fmt">录屏保存失败：%1$s</string>
+    <string name="toast_record_need_perm">请先授予「屏幕采集权限」后再开始录屏</string>
+    <string name="ov_record_btn">录屏</string>
+    <string name="mode_floating_record_title">悬浮栏显示录屏按钮</string>
+    <string name="mode_floating_record_sub">仅在「高速录屏采集」模式下生效；关闭后主悬浮栏更紧凑，仍可在概览页启停录屏</string>
 </resources>

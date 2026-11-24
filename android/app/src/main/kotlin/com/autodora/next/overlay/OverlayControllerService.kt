@@ -37,12 +37,18 @@ import androidx.core.app.NotificationCompat
 import com.autodora.next.R
 import com.autodora.next.capture.AutoGridDetector
 import com.autodora.next.capture.BoardCalibration
+import com.autodora.next.capture.CaptureRouter
+import com.autodora.next.capture.RecordingSaveOutcome
 import com.autodora.next.capture.ScreenCaptureSession
+import com.autodora.next.capture.ScreenCapturer
+import com.autodora.next.capture.ScreenRecordingSession
+import com.autodora.next.capture.ScreenRecordingState
 import com.autodora.next.data.*
 import com.autodora.next.jni.NativeCancelToken
 import com.autodora.next.jni.NativeSolver
 import com.autodora.next.model.*
 import com.autodora.next.touch.HoldReplanTrigger
+import com.autodora.next.touch.PathInterpolator
 import com.autodora.next.touch.SwipeSpeedPreset
 import com.autodora.next.touch.TouchExecutionResult
 import com.autodora.next.touch.TouchExecutor
@@ -113,7 +119,9 @@ class OverlayControllerService : Service() {
     private lateinit var resultIconBtn: ImageView
     private lateinit var calibIconBtn: ImageView
     private lateinit var tuneIconBtn: ImageView
+    private lateinit var recordIconBtn: ImageView
     private lateinit var closeIconBtn: ImageView
+    private var currentRecordingState: ScreenRecordingState = ScreenRecordingState.Idle
 
     // Active wave shields strip
     private lateinit var activeShieldScroll: HorizontalScrollView
@@ -186,14 +194,28 @@ class OverlayControllerService : Service() {
                 val presetSwitched = settings.activePresetId != latest.activePresetId
                 val previewModeChanged = settings.testModeOnlyDraw != latest.testModeOnlyDraw
                 val emergencyBtnChanged = settings.showEmergencyStop != latest.showEmergencyStop
+                val recordBtnChanged = settings.showFloatingRecordButton != latest.showFloatingRecordButton
                 val solverSettingChanged = settings.allowDiagonalMove != latest.allowDiagonalMove ||
                     settings.maxSteps != latest.maxSteps ||
                     settings.beamWidth != latest.beamWidth
                 val verticalChanged = settings.floatingBarVertical != latest.floatingBarVertical
                 val dockChanged = settings.floatingBarDockRight != latest.floatingBarDockRight
+                val captureModeChanged = settings.captureMode != latest.captureMode
+                val swipeTimingChanged = settings.stepDurationMs != latest.stepDurationMs ||
+                    settings.humanMode != latest.humanMode
                 settings = latest
+                if (CaptureRouter.effectiveMode(latest.captureMode) == CaptureMode.ACCESSIBILITY &&
+                    ScreenCaptureSession.capturer.value != null
+                ) {
+                    CaptureRouter.releaseMediaProjectionIfRunning(this@OverlayControllerService)
+                    if (captureModeChanged && !isFirstEmission) {
+                        toast(lctx.getString(R.string.ov_toast_media_released))
+                    }
+                }
                 if (presetSwitched || previewModeChanged || solverSettingChanged) {
                     invalidateLastSolution()
+                } else if (swipeTimingChanged && lastSolveOutput != null) {
+                    updateSummaryStrip()
                 }
                 stopIconBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
                 applyOverlayTheme()
@@ -205,7 +227,7 @@ class OverlayControllerService : Service() {
                     dockChanged -> {
                         snapToDockEdge(latest.floatingBarDockRight, animate = true)
                     }
-                    verticalChanged || (latest.floatingBarDockRight && (previewModeChanged || emergencyBtnChanged)) -> {
+                    verticalChanged || (latest.floatingBarDockRight && (previewModeChanged || emergencyBtnChanged || captureModeChanged || recordBtnChanged)) -> {
                         snapToDockEdge(latest.floatingBarDockRight, animate = false)
                     }
                 }
@@ -214,6 +236,12 @@ class OverlayControllerService : Service() {
                     currentGeometry = latest.calibration.toBase6x5Geometry(screenW, screenH)
                     refreshPathCanvas()
                 }
+            }
+        }
+        serviceScope.launch {
+            ScreenRecordingSession.state.collectLatest { st ->
+                currentRecordingState = st
+                refreshMainToggleChips()
             }
         }
         serviceScope.launch {
@@ -262,9 +290,23 @@ class OverlayControllerService : Service() {
         triggerEmergencyStop()
         serviceScope.cancel()
         removeOverlayViews()
+        // Always release MediaProjection when stopping the floating assistant so system Screen Recorder
+        // (e.g., HyperOS / Xiaomi 15) is immediately unlocked even if the user chose Fast Screen Cast mode!
+        CaptureRouter.releaseMediaProjectionIfRunning(this)
         OverlayServiceState.setRunning(false)
         super.onDestroy()
     }
+
+    private fun activeCapturer(): ScreenCapturer? =
+        CaptureRouter.resolveActiveCapturer(this, settings.captureMode)
+
+    private fun captureNotReadyMessage(): String = lctx.getString(
+        if (CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY) {
+            R.string.ov_toast_capture_need_a11y
+        } else {
+            R.string.toast_capture_denied
+        }
+    )
 
     private fun resolvePhysicalScreenSize() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -558,6 +600,11 @@ class OverlayControllerService : Service() {
         toolbarButtons.add(tuneIconBtn)
         toolbarContainer.addView(tuneIconBtn)
 
+        // Built-in MP4 Screen Recorder toggle (visible ONLY in Fast Screen Cast / MediaProjection mode!)
+        recordIconBtn = makeIconBtn(R.drawable.ic_ov_record) { toggleBuiltInRecording() }
+        toolbarButtons.add(recordIconBtn)
+        toolbarContainer.addView(recordIconBtn)
+
         closeIconBtn = makeIconBtn(R.drawable.ic_ov_close, marginEndDp = 0) { stopSelf() }
         toolbarButtons.add(closeIconBtn)
         toolbarContainer.addView(closeIconBtn)
@@ -610,10 +657,11 @@ class OverlayControllerService : Service() {
         }
         summaryTitle = TextView(this).apply {
             textSize = 10f
-            setSingleLine(true)
+            setSingleLine(false)
+            maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
             typeface = Typeface.DEFAULT_BOLD
-            maxWidth = (screenW * 0.72f).toInt()
+            maxWidth = (screenW * 0.76f).toInt()
             setOnClickListener {
                 summaryPillsExpanded = !summaryPillsExpanded
                 shieldStatusScroll.visibility = if (summaryPillsExpanded && shieldStatusRow.childCount > 0) View.VISIBLE else View.GONE
@@ -930,9 +978,9 @@ class OverlayControllerService : Service() {
             return
         }
 
-        val capturer = ScreenCaptureSession.capturer.value
+        val capturer = activeCapturer()
         if (capturer == null || !capturer.isReady.value) {
-            toast(lctx.getString(R.string.toast_capture_denied))
+            toast(captureNotReadyMessage())
             return
         }
 
@@ -962,27 +1010,36 @@ class OverlayControllerService : Service() {
             // Do NOT proactively call tryRecoverSurface() on static screens (lastFrameAgeMs > 2s is normal on LTPO
             // HyperOS displays whenever screen pixels are still!). Only wake SurfaceFlinger or recover if capture fails.
             var frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
-            if (frames.isEmpty()) {
+            if (frames.isEmpty() && !capturer.lastPermissionError) {
                 // First gently nudge SurfaceFlinger compositor without touching VirtualDisplay surface
                 controlRoot.postInvalidate()
                 delay(120)
                 frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
             }
-            if (frames.isEmpty()) {
+            if (frames.isEmpty() && !capturer.isAccessibilityBased) {
                 if (capturer.tryRecoverSurface()) {
                     frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
                 }
             }
             if (frames.isEmpty()) {
-                // OS silently stalled/revoked this VirtualDisplay without firing onStop(): clear the dead session
-                // immediately so Dashboard truthfully shows "授权" instead of falsely stuck at "3/3 已就绪"!
-                val stillClaimedReady = capturer.isReady.value
-                ScreenCaptureSession.clearIfCurrent(capturer)
-                com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
+                val msgRes = if (capturer.isAccessibilityBased) {
+                    if (capturer.lastPermissionError) {
+                        R.string.ov_toast_a11y_shot_need_regrant
+                    } else {
+                        R.string.ov_toast_capture_need_a11y
+                    }
+                } else {
+                    // OS silently stalled/revoked this VirtualDisplay without firing onStop(): clear the dead session
+                    // immediately so Dashboard truthfully shows "授权" instead of falsely stuck at "3/3 已就绪"!
+                    val stillClaimedReady = capturer.isReady.value
+                    ScreenCaptureSession.clearIfCurrent(capturer)
+                    com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
+                    if (stillClaimedReady) R.string.ov_toast_capture_stalled else R.string.toast_capture_denied
+                }
                 pathOverlayView.visibility = View.VISIBLE
                 setPhase(OverlayPhase.IDLE)
                 refreshPathCanvas()
-                toast(lctx.getString(if (stillClaimedReady) R.string.ov_toast_capture_stalled else R.string.toast_capture_denied))
+                toast(lctx.getString(msgRes))
                 return@launch
             }
 
@@ -992,7 +1049,7 @@ class OverlayControllerService : Service() {
                 var firstBlank = withContext(Dispatchers.Default) {
                     com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(frames.first())
                 }
-                if (firstBlank && capturer.tryRecoverSurface()) {
+                if (firstBlank && !capturer.isAccessibilityBased && capturer.tryRecoverSurface()) {
                     frames.forEach { if (!it.isRecycled) it.recycle() }
                     frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
                     firstBlank = frames.isEmpty() || withContext(Dispatchers.Default) {
@@ -1000,10 +1057,12 @@ class OverlayControllerService : Service() {
                     }
                 }
                 if (firstBlank) {
-                    // Persistent black frame even after recovery means HyperOS/OS suspended or another recorder
-                    // took over the projection slot — clear the dead session so Dashboard truthfully asks to re-grant!
-                    ScreenCaptureSession.clearIfCurrent(capturer)
-                    com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
+                    if (!capturer.isAccessibilityBased) {
+                        // Persistent black frame even after recovery means HyperOS/OS suspended or another recorder
+                        // took over the projection slot — clear the dead session so Dashboard truthfully asks to re-grant!
+                        ScreenCaptureSession.clearIfCurrent(capturer)
+                        com.autodora.next.capture.MediaProjectionForegroundService.stop(this@OverlayControllerService)
+                    }
                     flashMemoryTracker.clearLock()
                     usedMemorizedSnapshot = false
                     lastRecognition = null
@@ -1258,9 +1317,9 @@ class OverlayControllerService : Service() {
     // ==================== Ultra-Fast No-Root Hold-and-Replan Execution (按住重算 / 全屏问号珠) ====================
     private fun startHoldAndReplanExecution(forceNudge: Boolean = false) {
         if (currentPhase != OverlayPhase.IDLE) return
-        val capturer = ScreenCaptureSession.capturer.value
+        val capturer = activeCapturer()
         if (capturer == null || !capturer.isReady.value) {
-            toast(lctx.getString(R.string.toast_capture_denied))
+            toast(captureNotReadyMessage())
             return
         }
         if (!touchExecutor.isAvailable.value) {
@@ -1368,7 +1427,12 @@ class OverlayControllerService : Service() {
                 holdSolveTimeMs <= 1000L -> 52
                 else -> 80
             }
-            val maxRevealWaitMs = settings.holdReplanDelayMs.coerceIn(240L, 900L)
+            val baseRevealWaitMs = settings.holdReplanDelayMs.coerceIn(240L, 900L)
+            val maxRevealWaitMs = if (capturer.isAccessibilityBased) {
+                maxOf(baseRevealWaitMs, 760L)
+            } else {
+                baseRevealWaitMs
+            }
             val maxHoldWaitMs = maxRevealWaitMs + holdSolveTimeMs + 1200L
             val bandTop = (geom.topPx - geom.cellHeight * 0.15f).toInt().coerceAtLeast(0)
             val bandBot = (geom.bottomPx + geom.cellHeight * 0.15f).toInt().coerceAtMost(screenH)
@@ -1698,10 +1762,10 @@ class OverlayControllerService : Service() {
      */
     private fun scanLiveBoardForEditor(clearSavedFirst: Boolean, explicitTrigger: Boolean) {
         if (currentPhase != OverlayPhase.IDLE) return
-        val capturer = ScreenCaptureSession.capturer.value
+        val capturer = activeCapturer()
         if (capturer == null || !capturer.isReady.value) {
             if (explicitTrigger) {
-                toast(lctx.getString(R.string.toast_capture_denied))
+                toast(captureNotReadyMessage())
             }
             return
         }
@@ -1717,20 +1781,27 @@ class OverlayControllerService : Service() {
             controlRoot.postInvalidate()
             try {
                 delay(95L)
-                val scanCount = minOf(settings.multiFrameCount, 3).coerceAtLeast(2)
+                val scanCount = if (capturer.isAccessibilityBased) 1 else minOf(settings.multiFrameCount, 3).coerceAtLeast(2)
                 var captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
-                if (captured.isEmpty()) {
+                if (captured.isEmpty() && !capturer.lastPermissionError) {
                     controlRoot.postInvalidate()
                     delay(120L)
                     captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
                 }
-                if (captured.isEmpty() && capturer.tryRecoverSurface()) {
+                if (captured.isEmpty() && !capturer.isAccessibilityBased && capturer.tryRecoverSurface()) {
                     captured = capturer.captureMultiFrames(count = scanCount, intervalMs = 45L)
                 }
                 frames.addAll(captured)
                 if (frames.isEmpty()) {
                     if (explicitTrigger) {
-                        toast(lctx.getString(R.string.ov_toast_capture_stalled))
+                        val msgRes = if (capturer.isAccessibilityBased && capturer.lastPermissionError) {
+                            R.string.ov_toast_a11y_shot_need_regrant
+                        } else if (capturer.isAccessibilityBased) {
+                            R.string.ov_toast_capture_need_a11y
+                        } else {
+                            R.string.ov_toast_capture_stalled
+                        }
+                        toast(lctx.getString(msgRes))
                     }
                     return@launch
                 }
@@ -1863,9 +1934,9 @@ class OverlayControllerService : Service() {
     }
 
     private fun runAutoCalibration() {
-        val capturer = ScreenCaptureSession.capturer.value
+        val capturer = activeCapturer()
         if (capturer == null || !capturer.isReady.value) {
-            toast("自动校准需要先授权屏幕采集")
+            toast(captureNotReadyMessage())
             return
         }
         serviceScope.launch {
@@ -1881,6 +1952,9 @@ class OverlayControllerService : Service() {
             val bmp = capturer.captureSingleFrame() ?: run {
                 pathOverlayView.visibility = View.VISIBLE
                 refreshPathCanvas()
+                if (capturer.isAccessibilityBased && capturer.lastPermissionError) {
+                    toast(lctx.getString(R.string.ov_toast_a11y_shot_need_regrant))
+                }
                 return@launch
             }
             try {
@@ -1931,22 +2005,30 @@ class OverlayControllerService : Service() {
             var consecutiveMassQuestionTicks = 0
             var consecutiveBlankTicks = 0
             while (isActive) {
-                delay(340L)
-                if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) continue
-                val capturer = ScreenCaptureSession.capturer.value ?: continue
+                val loopDelayMs = if (CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY) {
+                    900L
+                } else {
+                    340L
+                }
+                delay(loopDelayMs)
+                if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) {
+                    consecutiveNonBattleTicks = 0
+                    continue
+                }
+                val capturer = activeCapturer() ?: continue
                 if (!capturer.isReady.value) continue
 
                 // Ignore stale frames (> 4s old) in background watcher so a stalled/frozen VirtualDisplay
                 // never feeds an old previous-wave board into FlashRevealMemoryTracker!
                 if (capturer.lastFrameAgeMs > 4_000L) continue
-                val bmp = capturer.captureSingleFrame() ?: continue
+                val bmp = capturer.captureBackgroundFrame() ?: continue
                 try {
                     val isBlank = withContext(Dispatchers.Default) {
                         com.autodora.next.capture.MediaProjectionCapturer.isBlankOrBlackFrame(bmp)
                     }
                     if (isBlank) {
                         consecutiveBlankTicks++
-                        if (consecutiveBlankTicks == 4) {
+                        if (consecutiveBlankTicks == 4 && !capturer.isAccessibilityBased) {
                             capturer.tryRecoverSurface()
                         }
                         continue
@@ -1954,19 +2036,29 @@ class OverlayControllerService : Service() {
                         consecutiveBlankTicks = 0
                     }
 
+                    val hasLockedMemoryOverlay = flashMemoryTracker.currentLockedSnapshot() != null || usedMemorizedSnapshot
                     val (geom, rec, watchStatus) = withContext(Dispatchers.Default) {
                         val frame = DirectBitmapVisionFrame(bmp)
                         if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(frame)) {
                             Triple(null, null, 1) // 1 = dark modal covering battle board
                         } else {
-                            val g = AutoGridDetector.detect(bmp, settings.calibration)
-                            // Strictly check the horizontal HP bar ABOVE the board (never polluted by our own
-                            // translucent orb overlay inside [topPx..bottomPx]!). Without this check, our own
-                            // translucent memorized circles can fool isBattleBoardPresent's corner/radial fallback
-                            // on non-battle Event Banner screens in a self-reinforcing feedback loop!
-                            val hasHp = AutoGridDetector.hasHpBarBarrier(bmp, g)
+                            var g = AutoGridDetector.detect(bmp, settings.calibration)
+                            // When a translucent full-board memorized '?' overlay is painted on top of the grid,
+                            // enforce the HP bar ABOVE the board to prevent our own 30 colored memory circles
+                            // from fooling isBattleBoardPresent's orb-grid fallback on Event Banner screens.
+                            // On live battles without memory circles, match startCaptureAndSolve()'s exact
+                            // isBattleBoardPresent() check so a valid calculated path is NEVER wiped by unusual HP bars!
+                            var hasHp = AutoGridDetector.hasHpBarBarrier(bmp, g)
                             if (!hasHp && !g.isWeijianExpanded) {
-                                Triple(null, null, 2) // 2 = non-battle screen or left battle (breaks overlay self-feedback!)
+                                val pFrame = com.autodora.next.capture.BitmapPixelFrame(bmp)
+                                val autoG = AutoGridDetector.autoCalibrateFromRealScreen(pFrame)
+                                if (autoG != null && AutoGridDetector.isBattleBoardPresent(pFrame, autoG)) {
+                                    g = autoG
+                                    hasHp = AutoGridDetector.hasHpBarBarrier(bmp, autoG)
+                                }
+                            }
+                            if (hasLockedMemoryOverlay && !hasHp && !g.isWeijianExpanded) {
+                                Triple(null, null, 2) // 2 = non-battle screen or left battle (breaks memory-circle self-feedback!)
                             } else if (!AutoGridDetector.isBattleBoardPresent(bmp, g)) {
                                 Triple(null, null, 2) // 2 = non-battle screen (Home Map, Event Banners, Menus)
                             } else {
@@ -2199,7 +2291,7 @@ class OverlayControllerService : Service() {
         summaryTitle.maxWidth = if (vertical) {
             (sideMaxW - dp(92)).coerceAtLeast(dp(136))
         } else {
-            (screenW * 0.72f).toInt()
+            (screenW * 0.76f).toInt()
         }
         (summaryStrip.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.topMargin = if (vertical) dp(2) else dp(3)
@@ -2291,7 +2383,89 @@ class OverlayControllerService : Service() {
             styleIconBtn(tuneIconBtn, bgColor = p.chipOffBg, iconTint = p.chipOffText, strokeColor = p.chipOffStroke)
         }
 
+        // Built-in MP4 Screen Recorder toggle (ONLY visible in Fast Screen Cast mode when enabled in Settings!)
+        if (::recordIconBtn.isInitialized) {
+            val showRec = CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.MEDIA_PROJECTION &&
+                settings.showFloatingRecordButton
+            recordIconBtn.visibility = if (showRec) View.VISIBLE else View.GONE
+            if (showRec) {
+                when (currentRecordingState) {
+                    is ScreenRecordingState.Recording -> {
+                        recordIconBtn.setImageResource(R.drawable.ic_ov_stop)
+                        recordIconBtn.isEnabled = true
+                        recordIconBtn.isClickable = true
+                        styleIconBtn(
+                            recordIconBtn,
+                            bgColor = Color.rgb(211, 47, 47),
+                            iconTint = Color.WHITE,
+                            strokeColor = Color.WHITE,
+                            enabled = true
+                        )
+                    }
+                    is ScreenRecordingState.Saving -> {
+                        recordIconBtn.setImageResource(R.drawable.ic_ov_record)
+                        recordIconBtn.isEnabled = false
+                        recordIconBtn.isClickable = false
+                        styleIconBtn(
+                            recordIconBtn,
+                            bgColor = p.chipOffBg,
+                            iconTint = p.onSurfaceVariant,
+                            strokeColor = p.chipOffStroke,
+                            enabled = false
+                        )
+                    }
+                    is ScreenRecordingState.Idle -> {
+                        recordIconBtn.setImageResource(R.drawable.ic_ov_record)
+                        recordIconBtn.isEnabled = true
+                        recordIconBtn.isClickable = true
+                        val recBg = if (p.isDark) Color.rgb(66, 28, 34) else Color.rgb(255, 235, 238)
+                        val recFg = if (p.isDark) Color.rgb(255, 118, 124) else Color.rgb(211, 47, 47)
+                        val recStroke = if (p.isDark) Color.rgb(156, 56, 66) else Color.rgb(229, 115, 115)
+                        styleIconBtn(
+                            recordIconBtn,
+                            bgColor = recBg,
+                            iconTint = recFg,
+                            strokeColor = recStroke,
+                            enabled = true
+                        )
+                    }
+                }
+            }
+        }
+
         styleIconBtn(closeIconBtn, bgColor = p.chipOffBg, iconTint = p.onSurfaceVariant, strokeColor = p.chipOffStroke)
+    }
+
+    private fun toggleBuiltInRecording() {
+        when (ScreenRecordingSession.state.value) {
+            is ScreenRecordingState.Saving -> return
+            is ScreenRecordingState.Recording -> {
+                serviceScope.launch {
+                    when (val outcome = ScreenRecordingSession.stopAndSave()) {
+                        is RecordingSaveOutcome.Saved -> {
+                            toast(lctx.getString(R.string.toast_record_saved_fmt, outcome.displayName))
+                        }
+                        is RecordingSaveOutcome.Failed -> {
+                            toast(lctx.getString(R.string.toast_record_failed_fmt, outcome.reason))
+                        }
+                        null -> Unit
+                    }
+                }
+            }
+            is ScreenRecordingState.Idle -> {
+                val cap = ScreenCaptureSession.capturer.value
+                if (cap == null || !cap.isReady.value) {
+                    toast(lctx.getString(R.string.toast_record_need_perm))
+                    return
+                }
+                if (ScreenRecordingSession.start(this, cap)) {
+                    toast(lctx.getString(R.string.toast_record_started))
+                } else {
+                    val reason = (ScreenRecordingSession.lastOutcome.value as? RecordingSaveOutcome.Failed)?.reason ?: "unknown"
+                    toast(lctx.getString(R.string.toast_record_failed_fmt, reason))
+                }
+            }
+        }
     }
 
     private fun refreshActiveShieldStrip() {
@@ -2412,6 +2586,9 @@ class OverlayControllerService : Service() {
             sol.allHardConstraintsMet && !lastPuzzleMaskMissing && !lastTrafficLightMissing -> "✓"
             else -> "!"
         }
+        val solveSecText = String.format(java.util.Locale.US, "%.2f", out.elapsedMs / 1000.0)
+        val estSwipeMs = PathInterpolator.estimateSwipeDurationMs(sol, geom, settings.toSwipeConfig())
+        val swipeSecText = String.format(java.util.Locale.US, "%.2f", estSwipeMs / 1000.0)
         val coreSummary = lctx.getString(
             R.string.ov_summary_fmt,
             geom.cols,
@@ -2419,7 +2596,8 @@ class OverlayControllerService : Service() {
             sol.firstWaveCombo,
             sol.totalCombo,
             sol.stepCount,
-            out.elapsedMs.toInt()
+            solveSecText,
+            swipeSecText
         )
         val extra = buildString {
             append(" ").append(shieldBadge)

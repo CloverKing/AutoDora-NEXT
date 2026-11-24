@@ -1469,6 +1469,50 @@ class OverlayTuningDrawerController(
 
             swBody.addView(makeSubDivider(p))
             populateHoldAndInvertControls(swBody, p)
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                swBody.addView(makeSubDivider(p))
+                swBody.addView(makeSubLabel(s(R.string.capture_mode_title), p))
+                val capRow = hRow(bottomMarginDp = 0)
+                capRow.addView(
+                    makeToggle(
+                        s(R.string.capture_mode_a11y),
+                        settings.captureMode == CaptureMode.ACCESSIBILITY,
+                        p,
+                        weight = 1.25f,
+                        marginEndDp = 4
+                    ) {
+                        onUpdateSettings { it.copy(captureMode = CaptureMode.ACCESSIBILITY) }
+                    }
+                )
+                capRow.addView(
+                    makeToggle(
+                        s(R.string.capture_mode_media),
+                        settings.captureMode == CaptureMode.MEDIA_PROJECTION,
+                        p,
+                        weight = 0.85f,
+                        marginEndDp = 0
+                    ) {
+                        onUpdateSettings { it.copy(captureMode = CaptureMode.MEDIA_PROJECTION) }
+                    }
+                )
+                swBody.addView(capRow)
+            }
+            val recToggleRow = hRow(bottomMarginDp = 0).apply {
+                (layoutParams as LinearLayout.LayoutParams).topMargin = dp(4)
+            }
+            recToggleRow.addView(
+                makeToggle(
+                    s(R.string.mode_floating_record_title),
+                    settings.showFloatingRecordButton,
+                    p,
+                    weight = 1f,
+                    marginEndDp = 0
+                ) {
+                    onUpdateSettings { it.copy(showFloatingRecordButton = !it.showFloatingRecordButton) }
+                }
+            )
+            swBody.addView(recToggleRow)
         }
 
         // Card 3 (Purple): Appearance, Theme, Language & Floating Bar Layout/Dock (matches Launch App Settings Purple card!)
