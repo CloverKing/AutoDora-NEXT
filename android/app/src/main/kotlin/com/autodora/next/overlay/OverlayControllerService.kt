@@ -48,6 +48,7 @@ import com.autodora.next.jni.NativeCancelToken
 import com.autodora.next.jni.NativeSolver
 import com.autodora.next.model.*
 import com.autodora.next.touch.HoldReplanTrigger
+import com.autodora.next.touch.PathInterpolator
 import com.autodora.next.touch.SwipeSpeedPreset
 import com.autodora.next.touch.TouchExecutionResult
 import com.autodora.next.touch.TouchExecutor
@@ -199,6 +200,8 @@ class OverlayControllerService : Service() {
                 val verticalChanged = settings.floatingBarVertical != latest.floatingBarVertical
                 val dockChanged = settings.floatingBarDockRight != latest.floatingBarDockRight
                 val captureModeChanged = settings.captureMode != latest.captureMode
+                val swipeTimingChanged = settings.stepDurationMs != latest.stepDurationMs ||
+                    settings.humanMode != latest.humanMode
                 settings = latest
                 if (CaptureRouter.effectiveMode(latest.captureMode) == CaptureMode.ACCESSIBILITY &&
                     ScreenCaptureSession.capturer.value != null
@@ -210,6 +213,8 @@ class OverlayControllerService : Service() {
                 }
                 if (presetSwitched || previewModeChanged || solverSettingChanged) {
                     invalidateLastSolution()
+                } else if (swipeTimingChanged && lastSolveOutput != null) {
+                    updateSummaryStrip()
                 }
                 stopIconBtn.visibility = if (latest.showEmergencyStop) View.VISIBLE else View.GONE
                 applyOverlayTheme()
@@ -651,10 +656,11 @@ class OverlayControllerService : Service() {
         }
         summaryTitle = TextView(this).apply {
             textSize = 10f
-            setSingleLine(true)
+            setSingleLine(false)
+            maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
             typeface = Typeface.DEFAULT_BOLD
-            maxWidth = (screenW * 0.72f).toInt()
+            maxWidth = (screenW * 0.76f).toInt()
             setOnClickListener {
                 summaryPillsExpanded = !summaryPillsExpanded
                 shieldStatusScroll.visibility = if (summaryPillsExpanded && shieldStatusRow.childCount > 0) View.VISIBLE else View.GONE
@@ -2004,7 +2010,10 @@ class OverlayControllerService : Service() {
                     340L
                 }
                 delay(loopDelayMs)
-                if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) continue
+                if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) {
+                    consecutiveNonBattleTicks = 0
+                    continue
+                }
                 val capturer = activeCapturer() ?: continue
                 if (!capturer.isReady.value) continue
 
@@ -2031,12 +2040,21 @@ class OverlayControllerService : Service() {
                         if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(frame)) {
                             Triple(null, null, 1) // 1 = dark modal covering battle board
                         } else {
-                            val g = AutoGridDetector.detect(bmp, settings.calibration)
+                            var g = AutoGridDetector.detect(bmp, settings.calibration)
                             // Strictly check the horizontal HP bar ABOVE the board (never polluted by our own
                             // translucent orb overlay inside [topPx..bottomPx]!). Without this check, our own
                             // translucent memorized circles can fool isBattleBoardPresent's corner/radial fallback
                             // on non-battle Event Banner screens in a self-reinforcing feedback loop!
-                            val hasHp = AutoGridDetector.hasHpBarBarrier(bmp, g)
+                            var hasHp = AutoGridDetector.hasHpBarBarrier(bmp, g)
+                            if (!hasHp && !g.isWeijianExpanded) {
+                                // Match startCaptureAndSolve()'s auto-calibration fallback when calibration drifted slightly
+                                val pFrame = com.autodora.next.capture.BitmapPixelFrame(bmp)
+                                val autoG = AutoGridDetector.autoCalibrateFromRealScreen(pFrame)
+                                if (autoG != null && AutoGridDetector.hasHpBarBarrier(bmp, autoG)) {
+                                    g = autoG
+                                    hasHp = true
+                                }
+                            }
                             if (!hasHp && !g.isWeijianExpanded) {
                                 Triple(null, null, 2) // 2 = non-battle screen or left battle (breaks overlay self-feedback!)
                             } else if (!AutoGridDetector.isBattleBoardPresent(bmp, g)) {
@@ -2271,7 +2289,7 @@ class OverlayControllerService : Service() {
         summaryTitle.maxWidth = if (vertical) {
             (sideMaxW - dp(92)).coerceAtLeast(dp(136))
         } else {
-            (screenW * 0.72f).toInt()
+            (screenW * 0.76f).toInt()
         }
         (summaryStrip.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.topMargin = if (vertical) dp(2) else dp(3)
@@ -2565,6 +2583,9 @@ class OverlayControllerService : Service() {
             sol.allHardConstraintsMet && !lastPuzzleMaskMissing && !lastTrafficLightMissing -> "✓"
             else -> "!"
         }
+        val solveSecText = String.format(java.util.Locale.US, "%.2f", out.elapsedMs / 1000.0)
+        val estSwipeMs = PathInterpolator.estimateSwipeDurationMs(sol, geom, settings.toSwipeConfig())
+        val swipeSecText = String.format(java.util.Locale.US, "%.2f", estSwipeMs / 1000.0)
         val coreSummary = lctx.getString(
             R.string.ov_summary_fmt,
             geom.cols,
@@ -2572,7 +2593,8 @@ class OverlayControllerService : Service() {
             sol.firstWaveCombo,
             sol.totalCombo,
             sol.stepCount,
-            out.elapsedMs.toInt()
+            solveSecText,
+            swipeSecText
         )
         val extra = buildString {
             append(" ").append(shieldBadge)

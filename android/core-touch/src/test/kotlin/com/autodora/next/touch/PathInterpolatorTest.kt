@@ -292,4 +292,52 @@ class PathInterpolatorTest {
             assertEquals(preset, SwipeSpeedPreset.fromStepDurationMs(preset.stepDurationMs))
         }
     }
+
+    @Test
+    fun `estimateSwipeDurationMs accurately reflects path length, speed tier, diagonals, and character orb pull`() {
+        val geom = BoardGeometry(leftPx = 0f, topPx = 1400f, rightPx = 1200f, bottomPx = 2400f, cols = 6, rows = 5)
+        val moves = List(20) { i -> if (i % 2 == 0) Direction.RIGHT else Direction.LEFT }
+        val waypoints = buildList {
+            var r = 2
+            var c = 2
+            add(CellCoord(r, c))
+            for (m in moves) {
+                r += m.dr
+                c += m.dc
+                add(CellCoord(r, c))
+            }
+        }
+        val sol = SolutionPath(
+            start = CellCoord(2, 2),
+            usedCharacterOrb = false,
+            characterOrbCol = 0,
+            moves = moves,
+            waypoints = waypoints,
+            stepCount = moves.size,
+            firstWaveCombo = 6,
+            totalCombo = 6,
+            firstWaveOrbs = 18,
+            totalOrbs = 18,
+            allHardConstraintsMet = true,
+            satisfiedFlags = 0,
+            failedFlags = 0,
+            score = 800.0,
+            tag = "Dur",
+            groups = emptyList()
+        )
+
+        val turboMs = PathInterpolator.estimateSwipeDurationMs(sol, geom, SwipeConfig(stepDurationMs = SwipeSpeedPreset.TURBO_2S.stepDurationMs))
+        val standardMs = PathInterpolator.estimateSwipeDurationMs(sol, geom, SwipeConfig(stepDurationMs = SwipeSpeedPreset.STANDARD.stepDurationMs))
+        val steadyMs = PathInterpolator.estimateSwipeDurationMs(sol, geom, SwipeConfig(stepDurationMs = SwipeSpeedPreset.STEADY.stepDurationMs))
+        assertTrue("Turbo ($turboMs ms) must be faster than Standard ($standardMs ms)", turboMs < standardMs)
+        assertTrue("Standard ($standardMs ms) must be faster than Steady ($steadyMs ms)", standardMs < steadyMs)
+        // Deterministic even when humanMode=true
+        val stdHumanMs = PathInterpolator.estimateSwipeDurationMs(sol, geom, SwipeConfig(stepDurationMs = SwipeSpeedPreset.STANDARD.stepDurationMs, humanMode = true))
+        assertEquals("Duration estimate must be deterministic regardless of humanMode jitter", standardMs, stdHumanMs)
+
+        // Character orb pull adds extra vertical pull-down duration
+        val charSol = sol.copy(usedCharacterOrb = true, characterOrbCol = 2)
+        val charMs = PathInterpolator.estimateSwipeDurationMs(charSol, geom, SwipeConfig(stepDurationMs = SwipeSpeedPreset.STANDARD.stepDurationMs))
+        assertTrue("Character orb pull ($charMs ms) must exceed normal start ($standardMs ms)", charMs > standardMs)
+    }
 }

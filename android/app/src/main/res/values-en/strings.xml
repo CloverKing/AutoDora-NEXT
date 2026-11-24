@@ -454,7 +454,7 @@
     <string name="ov_result_btn">Result</string>
     <string name="ov_toast_need_solve">Preview mode is ON: tap Solve first</string>
     <string name="ov_toast_stopped">Stopped</string>
-    <string name="ov_summary_fmt">%1$d×%2$d · 1st:%3$d/Tot:%4$dC · %5$d moves · %6$dms</string>
+    <string name="ov_summary_fmt">%1$d×%2$d · 1st:%3$d/%4$dC · %5$dst · ⚡%6$ss · 👆%7$ss</string>
 
     <!-- v3 Unified Strategy Workbench & Auto Long-Press Enemy Scan -->
     <string name="preset_bar_load">Load / Manage</string>

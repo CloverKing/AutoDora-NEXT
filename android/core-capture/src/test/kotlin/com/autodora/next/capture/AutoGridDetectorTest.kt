@@ -433,4 +433,65 @@ class AutoGridDetectorTest {
             }
         }
     }
+
+    @Test
+    fun `10-percent low-HP bar with glowing red right-side digits passes hasHpBarBarrier`() {
+        val frame = SyntheticFrame(width = 576, height = 1280)
+        val calib = BoardCalibration()
+        val base = calib.toBase6x5Geometry(frame.width, frame.height)
+        val cell = base.cellWidth.toInt()
+        frame.drawOrbGrid(0, base.topPx.toInt(), cell, 6, 5)
+
+        // Simulate 10% Low-HP player bar ("51709/517091"):
+        // x in [8%..19%] = red fill, x in [19%..62%] = dark empty slot, x in [62%..92%] = dark slot + glowing red danger digits!
+        val hpTop = (base.topPx - cell * 0.22f).toInt()
+        val hpBot = (base.topPx - cell * 0.04f).toInt()
+        for (y in hpTop..hpBot) {
+            for (x in (frame.width * 0.08f).toInt()..(frame.width * 0.92f).toInt()) {
+                val frac = x.toFloat() / frame.width
+                frame.pixels[y * frame.width + x] = when {
+                    frac <= 0.19f -> 0xFFD83430.toInt() // 10% red HP fill
+                    frac <= 0.62f -> 0xFF181616.toInt() // Empty dark charcoal HP track
+                    (x / 3) % 2 == 0 -> 0xFFE23834.toInt() // Glowing red danger digits "51709/517091"
+                    else -> 0xFF1E1A1A.toInt()
+                }
+            }
+        }
+        assertTrue(
+            "10% low-HP bar with glowing red digits on right must PASS hasHpBarBarrier (prevents 1s path disappearance)",
+            AutoGridDetector.hasHpBarBarrier(frame, base.leftPx, base.rightPx, base.topPx, base.cellHeight)
+        )
+        assertTrue(
+            "Live 10% low-HP battle board must pass isBattleBoardPresent",
+            AutoGridDetector.isBattleBoardPresent(frame, base)
+        )
+    }
+
+    @Test
+    fun `pitch-black enemy skill popup with peeking left HP heart fails isBattleBoardPresent`() {
+        val frame = SyntheticFrame(width = 576, height = 1280)
+        val calib = BoardCalibration()
+        val base = calib.toBase6x5Geometry(frame.width, frame.height)
+        val cell = base.cellWidth.toInt()
+
+        // Fill board with pitch-black enemy skill detail modal (white text flecks, zero orbs)
+        for (y in (base.topPx - cell * 0.30f).toInt() until base.bottomPx.toInt()) {
+            for (x in 0 until frame.width) {
+                frame.pixels[y * frame.width + x] = 0xFF141416.toInt()
+            }
+        }
+        // Left red HP heart medallion peeking out at x in [2%..8%]
+        val hpTop = (base.topPx - cell * 0.22f).toInt()
+        val hpBot = (base.topPx - cell * 0.04f).toInt()
+        for (y in hpTop..hpBot) {
+            for (x in (frame.width * 0.02f).toInt()..(frame.width * 0.085f).toInt()) {
+                frame.pixels[y * frame.width + x] = 0xFFD93832.toInt()
+            }
+        }
+
+        assertFalse(
+            "Pitch-black enemy skill modal covering board must be REJECTED by isBattleBoardPresent even with peeking left heart",
+            AutoGridDetector.isBattleBoardPresent(frame, base)
+        )
+    }
 }

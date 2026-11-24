@@ -1686,4 +1686,68 @@ class CvBoardRecognizerTest {
         assertEquals("Board B must have ZERO false Traffic Light Starts", 0, recB.trafficLightStartCount)
         assertEquals("Board B must have ZERO false Traffic Light Ends", 0, recB.trafficLightEndCount)
     }
+
+    @Test
+    fun `isDarkModalCoveringBoard catches enemy skill popup with golden header while allowing full-board question orbs`() {
+        val w = 576
+        val h = 1280
+
+        // 1) Enemy Skill Detail Popup: ~74% pure black background + ~18% golden/yellow header accents in upper band (0.41..0.53)
+        val popupPixels = IntArray(w * h) { 0xFF18181A.toInt() }
+        // Golden border & yellow 【固定 8 連擊盾】 header text in 0.41..0.53 (~18% vivid yellow pixels)
+        for (y in (h * 0.42f).toInt() until (h * 0.52f).toInt()) {
+            for (x in (w * 0.20f).toInt() until (w * 0.80f).toInt()) {
+                if ((y - (h * 0.42f).toInt()) % 6 == 0) {
+                    popupPixels[y * w + x] = 0xFFE8C438.toInt()
+                }
+            }
+        }
+        val popupFrame = object : VisionFrame {
+            override val width = w
+            override val height = h
+            override fun getArgb(x: Int, y: Int): Int =
+                popupPixels[y.coerceIn(0, h - 1) * w + x.coerceIn(0, w - 1)]
+        }
+        assertTrue(
+            "Enemy skill popup with golden header accents must be caught by isDarkModalCoveringBoard",
+            FlashRevealMemoryTracker.isDarkModalCoveringBoard(popupFrame)
+        )
+
+        // 2) Full-board 30/30 '?' Question Orbs (colorful portraits above + slate-blue glowing spheres in 6x5 grid) -> FALSE
+        val qPixels = IntArray(w * h) { 0xFF1E1C1A.toInt() }
+        // Colorful portraits above board (0.41..0.52)
+        for (y in (h * 0.41f).toInt() until (h * 0.52f).toInt()) {
+            for (x in 0 until w) {
+                qPixels[y * w + x] = if ((x / 40) % 2 == 0) 0xFFD06040.toInt() else 0xFF4090D8.toInt()
+            }
+        }
+        // 30 slate-blue '?' spheres (RGB ~ 78, 92, 118 -> NOT pure black!)
+        val cell = w / 6
+        val boardTop = (h * 0.528f).toInt()
+        for (r in 0 until 5) {
+            for (c in 0 until 6) {
+                val cx = c * cell + cell / 2
+                val cy = boardTop + r * cell + cell / 2
+                for (dy in -cell / 2 until cell / 2) {
+                    for (dx in -cell / 2 until cell / 2) {
+                        if (dx * dx + dy * dy <= (cell * 0.42f) * (cell * 0.42f)) {
+                            val py = (cy + dy).coerceIn(0, h - 1)
+                            val px = (cx + dx).coerceIn(0, w - 1)
+                            qPixels[py * w + px] = 0xFF566882.toInt()
+                        }
+                    }
+                }
+            }
+        }
+        val qFrame = object : VisionFrame {
+            override val width = w
+            override val height = h
+            override fun getArgb(x: Int, y: Int): Int =
+                qPixels[y.coerceIn(0, h - 1) * w + x.coerceIn(0, w - 1)]
+        }
+        assertFalse(
+            "Genuine full-board 30/30 '?' question-orb battle board must NOT be mistaken for a dark modal popup",
+            FlashRevealMemoryTracker.isDarkModalCoveringBoard(qFrame)
+        )
+    }
 }

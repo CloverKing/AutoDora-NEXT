@@ -14,6 +14,7 @@ import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.Surface
 import android.view.WindowManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -48,6 +49,7 @@ class MediaProjectionCapturer(
     private val handlerThread = HandlerThread("AutoDora-ScreenCapture").apply { start() }
     private val handler = Handler(handlerThread.looper)
 
+    private var eglRelay: EglCaptureRelay? = null
     private var imageReader: ImageReader? = null
     private var virtualDisplay: VirtualDisplay? = null
     private val imageLock = Any()
@@ -100,6 +102,34 @@ class MediaProjectionCapturer(
     }
 
     private fun setupVirtualDisplay() {
+        val relay = try {
+            EglCaptureRelay(screenWidth, screenHeight) { tsMs ->
+                lastImageTimestampMs = tsMs
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "EglCaptureRelay unavailable, falling back to ImageReader-only path", t)
+            null
+        }
+
+        if (relay != null) {
+            eglRelay = relay
+            virtualDisplay = mediaProjection.createVirtualDisplay(
+                "AutoDora-VirtualDisplay",
+                screenWidth,
+                screenHeight,
+                densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                relay.inputSurface,
+                null,
+                handler
+            )
+            if (!released.get()) {
+                _isReady.value = true
+            }
+            Log.i(TAG, "VirtualDisplay active (EGL GPU zero-copy relay): ${screenWidth}x${screenHeight} @ ${densityDpi}dpi")
+            return
+        }
+
         val reader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 4)
         reader.setOnImageAvailableListener({ r ->
             val incoming = try {
@@ -139,11 +169,40 @@ class MediaProjectionCapturer(
         if (!released.get()) {
             _isReady.value = true
         }
-        Log.i(TAG, "VirtualDisplay active: ${screenWidth}x${screenHeight} @ ${densityDpi}dpi")
+        Log.i(TAG, "VirtualDisplay active (ImageReader fallback): ${screenWidth}x${screenHeight} @ ${densityDpi}dpi")
+    }
+
+    override fun attachGpuRecorderSurface(
+        codecSurface: Surface,
+        width: Int,
+        height: Int,
+        targetFps: Int,
+        onFrameEncoded: () -> Unit,
+        onError: (String) -> Unit
+    ): Boolean {
+        val relay = eglRelay ?: return false
+        if (released.get() || !_isReady.value) return false
+        return relay.attachRecorderSurface(codecSurface, width, height, targetFps, onFrameEncoded, onError)
+    }
+
+    override fun detachGpuRecorderSurface() {
+        eglRelay?.detachRecorderSurface()
     }
 
     override suspend fun captureSingleFrame(): Bitmap? = withContext(Dispatchers.Default) {
         if (released.get() || !_isReady.value) return@withContext null
+
+        val relay = eglRelay
+        if (relay != null) {
+            var retries = 0
+            while (retries < 24 && !released.get() && _isReady.value) {
+                if (relay.hasValidFrameForCv) break
+                delay(25)
+                retries++
+            }
+            if (released.get() || !_isReady.value) return@withContext null
+            return@withContext relay.readLatestFrameAsImage { img -> imageToBitmap(img) }
+        }
 
         // Wait up to 600ms if the initial frame or post-overlay-hide frame hasn't landed yet
         var retries = 0
@@ -235,6 +294,18 @@ class MediaProjectionCapturer(
 
     override suspend fun captureBandBitmap(yStart: Int, yEnd: Int): BandBitmap? = withContext(Dispatchers.Default) {
         if (released.get() || !_isReady.value) return@withContext null
+
+        val relay = eglRelay
+        if (relay != null) {
+            var retries = 0
+            while (retries < 12 && !released.get() && _isReady.value) {
+                if (relay.hasValidFrameForCv) break
+                delay(16)
+                retries++
+            }
+            if (released.get() || !_isReady.value) return@withContext null
+            return@withContext relay.readLatestFrameAsImage { img -> imageToBandBitmap(img, yStart, yEnd) }
+        }
 
         var retries = 0
         while (retries < 12 && !released.get() && _isReady.value) {
@@ -330,6 +401,7 @@ class MediaProjectionCapturer(
     }
 
     override fun clearCachedFrame() {
+        eglRelay?.invalidateCachedCvFrame()
         synchronized(imageLock) {
             try {
                 // Drain any pending pre-hide image sitting in ImageReader before discarding latestImage
@@ -347,6 +419,35 @@ class MediaProjectionCapturer(
     override suspend fun tryRecoverSurface(): Boolean = withContext(Dispatchers.Default) {
         if (released.get() || !_isReady.value) return@withContext false
         val vd = virtualDisplay ?: return@withContext false
+        val relay = eglRelay
+        if (relay != null) {
+            if (ScreenRecordingSession.isRecording) return@withContext true
+            val now = SystemClock.elapsedRealtime()
+            if (lastRecoveryAttemptMs > 0L && now - lastRecoveryAttemptMs < MIN_RECOVERY_INTERVAL_MS) {
+                return@withContext relay.hasValidFrameForCv
+            }
+            if (!recovering.compareAndSet(false, true)) return@withContext false
+            lastRecoveryAttemptMs = now
+            return@withContext try {
+                val newSurf = relay.recreateInputSurface() ?: return@withContext false
+                vd.setSurface(newSurf)
+                var waited = 0
+                while (waited < 20 && !released.get() && _isReady.value) {
+                    if (relay.hasValidFrameForCv) {
+                        Log.i(TAG, "EGL VirtualDisplay surface recovery succeeded in ${waited * 30}ms")
+                        return@withContext true
+                    }
+                    delay(30L)
+                    waited++
+                }
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "EGL VirtualDisplay surface recovery failed", e)
+                false
+            } finally {
+                recovering.set(false)
+            }
+        }
         val now = SystemClock.elapsedRealtime()
         if (lastRecoveryAttemptMs > 0L && now - lastRecoveryAttemptMs < MIN_RECOVERY_INTERVAL_MS) {
             // Cooldown prevents rapid setSurface() thrashing on HyperOS / Android 14-16 SurfaceFlinger
@@ -434,6 +535,11 @@ class MediaProjectionCapturer(
         } catch (_: Exception) {
         }
         virtualDisplay = null
+        try {
+            eglRelay?.release()
+        } catch (_: Exception) {
+        }
+        eglRelay = null
         val readerToClose: ImageReader?
         synchronized(imageLock) {
             latestImage?.close()

@@ -174,6 +174,7 @@ object AutoGridDetector {
     ): Boolean {
         val span = (scanRight - scanLeft).coerceAtLeast(1)
         val leftCut = scanLeft + (span * 0.24f).roundToInt()
+        val midCut = scanLeft + (span * 0.62f).roundToInt()
 
         var greenHits = 0
         var coralRedHits = 0
@@ -182,8 +183,10 @@ object AutoGridDetector {
 
         var leftHpHits = 0
         var leftTotal = 0
+        var midDarkHits = 0
+        var midTotal = 0
         var rightDarkHits = 0
-        var rightVividHits = 0
+        var rightNonHpVividHits = 0
         var rightTotal = 0
 
         var x = scanLeft
@@ -202,23 +205,29 @@ object AutoGridDetector {
             } else {
                 r >= b || (r - g) * 12 >= 11 * (b - g) // H >= 295°
             }
-            val isCoral = r >= 155 && (r - g) >= 32 && r >= (b - 12) && isCoralHue
+            val isCoral = r >= 138 && (r - g) >= 32 && r >= (b - 12) && isCoralHue
             val isCyan = b >= 145 && g >= 125 && (b - r) >= 40
+            val isHpColor = isGreen || isCoral || isCyan
             if (isGreen) greenHits++
             else if (isCoral) coralRedHits++
             else if (isCyan) cyanHits++
 
             if (x <= leftCut) {
                 leftTotal++
-                if (isGreen || isCoral || isCyan) leftHpHits++
+                if (isHpColor) leftHpHits++
             } else {
                 rightTotal++
                 val maxCh = max(r, max(g, b))
                 val minCh = min(r, min(g, b))
-                // Empty HP track is a dark charcoal slot (allow white monochrome HP text on far right)
+                // Empty HP track is a dark charcoal slot (allow white/red monochrome HP digits on far right)
                 if (maxCh <= 85) rightDarkHits++
-                // Vivid colored pixels indicate an orb row (e.g. Weijian 6x6..6x8), NEVER an empty HP track!
-                if ((maxCh - minCh) >= 50 && maxCh >= 95) rightVividHits++
+                if (x <= midCut) {
+                    midTotal++
+                    if (maxCh <= 85) midDarkHits++
+                }
+                // Foreign vivid colored pixels (non-HP-color blue/yellow/purple orbs) indicate a Weijian orb row,
+                // whereas low-HP red danger numbers (e.g. red "51709/517091" on the right) share isCoral and must NOT reject!
+                if (!isHpColor && (maxCh - minCh) >= 50 && maxCh >= 95) rightNonHpVividHits++
             }
             x += stepX
         }
@@ -231,11 +240,15 @@ object AutoGridDetector {
             return true
         }
 
-        // Low-HP partial player HP bar (e.g. 15%..30% remaining HP on left, dark empty track with ZERO vivid orbs on right)
+        // Low-HP partial player HP bar (5%..30% remaining HP on left, solid dark empty track in middle/right,
+        // tolerating glowing red danger digits "51709/517091" on the right with near-zero foreign vivid orbs!)
         val leftRatio = if (leftTotal > 0) leftHpHits.toFloat() / leftTotal else 0f
+        val midDarkRatio = if (midTotal > 0) midDarkHits.toFloat() / midTotal else 0f
         val rightDarkRatio = if (rightTotal > 0) rightDarkHits.toFloat() / rightTotal else 0f
-        val rightVividRatio = if (rightTotal > 0) rightVividHits.toFloat() / rightTotal else 1f
-        return leftRatio >= 0.42f && rightDarkRatio >= 0.45f && rightVividRatio <= 0.12f
+        val rightNonHpVividRatio = if (rightTotal > 0) rightNonHpVividHits.toFloat() / rightTotal else 1f
+        return leftRatio >= 0.22f &&
+            (rightDarkRatio >= 0.45f || midDarkRatio >= 0.58f) &&
+            rightNonHpVividRatio <= 0.12f
     }
 
     /**
@@ -516,7 +529,7 @@ object AutoGridDetector {
         val vividCenterRatio = vividCenters.toFloat() / total
 
         val hasHp = hasHpBarBarrier(frame, geometry.leftPx, geometry.rightPx, geometry.topPx, ch)
-        if (hasHp && (darkCornerRatio >= 0.32f || posContrastRatio >= 0.45f)) {
+        if (hasHp && ((darkCornerRatio >= 0.32f && (posContrastRatio >= 0.20f || vividCenterRatio >= 0.15f)) || posContrastRatio >= 0.45f)) {
             return true
         }
         return darkCornerRatio >= 0.62f &&

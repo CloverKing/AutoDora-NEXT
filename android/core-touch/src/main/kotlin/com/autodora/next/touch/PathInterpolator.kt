@@ -24,6 +24,31 @@ data class StrokeSegment(
  */
 object PathInterpolator {
 
+    /**
+     * Empirical per-segment Binder IPC / VSync handoff overhead (ms) between consecutive
+     * Android AccessibilityService `continueStroke()` dispatches.
+     */
+    const val ESTIMATED_SEGMENT_IPC_HANDOFF_MS = 16L
+
+    /**
+     * Deterministically estimates the real-world finger-swipe execution time (in milliseconds)
+     * for [solution] under [config], summing the exact chained stroke segments (initial grab hold,
+     * character-orb pull-down, orthogonal & 45° diagonal step timings, first-corner guard, final settle hold)
+     * plus AccessibilityService inter-segment handoff overhead.
+     */
+    fun estimateSwipeDurationMs(
+        solution: SolutionPath,
+        geometry: BoardGeometry,
+        config: SwipeConfig
+    ): Long {
+        if (solution.waypoints.isEmpty()) return 0L
+        val segments = buildSegments(solution, geometry, config.copy(humanMode = false))
+        if (segments.isEmpty()) return 0L
+        val strokeSumMs = segments.sumOf { it.durationMs }
+        val handoffMs = (segments.size - 1).coerceAtLeast(0) * ESTIMATED_SEGMENT_IPC_HANDOFF_MS
+        return strokeSumMs + handoffMs
+    }
+
     fun buildSegments(
         solution: SolutionPath,
         geometry: BoardGeometry,

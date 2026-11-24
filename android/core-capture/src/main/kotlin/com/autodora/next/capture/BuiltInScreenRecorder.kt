@@ -55,6 +55,21 @@ interface RecordingFrameSource {
     val screenHeight: Int
     val isReady: StateFlow<Boolean>
     fun copyLatestFrameForRecording(reusable: Bitmap?, lastSeq: Long): RecordingFrameCopy
+
+    /**
+     * Zero-copy GPU recording path (EGL SurfaceTexture -> MediaCodec Input Surface at locked 60/30fps).
+     * Returns true when attached; false falls back to CPU Surface Canvas copy.
+     */
+    fun attachGpuRecorderSurface(
+        codecSurface: Surface,
+        width: Int,
+        height: Int,
+        targetFps: Int,
+        onFrameEncoded: () -> Unit,
+        onError: (String) -> Unit
+    ): Boolean = false
+
+    fun detachGpuRecorderSurface() {}
 }
 
 sealed class ScreenRecordingState {
@@ -144,6 +159,8 @@ class BuiltInScreenRecorder(
     private var feederThread: Thread? = null
     private var drainThread: Thread? = null
     @Volatile
+    private var usingGpuRelay: Boolean = false
+    @Volatile
     private var encodedFrameCount: Int = 0
     @Volatile
     private var recorderError: String? = null
@@ -152,6 +169,7 @@ class BuiltInScreenRecorder(
         if (!running.compareAndSet(false, true)) return startedAtElapsedMs
         stopping.set(false)
         eosSignaled.set(false)
+        usingGpuRelay = false
         encodedFrameCount = 0
         recorderError = null
         videoTrackIndex = -1
@@ -175,14 +193,31 @@ class BuiltInScreenRecorder(
         tempOutputFile = outFile
 
         try {
-            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, encWidth, encHeight).apply {
-                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_BIT_RATE, DEFAULT_BITRATE_BPS)
-                setInteger(MediaFormat.KEY_FRAME_RATE, TARGET_FPS)
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SEC)
-            }
             val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            val isSoftwareCodec = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && codec.codecInfo.isSoftwareOnly
+            var actualFps = if (isSoftwareCodec) SOFTWARE_FPS else HARDWARE_FPS
+            var bitrateBps = if (actualFps >= 60) HIGH_FPS_BITRATE_BPS else DEFAULT_BITRATE_BPS
+
+            fun buildFormat(fps: Int, bps: Int): MediaFormat =
+                MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, encWidth, encHeight).apply {
+                    setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                    setInteger(MediaFormat.KEY_BIT_RATE, bps)
+                    setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SEC)
+                }
+
+            try {
+                codec.configure(buildFormat(actualFps, bitrateBps), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            } catch (cfgErr: Throwable) {
+                if (actualFps > SOFTWARE_FPS) {
+                    Log.w(TAG, "Hardware encoder rejected ${actualFps}fps, falling back to ${SOFTWARE_FPS}fps", cfgErr)
+                    actualFps = SOFTWARE_FPS
+                    bitrateBps = DEFAULT_BITRATE_BPS
+                    codec.configure(buildFormat(actualFps, bitrateBps), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                } else {
+                    throw cfgErr
+                }
+            }
             val surface = codec.createInputSurface()
             codec.start()
 
@@ -197,15 +232,29 @@ class BuiltInScreenRecorder(
                 isDaemon = true
                 start()
             }
-            feederThread = Thread({ runFeederLoop(surface) }, "AutoDora-RecFeed").apply {
-                isDaemon = true
-                start()
+
+            val gpuAttached = frameSource.attachGpuRecorderSurface(
+                codecSurface = surface,
+                width = encWidth,
+                height = encHeight,
+                targetFps = actualFps,
+                onFrameEncoded = { encodedFrameCount++ },
+                onError = { err -> recorderError = err }
+            )
+            usingGpuRelay = gpuAttached
+            if (!gpuAttached) {
+                feederThread = Thread({ runFeederLoop(surface) }, "AutoDora-RecFeed").apply {
+                    isDaemon = true
+                    start()
+                }
             }
-            Log.i(TAG, "Built-in MP4 screen recording started: ${encWidth}x${encHeight} @ ${TARGET_FPS}fps")
+            val modeTag = if (gpuAttached) "GPU-zero-copy" else "CPU-fallback"
+            Log.i(TAG, "Built-in MP4 screen recording started ($modeTag): ${encWidth}x${encHeight} @ ${actualFps}fps (${bitrateBps / 1_000_000}Mbps)")
             return startedAtElapsedMs
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to start built-in screen recorder", t)
             running.set(false)
+            runCatching { frameSource.detachGpuRecorderSurface() }
             cleanupResources(deleteTemp = true)
             throw t
         }
@@ -238,8 +287,7 @@ class BuiltInScreenRecorder(
                 }
                 val now = SystemClock.elapsedRealtime()
                 val bmpToDraw = reusable
-                val shouldPost = bmpToDraw != null && (copy.changed || (now - lastPostedAtMs) >= STATIC_HEARTBEAT_MS)
-                if (shouldPost && bmpToDraw != null) {
+                if (bmpToDraw != null && (copy.changed || (now - lastPostedAtMs) >= STATIC_HEARTBEAT_MS)) {
                     var canvas: Canvas? = null
                     try {
                         canvas = surface.lockCanvas(null)
@@ -340,6 +388,9 @@ class BuiltInScreenRecorder(
         val durationMs = (SystemClock.elapsedRealtime() - startedAtElapsedMs).coerceAtLeast(0L)
         running.set(false)
 
+        if (usingGpuRelay) {
+            runCatching { frameSource.detachGpuRecorderSurface() }
+        }
         try {
             feederThread?.interrupt()
             feederThread?.join(1500L)
@@ -465,11 +516,13 @@ class BuiltInScreenRecorder(
 
     companion object {
         private const val TAG = "BuiltInRecorder"
-        private const val TARGET_FPS = 30
+        private const val HARDWARE_FPS = 60
+        private const val SOFTWARE_FPS = 30
         private const val FRAME_INTERVAL_MS = 33L
-        private const val STATIC_HEARTBEAT_MS = 200L
-        private const val DEFAULT_BITRATE_BPS = 5_000_000
-        private const val I_FRAME_INTERVAL_SEC = 2
+        private const val STATIC_HEARTBEAT_MS = 100L
+        private const val DEFAULT_BITRATE_BPS = 6_000_000
+        private const val HIGH_FPS_BITRATE_BPS = 8_000_000
+        private const val I_FRAME_INTERVAL_SEC = 1
     }
 }
 

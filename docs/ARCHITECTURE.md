@@ -37,8 +37,8 @@ flowchart LR
 
 - **双模免 Root 屏幕采集（兼容系统录屏）与血条锚定防误判**：
   - **无障碍截屏模式（`AccessibilityScreenCapturer`，Android 11+ 默认推荐）**：基于 `AccessibilityService.takeScreenshot()` 按需直采实时合成帧，**完全不占用系统独占的 `MediaProjection` 录屏通道**，小米 15 / HyperOS 等机型开启本应用后系统自带录屏全程正常可用，且免每次启动弹窗授权、无久放黑屏掉权限问题；内置 `370ms` 防限流节拍器、2 帧半周期闪烁融合封顶与 `850ms` 非阻塞后台问号记忆监听。
-  - **高速录屏采集模式（`MediaProjectionCapturer` + `BuiltInScreenRecorder`，可选 / Android 10 回退）**：支持 `50ms` 高频多帧连拍与 `25ms` 按住重算轮询；在切换回无障碍截屏或停止悬浮助手（`OverlayControllerService.onDestroy()`）时自动先落盘保存录屏并释放 `MediaProjectionForegroundService` 立即归还系统录屏通道；完整保留 `released` 首帧零丢弃门控、静止画面零扰动、`clearIfCurrent()` 身份校验、概览页热重授与 `clearCachedFrame()` 零陈旧帧门控；并在该模式下通过 `ScreenRecordingSession` + `BuiltInScreenRecorder` **直接复用同一套单一 `VirtualDisplay` + `ImageReader`**（100% 符合 Android 14/15/16 单实例约束，零重复弹窗、零崩溃），以硬件 `MediaCodec` (`video/avc`, 16px 对齐 720p@30fps, 5 Mbps, 0-based PTS 重基) + `MediaMuxer` 录制 MP4，经 Scoped `MediaStore.Video.Media` 免存储权限直存系统相册（`Movies/AutoDora-NEXT/AutoDora_YYYYMMDD_HHmmss.mp4`），并与启动页/悬浮栏双端按钮实时同步状态（系统意外停止 `MediaProjection.Callback.onStop()` 亦自动触发收尾保存防丢片）。
-  - **全态血条锚定防假违建**：在 `base.topPx` 上方检测绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，杜绝把队伍 6 个彩色头像误判为第 6 行假违建或「自动校准」误吸 Boss 血条。
+  - **高速录屏采集模式（`MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`，可选 / Android 10 回退）**：底层采用 OpenGL ES 2.0 / EGL 1.4 `SurfaceTexture`（`GL_TEXTURE_EXTERNAL_OES`）单 `VirtualDisplay` 零拷贝双路分发——CV 识盘时按需 0.4ms GPU 渲染至 `ImageReader`，录屏开启时以 `THREAD_PRIORITY_DISPLAY` 定频直推硬件 `MediaCodec`（真机硬编 `60fps / 8Mbps`，软件编码回退 `30fps / 6Mbps`，1s GOP、0-based PTS 重基，零 CPU 拷贝与软件缩放，完整收录游戏画面与全部悬浮识别层/路径/结果卡片），经 Scoped `MediaStore.Video.Media` 免存储权限直存系统相册（`Movies/AutoDora-NEXT/AutoDora_YYYYMMDD_HHmmss.mp4`），并在切回无障碍截屏、停服或系统 `onStop()` 时先自动收尾存片再释放录屏通道。
+  - **全态血条锚定防假违建**：在 `base.topPx` 上方检测绿色/珊瑚红（严格限定红粉紫 `H ≤ 22° || H ≥ 295°` 且附纵向薄条校验，拒绝暖米色/全高活动横幅）/青蓝 HP 血条隔离带、**`5%–30%` 低血亮红危急数字血条（不把右侧红字误判为异色珠体）**，**以及 `1/584001` 空血暗槽 + 左侧红心徽章**；命中时严格锁定 `6×5`，同时在 `isBattleBoardPresent()` 要求有效对比度/亮珠中心防纯黑弹窗透心误过。
 - **实时视觉校准框**：主悬浮栏点 `▦` 随时开启可拖拽四角/四边的半透明校准框，并附带 `上 / 下 / 窄 / 宽 / 高- / 高+ / 自动 / 重置` 像素级微调条，按比例持久化至 DataStore。
 
 ---
@@ -213,15 +213,15 @@ flowchart TD
     PathSmooth -.-> ShizukuExec
 ```
 
-### 仓库模块与测试矩阵（当前 `120` 项自动化测试全通过）
+### 仓库模块与测试矩阵（当前 `124` 项自动化测试全通过）
 
 | 模块 | 职责说明 | 自动化测试覆盖 |
 | :--- | :--- | :--- |
 | `solver-core/` | 纯 C++20 求解引擎（CMake，零 Android 依赖） | `test_main.cpp`：**51 / 51** 通过（含独立路径回放核验、荆棘严避与全版锁定渐进消除） |
 | `android/core-model/` | 不可变棋盘/规则模型、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**12 / 12** 通过 |
-| `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjectionCapturer` + `BuiltInScreenRecorder`（单 VirtualDisplay 内置 H.264 MP4 录屏直存系统相册）、`AutoGridDetector`（含空血 1-HP 暗槽与活动横幅过滤） | `AutoGridDetectorTest` (11) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3) + `BuiltInScreenRecorderTest` (3)：**20 / 20** 通过 |
-| `android/core-vision/` | `CvBoardRecognizer`（18 项实测 0 误报状态/地形 CV + 全 6 色笛卡尔积去色偏回归）、`FlashRevealMemoryTracker`、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**19 / 19** 通过（含 48 格全 6 色笛卡尔积回归矩阵） |
-| `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`、`SwipeSpeedPreset` | `PathInterpolatorTest`：**8 / 8** 通过 |
+| `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`（单 VirtualDisplay GPU 零拷贝 60fps 录屏直存系统相册）、`AutoGridDetector`（含低血亮红数字血条、空血 1-HP 暗槽与纯黑弹窗防误过） | `AutoGridDetectorTest` (13) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3) + `BuiltInScreenRecorderTest` (3)：**22 / 22** 通过 |
+| `android/core-vision/` | `CvBoardRecognizer`（18 项实测 0 误报状态/地形 CV + 全 6 色笛卡尔积去色偏回归）、`FlashRevealMemoryTracker`（含金色标题栏敌技弹窗拦截）、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**20 / 20** 通过（含 48 格全 6 色笛卡尔积回归矩阵） |
+| `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`（含精准分段预计转珠耗时计算）、`SwipeSpeedPreset` | `PathInterpolatorTest`：**9 / 9** 通过 |
 | `android/core-data/` | DataStore 设置、Room 实时策略持久化、39 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
 | `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务（含高速录屏双端内置录屏按钮）、单抽屉调参/编排（打开自动识盘）、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (3)：**10 / 10** 通过；四语言词条一致性 **575 / 575** |
