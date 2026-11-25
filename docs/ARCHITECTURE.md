@@ -144,7 +144,7 @@ flowchart LR
 | **分页结构** | 3-Tab：**概览 / 策略 / 设置** | 3-Tab：**快捷 / 策略 / 设置** |
 | **抽屉色彩** | 6 色语义色条 + 浅色边框卡片（蓝/靛蓝/青绿/琥珀/绯红/紫） | 与启动页对应模块使用**完全一致的抽屉配色** |
 | **展开模式** | 默认**全部展开**，支持多抽屉同时展开或单独收起 | 调参分页与盘面编排均采用**单抽屉手风琴互斥展开**，防止遮挡游戏盘面 |
-| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`582` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
+| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`584` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
 | **主悬浮胶囊** | 概览页一键启停悬浮助手；设置支持控制 **高速录屏模式下悬浮栏是否显示录屏按钮** 以及 **横排 / 竖排** 与 **靠左 / 靠右** 4 态切换（`floatingBarVertical` + `floatingBarDockRight`） | 圆形 App 图标手柄 + 8 个常驻矢量图标（`✦` `▶` `■` `〰` `▤` `▦` `🎚` `✕`）+ 高速录屏模式下可配置增显 **`● 录屏`** 图标；支持 **4 态实时热切**（横排靠右时 App 图标居右、主栏向左展开；竖排靠左向右/靠右向左展开面板）、**拖拽松手平滑左右吸边**及 **DataStore 持久化记忆停靠侧与纵坐标** |
 
 ### 5.2 单一自动保存策略与应用内更新闭环
@@ -227,7 +227,7 @@ flowchart TD
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`（含精准分段预计转珠耗时计算与校准头像中心垂直下拉）、`SwipeSpeedPreset` | `PathInterpolatorTest`：**9 / 9** 通过 |
 | `android/core-data/` | DataStore 设置（含 `useAiRecognizer` 开关）、Room 实时策略持久化、40 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台（含 AI 混合识盘开关）、4 态磁吸记忆悬浮服务、单抽屉调参/编排、`UpdateChecker`、未压缩打包 `assets/models/orb_multihead_v1.tflite` (`348,548 B`) | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **582 / 582** |
+| `android/app/` | 3-Tab Compose 启动台（含 AI 混合识盘开关）、4 态磁吸记忆悬浮服务、单抽屉调参/编排、`UpdateChecker`、未压缩打包 `assets/models/orb_multihead_v1.tflite` (`348,548 B`) | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **584 / 584** |
 
 ---
 
