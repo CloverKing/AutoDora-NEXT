@@ -219,8 +219,8 @@ flowchart TD
 | :--- | :--- | :--- |
 | `solver-core/` | 纯 C++20 求解引擎（CMake，零 Android 依赖） | `test_main.cpp`：**52 / 52** 通过（含独立路径回放核验、起动浮标角色珠破盾、荆棘严避与全版锁定渐进消除） |
 | `android/core-model/` | 不可变棋盘/规则模型、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**13 / 13** 通过 |
-| `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`（单 VirtualDisplay GPU 零拷贝 60fps 录屏直存系统相册）、`AutoGridDetector`（含低血亮红数字血条、空血 1-HP 暗槽与纯黑弹窗防误过） | `AutoGridDetectorTest` (13) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3) + `BuiltInScreenRecorderTest` (3)：**22 / 22** 通过 |
-| `android/core-vision/` | `CvBoardRecognizer`（18 项实测 0 误报状态/地形 CV + 全 6 色笛卡尔积去色偏回归 + 暗化盘面单格环中位 `p50/p75` 抗 Toast/路径干扰线性增益还原与三窗全漂浮高度起动浮标/队伍头像属性自动识别）、`FlashRevealMemoryTracker`（含金色标题栏敌技弹窗拦截）、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**21 / 21** 通过（含 48 格全 6 色笛卡尔积与暗化/上浮峰值/叠加路线起动浮标回归） |
+| `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`（单 VirtualDisplay GPU 零拷贝 60fps 录屏直存系统相册）、`AutoGridDetector`（含低血亮红数字血条、空血 1-HP 暗槽、全版深青 `?` 问号珠外环峰值门控与纯黑弹窗防误过） | `AutoGridDetectorTest` (14) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3) + `BuiltInScreenRecorderTest` (3)：**23 / 23** 通过 |
+| `android/core-vision/` | `CvBoardRecognizer`（18 项实测 0 误报状态/地形 CV + 全 6 色笛卡尔积去色偏回归 + 深青全版 `?` 问号珠分类 + 暗化盘面单格环中位 `p50/p75` 抗 Toast/路径干扰线性增益还原与三窗全漂浮高度起动浮标/队伍头像属性自动识别）、`FlashRevealMemoryTracker`（含金色标题栏敌技弹窗拦截）、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**22 / 22** 通过（含 48 格全 6 色笛卡尔积、深青全版 `?` 问号珠与暗化/上浮峰值起动浮标回归） |
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`（含精准分段预计转珠耗时计算与校准头像中心垂直下拉）、`SwipeSpeedPreset` | `PathInterpolatorTest`：**9 / 9** 通过 |
 | `android/core-data/` | DataStore 设置、Room 实时策略持久化、40 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |

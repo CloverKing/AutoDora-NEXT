@@ -375,7 +375,10 @@ class CvBoardRecognizer : BoardRecognizer {
         cellMedVs.sort()
         val p50V = cellMedVs[total / 2]
         val p75V = cellMedVs[(total * 0.75f).toInt().coerceIn(0, total - 1)]
-        val isDimmed = p50V in 0.20f..0.61f && p75V <= 0.66f && colorfulCells >= (total * 0.50f).toInt()
+        // Lower floor 0.32f excludes pitch-dark 30/30 dark-teal '?' Question boards (p50V ~0.18..0.24)
+        // from falsely receiving 2.05x Starting Buoy brightness normalization while keeping all genuine
+        // dimmed Starting Buoy boards (~0.45..0.60) well inside bounds!
+        val isDimmed = p50V in 0.32f..0.61f && p75V <= 0.66f && colorfulCells >= (total * 0.50f).toInt()
         return p75V to isDimmed
     }
 
@@ -1137,16 +1140,27 @@ class CvBoardRecognizer : BoardRecognizer {
         // Dedicated Question ('?') / Hidden Orb Detector:
         // Real ToS matchable orbs are vivid (either high saturation outerAvgS >= 0.45, OR bright white-rimmed
         // Shield/Enchanted orbs with outerAvgV >= 0.78).
-        // Modern ToS '?' Question Orbs (slate-blue, steel-grey, dark-indigo, muted-bronze) have BOTH muted
-        // saturation AND dimmer outer ring with pale '?' stroke pixels raising lowSatRatio.
+        // Modern ToS '?' Question Orbs cover BOTH:
+        //  1) Slate-blue / steel-grey / dark-indigo / muted-bronze '?' orbs (low saturation + dim outer ring);
+        //  2) Deep dark-teal '?' orbs (H in 135..215°, outerAvgV <= 0.42, allAvgV <= 0.36, darkBody >= 0.58)
+        //     whose hue lands near Wood/Water while their center is pitch-dark teal with a bright white '?' glyph!
+        val isDarkTealQuestionOrb = !isTrafficLightStart &&
+            (bestIdx == Element.WOOD.code || bestIdx == Element.WATER.code) &&
+            meanHueDeg in 135f..215f &&
+            outerAvgV <= 0.42f &&
+            allAvgV <= 0.36f &&
+            lowSatRatio in 0.08f..0.82f &&
+            (abnormal == null || (abnormal.maxDarkBody >= 0.58f && abnormal.minHighVBody <= 0.14f))
+
         val isSlateQuestionOrb = !isTrafficLightStart && (
-            (bestIdx == Element.WATER.code &&
-                ((outerAvgV < 0.66f && outerAvgS < 0.46f && lowSatRatio >= 0.06f) ||
-                    (outerAvgV < 0.56f && outerAvgS < 0.48f) ||
-                    (outerAvgV < 0.70f && lowSatRatio > 0.36f))) ||
-            (outerAvgV < 0.64f && outerAvgS < 0.36f && lowSatRatio >= 0.42f) ||
-            (outerAvgV < 0.70f && outerAvgS < 0.30f && lowSatRatio >= 0.52f)
-        )
+            isDarkTealQuestionOrb ||
+                (bestIdx == Element.WATER.code &&
+                    ((outerAvgV < 0.66f && outerAvgS < 0.46f && lowSatRatio >= 0.06f) ||
+                        (outerAvgV < 0.56f && outerAvgS < 0.48f) ||
+                        (outerAvgV < 0.70f && lowSatRatio > 0.36f))) ||
+                (outerAvgV < 0.64f && outerAvgS < 0.36f && lowSatRatio >= 0.42f) ||
+                (outerAvgV < 0.70f && outerAvgS < 0.30f && lowSatRatio >= 0.52f)
+            )
         if (isSlateQuestionOrb) {
             return CellState(
                 element = Element.HIDDEN,
@@ -1311,6 +1325,7 @@ class CvBoardRecognizer : BoardRecognizer {
             var bodyTot = 0; var bodyVSum = 0f; var whBodyHits = 0; var darkBodyHits = 0
             var highVBodyHits = 0; var satBodyHits = 0; var crackSilverHits = 0
             var iceWhiteBodyHits = 0; var icePurpBodyHits = 0; var tealWispHits = 0; var bbRedHits = 0
+            var questionGlyphHits = 0; var silverRimTot = 0; var silverRimHits = 0
             var latticePairs = 0; var latticeEdges = 0
             var purgRingTot = 0; var purgMagHits = 0
             var cornerTot = 0; var bbCornerHits = 0; var fireCornerHits = 0
@@ -1360,6 +1375,7 @@ class CvBoardRecognizer : BoardRecognizer {
                         if (v >= 0.35f && h in 250f..310f && s >= 0.35f) icePurpBodyHits++
                         // Tight turquoise wisp hue (162..198°) separates Evil Energy wisps from regular blue Water (202..230°)
                         if (h in 162f..198f && s >= 0.22f && v >= 0.32f) tealWispHits++
+                        if (v >= 0.62f && s <= 0.25f) questionGlyphHits++
                         if ((h <= 22f || h >= 332f) && s >= 0.28f && v in 0.12f..0.42f) bbRedHits++
 
                         // Color-invariant ice crystal lattice texture: sharp white-vs-saturated jumps between neighbors
@@ -1387,6 +1403,10 @@ class CvBoardRecognizer : BoardRecognizer {
                     if (rr in 0.33f..0.44f && s >= 0.35f && v >= 0.36f) {
                         val elIdx = classifyHueToElement(h, s, v)
                         if (elIdx >= 0) bombOuterVotes[elIdx] += s * v
+                    }
+                    if (rr in 0.36f..0.45f) {
+                        silverRimTot++
+                        if (v >= 0.48f && s <= 0.42f) silverRimHits++
                     }
                     if (rr in 0.34f..0.48f) {
                         purgRingTot++
@@ -1480,7 +1500,14 @@ class CvBoardRecognizer : BoardRecognizer {
 
             // 6. Color-Invariant Evil Energy (#12 邪惡能量): dark shadowed orb + glowing turquoise wisps (162..198°),
             //    relaxed avgV <= 0.34 & darkBody >= 0.54 supports brighter Light/Heart underlying orbs too!
-            if (avgV <= 0.34f && darkBody >= 0.54f && highVBody <= 0.08f && tealWisp >= 0.06f) anyEvilEnergy = true
+            //    Exclude modern dark-teal '?' Question Orbs which carry BOTH a bright white '?' glyph (>=4.5% of body)
+            //    and a crisp silver-mint circular outer rim (>=25% of r∈[0.36..0.45]).
+            val questionGlyphRatio = questionGlyphHits.toFloat() / bTot
+            val silverRimRatio = silverRimHits.toFloat() / max(1, silverRimTot)
+            val looksLikeQuestionGlyphAndRim = questionGlyphRatio >= 0.045f && silverRimRatio >= 0.25f
+            if (!looksLikeQuestionGlyphAndRim && avgV <= 0.34f && darkBody >= 0.54f && highVBody <= 0.08f && tealWisp >= 0.06f) {
+                anyEvilEnergy = true
+            }
 
             if (avgV < minAvgBodyV) minAvgBodyV = avgV
             if (avgV > maxAvgBodyV) maxAvgBodyV = avgV

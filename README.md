@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/badge/version-v0.4.9-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.9)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
-[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%2076%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
+[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%2078%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
 [![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#多语言主题与应用内更新)
 
 ---
@@ -162,7 +162,7 @@ AutoDora-NEXT/
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 3. Android 全模块 JVM 单测（76/76）与 APK 构建
+### 3. Android 全模块 JVM 单测（78/78）与 APK 构建
 
 ```powershell
 # 运行全部模块单元测试并构建 Debug APK
