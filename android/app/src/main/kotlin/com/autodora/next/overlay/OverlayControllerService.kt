@@ -162,6 +162,7 @@ class OverlayControllerService : Service() {
     private var lastPresetConfigHash: Int = 0
     private var currentGeometry: BoardGeometry? = null
     private var lastRecognition: RecognitionResult? = null
+    private var lastPortraitElements: List<Element> = emptyList()
     private var editedBoard: BoardState? = null
     private var savedEditedBoard: BoardState? = null
     private var lastSolveOutput: SolveOutput? = null
@@ -380,13 +381,23 @@ class OverlayControllerService : Service() {
         } else {
             preset.baseConfig.beamWidth
         }.coerceIn(40, 600)
+        val resolvedManualCharEl = if (preset.baseConfig.useCharacterOrb &&
+            preset.baseConfig.characterOrbAutoElement &&
+            preset.baseConfig.characterOrbCol in lastPortraitElements.indices &&
+            lastPortraitElements[preset.baseConfig.characterOrbCol].isMatchable
+        ) {
+            lastPortraitElements[preset.baseConfig.characterOrbCol]
+        } else {
+            preset.baseConfig.characterOrbElement
+        }
         val mergedBase = preset.baseConfig.copy(
             allowDiagonalMove = settings.allowDiagonalMove,
             maxSteps = effectiveSteps,
             beamWidth = effectiveBeam,
             maxTimeMs = maxOf(global.maxTimeMs, preset.baseConfig.maxTimeMs),
             topK = 5,
-            fixedStartCell = fixedStartCell
+            fixedStartCell = fixedStartCell,
+            characterOrbElement = resolvedManualCharEl
         )
         val canonicalChips = activeWaveChips.map { WaveShieldCatalog.canonicalizeForComposer(it) }
         val composed = RuleComposer.compose(
@@ -454,7 +465,7 @@ class OverlayControllerService : Service() {
         pathOverlayView.onBoardEditorCellTouched = { row, col ->
             val current = editedBoard
             if (current != null) {
-                editedBoard = boardEditor.applyActiveBrush(current, row, col)
+                editedBoard = boardEditor.applyActiveBrush(current, row, col, lastPortraitElements)
                 boardEditor.markDirty()
                 refreshPathCanvas()
             }
@@ -788,7 +799,9 @@ class OverlayControllerService : Service() {
                 if (cur != null) {
                     editedBoard = cur.copy(
                         cells = cur.cells.map { it.copy(variant = Variant.NORMAL, race = RaceType.NONE, hazards = HazardBits.NONE) },
-                        tileFlags = List(cur.cols * cur.rows) { TileFlagBits.NONE }
+                        tileFlags = List(cur.cols * cur.rows) { TileFlagBits.NONE },
+                        startingBuoyCol = -1,
+                        startingBuoyElement = Element.UNKNOWN
                     )
                 }
                 savedEditedBoard = null
@@ -1130,6 +1143,12 @@ class OverlayControllerService : Service() {
                 }
 
                 var liveRec = boardRecognizer.recognize(frames, geom)
+                lastPortraitElements = withContext(Dispatchers.Default) {
+                    com.autodora.next.vision.CvBoardRecognizer.detectAllPortraitAttributes(
+                        DirectBitmapVisionFrame(frames.first()),
+                        geom
+                    )
+                }
 
                 // Pulsing Red-Burst / Corner GO Rescue:
                 // The ToS red 8-ray starburst pulses on a ~0.6s cycle. If only Start (or neither/partial while
@@ -1189,6 +1208,12 @@ class OverlayControllerService : Service() {
                 usedMemorizedSnapshot = resolvedFromMemory
 
                 val ruleConfig = composeEffectiveRuleConfig(effectiveBoard)
+                if (activeWaveChips.any { it.id == "starting_buoy_shield" } &&
+                    !ruleConfig.useCharacterOrb &&
+                    effectiveBoard.startingBuoyCol < 0
+                ) {
+                    toast(lctx.getString(R.string.ov_toast_starting_buoy_not_detected))
+                }
                 val puzzleMaskMissing = ruleConfig.puzzle1.enabled &&
                     effectiveBoard.tileFlags.none { (it and TileFlagBits.PUZZLE_1) != 0 }
                 lastPuzzleMaskMissing = puzzleMaskMissing
@@ -1842,6 +1867,12 @@ class OverlayControllerService : Service() {
                 }
 
                 val liveRec = boardRecognizer.recognize(frames, geom)
+                lastPortraitElements = withContext(Dispatchers.Default) {
+                    com.autodora.next.vision.CvBoardRecognizer.detectAllPortraitAttributes(
+                        DirectBitmapVisionFrame(frames.first()),
+                        geom
+                    )
+                }
                 val resolvedBoard = when (val res = flashMemoryTracker.resolveForSolve(liveRec)) {
                     is FlashRevealMemoryTracker.MemoryResolution.UseMemorizedSnapshot -> res.rememberedBoard
                     else -> liveRec.board
@@ -2068,10 +2099,12 @@ class OverlayControllerService : Service() {
                                     r.shatteredTilesDetected +
                                     r.bloodbathTilesDetected +
                                     r.evilEnergyOrbsDetected
-                                if (AutoGridDetector.isDimmedTransitionBoard(bmp, g, r.questionOrbsDetected, specialDarkCount)) {
+                                if (r.startingBuoyCol < 0 &&
+                                    AutoGridDetector.isDimmedTransitionBoard(bmp, g, r.questionOrbsDetected, specialDarkCount)
+                                ) {
                                     Triple(null, null, 3) // 3 = dimmed VICTORY / wave-walk transition veil
                                 } else {
-                                    Triple(g, r, 0) // 0 = genuine active battle board
+                                    Triple(g, r, 0) // 0 = genuine active battle board (including dimmed 【起動浮標】!)
                                 }
                             }
                         }
@@ -2618,6 +2651,13 @@ class OverlayControllerService : Service() {
             }
             val stormCnt = lastRecognition?.stormCellsDetected ?: 0
             if (stormCnt > 0) append(" · 🌀").append(stormCnt)
+            if (sol.usedCharacterOrb) {
+                val buoyEl = activeBoard?.startingBuoyElement?.takeIf {
+                    activeBoard.startingBuoyCol == sol.characterOrbCol && it.isMatchable
+                } ?: lastPortraitElements.getOrNull(sol.characterOrbCol)?.takeIf { it.isMatchable }
+                val elTxt = if (buoyEl != null) LocaleHelper.elementLabel(lctx, buoyEl.code) else ""
+                append(" · ⚓").append(sol.characterOrbCol + 1).append(elTxt)
+            }
         }
         summaryTitle.text = coreSummary + extra
 

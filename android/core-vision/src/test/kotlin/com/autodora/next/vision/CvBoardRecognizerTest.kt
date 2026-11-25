@@ -1750,4 +1750,127 @@ class CvBoardRecognizerTest {
             FlashRevealMemoryTracker.isDarkModalCoveringBoard(qFrame)
         )
     }
+
+    @Test
+    fun `detects dimmed Starting Buoy board with 30 of 30 accuracy, buoy slot, portrait attribute, and zero false positives on normal boards`() {
+        val cell = 76
+        val w = cell * 6
+        val h = 1024
+        val topPx = 540f
+        val bottomPx = topPx + cell * 5f
+        val geom = BoardGeometry(0f, topPx, w.toFloat(), bottomPx, 6, 5)
+        val recognizer = CvBoardRecognizer()
+
+        val orbColors = intArrayOf(
+            0xFF288CF0.toInt(), // 0 Water
+            0xFFE83A28.toInt(), // 1 Fire
+            0xFF34C844.toInt(), // 2 Wood
+            0xFFFFD824.toInt(), // 3 Light
+            0xFF9C3CF0.toInt(), // 4 Dark
+            0xFFFF5CA8.toInt()  // 5 Heart
+        )
+        val teamAttrs = listOf(Element.WATER, Element.WOOD, Element.DARK, Element.LIGHT, Element.FIRE, Element.WOOD)
+
+        fun scaleColor(argb: Int, scale: Float): Int {
+            val r = (((argb ushr 16) and 0xFF) * scale).toInt().coerceIn(0, 255)
+            val g = (((argb ushr 8) and 0xFF) * scale).toInt().coerceIn(0, 255)
+            val b = ((argb and 0xFF) * scale).toInt().coerceIn(0, 255)
+            return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+        }
+
+        fun buildBattleFrame(dimFactor: Float, buoyCol: Int): VisionFrame {
+            val px = IntArray(w * h) { 0xFF181410.toInt() }
+            // 1) Draw 6 team portraits above HP bar with top-left attribute icons
+            val pTop = (topPx - 1.24f * cell).toInt()
+            val pBot = (topPx - 0.30f * cell).toInt()
+            for (c in 0 until 6) {
+                val x0 = c * cell + 3
+                val x1 = (c + 1) * cell - 3
+                val isBuoy = (c == buoyCol)
+                val basePortrait = if (buoyCol >= 0 && !isBuoy) 0xFF3E3A38.toInt() else 0xFF8C847E.toInt()
+                for (y in pTop until pBot) {
+                    for (x in x0 until x1) {
+                        px[y * w + x] = basePortrait
+                    }
+                }
+                // Top-left attribute badge ([0.03..0.30]*cell, [-1.24..-0.96]*cell)
+                val attrCol = orbColors[teamAttrs[c].code]
+                val bx0 = (c * cell + 0.04f * cell).toInt()
+                val bx1 = (c * cell + 0.28f * cell).toInt()
+                val by0 = (topPx - 1.22f * cell).toInt()
+                val by1 = (topPx - 0.98f * cell).toInt()
+                for (y in by0 until by1) {
+                    for (x in bx0 until bx1) {
+                        px[y * w + x] = attrCol
+                    }
+                }
+                // Glowing white-gold diamond Starting Buoy centered on portrait
+                if (isBuoy) {
+                    val cx = geom.cellCenterX(c)
+                    val cy = geom.characterAvatarCenterY()
+                    val dr = cell * 0.28f
+                    for (y in pTop until pBot) {
+                        for (x in x0 until x1) {
+                            val d = kotlin.math.abs(x - cx) + kotlin.math.abs(y - cy)
+                            if (d <= dr) {
+                                px[y * w + x] = if (d <= dr * 0.55f) 0xFFFFFFFA.toInt() else 0xFFD8FF60.toInt()
+                            }
+                        }
+                    }
+                }
+            }
+            // 2) Draw 6x5 colored board (dimmed by dimFactor when Starting Buoy scrim is active)
+            val rad = cell * 0.40f
+            for (r in 0 until 5) {
+                for (c in 0 until 6) {
+                    val elIdx = (r * 2 + c) % 6
+                    val col = scaleColor(orbColors[elIdx], dimFactor)
+                    val cx = geom.cellCenterX(c)
+                    val cy = geom.cellCenterY(r)
+                    for (y in (topPx + r * cell).toInt() until (topPx + (r + 1) * cell).toInt()) {
+                        for (x in c * cell until (c + 1) * cell) {
+                            val dx = x - cx
+                            val dy = y - cy
+                            if (dx * dx + dy * dy <= rad * rad) {
+                                px[y * w + x] = col
+                            }
+                        }
+                    }
+                }
+            }
+            return object : VisionFrame {
+                override val width = w
+                override val height = h
+                override fun getArgb(x: Int, y: Int): Int =
+                    px[y.coerceIn(0, h - 1) * w + x.coerceIn(0, w - 1)]
+            }
+        }
+
+        // Case 1: Dimmed 50% board with Starting Buoy on Slot 6 (col 5, Wood)
+        val buoyFrame = buildBattleFrame(dimFactor = 0.50f, buoyCol = 5)
+        val buoyRec = recognizer.recognizeFrames(listOf(buoyFrame), geom)
+        assertTrue("Dimmed Starting Buoy board must be flagged isDimmedBoard", buoyRec.isDimmedBoard)
+        assertEquals("Starting Buoy column must be detected as col 5", 5, buoyRec.startingBuoyCol)
+        assertEquals("Starting Buoy element must be detected as WOOD", Element.WOOD, buoyRec.startingBuoyElement)
+        assertEquals("BoardState must carry startingBuoyCol=5", 5, buoyRec.board.startingBuoyCol)
+        assertEquals("BoardState must carry startingBuoyElement=WOOD", Element.WOOD, buoyRec.board.startingBuoyElement)
+        assertEquals("Zero false '?' on dimmed Starting Buoy board", 0, buoyRec.questionOrbsDetected)
+        assertEquals("Zero false Petrified orbs on dimmed Starting Buoy board", 0, buoyRec.petrifiedOrbsDetected)
+        for (r in 0 until 5) {
+            for (c in 0 until 6) {
+                val expected = Element.fromCode((r * 2 + c) % 6)
+                assertEquals("Dimmed cell ($r,$c) must classify accurately", expected, buoyRec.board.cellAt(r, c).element)
+            }
+        }
+
+        // Case 2: All 6 portrait attributes read accurately from top-left badges
+        assertEquals(teamAttrs, CvBoardRecognizer.detectAllPortraitAttributes(buoyFrame, geom))
+
+        // Case 3: Normal bright battle board (no buoy) -> isDimmedBoard=false, startingBuoyCol=-1
+        val normalFrame = buildBattleFrame(dimFactor = 1.0f, buoyCol = -1)
+        val normalRec = recognizer.recognizeFrames(listOf(normalFrame), geom)
+        assertFalse("Normal bright board must NOT set isDimmedBoard", normalRec.isDimmedBoard)
+        assertEquals("Normal bright board must NOT false-trigger Starting Buoy", -1, normalRec.startingBuoyCol)
+        assertEquals(0, normalRec.questionOrbsDetected)
+    }
 }

@@ -117,13 +117,17 @@ object PathInterpolator {
             solution.usedCharacterOrb -> {
                 val avatarPt = ScreenPoint(
                     geometry.cellCenterX(solution.characterOrbCol),
-                    geometry.characterAvatarCenterY().coerceAtLeast(12f)
+                    geometry.characterAvatarCenterY().coerceAtLeast(16f)
                 )
+                // Firm portrait grab hold so ToS reliably engages Character Runestone / Starting Buoy (起動浮標)
                 val grabEnd = ScreenPoint(avatarPt.x, avatarPt.y + 0.5f)
-                draftSegments.add(listOf(avatarPt, grabEnd) to config.startHoldMs.coerceAtLeast(24L))
+                draftSegments.add(listOf(avatarPt, grabEnd) to config.startHoldMs.coerceAtLeast(45L))
+                // Strict vertical pull across the HP bar straight through row-0 top edge to cell (0, col) center
+                // (official ToS rule: Character Runestone pull must be strictly vertical and cannot enter diagonally)
+                val boardEntryPt = ScreenPoint(avatarPt.x, geometry.topPx)
                 val pullTarget = ScreenPoint(geometry.cellCenterX(solution.characterOrbCol), geometry.cellCenterY(0))
-                val pullMs = (config.stepDurationMs * 1.2f).roundToLong().coerceAtLeast(36L)
-                draftSegments.add(listOf(grabEnd, pullTarget) to pullMs)
+                val pullMs = (config.stepDurationMs * 2.0f).roundToLong().coerceIn(72L, 140L)
+                draftSegments.add(listOf(grabEnd, boardEntryPt, pullTarget) to pullMs)
                 pullTarget
             }
             else -> {

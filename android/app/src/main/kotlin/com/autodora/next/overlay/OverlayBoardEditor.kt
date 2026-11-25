@@ -28,6 +28,7 @@ sealed class BoardBrush(val id: String, val fallbackLabel: String, val labelRes:
     ) : BoardBrush("xflag_$flag", fallback, textRes)
     data class ToggleTileFlag(val flag: Int, val tag: String, val textRes: Int = 0) :
         BoardBrush("flag_$flag", tag, textRes)
+    data object SetStartingBuoy : BoardBrush("starting_buoy", "起动浮标", R.string.editor_brush_starting_buoy)
     data class ToggleHazard(val hazard: Int, val tag: String) : BoardBrush("haz_$hazard", tag)
     data object ClearMarkers : BoardBrush("clear_cell", "清除格标", R.string.editor_btn_clear_cell)
 
@@ -135,7 +136,10 @@ class OverlayBoardEditorController(
                         conflictFlag = TileFlagBits.START_ALLOWED,
                         textRes = R.string.editor_brush_red_vortex,
                         fallback = "红色漩涡"
-                    ),
+                    )
+                ),
+                listOf(
+                    BoardBrush.SetStartingBuoy,
                     BoardBrush.ToggleTileFlag(TileFlagBits.CHAR_ORB_PASS, "角色通行", R.string.editor_brush_char_pass),
                     BoardBrush.ToggleTileFlag(TileFlagBits.CHAR_ORB_END, "角色停放", R.string.editor_brush_char_end)
                 )
@@ -635,8 +639,12 @@ class OverlayBoardEditorController(
         refreshAccordionState()
     }
 
-    fun applyActiveBrush(board: BoardState, row: Int, col: Int): BoardState =
-        applyBrushToBoard(board, activeBrush, row, col)
+    fun applyActiveBrush(
+        board: BoardState,
+        row: Int,
+        col: Int,
+        portraitElements: List<Element> = emptyList()
+    ): BoardState = applyBrushToBoard(board, activeBrush, row, col, portraitElements)
 
     private fun makeHeaderBtn(label: String, marginEndDp: Int = 4, padH: Int = 8, onClick: () -> Unit): TextView {
         return TextView(context).apply {
@@ -705,13 +713,45 @@ class OverlayBoardEditorController(
          * Enforces strict single-point exclusivity for Start/End vortexes (起结有序: 绿色漩涡 / 红色漩涡),
          * multi-cell painting for Character Runestone pass/end terrains (#54 / #78), and exact 7-race selection.
          */
-        fun applyBrushToBoard(board: BoardState, brush: BoardBrush, row: Int, col: Int): BoardState {
+        fun applyBrushToBoard(
+            board: BoardState,
+            brush: BoardBrush,
+            row: Int,
+            col: Int,
+            portraitElements: List<Element> = emptyList()
+        ): BoardState {
+            if (brush == BoardBrush.SetStartingBuoy) {
+                if (col !in 0 until board.cols) return board
+                val newFlags = board.tileFlags.toMutableList()
+                // Portrait Starting Buoy is mutually exclusive with board-cell START_ALLOWED vortex
+                for (i in newFlags.indices) {
+                    newFlags[i] = newFlags[i] and TileFlagBits.START_ALLOWED.inv()
+                }
+                if (board.startingBuoyCol == col) {
+                    return board.copy(
+                        tileFlags = newFlags,
+                        startingBuoyCol = -1,
+                        startingBuoyElement = Element.UNKNOWN
+                    )
+                }
+                val detectedEl = portraitElements.getOrNull(col)?.takeIf { it.isMatchable }
+                    ?: board.cellAt(0, col).element.takeIf { it.isMatchable }
+                    ?: Element.FIRE
+                return board.copy(
+                    tileFlags = newFlags,
+                    startingBuoyCol = col,
+                    startingBuoyElement = detectedEl
+                )
+            }
+
             val idx = row * board.cols + col
             if (idx !in board.cells.indices) return board
             val newCells = board.cells.toMutableList()
             val newFlags = board.tileFlags.toMutableList()
             val oldCell = newCells[idx]
             val oldFlags = newFlags[idx]
+            var nextBuoyCol = board.startingBuoyCol
+            var nextBuoyEl = board.startingBuoyElement
 
             when (brush) {
                 is BoardBrush.PaintElement -> {
@@ -745,6 +785,11 @@ class OverlayBoardEditorController(
                     if (!alreadySet) {
                         // Also clear conflicting start/end flag on this same cell (start != end)
                         newFlags[idx] = (newFlags[idx] and brush.conflictFlag.inv()) or brush.flag
+                        // Setting board-cell Green Start Vortex overrides portrait Starting Buoy (No. 6786-6789)
+                        if (brush.flag == TileFlagBits.START_ALLOWED) {
+                            nextBuoyCol = -1
+                            nextBuoyEl = Element.UNKNOWN
+                        }
                     }
                 }
                 is BoardBrush.ToggleTileFlag -> {
@@ -760,9 +805,19 @@ class OverlayBoardEditorController(
                         hazards = HazardBits.NONE
                     )
                     newFlags[idx] = TileFlagBits.NONE
+                    if (row == 0 && col == nextBuoyCol) {
+                        nextBuoyCol = -1
+                        nextBuoyEl = Element.UNKNOWN
+                    }
                 }
+                BoardBrush.SetStartingBuoy -> Unit
             }
-            return board.copy(cells = newCells, tileFlags = newFlags)
+            return board.copy(
+                cells = newCells,
+                tileFlags = newFlags,
+                startingBuoyCol = nextBuoyCol,
+                startingBuoyElement = nextBuoyEl
+            )
         }
     }
 }

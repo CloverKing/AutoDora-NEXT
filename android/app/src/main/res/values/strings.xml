@@ -361,7 +361,7 @@
     <string name="help_columns_title">直排升华说明</string>
     <string name="help_columns_body">【功能作用】\n为第 1～6 直行分别设定直排消珠颗数（关 / 3珠 / 4珠 / 5珠），引擎会优先在对应列凑出竖排消除。\n\n【适用场景】\n触发角色直排升华剑、直排心回血，或应对指定直行消除敌技。</string>
     <string name="help_start_char_title">起手位置与角色符石说明</string>
-    <string name="help_start_char_body">【起手位置】\n默认任意起手；若关卡限定左下/右下固定起点，可锁定起手格。\n\n【角色符石下拉起手】\n开启并选择 1～6 号位后，转珠将从对应队员头像下拉角色珠进场（首步拉出不计入常规步数），适用于角色珠通行/停放地形及角色珠增伤队伍。</string>
+    <string name="help_start_char_body">【起手位置】\n默认任意起手；若关卡限定左下/右下固定起点，可锁定起手格；盘面指定起手格（如盘面起动浮标 / 绿灯）可使用盘面编排的「绿色漩涡」。\n\n【起动浮标（自动识别）与角色符石】\n• 默认开启「自动识别起动浮标」：自动识别暗化盘面与发光头像浮标位置及其属性色，自动从该队员头像垂直下拉角色符石进场（首步不计步数、自动覆盖第 1 行障碍），并优先将其纳入首批消除以破除「消除起动浮标角色符石盾」。\n• 也可手动指定 1～6 号位与角色珠属性（默认自动读取头像左上角属性），或在盘面编排使用「起动浮标」画笔直接点选头像或直行。</string>
     <string name="help_strategy_switches_title">进阶策略开关说明</string>
     <string name="help_strategy_switches_body">• 强制切珠：尽量把同色珠拆成多组 3 消以冲高连击。\n• 只计首批连击：评分时忽略天降叠珠连击，适合禁天降或稳健求首消连击的副本。\n• 允许斜消：开启八向相连即可消除（仅限拥有斜消队长技的队伍，常规队请保持关闭）。\n• 强化/种族优先：同等条件下优先把强化珠或种族珠纳入消除。\n• 允许撞击风化珠：默认严避风化珠；仅在需要故意撞掉风化珠解状态时开启。</string>
     <string name="help_active_shields_title">本波已挂载解盾说明</string>
@@ -617,5 +617,12 @@
     <string name="toast_record_need_perm">请先授予「屏幕采集权限」后再开始录屏</string>
     <string name="ov_record_btn">录屏</string>
     <string name="mode_floating_record_title">悬浮栏显示录屏按钮</string>
-    <string name="mode_floating_record_sub">仅在「高速录屏采集」模式下生效；关闭后主悬浮栏更紧凑，仍可在概览页启停录屏</string>
+    <string name="mode_floating_record_sub">仅在「高速录屏采集」模式下生效；开启后可在主悬浮栏一键录屏保存至系统相册，关闭后主悬浮栏更紧凑</string>
+
+    <!-- Starting Buoy (起動浮標) & Character Runestone Auto-Attribute -->
+    <string name="char_auto_buoy">自动起动浮标</string>
+    <string name="char_elem_auto">自动属性</string>
+    <string name="shield_starting_buoy">起动浮标盾</string>
+    <string name="editor_brush_starting_buoy">起动浮标</string>
+    <string name="ov_toast_starting_buoy_not_detected">未检测到起动浮标，可在盘面编排点选头像/直行或手动指定角色直行</string>
 </resources>

@@ -12,6 +12,7 @@ import kotlin.math.*
 interface VisionFrame {
     val width: Int
     val height: Int
+    val minAccessibleY: Int get() = 0
     fun getArgb(x: Int, y: Int): Int
 }
 
@@ -39,6 +40,7 @@ class DirectBitmapVisionFrame(
     override val height: Int = bitmap.height,
     private val yOffset: Int = 0
 ) : VisionFrame {
+    override val minAccessibleY: Int = yOffset
     private val maxBmpX = (minOf(width, bitmap.width) - 1).coerceAtLeast(0)
     private val maxBmpY = (bitmap.height - 1).coerceAtLeast(0)
 
@@ -46,6 +48,28 @@ class DirectBitmapVisionFrame(
         val bx = x.coerceIn(0, maxBmpX)
         val by = (y - yOffset).coerceIn(0, maxBmpY)
         return bitmap.getPixel(bx, by)
+    }
+}
+
+/**
+ * Zero-allocation linear luminance gain wrapper used to invert Tower of Saviors' uniform dark scrim
+ * (e.g., ~50% board dimming while 【起動浮標】 awaits a portrait pull), preserving exact Hue & Saturation!
+ */
+private class BrightnessNormalizedVisionFrame(
+    private val inner: VisionFrame,
+    private val gain: Float
+) : VisionFrame {
+    override val width: Int get() = inner.width
+    override val height: Int get() = inner.height
+    override val minAccessibleY: Int get() = inner.minAccessibleY
+
+    override fun getArgb(x: Int, y: Int): Int {
+        val argb = inner.getArgb(x, y)
+        val a = argb and 0xFF000000.toInt()
+        val r = (((argb ushr 16) and 0xFF) * gain).roundToInt().coerceIn(0, 255)
+        val g = (((argb ushr 8) and 0xFF) * gain).roundToInt().coerceIn(0, 255)
+        val b = ((argb and 0xFF) * gain).roundToInt().coerceIn(0, 255)
+        return a or (r shl 16) or (g shl 8) or b
     }
 }
 
@@ -90,6 +114,21 @@ class CvBoardRecognizer : BoardRecognizer {
         val cellH = geometry.cellHeight
         val radius = min(cellW, cellH) * 0.5f
 
+        // Detect uniform dimmed battle scrim (e.g. 【起動浮標】 No. 5893 / 7403 darkens the 6x5 board ~50% while
+        // keeping high orb saturation & lighting up the single buoyed team portrait above the HP bar!).
+        val (boardP85V, isDimmedBoard) = measureBoardDimness(frames.first(), geometry)
+        val (buoyCol, buoyElement) = if (isDimmedBoard) {
+            detectPortraitStartingBuoy(frames, geometry)
+        } else {
+            -1 to Element.UNKNOWN
+        }
+        val evalFrames: List<VisionFrame> = if (isDimmedBoard && boardP85V > 0.15f) {
+            val gain = (0.92f / boardP85V).coerceIn(1.22f, 2.05f)
+            frames.map { BrightnessNormalizedVisionFrame(it, gain) }
+        } else {
+            frames
+        }
+
         val cells = ArrayList<CellState>(total)
         val tileFlags = MutableList(total) { TileFlagBits.NONE }
         val lowConfIndices = ArrayList<Int>()
@@ -105,14 +144,14 @@ class CvBoardRecognizer : BoardRecognizer {
             for (c in 0 until cols) {
                 val idx = r * cols + c
                 abnormalStats[idx] = analyzeCellAbnormalMultiFrame(
-                    frames, geometry.cellCenterX(c), geometry.cellCenterY(r), cellW, cellH
+                    evalFrames, geometry.cellCenterX(c), geometry.cellCenterY(r), cellW, cellH
                 )
             }
         }
 
         // Pre-scan Traffic Light markers (GO green start + red 8-ray burst end) so white 'GO' lettering
         // is known before orb classification and never triggers false '?' or Enchanted flags.
-        detectTrafficLightMarkers(frames, geometry, tileFlags, abnormalStats)
+        detectTrafficLightMarkers(evalFrames, geometry, tileFlags, abnormalStats)
 
         val stormWeakFlags = BooleanArray(total)
         val stormStrongFlags = BooleanArray(total)
@@ -126,14 +165,14 @@ class CvBoardRecognizer : BoardRecognizer {
                 val isTlStart = (tileFlags[idx] and TileFlagBits.START_ALLOWED) != 0
                 val stats = abnormalStats[idx]
                 val cellState = classifyCellMultiFrame(
-                    frames = frames,
+                    frames = evalFrames,
                     cx = cx,
                     cy = cy,
                     radius = radius,
                     isTrafficLightStart = isTlStart,
                     abnormal = stats
                 )
-                val (isStormStrong, isStormWeak) = detectStormMultiFrame(frames, cx, cy, cellW, cellH)
+                val (isStormStrong, isStormWeak) = detectStormMultiFrame(evalFrames, cx, cy, cellW, cellH)
                 stormStrongFlags[idx] = isStormStrong
                 stormWeakFlags[idx] = isStormWeak
 
@@ -162,7 +201,7 @@ class CvBoardRecognizer : BoardRecognizer {
         }
 
         // Detect Puzzle Shield shapes BEFORE terrain post-pass so golden puzzle borders are never confused with Burning tiles!
-        val puzzleCount = detectPuzzleRegions(frames, geometry, tileFlags)
+        val puzzleCount = detectPuzzleRegions(evalFrames, geometry, tileFlags)
 
         // Board-level terrain post-pass (Shattered, Bloodbath, Burning Tile):
         // Gate dark-terrain detectors (Shattered / Bloodbath) on genuine active battle boards (>= 8 bright matchable orbs)
@@ -261,8 +300,16 @@ class CvBoardRecognizer : BoardRecognizer {
         val tlEndCount = tileFlags.count { (it and TileFlagBits.END_REQUIRED) != 0 }
 
         val elapsedMs = (System.nanoTime() - t0) / 1_000_000.0
+        val recognizedBoard = BoardState(
+            cols = cols,
+            rows = rows,
+            cells = cells,
+            tileFlags = tileFlags,
+            startingBuoyCol = buoyCol,
+            startingBuoyElement = buoyElement
+        )
         return RecognitionResult(
-            board = BoardState(cols = cols, rows = rows, cells = cells, tileFlags = tileFlags),
+            board = recognizedBoard,
             averageConfidence = if (total > 0) confSum / total else 0f,
             lowConfidenceIndices = lowConfIndices,
             puzzleCellsDetected = puzzleCount,
@@ -272,8 +319,153 @@ class CvBoardRecognizer : BoardRecognizer {
             raceBadgesDetected = raceBadgeCount,
             stormCellsDetected = stormCount,
             trafficLightStartCount = tlStartCount,
-            trafficLightEndCount = tlEndCount
+            trafficLightEndCount = tlEndCount,
+            startingBuoyCol = buoyCol,
+            startingBuoyElement = buoyElement,
+            isDimmedBoard = isDimmedBoard
         )
+    }
+
+    /**
+     * Measures whether a full colored battle board is covered by a uniform translucent dark scrim
+     * (e.g., Tower of Saviors 【起動浮標】 dims the entire 6x5 board by ~45-55% while preserving vivid
+     * orb saturation S >= 0.42, cleanly separating it from Monochrome/Question/Stone-Locked boards!).
+     * Returns Pair(p85CellMaxV, isUniformlyDimmedColoredBoard).
+     */
+    private fun measureBoardDimness(frame: VisionFrame, geometry: BoardGeometry): Pair<Float, Boolean> {
+        val cols = geometry.cols
+        val rows = geometry.rows
+        val total = cols * rows
+        if (total < 9) return 1f to false
+        val radius = min(geometry.cellWidth, geometry.cellHeight) * 0.5f
+        val ringR = radius * 0.36f
+        val cellMaxVs = FloatArray(total)
+        var colorfulCells = 0
+
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val cx = geometry.cellCenterX(c)
+                val cy = geometry.cellCenterY(r)
+                var maxV = 0f
+                var satSum = 0f
+                var cnt = 0
+                for (a in 0 until 8) {
+                    val theta = (2.0 * PI * a / 8).toFloat()
+                    val dx = cos(theta) * ringR
+                    val dy = sin(theta) * ringR
+                    if (dx > radius * 0.08f && dy < -radius * 0.08f) continue
+                    val (_, s, v) = rgbToHsv(frame.getArgb((cx + dx).roundToInt(), (cy + dy).roundToInt()))
+                    if (v > maxV) maxV = v
+                    satSum += s
+                    cnt++
+                }
+                val idx = r * cols + c
+                cellMaxVs[idx] = maxV
+                val meanS = satSum / max(1, cnt)
+                if (meanS >= 0.42f && maxV >= 0.24f) colorfulCells++
+            }
+        }
+        cellMaxVs.sort()
+        val p85V = cellMaxVs[(total * 0.85f).toInt().coerceIn(0, total - 1)]
+        val isDimmed = p85V in 0.28f..0.67f && colorfulCells >= (total * 0.50f).toInt()
+        return p85V to isDimmed
+    }
+
+    /**
+     * Detects Tower of Saviors 【起動浮標】 (No. 5893 / 7403) glowing diamond beacon over one of the 6 team
+     * character portraits directly above the HP bar while the 6x5 board & other 5 portraits are dimmed.
+     * Returns Pair(col 0..5, auto-detected portrait Element), or Pair(-1, Element.UNKNOWN) when absent.
+     */
+    private fun detectPortraitStartingBuoy(
+        frames: List<VisionFrame>,
+        geometry: BoardGeometry
+    ): Pair<Int, Element> {
+        if (geometry.cols != 6) return -1 to Element.UNKNOWN
+        val f0 = frames.first()
+        val cw = geometry.cellWidth
+        val ch = geometry.cellHeight
+        val portraitTopY = geometry.topPx - 1.24f * ch
+        if (portraitTopY < f0.minAccessibleY.toFloat() || portraitTopY < 4f) return -1 to Element.UNKNOWN
+
+        val avgVs = FloatArray(6)
+        val brightFracs = FloatArray(6)
+        val buoyGlows = FloatArray(6)
+        val scores = FloatArray(6)
+
+        for (c in 0 until 6) {
+            val left = geometry.leftPx + c * cw
+            val x0 = left + cw * 0.10f
+            val x1 = left + cw * 0.90f
+            val y0 = geometry.topPx - 1.20f * ch
+            val y1 = geometry.topPx - 0.34f * ch
+            val cx = left + cw * 0.50f
+            val cy = geometry.characterAvatarCenterY()
+
+            var bestAvgV = 0f
+            var bestBright = 0f
+            var bestGlow = 0f
+
+            for (f in frames) {
+                var vSum = 0f
+                var brightHits = 0
+                var glowHits = 0
+                var glowTot = 0
+                var tot = 0
+                for (iy in 0 until 9) {
+                    val py = (y0 + (y1 - y0) * iy / 8f).roundToInt().coerceIn(0, f.height - 1)
+                    val inCoreY = abs(py - cy) <= ch * 0.30f
+                    for (ix in 0 until 9) {
+                        val px = (x0 + (x1 - x0) * ix / 8f).roundToInt().coerceIn(0, f.width - 1)
+                        val (h, s, v) = rgbToHsv(f.getArgb(px, py))
+                        vSum += v
+                        tot++
+                        if (v >= 0.72f) brightHits++
+                        if (inCoreY && abs(px - cx) <= cw * 0.32f) {
+                            glowTot++
+                            // Blazing white/gold diamond core OR vivid neon-green/gold Starting Buoy halo
+                            if ((v >= 0.86f && s <= 0.44f) || (v >= 0.82f && s >= 0.38f && h in 35f..165f)) {
+                                glowHits++
+                            }
+                        }
+                    }
+                }
+                val avgV = vSum / max(1, tot)
+                val bFrac = brightHits.toFloat() / max(1, tot)
+                val gFrac = glowHits.toFloat() / max(1, glowTot)
+                if (avgV > bestAvgV) bestAvgV = avgV
+                if (bFrac > bestBright) bestBright = bFrac
+                if (gFrac > bestGlow) bestGlow = gFrac
+            }
+            avgVs[c] = bestAvgV
+            brightFracs[c] = bestBright
+            buoyGlows[c] = bestGlow
+            scores[c] = bestAvgV * 1.4f + bestBright * 1.2f + bestGlow * 2.2f
+        }
+
+        var bestCol = 0
+        var secondScore = -1f
+        for (c in 0 until 6) {
+            if (scores[c] > scores[bestCol]) {
+                secondScore = scores[bestCol]
+                bestCol = c
+            } else if (c != bestCol && scores[c] > secondScore) {
+                secondScore = scores[c]
+            }
+        }
+        val otherVs = (0 until 6).filter { it != bestCol }.map { avgVs[it] }.sorted()
+        val otherMedianV = otherVs[otherVs.size / 2]
+
+        val standoutBrightness = avgVs[bestCol] >= 0.46f && (
+            avgVs[bestCol] >= otherMedianV + 0.10f ||
+                (buoyGlows[bestCol] >= 0.14f && brightFracs[bestCol] >= 0.24f)
+            )
+        val hasBeacon = buoyGlows[bestCol] >= 0.08f
+        val uniqueWinner = scores[bestCol] >= secondScore + 0.22f
+        if (!standoutBrightness || !hasBeacon || !uniqueWinner) {
+            return -1 to Element.UNKNOWN
+        }
+        val attr = detectPortraitAttribute(f0, geometry, bestCol)
+        return bestCol to attr
     }
 
     /**
@@ -1955,5 +2147,71 @@ class CvBoardRecognizer : BoardRecognizer {
     companion object {
         const val LOW_CONFIDENCE_THRESHOLD = 0.55f
         const val PUZZLE_BORDER_THRESHOLD = 0.42f
+
+        /**
+         * Reads the attribute element (Water/Fire/Wood/Light/Dark) of team portrait slot [col] (0..5)
+         * from its top-left corner attribute emblem (`x ∈ [0.03..0.30]*cw`, `y ∈ [topPx-1.24*ch..topPx-0.96*ch]`).
+         * Verified 23/23 (100%) across real ToS battle screenshots; returns [Element.UNKNOWN] if empty/out-of-bounds.
+         */
+        fun detectPortraitAttribute(frame: VisionFrame, geometry: BoardGeometry, col: Int): Element {
+            if (geometry.cols != 6 || col !in 0 until 6) return Element.UNKNOWN
+            val cw = geometry.cellWidth
+            val ch = geometry.cellHeight
+            val y0 = (geometry.topPx - 1.24f * ch).roundToInt()
+            val y1 = (geometry.topPx - 0.96f * ch).roundToInt()
+            if (y0 < frame.minAccessibleY || y0 < 0 || y1 >= frame.height || y1 <= y0 + 2) return Element.UNKNOWN
+            val x0 = (geometry.leftPx + (col + 0.03f) * cw).roundToInt().coerceIn(0, frame.width - 1)
+            val x1 = (geometry.leftPx + (col + 0.30f) * cw).roundToInt().coerceIn(x0, frame.width - 1)
+            if (x1 <= x0 + 2) return Element.UNKNOWN
+
+            val stepX = max(1, (x1 - x0) / 10)
+            val stepY = max(1, (y1 - y0) / 10)
+            val votes = FloatArray(5) // 0=Water, 1=Fire, 2=Wood, 3=Light, 4=Dark
+            var y = y0
+            while (y <= y1) {
+                var x = x0
+                while (x <= x1) {
+                    val argb = frame.getArgb(x, y)
+                    val r = ((argb ushr 16) and 0xFF) / 255f
+                    val g = ((argb ushr 8) and 0xFF) / 255f
+                    val b = (argb and 0xFF) / 255f
+                    val mx = max(r, max(g, b))
+                    val mn = min(r, min(g, b))
+                    val d = mx - mn
+                    val s = if (mx < 1e-5f) 0f else d / mx
+                    if (s >= 0.36f && mx >= 0.28f && d >= 1e-5f) {
+                        var h = when (mx) {
+                            r -> 60f * (((g - b) / d) % 6f)
+                            g -> 60f * (((b - r) / d) + 2f)
+                            else -> 60f * (((r - g) / d) + 4f)
+                        }
+                        if (h < 0f) h += 360f
+                        val el = when {
+                            h < 22f || h >= 346f -> Element.FIRE.code
+                            h in 22f..74f -> Element.LIGHT.code
+                            h in 74f..162f -> Element.WOOD.code
+                            h in 162f..248f -> Element.WATER.code
+                            h in 248f..318f -> Element.DARK.code
+                            else -> -1
+                        }
+                        if (el in 0..4) votes[el] += s * mx
+                    }
+                    x += stepX
+                }
+                y += stepY
+            }
+            var bestIdx = -1
+            var bestVote = 0f
+            for (i in 0 until 5) {
+                if (votes[i] > bestVote) {
+                    bestVote = votes[i]
+                    bestIdx = i
+                }
+            }
+            return if (bestIdx >= 0 && bestVote >= 1.5f) Element.fromCode(bestIdx) else Element.UNKNOWN
+        }
+
+        fun detectAllPortraitAttributes(frame: VisionFrame, geometry: BoardGeometry): List<Element> =
+            if (geometry.cols == 6) List(6) { c -> detectPortraitAttribute(frame, geometry, c) } else emptyList()
     }
 }

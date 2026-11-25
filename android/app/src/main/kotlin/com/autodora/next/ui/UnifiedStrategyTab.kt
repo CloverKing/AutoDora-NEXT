@@ -521,14 +521,25 @@ internal fun UnifiedStrategyTab(
                 }
                 val tlLabel = stringResource(R.string.shield_traffic_light)
                 val tlActive = "traffic_light" in activeIds
-                CompactChoicePill(
-                    label = tlLabel,
-                    selected = tlActive,
-                    onClick = {
-                        onToggleWaveChip(WaveShieldChip("traffic_light", tlLabel, ShieldCategory.HAZARD_AND_PATH))
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    CompactChoicePill(
+                        label = tlLabel,
+                        selected = tlActive,
+                        onClick = {
+                            onToggleWaveChip(WaveShieldChip("traffic_light", tlLabel, ShieldCategory.HAZARD_AND_PATH))
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    CompactChoicePill(
+                        label = stringResource(R.string.char_auto_buoy),
+                        selected = cfg.autoDetectStartingBuoy,
+                        onClick = { updateCfg { it.copy(autoDetectStartingBuoy = !it.autoDetectStartingBuoy) } },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
                 AnimatedVisibility(visible = tlActive) {
                     Text(
                         text = stringResource(R.string.traffic_light_hint),
@@ -553,6 +564,27 @@ internal fun UnifiedStrategyTab(
                             onClick = { updateCfg { it.copy(useCharacterOrb = true, characterOrbCol = slot) } },
                             modifier = Modifier.weight(0.9f)
                         )
+                    }
+                }
+                AnimatedVisibility(visible = cfg.useCharacterOrb) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        CompactChoicePill(
+                            label = stringResource(R.string.char_elem_auto),
+                            selected = cfg.characterOrbAutoElement,
+                            onClick = { updateCfg { it.copy(characterOrbAutoElement = true) } },
+                            modifier = Modifier.weight(1.3f)
+                        )
+                        listOf(Element.WATER, Element.FIRE, Element.WOOD, Element.LIGHT, Element.DARK).forEach { el ->
+                            CompactChoicePill(
+                                label = LocaleHelper.elementLabel(ctx, el.code),
+                                selected = !cfg.characterOrbAutoElement && cfg.characterOrbElement == el,
+                                onClick = { updateCfg { it.copy(characterOrbAutoElement = false, characterOrbElement = el) } },
+                                modifier = Modifier.weight(0.9f)
+                            )
+                        }
                     }
                 }
         }
@@ -779,7 +811,7 @@ internal fun UnifiedStrategyTab(
                                 "same_combo_elements", "second_wave_combo", "same_elem_combos",
                                 "equal_pair_light_dark", "first_wave_full_clear", "digital_orb_count",
                                 "elem_burst_shield", "any_enchanted_orb_shield", "race_orb_shield",
-                                "char_orb_first_wave", "luminous_orb_shield"
+                                "char_orb_first_wave", "starting_buoy_shield", "luminous_orb_shield"
                             ).forEach { ActiveStrategyStore.removeChip(it) }
                             WaveShieldChip("zero_combo", ctx.getString(R.string.combo_type_zero), ShieldCategory.COMBO)
                         }
@@ -1021,7 +1053,7 @@ internal fun UnifiedStrategyTab(
             "min_distinct_elements", "require_elements", "three_elements", "five_elements", "five_elements_enchanted",
             "elem_burst_shield", "anti_first_wave", "forbid_all", "clear_all_element", "unmatchable_elements",
             "digital_orb_count", "first_wave_full_clear", "any_enchanted_orb_shield", "race_orb_shield",
-            "char_orb_first_wave", "forbid_weakened_orb", "luminous_orb_shield"
+            "char_orb_first_wave", "starting_buoy_shield", "forbid_weakened_orb", "luminous_orb_shield"
         )
         val elemActiveLabels = activeWaveChips.filter { it.id in elemIds }.map { LocaleHelper.formatWaveChipLabel(ctx, it) }
         val customMatrixCount = cfg.elementRules.count { it.targetShape != TargetShape.ANY || it.priority != ElementPriority.NORMAL || it.timing != MatchTiming.ANY || it.minMatchCount != 3 }
@@ -1275,6 +1307,7 @@ internal fun UnifiedStrategyTab(
                         "any_enchanted_orb_shield" to stringResource(R.string.shield_any_enchanted_orb),
                         "race_orb_shield" to stringResource(R.string.shield_race_orb),
                         "char_orb_first_wave" to stringResource(R.string.shield_char_orb_first),
+                        "starting_buoy_shield" to stringResource(R.string.shield_starting_buoy),
                         "forbid_weakened_orb" to stringResource(R.string.shield_forbid_weakened),
                         "luminous_orb_shield" to stringResource(R.string.shield_luminous_orb)
                     ).forEach { (id, lbl) ->

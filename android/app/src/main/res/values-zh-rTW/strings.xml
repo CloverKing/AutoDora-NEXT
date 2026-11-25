@@ -361,7 +361,7 @@
     <string name="help_columns_title">直排昇華說明</string>
     <string name="help_columns_body">【功能作用】\n為第 1～6 直行分別設定直排消珠粒數（關 / 3珠 / 4珠 / 5珠），引擎會優先在對應列湊出豎排消除。\n\n【適用場景】\n觸發角色直排昇華劍、直排心回血，或應對指定直行消除敵技。</string>
     <string name="help_start_char_title">起手位置與角色符石說明</string>
-    <string name="help_start_char_body">【起手位置】\n預設任意起手；若關卡限定左下/右下固定起點，可鎖定起手格。\n\n【角色符石下拉起手】\n開啟並選擇 1～6 號位後，轉珠將從對應隊員頭像下拉角色珠進場（首步拉出不計入常規步數），適用於角色珠通行/停放地形及角色珠增傷隊伍。</string>
+    <string name="help_start_char_body">【起手位置】\n預設任意起手；若關卡限定左下/右下固定起點，可鎖定起手格；盤面指定起手格（如盤面起動浮標 / 綠燈）可使用盤面編排的「綠色漩渦」。\n\n【起動浮標（自動識別）與角色符石】\n• 預設開啟「自動起動浮標」：自動識別暗化盤面與發光頭像浮標位置及其屬性色，自動從該隊員頭像垂直下拉角色符石進場（首步不計步數、自動覆蓋第 1 行障礙），並優先將其納入首批消除以破除「消除起動浮標角色符石盾」。\n• 亦可手動指定 1～6 號位與角色珠屬性（預設自動讀取頭像左上角屬性），或在盤面編排使用「起動浮標」畫筆直接點選頭像或直行。</string>
     <string name="help_strategy_switches_title">進階策略開關說明</string>
     <string name="help_strategy_switches_body">• 強制切珠：盡量把同色珠拆成多組 3 消以衝高連擊。\n• 只計首批連擊：評分時忽略天降疊珠連擊，適合禁天降或穩健求首消連擊的副本。\n• 允許斜消：開啟八向相連即可消除（僅限擁有斜消隊長技的隊伍，常規隊請保持關閉）。\n• 強化/種族優先：同等條件下優先將強化珠或種族珠納入消除。\n• 允許撞擊風化珠：預設嚴避風化珠；僅在需要故意撞掉風化珠解狀態時開啟。</string>
     <string name="help_active_shields_title">本波已掛載解盾說明</string>
@@ -617,5 +617,12 @@
     <string name="toast_record_need_perm">請先授予「螢幕擷取權限」後再開始錄影</string>
     <string name="ov_record_btn">錄影</string>
     <string name="mode_floating_record_title">懸浮欄顯示錄影按鈕</string>
-    <string name="mode_floating_record_sub">僅在「高速錄影擷取」模式下生效；關閉後主懸浮欄更緊湊，仍可在概覽頁啟停錄影</string>
+    <string name="mode_floating_record_sub">僅在「高速錄影擷取」模式下生效；開啟後可在主懸浮欄一鍵錄影儲存至系統相簿，關閉後主懸浮欄更緊湊</string>
+
+    <!-- Starting Buoy (起動浮標) & Character Runestone Auto-Attribute -->
+    <string name="char_auto_buoy">自動起動浮標</string>
+    <string name="char_elem_auto">自動屬性</string>
+    <string name="shield_starting_buoy">起動浮標盾</string>
+    <string name="editor_brush_starting_buoy">起動浮標</string>
+    <string name="ov_toast_starting_buoy_not_detected">未偵測到起動浮標，可在盤面編排點選頭像/直行或手動指定角色直行</string>
 </resources>

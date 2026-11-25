@@ -117,7 +117,7 @@
 | 84 | 我方效果欄狀態弱攻 | 我方效果栏状态弱攻 | `turn_damage_defense` | `non_board_mechanic` | **NON_BOARD** | — Damage reduction scaling with player buff count. |
 | 85 | 即效永生 | 即效永生 | `turn_damage_defense` | `non_board_mechanic` | **NON_BOARD** | — Enemy full-heals on turn start/end and skill use. |
 | 86 | 佑律 | 佑律 | `element_color` | `non_board_mechanic` | **NON_BOARD** | — Replaces removed/exploded orbs with specified element on entry/turn-end/skill. |
-| 87 | 起動浮標 | 启动浮标 | `path_terrain` | `direct_board_rule` | **FULL** | `traffic_light` `TileFlagBits.START_ALLOWED` Mandatory starting buoy cell (StartAllowed + Character Orb). |
+| 87 | 起動浮標 | 启动浮标 | `path_terrain` | `direct_board_rule` | **UPGRADED** | `starting_buoy_shield` / `traffic_light` `BoardState.startingBuoyCol` + `TileFlagBits.START_ALLOWED` Full dual-variant support: (A) Member Portrait Starting Buoy (Wiki No.5893/7403 + No.5894 Buoy Character Orb Shield) with dimmed-board linear luminance restoration, automatic glowing portrait beacon + top-left attribute detection, strict vertical portrait pull (`topPx - 0.77*ch`), automatic Wave-1 Character Orb clearance, Board Editor `起动浮标` brush & `starting_buoy_shield` verdict; (B) Board-Cell Starting Buoy (No.6786–6789) via `START_ALLOWED` (Green Vortex). |
 | 88 | 次批消除盾 | 次批消除盾 | `combo` | `direct_board_rule` | **FULL** | `second_wave_combo` Wave-2 cascade combo shield (>= N Wave-2 combos, verified in Test #21). |
 | 89 | 冰魄暴劫 | 冰魄暴劫 | `element_color` | `direct_board_rule` | **FULL** | `elem_burst_shield + forbid_all` Ice Death-Rattle: maximize Wood, avoid Water. |
 | 90 | 熔焰焚爆 | 熔焰焚爆 | `element_color` | `direct_board_rule` | **FULL** | `elem_burst_shield + forbid_all` Flame Death-Rattle: maximize Water, avoid Fire. |

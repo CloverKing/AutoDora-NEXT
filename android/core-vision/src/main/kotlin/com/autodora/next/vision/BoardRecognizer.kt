@@ -37,7 +37,10 @@ data class RecognitionResult(
         (it and (TileFlagBits.BURNING_TILE or TileFlagBits.SCORCHING_TILE)) != 0
     },
     val bloodbathTilesDetected: Int = board.tileFlags.count { (it and TileFlagBits.END_FORBIDDEN) != 0 },
-    val shatteredTilesDetected: Int = board.tileFlags.count { (it and TileFlagBits.SHATTERED) != 0 }
+    val shatteredTilesDetected: Int = board.tileFlags.count { (it and TileFlagBits.SHATTERED) != 0 },
+    val startingBuoyCol: Int = board.startingBuoyCol,
+    val startingBuoyElement: Element = board.startingBuoyElement,
+    val isDimmedBoard: Boolean = false
 )
 
 /**

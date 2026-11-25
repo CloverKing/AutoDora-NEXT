@@ -401,7 +401,7 @@ class OverlayTuningDrawerController(
             "min_distinct_elements", "require_elements", "three_elements", "five_elements", "five_elements_enchanted",
             "elem_burst_shield", "anti_first_wave", "forbid_all", "clear_all_element", "unmatchable_elements",
             "digital_orb_count", "first_wave_full_clear", "any_enchanted_orb_shield", "race_orb_shield",
-            "char_orb_first_wave", "forbid_weakened_orb", "luminous_orb_shield"
+            "char_orb_first_wave", "starting_buoy_shield", "forbid_weakened_orb", "luminous_orb_shield"
         )
         val activeElemLabels = activeChips.filter { it.id in elemChipIds }.map { LocaleHelper.formatWaveChipLabel(lctx, it) }
         val customMatrixCount = cfg.elementRules.count { it.targetShape != TargetShape.ANY || it.priority != ElementPriority.NORMAL || it.timing != MatchTiming.ANY || it.minMatchCount != 3 }
@@ -578,7 +578,7 @@ class OverlayTuningDrawerController(
                     listOf(
                         "same_combo_elements", "second_wave_combo", "same_elem_combos", "equal_pair_light_dark",
                         "first_wave_full_clear", "digital_orb_count", "elem_burst_shield",
-                        "any_enchanted_orb_shield", "race_orb_shield", "char_orb_first_wave", "luminous_orb_shield"
+                        "any_enchanted_orb_shield", "race_orb_shield", "char_orb_first_wave", "starting_buoy_shield", "luminous_orb_shield"
                     ).forEach { ActiveStrategyStore.removeChip(it) }
                     WaveShieldChip("zero_combo", s(R.string.combo_type_zero), ShieldCategory.COMBO)
                 }
@@ -905,6 +905,9 @@ class OverlayTuningDrawerController(
         body.addView(spRow1)
 
         val spRow2 = hRow(bottomMarginDp = 4)
+        spRow2.addView(makeToggle(s(R.string.shield_starting_buoy), "starting_buoy_shield" in activeIds, p, weight = 1f) {
+            onToggleWaveChip(WaveShieldChip("starting_buoy_shield", s(R.string.shield_starting_buoy), ShieldCategory.COUNT_AND_ELEMENT))
+        })
         spRow2.addView(makeToggle(s(R.string.shield_forbid_weakened), "forbid_weakened_orb" in activeIds, p, weight = 1f) {
             onToggleWaveChip(WaveShieldChip("forbid_weakened_orb", s(R.string.shield_forbid_weakened), ShieldCategory.COUNT_AND_ELEMENT))
         })
@@ -1316,11 +1319,14 @@ class OverlayTuningDrawerController(
             }
         body.addView(stRow)
         val tlRow = hRow(bottomMarginDp = 4)
-        tlRow.addView(makeToggle(s(R.string.shield_traffic_light), "traffic_light" in activeIds, p, weight = 1f, marginEndDp = 0) {
+        tlRow.addView(makeToggle(s(R.string.shield_traffic_light), "traffic_light" in activeIds, p, weight = 1f) {
             onToggleWaveChip(WaveShieldChip("traffic_light", s(R.string.shield_traffic_light), ShieldCategory.HAZARD_AND_PATH))
         })
+        tlRow.addView(makeToggle(s(R.string.char_auto_buoy), cfg.autoDetectStartingBuoy, p, weight = 1f, marginEndDp = 0) {
+            onUpdateActivePresetConfig { it.copy(autoDetectStartingBuoy = !it.autoDetectStartingBuoy) }
+        })
         body.addView(tlRow)
-        val chRow = hRow(bottomMarginDp = 0)
+        val chRow = hRow(bottomMarginDp = if (cfg.useCharacterOrb) 4 else 0)
         chRow.addView(makeToggle(s(R.string.char_off), !cfg.useCharacterOrb, p, weight = 1f) {
             onUpdateActivePresetConfig { it.copy(useCharacterOrb = false) }
         })
@@ -1330,6 +1336,20 @@ class OverlayTuningDrawerController(
             })
         }
         body.addView(chRow)
+        if (cfg.useCharacterOrb) {
+            val chElRow = hRow(bottomMarginDp = 0)
+            chElRow.addView(makeToggle(s(R.string.char_elem_auto), cfg.characterOrbAutoElement, p, weight = 1.25f) {
+                onUpdateActivePresetConfig { it.copy(characterOrbAutoElement = true) }
+            })
+            val elems = listOf(Element.WATER, Element.FIRE, Element.WOOD, Element.LIGHT, Element.DARK)
+            elems.forEachIndexed { idx, el ->
+                val lbl = LocaleHelper.elementLabel(lctx, el.code)
+                chElRow.addView(makeToggle(lbl, !cfg.characterOrbAutoElement && cfg.characterOrbElement == el, p, weight = 0.85f, marginEndDp = if (idx == elems.lastIndex) 0 else 3) {
+                    onUpdateActivePresetConfig { it.copy(characterOrbAutoElement = false, characterOrbElement = el) }
+                })
+            }
+            body.addView(chElRow)
+        }
     }
 
     private fun buildLeaderAndTraitsCardBody(

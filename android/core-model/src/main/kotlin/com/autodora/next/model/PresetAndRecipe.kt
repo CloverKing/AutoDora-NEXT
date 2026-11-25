@@ -414,6 +414,13 @@ object RuleComposer {
                     cfg = cfg.copy(requireCharOrbFirstWave = true)
                     highDifficultyShield = true
                 }
+                "starting_buoy_shield" -> {
+                    cfg = cfg.copy(
+                        autoDetectStartingBuoy = true,
+                        requireCharOrbFirstWave = true
+                    )
+                    highDifficultyShield = true
+                }
                 "forbid_weakened_orb" -> {
                     cfg = cfg.copy(forbidWeakenedOrbs = true)
                 }
@@ -463,6 +470,44 @@ object RuleComposer {
                     cfg = cfg.copy(startPreset = StartPointPreset.ANY)
                 }
                 highDifficultyShield = true
+            }
+            // Official ToS 【起動浮標】 (No. 5893 / 7403) & 【消除起動浮標角色符石盾】 (No. 5894):
+            // When a portrait Starting Buoy is detected (or painted in Board Editor) and no board-cell start vortex
+            // overrides it, automatically start from that portrait's Character Runestone with its real attribute!
+            val hasBuoyChip = activeChips.any { it.id == "starting_buoy_shield" }
+            if (!hasTrafficStart &&
+                board.startingBuoyCol in 0 until board.cols &&
+                (cfg.autoDetectStartingBuoy || hasBuoyChip)
+            ) {
+                val resolvedEl = if (board.startingBuoyElement.isMatchable) {
+                    board.startingBuoyElement
+                } else {
+                    cfg.characterOrbElement
+                }
+                // Auto-enforce Wave-1 elimination of the buoyed Character Runestone (breaks No. 5894 shield & adds
+                // free chase attack on No. 5893) whenever that element is not forbidden and >= 3 orbs exist after pull!
+                val buoyIdx = board.index(0, board.startingBuoyCol)
+                val otherSameCount = board.cells.indices.count { i ->
+                    i != buoyIdx && board.cells[i].element == resolvedEl
+                }
+                val elRule = elemRules.getOrNull(resolvedEl.code)
+                val elForbidden = elRule != null &&
+                    (elRule.timing == MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE || elRule.timing == MatchTiming.FORBID_ALL)
+                val autoRequireClear = !elForbidden && otherSameCount >= 2
+                cfg = cfg.copy(
+                    useCharacterOrb = true,
+                    characterOrbCol = board.startingBuoyCol,
+                    characterOrbElement = resolvedEl,
+                    startPreset = StartPointPreset.ANY,
+                    requireCharOrbFirstWave = cfg.requireCharOrbFirstWave || hasBuoyChip || autoRequireClear
+                )
+                highDifficultyShield = true
+            } else if (cfg.useCharacterOrb &&
+                cfg.characterOrbAutoElement &&
+                board.startingBuoyElement.isMatchable &&
+                board.startingBuoyCol == cfg.characterOrbCol
+            ) {
+                cfg = cfg.copy(characterOrbElement = board.startingBuoyElement)
             }
         }
 

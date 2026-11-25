@@ -158,8 +158,9 @@ data class BoardGeometry(
     fun cellCenterX(col: Int): Float = leftPx + (col + 0.5f) * cellWidth
     fun cellCenterY(row: Int): Float = topPx + (row + 0.5f) * cellHeight
 
-    // Team character portrait pull origin right above row 0
-    fun characterAvatarCenterY(): Float = topPx - 0.65f * cellHeight
+    // Team character portrait pull origin right above HP bar & row 0 (calibrated across 4 real ToS layouts:
+    // HP bar spans [topPx - 0.25*ch .. topPx - 0.05*ch], portraits span [topPx - 1.24*ch .. topPx - 0.30*ch])
+    fun characterAvatarCenterY(): Float = topPx - 0.77f * cellHeight
 }
 
 @Serializable
@@ -168,7 +169,9 @@ data class BoardState(
     val rows: Int = 5,
     val cells: List<CellState>,
     val tileFlags: List<Int> = List(cols * rows) { TileFlagBits.NONE },
-    val orderedCheckpoints: List<Int> = emptyList()
+    val orderedCheckpoints: List<Int> = emptyList(),
+    val startingBuoyCol: Int = -1,
+    val startingBuoyElement: Element = Element.UNKNOWN
 ) {
     init {
         require(cols in 3..8 && rows in 3..8) { "Board dimensions must be within 3..8, got ${cols}x${rows}" }
