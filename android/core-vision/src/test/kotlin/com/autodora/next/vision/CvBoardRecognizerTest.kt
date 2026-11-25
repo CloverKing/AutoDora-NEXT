@@ -2006,4 +2006,94 @@ class CvBoardRecognizerTest {
             assertEquals("Real Xiaomi 30/30 dark-teal '?' frame must have 0 Evil Energy FPs", 0, realRec.evilEnergyOrbsDetected)
         }
     }
+
+    @Test
+    fun `detects 6-color element-tinted Evil Energy wisps and full-board 30-cell Bloodbath while rejecting modals`() {
+        val cell = 84
+        val cols = 6
+        val rows = 5
+        val geom = BoardGeometry(0f, 0f, (cols * cell).toFloat(), (rows * cell).toFloat(), cols, rows)
+        val recognizer = CvBoardRecognizer()
+
+        val wispColors = mapOf(
+            Element.WATER to 0xFF349CB0.toInt(),
+            Element.FIRE  to 0xFFE84C1C.toInt(),
+            Element.WOOD  to 0xFF2CB844.toInt(),
+            Element.LIGHT to 0xFFE8C820.toInt(),
+            Element.DARK  to 0xFFA43CE8.toInt(),
+            Element.HEART to 0xFFE868A8.toInt()
+        )
+        val normalColors = mapOf(
+            Element.WATER to 0xFF1E9CFF.toInt(),
+            Element.FIRE  to 0xFFFF3020.toInt(),
+            Element.WOOD  to 0xFF2EC840.toInt(),
+            Element.LIGHT to 0xFFFFDF20.toInt(),
+            Element.DARK  to 0xFF8C32E6.toInt(),
+            Element.HEART to 0xFFFF5CA8.toInt()
+        )
+
+        // Board 1: Row 0 = All 6 colors of Evil Energy with matching element-colored wisps (NOT cyan-only!)
+        //          Rows 1..4 = Bright normal 6-color orbs (control)
+        val evilFrame = SyntheticBoardFrame(cols * cell, rows * cell)
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val el = Element.MATCHABLE[c]
+                if (r > 0) {
+                    evilFrame.drawCell(c * cell, r * cell, cell, normalColors.getValue(el))
+                } else {
+                    val x0 = c * cell
+                    val y0 = 0
+                    val cx = x0 + cell * 0.5f
+                    val cy = y0 + cell * 0.5f
+                    val wispCol = wispColors.getValue(el)
+                    for (y in y0 until y0 + cell) {
+                        for (x in x0 until x0 + cell) {
+                            val dx = (x - cx) / cell
+                            val dy = (y - cy) / cell
+                            val rr = hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                            val isWisp = (kotlin.math.abs(dx - 0.14f) < 0.06f && kotlin.math.abs(dy - 0.08f) < 0.06f) ||
+                                (kotlin.math.abs(dx + 0.14f) < 0.06f && kotlin.math.abs(dy + 0.10f) < 0.06f)
+                            evilFrame.pixels[y * evilFrame.width + x] = when {
+                                isWisp -> wispCol
+                                rr <= 0.40f -> 0xFF181418.toInt()
+                                else -> 0xFF141010.toInt()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val evilRec = recognizer.recognizeFrames(listOf(evilFrame), geom)
+        assertEquals("Must detect all 6 element-tinted Evil Energy orbs", 6, evilRec.evilEnergyOrbsDetected)
+        for (c in 0 until 6) {
+            val cellState = evilRec.board.cellAt(0, c)
+            assertTrue("Row 0 col $c (${Element.MATCHABLE[c]}) must have EVIL_ENERGY", (cellState.hazards and HazardBits.EVIL_ENERGY) != 0)
+            assertEquals("Control row 1 col $c must have 0 hazards", HazardBits.NONE, evilRec.board.cellAt(1, c).hazards)
+        }
+
+        // Board 2: Full-board 30/30 deep crimson Bloodbath terrain (all cells darkened by red pool -> brightMatchable < 8!)
+        val bbFrame = SyntheticBoardFrame(cols * cell, rows * cell)
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val x0 = c * cell
+                val y0 = r * cell
+                val cx = x0 + cell * 0.5f
+                val cy = y0 + cell * 0.5f
+                for (y in y0 until y0 + cell) {
+                    for (x in x0 until x0 + cell) {
+                        val rr = hypot(((x - cx) / cell).toDouble(), ((y - cy) / cell).toDouble()).toFloat()
+                        bbFrame.pixels[y * bbFrame.width + x] = if (rr <= 0.36f) 0xFF56181A.toInt() else 0xFF421012.toInt()
+                    }
+                }
+            }
+        }
+        val bbRec = recognizer.recognizeFrames(listOf(bbFrame), geom)
+        assertEquals("Full-board 30/30 Bloodbath stage must detect all 30 END_FORBIDDEN tiles", 30, bbRec.bloodbathTilesDetected)
+
+        // Board 3: Pitch-black enemy popup modal (avgV ~ 0.08, 0 wisps, 0 crimson) -> 0 Evil Energy, 0 Bloodbath!
+        val darkModal = SyntheticBoardFrame(cols * cell, rows * cell)
+        val modalRec = recognizer.recognizeFrames(listOf(darkModal), geom)
+        assertEquals("Dark modal must trigger 0 Evil Energy FPs", 0, modalRec.evilEnergyOrbsDetected)
+        assertEquals("Dark modal must trigger 0 Bloodbath FPs", 0, modalRec.bloodbathTilesDetected)
+    }
 }

@@ -2,10 +2,10 @@
 
 > **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
 
-[![Version](https://img.shields.io/badge/version-v0.4.9-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.4.9)
+[![Version](https://img.shields.io/badge/version-v0.5.0-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.5.0)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
-[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%2078%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
+[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%2082%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
 [![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#多语言主题与应用内更新)
 
 ---
@@ -48,8 +48,9 @@
   - **高速录屏采集模式（可选 / Android 10 回退 · GPU 零拷贝内置录屏存相册）**：基于 `MediaProjection` + OpenGL ES 2.0 `SurfaceTexture` 单一 `VirtualDisplay` 零拷贝双路分发（Android 14–16 合规零冲突），在切换回无障碍截屏或停止悬浮助手时**自动先收尾存片再释放录屏通道**立即归还系统录屏；同时在该模式下于**主悬浮栏提供内置录屏按钮**（可在设置中自由开关是否显示），零 CPU 缩放直连硬件 H.264 编码器（真机硬编 60fps / 8Mbps，完整录制游戏画面与悬浮栏/识别标注/计算路径），免存储权限直存系统相册（`Movies/AutoDora-NEXT/`）。
   - **起动浮标（Wiki No.5893 / No.7403）与消除起动浮标角色符石盾（No.5894）全链路自动支持**：实时检测暗化盘面并执行线性亮度增益还原（30/30 精准识盘、彻底消除暗化误判 `?`/`石`），同步自动识别 6 格队伍头像上的发光菱形「起动浮标」位置及其左上角属性徽标（5 属实图 100% 校准），自动拦截后台转场误清并零配置垂直下拉角色符石进场（校准头像中心 `topPx - 0.77*ch`，稳固按住 `≥45ms` + 严格垂直穿越血条 `72–140ms`，首步不计步且覆盖第 1 行障碍）、自动将其纳入首批消除破盾；双端策略页补充 **`自动起动浮标`** 开关、手动 1–6 号位 **`自动属性 / 5 色`** 选择器与 **`起动浮标盾`** 波次盾，盘面编排同步新增 **`起动浮标`** 画笔（支持直点头像或对应直行标记，与盘面绿灯互斥）。
   - 配备全态血条锚定防误判（无缝覆盖 **`0%–100%`** 全部血量状态：绿/珊瑚红/粉紫/青蓝血条、**`1%–30%` 极低/低血亮红数字危急血条以及 `1/584001` 空血暗槽 + 左侧红心徽章识别**，并兼容密集路径与左上角珠色徽章遮角，彻底杜绝低血队计算后路径闪消、空血队误判队伍头像为假 `6×6` 违建或「自动校准」误吸 Boss 血条），并严格拦截敌技详情弹窗（含金色标题栏）与暖米色/全高活动横幅防非战斗误判。
-- **真实游戏标定多帧融合识盘（18 项异常状态与盘面地形自动检出）**：
-  - 6 属性精准 HSV 分类（自动排除右上角种族徽章与印记象限防偏色）；**7 大种族圆章几何特征识别**（兼容魔族暗底米金环与人类等全种族角标，同时精准过滤心珠右上高光实现 `0` 误报 `心族`）；多帧高光强化星芒、`?` 问号珠、白边护盾珠。
+- **真实游戏标定多帧融合识盘 + 端侧 LiteRT 多头 AI 混合引擎（`v0.5.0` 上线）**：
+  - **`CV-Rule-v2.7` 规则基线**：6 属性精准 HSV 分类（自动排除右上角种族徽章与印记象限防偏色）；**7 大种族圆章几何特征识别**；强化星芒、`?` 问号珠（含 `±3px` 深青边缘容差）与白边护盾珠；新增 **6 色元素着色邪能外焰** 与 **全版 30/30 血浴地形放行（含深红暗池防误计暗化）**，结合 18 项异常/地形零误报检出。
+  - **端侧多头轻量 CNN（`AutoDoraOrbNetV1` · `orb_multihead_v1.tflite`）**：基于 `6,486` 格真机实图多头训练集（GPU 训练导出 BN 折叠 FP32 `.tflite`，`340.4 KB`，APK 内 `noCompress` 零压缩打包；`batch=30` 桌面 CPU 耗时 `2.07ms`），通过 **`HybridFusionPolicy`** 以近零误报门槛融合纠偏黑白珠反色、7 大种族识别与炸弹/刺血/魔力/燃烧/灼热检测，其余低样本类别自动 `0.98` 安全兜底并可在「设置」实时切换 AI 混合模式开关（加载异常自动回退规则 CV）。
   - **全量明显符石状态自动识别（全 6 色笛卡尔积通用去色偏）**：**电击符石（`电`，支持闪光峰值与低亮弱电弧全 6 色双相检测、剥离电光还原底层珠色并豁免红绿灯误起手，永不误判为 `?`）**、**冻结（`冻`）与冰封（`冰`）颜色无关方形晶格检测（6 色全覆盖且与暗珠冰封清晰解耦，同时豁免木/火冻结误报红绿灯）**、**爆破炸弹（`炸`，中心红核+金属灰环+外缘底色还原）**、**邪恶能量（`邪`，放宽至光/心较亮暗化底珠通用）**、**炼狱之火（`狱`，洋红火环主导保护防底色干扰）**、**石化符石（`石`）**、**化血 / 全版 30 颗锁定符石（`血`）**、**荆棘符石（`棘`）**。
   - **盘面地形与盾框自动识别**：**燃烧地形（`燃`，去除光珠高亮偏置全 6 色通用，并收紧拼图金框至纯黄金色 `35°–64°` 彻底杜绝连续 `1×6` 燃烧横行/围城被误判为拼图盾）**、**血浴地形（`浴`）**、**碎裂地形（`碎`，优先区分于暴风雾气）**、暴风区域（`暴风`）、经典金色与现代金属拼图框、**起结有序 V4 识别**（24 角度外环绿芒扫描突破种族角标遮挡、火珠邻格红溢抑制与官方单点绿/红漩涡约束）；所有自动检出状态与地形均在路径预览层同步渲染高对比角标。
   - 结界地形兼容识别，以及非战斗活动列表（强制校验盘面上方血条隔离带，根除自身半透明记忆圆圈自激反馈循环）、关卡转场、`VICTORY` 结算画面与敌技详情弹窗的自动静默拦截，彻底消除非战斗残留浮动识别层。
@@ -106,7 +107,7 @@
 | [docs/enemy_skill_audit.md](./docs/enemy_skill_audit.md) | **《神魔百科 · 敵人技能》98 项全量结构化审计报告**：逐项核验官方正/误示例与引擎落地详情 |
 | [docs/runestone_status_audit.md](./docs/runestone_status_audit.md) | **全量 22 项「符石狀態」物理核验报告**（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）：逐项核验物理细节、CV 标定与编绘画笔映射 |
 | [docs/LEGACY_AUTODORA_ANALYSIS.md](./docs/LEGACY_AUTODORA_ANALYSIS.md) | 旧版 `AutoDora-V3.4.3.apk` 深度拆解与继承升级对照表 |
-| [ml/README.md](./ml/README.md) | Phase 4 端侧多头轻量 CNN（LiteRT `.tflite`）训练与数据飞轮规划 |
+| [ml/README.md](./ml/README.md) | Phase 4 端侧多头轻量 CNN（`AutoDoraOrbNetV1` LiteRT `.tflite`）训练、近零误报校准与融合管线说明 |
 
 > **标定与合规原则**：所有棋盘几何探测、视觉色域与特化识别标定均严格基于真实《神魔之塔》游戏画面实测验证；仓库内绝不包含任何受版权保护的第三方游戏截图、角色立绘或原始游戏素材。
 
@@ -124,11 +125,11 @@ AutoDora-NEXT/
 │   ├── app/                      # 3-Tab 启动台、圆形图标悬浮栏、3-Tab 单抽屉调参面板、1:1 盘面编排、应用内更新器
 │   ├── core-model/               # 跨层不可变模型、两层 RuleComposer、ShieldVerdictEvaluator 逐盾核验器
 │   ├── core-capture/             # 双模采集（无障碍截屏 + MediaProjection + 内置 H.264 录屏存相册）、血条锚定 6×5↔6×8 自动规格探测
-│   ├── core-vision/              # 多帧融合 CvBoardRecognizer、FlashRevealMemoryTracker 全屏问号记忆、Hybrid 推理接口
+│   ├── core-vision/              # CV-Rule-v2.7 多帧融合、FlashRevealMemoryTracker、LiteRtOrbClassifier + HybridBoardRecognizer
 │   ├── core-touch/               # 免 Root AccessibilityService 分段手势、角色珠下拉、按住重算续滑、6 档速度与镜像反转
-│   ├── core-data/                # DataStore 设置、Room 实时策略持久化、39 项 WaveShieldCatalog、98 敌技 & 22 符石状态目录
+│   ├── core-data/                # DataStore 设置（含 AI 混合识盘开关）、Room 实时策略持久化、39 项 WaveShieldCatalog、98 敌技 & 22 符石状态目录
 │   └── solver-jni/               # NDK/JNI 桥接（arm64-v8a / armeabi-v7a / x86_64，-O3 优化）
-├── ml/                           # 端侧多头轻量 CNN 训练与 LiteRT 导出管线（Phase 4）
+├── ml/                           # AutoDoraOrbNetV1 多头轻量 CNN 训练、近零误报校准与 LiteRT 导出管线
 └── docs/                         # 系统架构、机制全景手册、百科审计规范与应用干净截图（docs/images/）
 ```
 
@@ -138,12 +139,13 @@ AutoDora-NEXT/
 
 - [x] **Phase 1（`v0.1.0`）**：纯 C++20 `3×3~8×8` 64-bit 动态解盘引擎（支持最高 300 步）+ Android 多模块骨架 + JNI 跨平台编译。
 - [x] **Phase 2 & 2.5（`v0.2.x` – `v0.3.x`）**：免 Root 零拷贝 `MediaProjection` + 血条锚定 `6×5`/`6×8` 实图精准标定 + 先露后藏问号记忆 + 免 Root 按住重算续滑 + 经典/现代拼图框、起结有序漩涡、暴风、化血、结界与 VICTORY 过滤 + 逐盾 `✓/✗` 实时判定 + 方向逆转镜像与首步防拐保护。
-- [x] **Phase 3 & 3.5（`v0.4.0` – `v0.4.9` · 当前版本）**：
+- [x] **Phase 3 & 3.5（`v0.4.0` – `v0.4.9`）**：
   - **全量 98 敌技 + 22 符石状态（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）+ 7 大官方种族审计与引擎/CV/编排闭环升级**。
   - **Material 3 / Material You 3-Tab 启动页 + 同色系悬浮 3-Tab 单抽屉调参面板 + 4 态磁吸记忆悬浮栏**（横排靠左/横排靠右向左展开/竖排靠左/竖排靠右，松手左右平滑吸边并持久记忆停靠侧与纵坐标）。
   - **5 色单开互斥抽屉 1:1 盘面编排（打开即自动识盘 + 一键「重新识盘」）**（仅允许单一抽屉展开防遮挡 + 激活画笔标题徽标、单点互斥绿/红漩涡、多格角色通行/停放、18 项齐整符石状态画笔含荆棘/锁定、独立清除格标、「保存版面 → 主栏计算/执行」工作流）。
   - **双模免 Root 屏幕采集（Android 11+ 默认无障碍截屏兼容系统录屏 + 可选高速录屏采集自动释放 & 悬浮栏内置 H.264 MP4 录屏直存系统相册）** + **成员起动浮标（Wiki No.5893/7403）与消除起动浮标角色符石盾（No.5894）全链路自动支持**（暗化盘面线性亮度还原 + 发光头像浮标与左上角属性自动识别 + 校准头像中心严格垂直下拉 + 零配置首批消破盾 + 策略/编排双端配置）+ **空血 `1 HP` 暗槽血条锚定防假违建** + **非战斗悬浮自激拦截** + **18 项异常状态/地形自动 CV 识别与全 6 色笛卡尔积去色偏**（电击双相+底色还原、颜色无关晶格冻结/冰封、炸弹、邪能、炼狱、燃烧/血浴/碎裂、7 种族圆章 V3、起结有序 V4、石化、全版 30 颗锁定·化血、荆棘 + 跨机制防误判隔离）+ **精准 45° 斜转 `1.414×` 弧长计时** + **双端 1:1 统一四态颠倒方向操控 & 嵌套按住触发子卡片 & 可配按住显形后解盘时间（`0.15–3.5s`）** + **6 档统一速度（`2s~7s`）**、**单一自动保存策略（一键恢复默认）+ 16 形态×`1~5消` 单属性规则矩阵（一键全矩阵重置）+ 暗色模式高对比度适配**、**三语纯终态文案热切（582 词条）** 与 **免 403 限流双通道检更 + 应用内流式下载与 `FileProvider` 自动安装**。
-- [ ] **Phase 4（规划中）**：端侧多头轻量 CNN（LiteRT `.tflite` 热加载，攻克黑白符石/复杂联名皮肤/叠加态自动识盘）、纠错样本本地采集飞轮、端侧敌技说明自动解析与可选 Shizuku 触控引擎。
+- [x] **Phase 4 首版（`v0.5.0` · 当前版本）**：端侧多头轻量 CNN `AutoDoraOrbNetV1`（`84,191` 参数，BN 折叠 FP32 `.tflite` `340.4 KB`）+ 近零误报 `HybridFusionPolicy` 混合识盘正式上线；`CV-Rule-v2.7` 补齐 6 色元素着色邪能外焰、全版 30/30 血浴地形放行与 `?` 边缘漂移容差；Settings 支持 AI 混合识盘开关与规则 CV 无缝兜底。
+- [ ] **Phase 4 后续规划（`v0.5.x` – `v1.0.0`）**：纠错样本本地 ZIP 采集飞轮、端侧敌技说明自动解析、可选 Shizuku 触控引擎与 `v1.0.0` 正式发布。
 
 ---
 
@@ -162,11 +164,11 @@ AutoDora-NEXT/
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 3. Android 全模块 JVM 单测（78/78）与 APK 构建
+### 3. Android 全模块 JVM 单测（82/82）与 APK 构建
 
 ```powershell
 # 运行全部模块单元测试并构建 Debug APK
-powershell -ExecutionPolicy Bypass -File android/build-android.ps1 :core-model:test :core-capture:testDebugUnitTest :core-vision:testDebugUnitTest :core-touch:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug
+powershell -ExecutionPolicy Bypass -File android/build-android.ps1 core-model:test core-capture:testDebugUnitTest core-vision:testDebugUnitTest core-touch:testDebugUnitTest core-data:testDebugUnitTest app:testDebugUnitTest app:assembleDebug
 
 # 构建签名 Release APK
 powershell -ExecutionPolicy Bypass -File android/build-android.ps1 :app:assembleRelease

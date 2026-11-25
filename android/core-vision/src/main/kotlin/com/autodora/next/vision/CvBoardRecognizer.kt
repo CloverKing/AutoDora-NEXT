@@ -84,7 +84,7 @@ private class BrightnessNormalizedVisionFrame(
  */
 class CvBoardRecognizer : BoardRecognizer {
 
-    override val name: String = "CV-Rule-v2.6 (RealGame+Hazards+Terrains)"
+    override val name: String = "CV-Rule-v2.7 (RealGame+Hazards+Terrains)"
 
     override suspend fun recognize(frames: List<Bitmap>, geometry: BoardGeometry): RecognitionResult =
         withContext(Dispatchers.Default) {
@@ -211,6 +211,14 @@ class CvBoardRecognizer : BoardRecognizer {
                 (it.hazards and HazardBits.QUESTION) == 0 &&
                 it.confidence >= 0.50f
         }
+        val bloodbathCandidateCount = abnormalStats.count { st ->
+            st != null &&
+                st.minAvgBodyV <= 0.38f &&
+                st.minHighVBody <= 0.08f &&
+                st.maxBbRed >= 0.48f &&
+                st.maxBbCorner >= 0.16f
+        }
+        val allowBloodbathTerrain = brightMatchableCount >= 8 || bloodbathCandidateCount >= 18
         for (idx in 0 until total) {
             val flags = tileFlags[idx]
             val isStorm = (flags and TileFlagBits.STORM) != 0
@@ -220,6 +228,7 @@ class CvBoardRecognizer : BoardRecognizer {
             val stats = abnormalStats[idx]
 
             if (stats != null && !isPetrified) {
+                var markedDarkTerrain = false
                 // 1. Shattered Tile (#35 碎裂): pitch-black glass-cracked void with zero saturated color.
                 //    Evaluated even if radial grey cracks touched Storm's diagonal samples (real Storm veils
                 //    have avgV >= 0.32 and darkBody < 0.20, NEVER a pitch-black void with darkBody >= 0.72!).
@@ -237,9 +246,10 @@ class CvBoardRecognizer : BoardRecognizer {
                         hazards = cell.hazards and HazardBits.QUESTION.inv(),
                         confidence = 0.90f
                     )
+                    markedDarkTerrain = true
                 } else if (!isStorm &&
                     !isBloodDrain &&
-                    brightMatchableCount >= 8 &&
+                    allowBloodbathTerrain &&
                     stats.minAvgBodyV <= 0.38f &&
                     stats.minHighVBody <= 0.08f &&
                     stats.maxBbRed >= 0.48f &&
@@ -253,6 +263,7 @@ class CvBoardRecognizer : BoardRecognizer {
                             confidence = max(cell.confidence, 0.82f)
                         )
                     }
+                    markedDarkTerrain = true
                 } else if (!isStorm &&
                     (cell.hazards and (HazardBits.ELECTRIFIED or HazardBits.PURGATORY_FIRE)) == 0 &&
                     (flags and (TileFlagBits.PUZZLE_1 or TileFlagBits.PUZZLE_2 or TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED)) == 0 &&
@@ -264,6 +275,26 @@ class CvBoardRecognizer : BoardRecognizer {
                     //    outer border/corners on ANY of the 6 orb colors (no Light-orb brightness bias; avgV >= 0.40
                     //    only excludes pitch-black non-battle modals, verified 0/329 FP on real battle screens!)
                     tileFlags[idx] = flags or TileFlagBits.BURNING_TILE
+                }
+
+                // 4. All-6-Color Evil Energy (#12 邪惡能量) promotion:
+                //    Covers orange-red Fire, green Wood, yellow-gold Light, purple Dark, and pink-white Heart wisps
+                //    over a deeply darkened orb body, safely gated on brightMatchableCount >= 6 so full dark '?'
+                //    boards & dark modal popups remain 0 FP.
+                if (!markedDarkTerrain &&
+                    !isStorm &&
+                    !isBloodDrain &&
+                    stats.isColorEvilCandidate &&
+                    brightMatchableCount >= 6 &&
+                    (cell.hazards and (HazardBits.EVIL_ENERGY or HazardBits.FROZEN or HazardBits.ICE_SEALED or HazardBits.ELECTRIFIED or HazardBits.PURGATORY_FIRE or HazardBits.BOMB)) == 0
+                ) {
+                    val cur = cells[idx]
+                    val recoveredEl = if (cur.element.isMatchable) cur.element else Element.DARK
+                    cells[idx] = cur.copy(
+                        element = recoveredEl,
+                        hazards = (cur.hazards and HazardBits.QUESTION.inv()) or HazardBits.EVIL_ENERGY,
+                        confidence = max(cur.confidence, 0.84f)
+                    )
                 }
             }
         }
@@ -347,6 +378,7 @@ class CvBoardRecognizer : BoardRecognizer {
         val cellMedVs = FloatArray(total)
         val ringVs = FloatArray(8)
         var colorfulCells = 0
+        var darkCrimsonCells = 0
 
         for (r in 0 until rows) {
             for (c in 0 until cols) {
@@ -354,22 +386,25 @@ class CvBoardRecognizer : BoardRecognizer {
                 val cy = geometry.cellCenterY(r)
                 var maxV = 0f
                 var satSum = 0f
+                var crimsonHits = 0
                 var cnt = 0
                 for (a in 0 until 8) {
                     val theta = (2.0 * PI * a / 8).toFloat()
                     val dx = cos(theta) * ringR
                     val dy = sin(theta) * ringR
                     if (dx > radius * 0.08f && dy < -radius * 0.08f) continue
-                    val (_, s, v) = rgbToHsv(frame.getArgb((cx + dx).roundToInt(), (cy + dy).roundToInt()))
+                    val (h, s, v) = rgbToHsv(frame.getArgb((cx + dx).roundToInt(), (cy + dy).roundToInt()))
                     ringVs[cnt++] = v
                     if (v > maxV) maxV = v
                     satSum += s
+                    if ((h <= 22f || h >= 332f) && s >= 0.28f && v in 0.12f..0.42f) crimsonHits++
                 }
                 if (cnt > 1) ringVs.sort(0, cnt)
                 val medV = if (cnt > 0) ringVs[cnt / 2] else 0f
                 cellMedVs[r * cols + c] = medV
                 val meanS = satSum / max(1, cnt)
                 if (meanS >= 0.42f && maxV >= 0.24f) colorfulCells++
+                if (cnt > 0 && crimsonHits * 2 >= cnt) darkCrimsonCells++
             }
         }
         cellMedVs.sort()
@@ -378,8 +413,17 @@ class CvBoardRecognizer : BoardRecognizer {
         // Lower floor 0.32f excludes pitch-dark 30/30 dark-teal '?' Question boards (p50V ~0.18..0.24)
         // from falsely receiving 2.05x Starting Buoy brightness normalization while keeping all genuine
         // dimmed Starting Buoy boards (~0.45..0.60) well inside bounds!
-        val isDimmed = p50V in 0.32f..0.61f && p75V <= 0.66f && colorfulCells >= (total * 0.50f).toInt()
+        // Also exclude uniform full-board crimson Bloodbath stages (darkCrimsonCells >= half the board).
+        val isDimmed = p50V in 0.32f..0.61f &&
+            p75V <= 0.66f &&
+            colorfulCells >= (total * 0.50f).toInt() &&
+            darkCrimsonCells < (total * 0.50f).toInt()
         return p75V to isDimmed
+    }
+
+    internal fun computeDimmedBrightnessGain(frame: VisionFrame, geometry: BoardGeometry): Float {
+        val (p75, dimmed) = measureBoardDimness(frame, geometry)
+        return if (dimmed && p75 > 0.15f) (0.90f / p75).coerceIn(1.22f, 2.05f) else 1.0f
     }
 
     /**
@@ -1204,6 +1248,7 @@ class CvBoardRecognizer : BoardRecognizer {
         val isElectrified: Boolean,
         val isBomb: Boolean,
         val isEvilEnergy: Boolean,
+        val isColorEvilCandidate: Boolean,
         val minAvgBodyV: Float,
         val maxAvgBodyV: Float,
         val maxDarkBody: Float,
@@ -1281,6 +1326,7 @@ class CvBoardRecognizer : BoardRecognizer {
         var anyElectrified = false
         var anyBomb = false
         var anyEvilEnergy = false
+        var anyColorEvilCandidate = false
 
         var minAvgBodyV = 1f
         var maxAvgBodyV = 0f
@@ -1324,7 +1370,7 @@ class CvBoardRecognizer : BoardRecognizer {
             var midTot = 0; var bombGreyHits = 0
             var bodyTot = 0; var bodyVSum = 0f; var whBodyHits = 0; var darkBodyHits = 0
             var highVBodyHits = 0; var satBodyHits = 0; var crackSilverHits = 0
-            var iceWhiteBodyHits = 0; var icePurpBodyHits = 0; var tealWispHits = 0; var bbRedHits = 0
+            var iceWhiteBodyHits = 0; var icePurpBodyHits = 0; var tealWispHits = 0; var anyWispHits = 0; var bbRedHits = 0
             var questionGlyphHits = 0; var silverRimTot = 0; var silverRimHits = 0
             var latticePairs = 0; var latticeEdges = 0
             var purgRingTot = 0; var purgMagHits = 0
@@ -1375,6 +1421,8 @@ class CvBoardRecognizer : BoardRecognizer {
                         if (v >= 0.35f && h in 250f..310f && s >= 0.35f) icePurpBodyHits++
                         // Tight turquoise wisp hue (162..198°) separates Evil Energy wisps from regular blue Water (202..230°)
                         if (h in 162f..198f && s >= 0.22f && v >= 0.32f) tealWispHits++
+                        // Element-colored glowing wisps (Fire orange, Wood green, Light gold, Dark purple, Heart pink)
+                        if (s >= 0.24f && v >= 0.28f) anyWispHits++
                         if (v >= 0.62f && s <= 0.25f) questionGlyphHits++
                         if ((h <= 22f || h >= 332f) && s >= 0.28f && v in 0.12f..0.42f) bbRedHits++
 
@@ -1448,6 +1496,7 @@ class CvBoardRecognizer : BoardRecognizer {
             val icePurpBody = icePurpBodyHits.toFloat() / bTot
             val latticeRatio = latticeEdges.toFloat() / max(1, latticePairs)
             val tealWisp = tealWispHits.toFloat() / bTot
+            val anyWisp = anyWispHits.toFloat() / bTot
             val bbRed = bbRedHits.toFloat() / bTot
             val bbCorner = bbCornerHits.toFloat() / max(1, cornerTot)
             val purgMag = purgMagHits.toFloat() / max(1, purgRingTot)
@@ -1504,9 +1553,20 @@ class CvBoardRecognizer : BoardRecognizer {
             //    and a crisp silver-mint circular outer rim (>=25% of r∈[0.36..0.45]).
             val questionGlyphRatio = questionGlyphHits.toFloat() / bTot
             val silverRimRatio = silverRimHits.toFloat() / max(1, silverRimTot)
-            val looksLikeQuestionGlyphAndRim = questionGlyphRatio >= 0.045f && silverRimRatio >= 0.25f
+            val looksLikeQuestionGlyphAndRim = questionGlyphRatio >= 0.036f && silverRimRatio >= 0.25f
             if (!looksLikeQuestionGlyphAndRim && avgV <= 0.34f && darkBody >= 0.54f && highVBody <= 0.08f && tealWisp >= 0.06f) {
                 anyEvilEnergy = true
+            }
+            if (!looksLikeQuestionGlyphAndRim &&
+                !anyEvilEnergy &&
+                crackSilver < 0.12f &&
+                bbRed < 0.45f &&
+                avgV <= 0.26f &&
+                darkBody >= 0.62f &&
+                highVBody <= 0.12f &&
+                anyWisp >= 0.02f
+            ) {
+                anyColorEvilCandidate = true
             }
 
             if (avgV < minAvgBodyV) minAvgBodyV = avgV
@@ -1528,6 +1588,7 @@ class CvBoardRecognizer : BoardRecognizer {
             isElectrified = anyElectrified,
             isBomb = anyBomb,
             isEvilEnergy = anyEvilEnergy,
+            isColorEvilCandidate = anyColorEvilCandidate,
             minAvgBodyV = minAvgBodyV,
             maxAvgBodyV = maxAvgBodyV,
             maxDarkBody = maxDarkBody,

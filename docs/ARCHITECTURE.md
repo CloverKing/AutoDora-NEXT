@@ -1,6 +1,6 @@
 # AutoDora-NEXT v3.0 系统架构、功能设计与演进规划
 
-> **当前基线版本**：`v0.4.9`（`versionCode = 409`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
+> **当前基线版本**：`v0.5.0`（`versionCode = 500`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
 > **项目定位**：面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备的**免 Root、全规格动态棋盘自适应、可自由组合解盾、问号/按珠变盘双模破局、1:1 实时盘面编排、C++20 端侧高速引擎驱动**的新一代智能转珠辅助工程。  
 > **设计基线**：全面继承并升级旧版 [AutoDora-V3.4.3](./LEGACY_AUTODORA_ANALYSIS.md) 经实战验证的悬浮窗交互、调参与「问号‧转/风化‧转」按珠重算精华；完整对照 [《神魔之塔》13 年全机制全景调研手册](./TOS_COMPLETE_MECHANICS_CATALOG.md)、[98 项官方敌技审计报告](./enemy_skill_audit.md) 与 [22 项符石状态核验报告](./runestone_status_audit.md)（官方百科 20 项 + 百科外经典 2 项）。  
 > **标定与合规原则**：所有棋盘几何探测、校准基准与视觉特征阈值均严格以**真实《神魔之塔》游戏画面**实测标定；仓库仅包含工程代码、结构化技术规范与应用自身纯净截图，严禁提交任何第三方版权游戏素材。
@@ -56,17 +56,20 @@ flowchart LR
    - **电击符石（#01 電擊，`电`）**：在红绿灯与问号珠判定之前优先执行 13×13 网格多帧峰值检测，覆盖「强白炽核心 + 青蓝电弧外溢边角」闪光峰值相与「颜色无关低亮弱电弧（`avgV ≥ 0.58..0.62`，全 6 色木/火/暗珠同样覆盖）」双分支，并在 `detectTrafficLightMarkers` 中显式豁免以防白核+邻格木珠误判绿灯起手；通过外缘 `[0.22..0.385]` 饱和像素剔除青蓝电光智能还原 6 属真实底色（光珠金橙 `15°–74°` vs 火珠正红 `<15°/≥346°`），实机图 `2/2` 精准检出且 `0/328` 误报；
    - **冻结（#03 凍結，`冻`）与冰封（冰封，`冰`）**：基于 13×13 网格相邻像素饱和度跃迁晶格纹理（`latticeRatio ≥ 0.30`，全 6 色通用无水珠偏置）+ 四角亮面 + 任意色相饱和底珠（`satColorCore ≥ 0.20`）识别 6 色冻结，与深紫晶脉冰封（`icePurpBody ≥ 0.45` & `iceWhiteBody ∈ [0.20..0.44]`）清晰解耦（含暗珠冻结不误判冰封），并在红绿灯检测前优先扫盘豁免以防木/火方形冰块误触发绿/红漩涡；
    - **爆破炸弹（#09 爆破炸彈，`炸`）**：中心正红圆核（`r ≤ 0.145`）联立中环哑光灰金属六角壳（`r ∈ [0.18..0.355]`），并从最外缘恢复 6 属底层属性；
-   - **邪恶能量（#12 邪惡能量，`邪`）与炼狱之火（#59 煉獄之火，`狱`）**：邪恶能量采用收窄青绿幽火色相（`162°–198°` 隔绝普通蓝水珠）并放宽珠体亮度至 `avgV ≤ 0.34 / darkBody ≥ 0.54` 覆盖较亮暗化光/心底珠；炼狱之火识别纯白强核外绕洋红紫焰并加入洋红主导保护（`purgMag ≥ elecCyanBorder × 1.5`）及红绿灯豁免；
-   - **问号符石（`?`）**：暗灰蓝低饱和特征与鲜亮水珠严格解耦，避免误判水珠；
+   - **邪恶能量（#12 邪惡能量，`邪`）与炼狱之火（#59 煉獄之火，`狱`）**：邪恶能量在窄带青绿幽火之外支持 `CV-Rule-v2.7` 全 6 色元素着色邪能外焰检测（前置 `brightMatchableCount >= 6` 门控防暗色说明弹窗误触发）；炼狱之火识别纯白强核外绕洋红紫焰并加入洋红主导保护（`purgMag ≥ elecCyanBorder × 1.5`）及红绿灯豁免；
+   - **问号符石（`?`）**：暗灰蓝/深青绿低饱和特征与 `looksLikeQuestionGlyphAndRim`（`0.036f` 容差）支持 `±3px` 采样偏移，同时与鲜亮水珠严格解耦；
    - **石化符石（#04 石化，`石`）**：识别暗炭蓝岩体（`≥ 22%`）交织赤红熔岩裂纹（`≥ 18%`）；
    - **化血符石（#08，`血`）& 全版/单颗经典锁定符石**：统一识别灰石壳缠绕外观，覆盖全部 6 属性（含低饱和橄榄灰锁定光珠），支持全版 30/30 锁定盘面 100% 识别且不被误判为转场暗化界面；
    - **荆棘符石（百科外经典，`棘`）**：双侧中腰棕褐棘蔓带 + 上下珠体反差校验；
-   - **燃烧地形（#25 燃燒，`燃`）、血浴地形（#31 血浴，`浴`）与碎裂地形（#35 碎裂，`碎`）**：在拼图框识别之后执行棋盘级地形后验扫盘——燃烧地形去除光珠高亮偏置（`maxAvgBodyV ≥ 0.40` 全 6 色暗珠通用），配合拼图金框下限收紧至纯黄金色 `35°–64°`（彻底隔离 `10°–33°` 橙红火焰，防止连续 `1×6` 燃烧横行/围城被误判为拼图盾），实机 `1/1` 检出、`0/329` 误报；血浴地形检验深暗赤红血池浸染；碎裂地形在确认存在 `≥ 8` 颗正常亮珠的活跃盘面上识别漆黑蛛网裂纹空洞并优先豁免暴风误判；
+   - **燃烧地形（#25 燃燒，`燃`）、血浴地形（#31 血浴，`浴`）与碎裂地形（#35 碎裂，`碎`）**：在拼图框识别之后执行棋盘级地形后验扫盘——燃烧地形去除光珠高亮偏置（`maxAvgBodyV ≥ 0.40` 全 6 色暗珠通用），配合拼图金框下限收紧至纯黄金色 `35°–64°`（彻底隔离 `10°–33°` 橙红火焰，防止连续 `1×6` 燃烧横行/围城被误判为拼图盾），实机 `1/1` 检出、`0/329` 误报；血浴地形在 `CV-Rule-v2.7` 支持单格及全版 30/30 深暗赤红血池浸染（放行 `brightMatchableCount >= 8 || bloodbathCandidateCount >= 18`，并在 `measureBoardDimness` 排除深红暗池免误计暗化）；碎裂地形在确认存在 `≥ 8` 颗正常亮珠的活跃盘面上识别漆黑蛛网裂纹空洞并优先豁免暴风误判；
    - **暴风区域（`暴风`）**：多帧灰白龙卷风纹理与高饱和缺失联动判定；
    - **结界地形兼容**：针对结界滤镜与边框变暗优化色域容错，稳定维持盘面识别；
    - **拼图盾框自动抠图**：同时兼容经典金色亮边与现代金属雕花边框；
    - **起结有序 V4 自动识别**：在四角极角探针外叠加 24 角度外环绿芒扫描（突破右上角种族圆章遮挡与 ±8% 纵向漂移），结合火珠邻格红溢惩罚与非火非心红环救援，按官方机制严格择优锁定单一绿色 `GO` 起点漩涡与单一红色停手漩涡（并防止白色 `GO` 字母误触发问号或强化判定）；所有自动检出状态与地形均在 `PathOverlayView` 路径预览与编排网格同步呈现高辨识角标。
 3. **非战斗与转场防误显保护**：后台 ~3Hz 监听强制在盘面上方校验血条隔离带（非违建状态下独立于悬浮绘制区，从根本上杜绝自身半透明问号记忆圆圈在活动列表页触发自激反馈循环）并配合双区暗箱弹窗校验（需同时满足上框 `41%..53%` 与盖盘区 `58%..78%` 暗化），自动拦截活动列表页、关卡切换动画、`VICTORY` 结算画面（同时放行全版 `?` 与全版 30/30 锁定/化血盘面）与敌技长按弹窗。
+4. **端侧多头 LiteRT CNN + 近零误报融合识别（`LiteRtOrbClassifier` + `HybridFusionPolicy` + `HybridBoardRecognizer`，`v0.5.0`）**：
+   - `AutoDoraOrbNetV1`（`84,191` 参数，BN 折叠 FP32 `.tflite` `340.4 KB` 以 `noCompress` 未压缩方式随 APK 打包）单次动态 Batch 推理 `[Cols×Rows, 64, 64, 3] → [Cols×Rows, 47]`（`val`: `is_rune_acc = 96.28%`、`clean_6color_element_acc = 96.26%`、`variant_acc = 86.46%`、`race_acc = 86.82%`；桌面 4T CPU `6×5 = 2.07ms`、`6×8 = 3.91ms`），配合 `FastBitmapRoiVisionFrame` 对暗化盘面应用 `computeDimmedBrightnessGain` 提亮还原后直出 47 维概率。
+   - `HybridFusionPolicy` 以 **Rules + LiteRT** 互补融合：高置信纠正黑白反色底色/低置信属性、补强 7 大种族（`acceptRaceProb = 0.78f`）及经验证集严格标定近零误报的异常/地形类别（`BOMB 0.93`、`BLOOD_THORN 0.97`、`MAGIC_ORB 0.65`、`BURNING_TILE 0.65`、`SCORCHING_TILE 0.65`），对其余高噪声稀疏类强制 `0.98` 安全兜底交由规则 CV 处理；支持在主控台「设置」实时开关 `useAiRecognizer` 并在模型加载异常时零感知回退规则 CV。
 
 ### 2.2 全屏问号珠双模破局引擎
 
@@ -176,9 +179,9 @@ flowchart TD
     subgraph CaptureVision["采集与视觉层 (core-capture & core-vision)"]
         MediaProj["MediaProjectionCapturer (前台零拷贝取帧)"]
         GridDetect["AutoGridDetector (血条锚定 6×5↔6×8 + 非战斗/弹窗门控)"]
-        CvRecog["CvBoardRecognizer (多帧融合 + 拼图/漩涡/暴风/化血/结界)"]
+        CvRecog["CvBoardRecognizer (CV-Rule-v2.7 多帧融合 + 拼图/漩涡/暴风/血浴/结界)"]
         FlashMem["FlashRevealMemoryTracker (全屏问号先露后藏记忆快照)"]
-        Hybrid["HybridBoardRecognizer (预留 Phase 4 LiteRT CNN 插槽)"]
+        Hybrid["HybridBoardRecognizer (LiteRT AutoDoraOrbNetV1 + HybridFusionPolicy)"]
     end
 
     subgraph Solver["纯 C++20 求解引擎 (solver-core + solver-jni)"]
@@ -213,18 +216,18 @@ flowchart TD
     PathSmooth -.-> ShizukuExec
 ```
 
-### 仓库模块与测试矩阵（当前 `128` 项自动化测试全通过）
+### 仓库模块与测试矩阵（当前 `134` 项自动化测试全通过）
 
 | 模块 | 职责说明 | 自动化测试覆盖 |
 | :--- | :--- | :--- |
 | `solver-core/` | 纯 C++20 求解引擎（CMake，零 Android 依赖） | `test_main.cpp`：**52 / 52** 通过（含独立路径回放核验、起动浮标角色珠破盾、荆棘严避与全版锁定渐进消除） |
 | `android/core-model/` | 不可变棋盘/规则模型、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**13 / 13** 通过 |
 | `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`（单 VirtualDisplay GPU 零拷贝 60fps 录屏直存系统相册）、`AutoGridDetector`（含低血亮红数字血条、空血 1-HP 暗槽、全版深青 `?` 问号珠外环峰值门控与纯黑弹窗防误过） | `AutoGridDetectorTest` (14) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3) + `BuiltInScreenRecorderTest` (3)：**23 / 23** 通过 |
-| `android/core-vision/` | `CvBoardRecognizer`（18 项实测 0 误报状态/地形 CV + 全 6 色笛卡尔积去色偏回归 + 深青全版 `?` 问号珠分类 + 暗化盘面单格环中位 `p50/p75` 抗 Toast/路径干扰线性增益还原与三窗全漂浮高度起动浮标/队伍头像属性自动识别）、`FlashRevealMemoryTracker`（含金色标题栏敌技弹窗拦截）、`HybridBoardRecognizer` | `CvBoardRecognizerTest`：**22 / 22** 通过（含 48 格全 6 色笛卡尔积、深青全版 `?` 问号珠与暗化/上浮峰值起动浮标回归） |
+| `android/core-vision/` | `CvBoardRecognizer`（`CV-Rule-v2.7`：6 色邪能外焰、全版 30/30 血浴放行/暗度隔离、`±3px` 深青 `?` 容差 + 18 项状态/地形与起动浮标自动识别）、`LiteRtOrbClassifier`（`orb_multihead_v1.tflite` 动态 Batch `[Cols×Rows, 64, 64, 3]`）、`HybridFusionPolicy`（`model_meta.json` 近零误报融合）、`HybridBoardRecognizer` | `CvBoardRecognizerTest` (23) + `HybridBoardRecognizerTest` (3)：**26 / 26** 通过 |
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`（含精准分段预计转珠耗时计算与校准头像中心垂直下拉）、`SwipeSpeedPreset` | `PathInterpolatorTest`：**9 / 9** 通过 |
-| `android/core-data/` | DataStore 设置、Room 实时策略持久化、40 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
+| `android/core-data/` | DataStore 设置（含 `useAiRecognizer` 开关）、Room 实时策略持久化、40 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务（含高速录屏悬浮栏内置录屏按钮与可配显示开关）、单抽屉调参/编排（打开自动识盘 + 起动浮标画笔）、`UpdateChecker`（含免限流 Atom 回退） | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **582 / 582** |
+| `android/app/` | 3-Tab Compose 启动台（含 AI 混合识盘开关）、4 态磁吸记忆悬浮服务、单抽屉调参/编排、`UpdateChecker`、未压缩打包 `assets/models/orb_multihead_v1.tflite` (`348,548 B`) | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **582 / 582** |
 
 ---
 
@@ -234,5 +237,5 @@ flowchart TD
 | :--- | :---: | :--- |
 | **Phase 1：纯 C++20 动态内核 + 多模块骨架** | `v0.1.0` | **已完成** — `3×3~8×8` 64-bit 位掩码求解器、最高 300 步、Android 7 模块工程与 JNI 三架构编译。 |
 | **Phase 2 & 2.5：免 Root 全链路 + 真图高精度标定** | `v0.2.x` – `v0.3.x` | **已完成** — 零拷贝 `MediaProjection`、血条防假违建、先露后藏记忆快照、免 Root 按住重算续滑、拼图/红绿灯/暴风/化血/结界识别、非战斗/VICTORY 过滤、方向逆转与逐盾 `✓/✗` 判定。 |
-| **Phase 3 & 3.5：百科全量审计 + 统一交互 + 全 6 色特殊符石 CV 与长时稳定** | `v0.4.0` – `v0.4.9`（当前） | **已完成** — 全量 98 敌技 + 22 符石状态（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）+ 7 大官方种族全链路升级；**成员起动浮标（Wiki No.5893/7403）与消除起动浮标角色符石盾（No.5894）全链路自动支持**（暗化盘面单格环中位 `p50/p75` 抗 Toast/路径干扰线性增益还原 + 三窗全漂浮高度金白菱形浮标与左上角属性自动识别 + 后台监听活跃浮标预览双保险防自反馈闪消 + 校准头像中心严格垂直下拉 + 零配置破盾 + 策略/编排双端配置 + 描边高对比浮标徽章）；双模屏幕采集（Android 11+ 默认无障碍截屏兼容系统录屏 + 可选高速录屏采集自动释放 + 单 VirtualDisplay OpenGL ES 2.0 零拷贝内置 60fps H.264 MP4 录屏直存系统相册，悬浮栏一键启停且支持在设置中控制显隐）；结果详情卡片升级 `⚡x.xx秒` 计算耗时 + `👆x.xx秒` 精准预计实际转珠时长（切速度即时联动）；HyperOS / Android 14–16 屏幕采集防断流、零陈旧帧门控与热重授权、`0%–100%` 全态血条防假违建（含 `1%–30%` 极低/低血亮红数字危急血条与 `1/584001` 空血暗槽 + 密集路径/珠标遮角兼容）、金色标题栏敌技详情弹窗拦截与非战斗悬浮自激拦截；18 项异常状态/地形自动 CV 识别与全 6 色笛卡尔积去色偏；精准 45° 斜转 `1.414×` 弧长计时；3-Tab Material You 启动页与同色系单抽屉悬浮面板；双端 1:1 统一四态颠倒方向操控、嵌套按住触发子卡片与可配按住显形后解盘时间（`0.15–3.5s`）；4 态磁吸记忆悬浮胶囊；5 色单开互斥抽屉 1:1 盘面编排（打开自动识盘 + 一键「重新识盘」+ 起动浮标画笔）；6 档统一速度（`2s~7s`）；单一自动保存作战策略 + 16 形态×`1~5消` 单属性规则矩阵 + 暗色模式高对比度适配；三语纯终态文案热切（582 词条）；免 403 限流双通道检更 + 应用内流式下载与 `FileProvider` 自动安装。 |
-| **Phase 4：端侧多头 AI 识盘 + 敌技自动解析 + Shizuku 扩展** | `v0.5.x` – `v1.0.0`（规划中） | **规划中** — ① 悬浮纠错一键样本采集与 ZIP 数据飞轮；② `ml/` 多头轻量 CNN 训练与 LiteRT (`.tflite`) 端侧热加载（攻克黑白符石、合作皮肤、7 种族角标与 22 项符石状态全自动识别，目标整盘推理 `< 20ms`）；③ 端侧离线敌技说明自动解析（结合官方三态灰字无视过滤自动勾选波次盾）；④ 可选 Shizuku 特权触控引擎；⑤ 稳定版 `v1.0.0` 正式发布。 |
+| **Phase 3 & 3.5：百科全量审计 + 统一交互 + 全 6 色特殊符石 CV 与长时稳定** | `v0.4.0` – `v0.4.9` | **已完成** — 全量 98 敌技 + 22 符石状态 + 7 大官方种族全链路升级；成员起动浮标（No.5893/5894/7403）全链路支持；双模屏幕采集与内置 60fps H.264 录屏；HyperOS / Android 14–16 稳态、`0%–100%` 全态血条锚定、18 项状态/地形自动 CV 识别与统一 M3 悬浮/编排闭环。 |
+| **Phase 4：端侧多头 AI 识盘 + 敌技自动解析 + Shizuku 扩展** | `v0.5.0`（当前）– `v1.0.0` | **首版已落地（`v0.5.0`）** — ① `CV-Rule-v2.7` 补齐 6 色邪能外焰、全版 30/30 血浴与 `?` 漂移容差；② 完成 `ml/` 47 维多头训练集（`6,486` 格）与 `AutoDoraOrbNetV1`（`84,191` 参，FP32 `.tflite` `340.4 KB`）训练导出，实装 `LiteRtOrbClassifier` + 近零误报 `HybridFusionPolicy` + `HybridBoardRecognizer` + Settings 实时开关。<br>**后续迭代（`v0.5.x–v1.0.0`）**：悬浮纠错 ZIP 数据飞轮、端侧离线敌技说明自动解析（结合灰字无视过滤自动勾选波次盾）、可选 Shizuku 特权触控引擎与稳定版 `v1.0.0`。 |

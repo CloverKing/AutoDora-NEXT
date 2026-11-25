@@ -205,6 +205,7 @@ class OverlayControllerService : Service() {
                 val swipeTimingChanged = settings.stepDurationMs != latest.stepDurationMs ||
                     settings.humanMode != latest.humanMode
                 settings = latest
+                (boardRecognizer as? com.autodora.next.vision.HybridBoardRecognizer)?.useAiModel = latest.useAiRecognizer
                 if (CaptureRouter.effectiveMode(latest.captureMode) == CaptureMode.ACCESSIBILITY &&
                     ScreenCaptureSession.capturer.value != null
                 ) {

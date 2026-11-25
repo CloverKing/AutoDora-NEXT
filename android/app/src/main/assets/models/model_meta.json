@@ -1,0 +1,314 @@
+{
+  "model_name": "AutoDoraOrbNetV1",
+  "schema_version": 1,
+  "input_size": 64,
+  "output_dim": 47,
+  "quantization": "fp32",
+  "size_kb": 340.4,
+  "param_count": 84191,
+  "parity": {
+    "batch_30": {
+      "max_abs_diff": 1e-06,
+      "mean_abs_diff": 0.0,
+      "cpu_ms_desktop_4t": 2.07
+    },
+    "batch_48": {
+      "max_abs_diff": 1e-06,
+      "mean_abs_diff": 0.0,
+      "cpu_ms_desktop_4t": 3.91
+    }
+  },
+  "hazard_thresholds": {
+    "WEATHERED": 0.98,
+    "ELECTRIFIED": 0.98,
+    "FROZEN": 0.93,
+    "ICE_SEALED": 0.98,
+    "BLOOD_DRAIN_LOCKED": 0.98,
+    "PETRIFIED": 0.98,
+    "BOMB": 0.93,
+    "QUESTION": 0.98,
+    "BLACK_WHITE": 0.98,
+    "PURGATORY_FIRE": 0.98,
+    "EVIL_ENERGY": 0.98,
+    "THORN": 0.98,
+    "COAGULATED": 0.98,
+    "FOAM": 0.98,
+    "LUMINOUS": 0.98,
+    "MAGIC_ORB": 0.65,
+    "BLOOD_THORN": 0.97
+  },
+  "tile_overlay_thresholds": {
+    "PUZZLE": 0.98,
+    "STORM": 0.98,
+    "SHATTERED": 0.98,
+    "BURNING_TILE": 0.65,
+    "SCORCHING_TILE": 0.65,
+    "END_FORBIDDEN_BLOODBATH": 0.98,
+    "BLACK_HOLE": 0.98,
+    "TRAFFIC_LIGHT_MARKER": 0.98
+  },
+  "production_safety_metrics": {
+    "hazards": {
+      "WEATHERED": {
+        "threshold": 0.98,
+        "pos_val": 2,
+        "tp": 0,
+        "fp": 0,
+        "fn": 2,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "ELECTRIFIED": {
+        "threshold": 0.98,
+        "pos_val": 6,
+        "tp": 0,
+        "fp": 0,
+        "fn": 6,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "FROZEN": {
+        "threshold": 0.93,
+        "pos_val": 10,
+        "tp": 6,
+        "fp": 0,
+        "fn": 4,
+        "precision": 1.0,
+        "recall": 0.6,
+        "fail_safe": false
+      },
+      "ICE_SEALED": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "BLOOD_DRAIN_LOCKED": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 4,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "PETRIFIED": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "BOMB": {
+        "threshold": 0.93,
+        "pos_val": 15,
+        "tp": 14,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.9333,
+        "fail_safe": false
+      },
+      "QUESTION": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "BLACK_WHITE": {
+        "threshold": 0.98,
+        "pos_val": 30,
+        "tp": 0,
+        "fp": 0,
+        "fn": 30,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "PURGATORY_FIRE": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "EVIL_ENERGY": {
+        "threshold": 0.98,
+        "pos_val": 18,
+        "tp": 2,
+        "fp": 2,
+        "fn": 16,
+        "precision": 0.5,
+        "recall": 0.1111,
+        "fail_safe": true
+      },
+      "THORN": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "COAGULATED": {
+        "threshold": 0.98,
+        "pos_val": 4,
+        "tp": 0,
+        "fp": 0,
+        "fn": 4,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "FOAM": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "LUMINOUS": {
+        "threshold": 0.98,
+        "pos_val": 1,
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "MAGIC_ORB": {
+        "threshold": 0.65,
+        "pos_val": 7,
+        "tp": 2,
+        "fp": 0,
+        "fn": 5,
+        "precision": 1.0,
+        "recall": 0.2857,
+        "fail_safe": false
+      },
+      "BLOOD_THORN": {
+        "threshold": 0.97,
+        "pos_val": 14,
+        "tp": 7,
+        "fp": 0,
+        "fn": 7,
+        "precision": 1.0,
+        "recall": 0.5,
+        "fail_safe": false
+      }
+    },
+    "tile_overlay": {
+      "PUZZLE": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "STORM": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "SHATTERED": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "BURNING_TILE": {
+        "threshold": 0.65,
+        "pos_val": 5,
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "fail_safe": false
+      },
+      "SCORCHING_TILE": {
+        "threshold": 0.65,
+        "pos_val": 20,
+        "tp": 1,
+        "fp": 0,
+        "fn": 19,
+        "precision": 1.0,
+        "recall": 0.05,
+        "fail_safe": false
+      },
+      "END_FORBIDDEN_BLOODBATH": {
+        "threshold": 0.98,
+        "pos_val": 12,
+        "tp": 0,
+        "fp": 0,
+        "fn": 12,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "BLACK_HOLE": {
+        "threshold": 0.98,
+        "pos_val": 7,
+        "tp": 0,
+        "fp": 2,
+        "fn": 7,
+        "precision": 0.0,
+        "recall": 0.0,
+        "fail_safe": true
+      },
+      "TRAFFIC_LIGHT_MARKER": {
+        "threshold": 0.98,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 0.0,
+        "fail_safe": true
+      }
+    }
+  },
+  "val_summary": {
+    "element_acc": 0.9271,
+    "clean_6color_element_acc": 0.9626,
+    "variant_acc": 0.8646,
+    "race_acc": 0.8682,
+    "macro_hazard_f1": 0.3661,
+    "macro_overlay_f1": 0.3651
+  }
+}

@@ -66,6 +66,7 @@ data class AppSettings(
     val stepDurationMs: Long = 68L,
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
+    val useAiRecognizer: Boolean = true,        // Phase 4 LiteRT + CV Hybrid recognition (falls back to pure CV if off)
     val showOrbBadgesOnPath: Boolean = true,    // Show compact recognized orb badges so users verify board accuracy at a glance
     val holdReplanEnabled: Boolean = false,     // Toggle mode: when ON, '行' executes Hold-and-Replan (按住重算)
     val holdReplanDelayMs: Long = 560L,         // Max wait ceiling for '?' flip reveal animation (exits early once revealed!)
@@ -122,6 +123,7 @@ class SettingsRepository(private val context: Context) {
         val STEP_DURATION_MS = longPreferencesKey("touch_step_ms")
         val HUMAN_MODE = booleanPreferencesKey("touch_human_mode")
         val MULTI_FRAME_COUNT = intPreferencesKey("vision_multi_frames")
+        val USE_AI_RECOGNIZER = booleanPreferencesKey("vision_use_ai_recognizer")
         val SHOW_ORB_BADGES = booleanPreferencesKey("ux_show_orb_badges")
 
         val HOLD_REPLAN_ENABLED = booleanPreferencesKey("touch_hold_replan_enabled")
@@ -159,6 +161,7 @@ class SettingsRepository(private val context: Context) {
         stepDurationMs = p[Keys.STEP_DURATION_MS] ?: 68L,
         humanMode = p[Keys.HUMAN_MODE] ?: false,
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
+        useAiRecognizer = p[Keys.USE_AI_RECOGNIZER] ?: true,
         showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
         holdReplanEnabled = p[Keys.HOLD_REPLAN_ENABLED] ?: false,
         holdReplanDelayMs = (p[Keys.HOLD_REPLAN_DELAY_MS] ?: 560L).coerceIn(240L, 900L),
@@ -202,6 +205,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.STEP_DURATION_MS] = next.stepDurationMs.coerceIn(20L, 140L)
             p[Keys.HUMAN_MODE] = next.humanMode
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)
+            p[Keys.USE_AI_RECOGNIZER] = next.useAiRecognizer
             p[Keys.SHOW_ORB_BADGES] = next.showOrbBadgesOnPath
             p[Keys.HOLD_REPLAN_ENABLED] = next.holdReplanEnabled
             p[Keys.HOLD_REPLAN_DELAY_MS] = next.holdReplanDelayMs.coerceIn(240L, 900L)

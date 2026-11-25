@@ -335,6 +335,8 @@
     <string name="mode_weijian_sub">Detects rows 6–8 with HP-bar isolation protection</string>
     <string name="mode_badges_title">Show Recognized Orb Badges on Path</string>
     <string name="mode_badges_sub">Displays recognized colors on preview to verify 1st-wave combos</string>
+    <string name="mode_ai_vision_title">On-Device AI Hybrid Vision (LiteRT)</string>
+    <string name="mode_ai_vision_sub">Runs multi-head CNN with CV fusion for monochrome, weakened, coagulated, blood-thorn &amp; 7 races (off = pure CV)</string>
     <string name="mode_question_mem_title">Full-Board Question Memory</string>
     <string name="mode_question_mem_sub">Silently remembers clear boards before flip; tapping Solve icon auto-triggers Hold-Nudge-Reveal on direct Question-Turn stages.</string>
     <string name="mode_human_title">Humanized Micro-Jitter</string>

@@ -335,6 +335,8 @@
     <string name="mode_weijian_sub">向上探查第 6～8 行并受血条隔离保护防误判</string>
     <string name="mode_badges_title">路径预览显示识盘珠色角标</string>
     <string name="mode_badges_sub">画线预览时在每格显示识别出的珠色，方便核对首消连击</string>
+    <string name="mode_ai_vision_title">端侧 AI 混合识盘（LiteRT）</string>
+    <string name="mode_ai_vision_sub">使用多头轻量 CNN 联合规则 CV 识别黑白/弱化/凝结/刺血/7大种族等状态（关闭则纯 CV 识盘）</string>
     <string name="mode_question_mem_title">全屏问号珠记忆</string>
     <string name="mode_question_mem_sub">后台静默记住翻面前盘面；若进场直接全版问号，点击计算图标将自动按住微移显形重算。</string>
     <string name="mode_human_title">拟人化微抖动滑动</string>

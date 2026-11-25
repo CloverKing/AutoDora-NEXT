@@ -1148,6 +1148,13 @@ private fun SettingsTab(
                     onCheckedChange = { v -> onUpdateSettings { it.copy(showOrbBadgesOnPath = v) } }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SwitchSettingRow(
+                    title = stringResource(R.string.mode_ai_vision_title),
+                    subtitle = stringResource(R.string.mode_ai_vision_sub),
+                    checked = settings.useAiRecognizer,
+                    onCheckedChange = { v -> onUpdateSettings { it.copy(useAiRecognizer = v) } }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
                     Text(
                         text = stringResource(R.string.mode_question_mem_title),
