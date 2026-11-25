@@ -734,9 +734,9 @@ class OverlayBoardEditorController(
                         startingBuoyElement = Element.UNKNOWN
                     )
                 }
-                val detectedEl = portraitElements.getOrNull(col)?.takeIf { it.isMatchable }
-                    ?: board.cellAt(0, col).element.takeIf { it.isMatchable }
-                    ?: Element.FIRE
+                val detectedEl = portraitElements.getOrNull(col)?.takeIf { it.isMatchable && it != Element.HEART }
+                    ?: board.cellAt(0, col).element.takeIf { it.isMatchable && it != Element.HEART }
+                    ?: Element.UNKNOWN
                 return board.copy(
                     tileFlags = newFlags,
                     startingBuoyCol = col,

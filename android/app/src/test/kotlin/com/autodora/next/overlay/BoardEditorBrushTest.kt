@@ -134,5 +134,16 @@ class BoardEditorBrushTest {
         b = OverlayBoardEditorController.applyBrushToBoard(b, startVortex, 1, 1)
         assertEquals(-1, b.startingBuoyCol)
         assertEquals(1, b.tileFlags.count { (it and TileFlagBits.START_ALLOWED) != 0 })
+
+        // Painting Starting Buoy on a Heart-only column without portrait detection never invents an impossible Heart portrait!
+        val heartBoard = BoardState(
+            cols = 6,
+            rows = 5,
+            cells = List(30) { CellState(Element.HEART) },
+            tileFlags = List(30) { TileFlagBits.NONE }
+        )
+        val heartBuoy = OverlayBoardEditorController.applyBrushToBoard(heartBoard, BoardBrush.SetStartingBuoy, 0, 5)
+        assertEquals(5, heartBuoy.startingBuoyCol)
+        assertEquals(Element.UNKNOWN, heartBuoy.startingBuoyElement)
     }
 }

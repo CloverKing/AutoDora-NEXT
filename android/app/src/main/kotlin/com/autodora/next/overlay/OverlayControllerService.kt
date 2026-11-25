@@ -2653,8 +2653,8 @@ class OverlayControllerService : Service() {
             if (stormCnt > 0) append(" · 🌀").append(stormCnt)
             if (sol.usedCharacterOrb) {
                 val buoyEl = activeBoard?.startingBuoyElement?.takeIf {
-                    activeBoard.startingBuoyCol == sol.characterOrbCol && it.isMatchable
-                } ?: lastPortraitElements.getOrNull(sol.characterOrbCol)?.takeIf { it.isMatchable }
+                    activeBoard.startingBuoyCol == sol.characterOrbCol && it.isMatchable && it != Element.HEART
+                } ?: lastPortraitElements.getOrNull(sol.characterOrbCol)?.takeIf { it.isMatchable && it != Element.HEART }
                 val elTxt = if (buoyEl != null) LocaleHelper.elementLabel(lctx, buoyEl.code) else ""
                 append(" · ⚓").append(sol.characterOrbCol + 1).append(elTxt)
             }

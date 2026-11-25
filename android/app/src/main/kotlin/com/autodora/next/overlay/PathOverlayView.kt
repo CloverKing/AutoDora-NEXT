@@ -615,16 +615,24 @@ class PathOverlayView(context: Context) : View(context) {
             lineTo(ax - r, ay)
             close()
         }
-        val fillCol = if (element.isMatchable) elementColor(element) else Color.rgb(142, 36, 170)
-        fillPaint.color = Color.argb(225, Color.red(fillCol), Color.green(fillCol), Color.blue(fillCol))
+        val hasPlayableAttr = element.isMatchable && element != Element.HEART
+        val fillCol = if (hasPlayableAttr) elementColor(element) else Color.rgb(142, 36, 170)
+        fillPaint.color = Color.argb(230, Color.red(fillCol), Color.green(fillCol), Color.blue(fillCol))
         canvas.drawPath(diamond, fillPaint)
         gridBorderPaint.color = Color.rgb(255, 238, 88)
         gridBorderPaint.strokeWidth = 5f
         canvas.drawPath(diamond, gridBorderPaint)
-        textPaint.color = Color.WHITE
+        val lbl = if (hasPlayableAttr) "浮${elementShortZh(element)}" else "浮"
+        val textY = ay + r * 0.25f
         textPaint.textSize = r * 0.72f
-        val lbl = if (element.isMatchable) "浮${elementShortZh(element)}" else "浮"
-        canvas.drawText(lbl, ax, ay + r * 0.25f, textPaint)
+        textPaint.style = Paint.Style.STROKE
+        textPaint.strokeWidth = 5f
+        textPaint.strokeJoin = Paint.Join.ROUND
+        textPaint.color = Color.argb(225, 15, 23, 42)
+        canvas.drawText(lbl, ax, textY, textPaint)
+        textPaint.style = Paint.Style.FILL
+        textPaint.color = Color.WHITE
+        canvas.drawText(lbl, ax, textY, textPaint)
     }
 
     /**
