@@ -3,12 +3,18 @@ package com.autodora.next.vision
 import android.content.Context
 import android.graphics.Bitmap
 import com.autodora.next.model.BoardGeometry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Pluggable AI Recognizer slot for Phase 4 multi-head LiteRT (.tflite) model.
- * Automatically checks for user-loaded/asset .tflite model and gracefully delegates to
- * CvBoardRecognizer until Phase 4 trained weights are installed.
+ * Pluggable AI + Rule-CV Hybrid Board Recognizer (Phase 4):
+ *  - Executes calibrated CvBoardRecognizer baseline (preserving Starting Buoy, Jordan-curve
+ *    Puzzle Polygons, Traffic Light Start/End, and Storm full-column tornado tips).
+ *  - When enabled (`useAiModel == true`) and `.tflite` weights are available (bundled asset or
+ *    user custom model file), runs batched LiteRT `AutoDoraOrbNetV1` (`[Cols*Rows, 64, 64, 3]`)
+ *    and merges predictions through confidence-gated [HybridFusionPolicy].
+ *  - Gracefully falls back to pure CvBoardRecognizer whenever disabled or unavailable.
  */
 class HybridBoardRecognizer(
     private val context: Context,
@@ -16,9 +22,13 @@ class HybridBoardRecognizer(
 ) : BoardRecognizer {
 
     private var customModelFile: File? = null
+    private val liteRtClassifier: LiteRtOrbClassifier by lazy { LiteRtOrbClassifier(context) }
+
+    @Volatile
+    var useAiModel: Boolean = true
 
     override val name: String
-        get() = if (hasAiModel()) "LiteRT-MultiHead-CNN" else cvFallback.name
+        get() = if (useAiModel && hasAiModel()) "Hybrid-LiteRT+CV-v1" else cvFallback.name
 
     fun setCustomModelFile(file: File?) {
         customModelFile = file?.takeIf { it.exists() && it.length() > 0 }
@@ -33,10 +43,51 @@ class HybridBoardRecognizer(
         }
     }
 
-    override suspend fun recognize(frames: List<Bitmap>, geometry: BoardGeometry): RecognitionResult {
-        // Phase 4 wires CompiledModel / Interpreter batch=[cols*rows, 64, 64, 3] inference here.
-        return cvFallback.recognize(frames, geometry)
+    fun modelDisplayStatus(): String = when {
+        !hasAiModel() -> "CV Fallback (No .tflite asset)"
+        !useAiModel -> "Pure CV Mode (AI Paused)"
+        else -> "Hybrid LiteRT + CV Active"
     }
+
+    fun close() {
+        liteRtClassifier.close()
+    }
+
+    override suspend fun recognize(frames: List<Bitmap>, geometry: BoardGeometry): RecognitionResult =
+        withContext(Dispatchers.Default) {
+            val t0 = System.nanoTime()
+            require(frames.isNotEmpty()) { "At least one frame is required for recognition" }
+            val visionFrames = frames.map { DirectBitmapVisionFrame(it) }
+            val cvResult = cvFallback.recognizeFrames(visionFrames, geometry)
+
+            if (!useAiModel || !hasAiModel()) {
+                return@withContext cvResult
+            }
+
+            val primaryBmp = frames.first()
+            val gain = if (cvResult.isDimmedBoard) {
+                cvFallback.computeDimmedBrightnessGain(visionFrames.first(), geometry)
+            } else {
+                1.0f
+            }
+            val preds = liteRtClassifier.classifyBitmap(
+                bitmap = primaryBmp,
+                fullWidth = primaryBmp.width,
+                fullHeight = primaryBmp.height,
+                yOffset = 0,
+                geometry = geometry,
+                brightnessGain = gain,
+                customModelFile = customModelFile
+            ) ?: return@withContext cvResult
+
+            val totalMs = (System.nanoTime() - t0) / 1_000_000.0
+            HybridFusionPolicy.fuse(
+                cvResult = cvResult,
+                predictions = preds,
+                totalElapsedMs = totalMs,
+                config = liteRtClassifier.fusionConfig
+            )
+        }
 
     override suspend fun recognizeBand(
         bandBitmap: Bitmap,
@@ -44,7 +95,36 @@ class HybridBoardRecognizer(
         fullHeight: Int,
         yOffset: Int,
         geometry: BoardGeometry
-    ): RecognitionResult {
-        return cvFallback.recognizeBand(bandBitmap, fullWidth, fullHeight, yOffset, geometry)
+    ): RecognitionResult = withContext(Dispatchers.Default) {
+        val t0 = System.nanoTime()
+        val vf = DirectBitmapVisionFrame(bandBitmap, fullWidth, fullHeight, yOffset)
+        val cvResult = cvFallback.recognizeFrames(listOf(vf), geometry)
+
+        if (!useAiModel || !hasAiModel()) {
+            return@withContext cvResult
+        }
+
+        val gain = if (cvResult.isDimmedBoard) {
+            cvFallback.computeDimmedBrightnessGain(vf, geometry)
+        } else {
+            1.0f
+        }
+        val preds = liteRtClassifier.classifyBitmap(
+            bitmap = bandBitmap,
+            fullWidth = fullWidth,
+            fullHeight = fullHeight,
+            yOffset = yOffset,
+            geometry = geometry,
+            brightnessGain = gain,
+            customModelFile = customModelFile
+        ) ?: return@withContext cvResult
+
+        val totalMs = (System.nanoTime() - t0) / 1_000_000.0
+        HybridFusionPolicy.fuse(
+            cvResult = cvResult,
+            predictions = preds,
+            totalElapsedMs = totalMs,
+            config = liteRtClassifier.fusionConfig
+        )
     }
 }

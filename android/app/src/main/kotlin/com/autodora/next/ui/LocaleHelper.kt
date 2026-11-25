@@ -197,6 +197,7 @@ object LocaleHelper {
                 }
             }
             "char_orb_first_wave" -> ctx.getString(R.string.shield_char_orb_first)
+            "starting_buoy_shield" -> ctx.getString(R.string.shield_starting_buoy)
             "forbid_weakened_orb" -> ctx.getString(R.string.shield_forbid_weakened)
             "luminous_orb_shield" -> ctx.getString(R.string.shield_luminous_orb)
             "puzzle_shield" -> {
@@ -261,6 +262,7 @@ object LocaleHelper {
             when (verdict.chipId) {
                 "traffic_light" -> ctx.getString(R.string.shield_traffic_light)
                 "puzzle_shield" -> ctx.getString(R.string.puzzle_mode_normal)
+                "starting_buoy_shield" -> ctx.getString(R.string.shield_starting_buoy)
                 else -> verdict.chipId
             }
         }

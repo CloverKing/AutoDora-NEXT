@@ -485,6 +485,7 @@ object AutoGridDetector {
         var radialSum = 0f
         var posContrastCells = 0
         var vividCenters = 0
+        var brightRimOrGlyphCells = 0
 
         val centerOffsets = arrayOf(
             0f to 0f,
@@ -492,6 +493,18 @@ object AutoGridDetector {
             -0.24f to 0f,
             0f to 0.24f,
             0f to -0.24f
+        )
+        // Outer orb rim & '?' glyph ring offsets (detects dark-interior 30/30 '?' Question Orbs whose
+        // dark-teal center has V~0.21 while their silver-teal rim & white '?' stroke peak at V>=0.55!)
+        val rimPeakOffsets = arrayOf(
+            0.38f to 0f,
+            -0.38f to 0f,
+            0f to 0.38f,
+            0f to -0.38f,
+            0.27f to 0.27f,
+            -0.27f to 0.27f,
+            0.27f to -0.27f,
+            -0.27f to -0.27f
         )
 
         for (r in 0 until rows) {
@@ -515,6 +528,7 @@ object AutoGridDetector {
 
                 var inVSum = 0f
                 var inSSum = 0f
+                var cellPeakV = 0f
                 for ((dx, dy) in centerOffsets) {
                     val px = (cx + dx * cw).roundToInt().coerceIn(0, frame.width - 1)
                     val py = (cy + dy * ch).roundToInt().coerceIn(0, frame.height - 1)
@@ -525,7 +539,15 @@ object AutoGridDetector {
                     val mx = max(rr, max(gg, bb))
                     val mn = min(rr, min(gg, bb))
                     inVSum += mx
+                    if (mx > cellPeakV) cellPeakV = mx
                     inSSum += if (mx < 1e-4f) 0f else (mx - mn) / mx
+                }
+                for ((dx, dy) in rimPeakOffsets) {
+                    val px = (cx + dx * cw).roundToInt().coerceIn(0, frame.width - 1)
+                    val py = (cy + dy * ch).roundToInt().coerceIn(0, frame.height - 1)
+                    val argb = frame.getArgb(px, py)
+                    val v = max((argb ushr 16) and 0xFF, max((argb ushr 8) and 0xFF, argb and 0xFF)) / 255f
+                    if (v > cellPeakV) cellPeakV = v
                 }
                 val inMeanV = inVSum * 0.2f
                 val inMeanS = inSSum * 0.2f
@@ -533,6 +555,7 @@ object AutoGridDetector {
                 radialSum += contrast
                 if (contrast >= 0.18f) posContrastCells++
                 if (inMeanV >= 0.48f && (inMeanS >= 0.32f || cornerMeanV <= 0.28f)) vividCenters++
+                if (cellPeakV >= 0.45f && (cellPeakV - cornerMeanV) >= 0.28f) brightRimOrGlyphCells++
             }
         }
 
@@ -540,9 +563,15 @@ object AutoGridDetector {
         val meanRadial = radialSum / total
         val posContrastRatio = posContrastCells.toFloat() / total
         val vividCenterRatio = vividCenters.toFloat() / total
+        val rimPeakRatio = brightRimOrGlyphCells.toFloat() / total
 
         val hasHp = hasHpBarBarrier(frame, geometry.leftPx, geometry.rightPx, geometry.topPx, ch)
-        if (hasHp && ((darkCornerRatio >= 0.32f && (posContrastRatio >= 0.20f || vividCenterRatio >= 0.15f)) || posContrastRatio >= 0.45f)) {
+        if (hasHp && (
+                (darkCornerRatio >= 0.32f && (posContrastRatio >= 0.20f || vividCenterRatio >= 0.15f)) ||
+                    posContrastRatio >= 0.45f ||
+                    (darkCornerRatio >= 0.60f && rimPeakRatio >= 0.55f)
+                )
+        ) {
             return true
         }
         return darkCornerRatio >= 0.48f &&

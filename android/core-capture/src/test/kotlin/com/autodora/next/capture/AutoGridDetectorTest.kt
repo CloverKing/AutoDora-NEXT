@@ -521,4 +521,69 @@ class AutoGridDetectorTest {
             AutoGridDetector.isBattleBoardPresent(frame, base)
         )
     }
+
+    @Test
+    fun `full 30-of-30 dark-teal question-orb battle board passes isBattleBoardPresent`() {
+        val frame = SyntheticFrame(width = 576, height = 1280)
+        val calib = BoardCalibration()
+        val base = calib.toBase6x5Geometry(frame.width, frame.height)
+        val cell = base.cellWidth.toInt()
+
+        // Full coral-pink Player HP bar directly above row 0
+        val hpTop = (base.topPx - cell * 0.22f).toInt()
+        val hpBot = (base.topPx - cell * 0.04f).toInt()
+        for (y in hpTop..hpBot) {
+            for (x in (frame.width * 0.08f).toInt()..(frame.width * 0.92f).toInt()) {
+                frame.pixels[y * frame.width + x] = 0xFFE86A78.toInt()
+            }
+        }
+        // Draw 30 dark-teal '?' Question Orbs: dark corners (0x1E1812), dark-teal hollow center (0x082622),
+        // and crisp silver-mint circular outer rim (r in [0.35..0.42]*cell, 0x9AD0C2) + pale '?' stroke!
+        for (r in 0 until 5) {
+            for (c in 0 until 6) {
+                val cx = base.cellCenterX(c)
+                val cy = base.cellCenterY(r)
+                val y0 = (base.topPx + r * cell).toInt()
+                val y1 = (base.topPx + (r + 1) * cell).toInt().coerceAtMost(frame.height)
+                val x0 = c * cell
+                val x1 = ((c + 1) * cell).coerceAtMost(frame.width)
+                for (y in y0 until y1) {
+                    for (x in x0 until x1) {
+                        val d = kotlin.math.hypot((x - cx).toDouble(), (y - cy).toDouble()).toFloat() / cell
+                        frame.pixels[y * frame.width + x] = when {
+                            d in 0.35f..0.42f -> 0xFF9AD0C2.toInt() // Bright silver-teal circular rim
+                            d < 0.35f -> 0xFF0A2A24.toInt() // Very dark teal interior (inMeanV ~ 0.16!)
+                            else -> 0xFF1E1812.toInt() // Dark checkerboard corner
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(
+            "Full 30/30 dark-teal '?' Question Orb board with Player HP bar must PASS isBattleBoardPresent",
+            AutoGridDetector.isBattleBoardPresent(frame, base)
+        )
+
+        // Optional local real Xiaomi 15 30/30 dark-teal '?' frame verification
+        val realQ30 = java.io.File("../../backups/user_training_media/20261125_dark_teal_question_30/01_dark_teal_question_30orbs.png")
+        if (realQ30.exists()) {
+            val imageIo = Class.forName("javax.imageio.ImageIO")
+            val img = imageIo.getMethod("read", java.io.File::class.java).invoke(null, realQ30)
+            val cls = img.javaClass
+            val iw = cls.getMethod("getWidth").invoke(img) as Int
+            val ih = cls.getMethod("getHeight").invoke(img) as Int
+            val getRgb = cls.getMethod("getRGB", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            val pf = object : PixelFrame {
+                override val width = iw
+                override val height = ih
+                override fun getArgb(x: Int, y: Int): Int =
+                    getRgb.invoke(img, x.coerceIn(0, width - 1), y.coerceIn(0, height - 1)) as Int
+            }
+            val g = AutoGridDetector.autoCalibrateFromRealScreen(pf) ?: AutoGridDetector.detect(pf, calib)
+            assertTrue(
+                "Real Xiaomi 30/30 dark-teal '?' Question Orb screenshot must PASS isBattleBoardPresent",
+                AutoGridDetector.isBattleBoardPresent(pf, g)
+            )
+        }
+    }
 }

@@ -39,8 +39,6 @@ import androidx.compose.ui.window.Dialog
 import com.autodora.next.BuildConfig
 import com.autodora.next.R
 import com.autodora.next.capture.CaptureRouter
-import com.autodora.next.capture.RecordingFormatUtils
-import com.autodora.next.capture.ScreenRecordingState
 import com.autodora.next.data.*
 import com.autodora.next.model.*
 import com.autodora.next.touch.SwipeSpeedPreset
@@ -68,7 +66,6 @@ fun DashboardScreen(
     settings: AppSettings,
     presets: List<TeamPresetRecord>,
     activeWaveChips: List<WaveShieldChip>,
-    recordingState: ScreenRecordingState = ScreenRecordingState.Idle,
     benchmarkReport: String?,
     isBenchmarking: Boolean,
     updateCheckState: UpdateCheckState = UpdateCheckState.Idle,
@@ -78,7 +75,6 @@ fun DashboardScreen(
     onRequestMediaProjection: () -> Unit,
     onRequestNotifications: () -> Unit,
     onToggleOverlayService: () -> Unit,
-    onToggleScreenRecording: () -> Unit = {},
     onRunNativeBenchmark: () -> Unit,
     onOpenGitHub: () -> Unit = {},
     onCheckForUpdates: () -> Unit = {},
@@ -203,14 +199,12 @@ fun DashboardScreen(
                     settings = settings,
                     activeGoalSummary = activeGoalSummary,
                     activeWaveChips = activeWaveChips,
-                    recordingState = recordingState,
                     onRequestOverlay = onRequestOverlay,
                     onOpenAccessibility = onOpenAccessibility,
                     onOpenAppDetails = onOpenAppDetails,
                     onRequestMediaProjection = onRequestMediaProjection,
                     onRequestNotifications = onRequestNotifications,
                     onToggleOverlayService = onToggleOverlayService,
-                    onToggleScreenRecording = onToggleScreenRecording,
                     onUpdateSettings = onUpdateSettings,
                     onNavigateTab = { activeTab = it }
                 )
@@ -263,14 +257,12 @@ private fun OverviewTab(
     settings: AppSettings,
     activeGoalSummary: String,
     activeWaveChips: List<WaveShieldChip>,
-    recordingState: ScreenRecordingState,
     onRequestOverlay: () -> Unit,
     onOpenAccessibility: () -> Unit,
     onOpenAppDetails: () -> Unit,
     onRequestMediaProjection: () -> Unit,
     onRequestNotifications: () -> Unit,
     onToggleOverlayService: () -> Unit,
-    onToggleScreenRecording: () -> Unit,
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onNavigateTab: (HomeTab) -> Unit
 ) {
@@ -434,79 +426,6 @@ private fun OverviewTab(
                             onClick = { onUpdateSettings { it.copy(captureMode = CaptureMode.MEDIA_PROJECTION) } },
                             modifier = Modifier.weight(0.9f)
                         )
-                    }
-                }
-                if (!useA11yCapture) {
-                    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-                    var recElapsedMs by remember(recordingState) {
-                        mutableLongStateOf(
-                            if (recordingState is ScreenRecordingState.Recording) {
-                                (android.os.SystemClock.elapsedRealtime() - recordingState.startedAtElapsedMs).coerceAtLeast(0L)
-                            } else 0L
-                        )
-                    }
-                    LaunchedEffect(recordingState) {
-                        if (recordingState is ScreenRecordingState.Recording) {
-                            while (true) {
-                                recElapsedMs = (android.os.SystemClock.elapsedRealtime() - recordingState.startedAtElapsedMs).coerceAtLeast(0L)
-                                kotlinx.coroutines.delay(500L)
-                            }
-                        }
-                    }
-                    val isRec = recordingState is ScreenRecordingState.Recording
-                    val isSaving = recordingState is ScreenRecordingState.Saving
-                    val recBg = when {
-                        isRec -> if (isDark) Color(0xFF6B1D24) else Color(0xFFD32F2F)
-                        isSaving -> MaterialTheme.colorScheme.surfaceContainerHigh
-                        else -> if (isDark) Color(0xFF3A1D22) else Color(0xFFFFEBEE)
-                    }
-                    val recFg = when {
-                        isRec -> Color.White
-                        isSaving -> MaterialTheme.colorScheme.onSurfaceVariant
-                        else -> if (isDark) Color(0xFFFFB4B8) else Color(0xFFC62828)
-                    }
-                    val recBorder = when {
-                        isRec -> if (isDark) Color(0xFFFF6B72) else Color(0xFFB71C1C)
-                        else -> if (isDark) Color(0xFF7D343B) else Color(0xFFE57373)
-                    }
-                    Surface(
-                        onClick = onToggleScreenRecording,
-                        enabled = !isSaving,
-                        shape = RoundedCornerShape(10.dp),
-                        color = recBg,
-                        border = BorderStroke(1.dp, recBorder),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp, bottom = 6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .background(
-                                        color = if (isRec) Color.White else if (isDark) Color(0xFFFF6B72) else Color(0xFFD32F2F),
-                                        shape = if (isRec) RoundedCornerShape(2.dp) else CircleShape
-                                    )
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = when {
-                                    isSaving -> stringResource(R.string.btn_record_saving)
-                                    isRec -> stringResource(
-                                        R.string.btn_record_stop_fmt,
-                                        RecordingFormatUtils.formatDuration(recElapsedMs)
-                                    )
-                                    else -> stringResource(R.string.btn_record_start)
-                                },
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = recFg
-                            )
-                        }
                     }
                 }
                 if (!health.notificationsGranted) {
@@ -1227,6 +1146,13 @@ private fun SettingsTab(
                     subtitle = stringResource(R.string.mode_badges_sub),
                     checked = settings.showOrbBadgesOnPath,
                     onCheckedChange = { v -> onUpdateSettings { it.copy(showOrbBadgesOnPath = v) } }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SwitchSettingRow(
+                    title = stringResource(R.string.mode_ai_vision_title),
+                    subtitle = stringResource(R.string.mode_ai_vision_sub),
+                    checked = settings.useAiRecognizer,
+                    onCheckedChange = { v -> onUpdateSettings { it.copy(useAiRecognizer = v) } }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(modifier = Modifier.padding(vertical = 4.dp)) {

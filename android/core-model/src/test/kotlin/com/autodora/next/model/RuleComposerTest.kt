@@ -402,4 +402,81 @@ class RuleComposerTest {
         assertFalse(specific.requireAnyRaceOrb)
         assertEquals(mask, specific.requiredRaceTypesMask)
     }
+
+    @Test
+    fun `compose auto-engages Starting Buoy col, attribute, and Wave-1 clear while respecting forbidden elements`() {
+        val base = TeamBasePreset(
+            id = "default",
+            name = "Default",
+            baseConfig = RuleConfig(
+                startPreset = StartPointPreset.BOTTOM_LEFT,
+                autoDetectStartingBuoy = true,
+                useCharacterOrb = false
+            )
+        )
+        // Board with Slot-6 Wood Starting Buoy and >= 2 Wood orbs on board
+        val cells = MutableList(30) { CellState(Element.DARK) }.apply {
+            this[10] = CellState(Element.WOOD)
+            this[11] = CellState(Element.WOOD)
+            this[12] = CellState(Element.WOOD)
+        }
+        val buoyBoard = BoardState(
+            cols = 6,
+            rows = 5,
+            cells = cells,
+            startingBuoyCol = 5,
+            startingBuoyElement = Element.WOOD
+        )
+
+        // Case 1: Zero-config auto-detection breaks BOTH No.5893 & No.5894
+        val composed = RuleComposer.compose(base, emptyList(), buoyBoard)
+        assertTrue(composed.useCharacterOrb)
+        assertEquals(5, composed.characterOrbCol)
+        assertEquals(Element.WOOD, composed.characterOrbElement)
+        assertEquals(StartPointPreset.ANY, composed.startPreset)
+        assertTrue(composed.requireCharOrbFirstWave)
+
+        // Case 2: If Wood is explicitly Anti-First-Wave, do NOT force conflicting Wave-1 Wood elimination
+        val antiWood = WaveShieldChip(
+            "anti_first_wave",
+            "反首消:木",
+            ShieldCategory.COUNT_AND_ELEMENT,
+            paramElementMask = Element.WOOD.bitMask
+        )
+        val composedConflict = RuleComposer.compose(base, listOf(antiWood), buoyBoard)
+        assertTrue(composedConflict.useCharacterOrb)
+        assertEquals(5, composedConflict.characterOrbCol)
+        assertFalse(composedConflict.requireCharOrbFirstWave)
+
+        // Case 3: ShieldVerdictEvaluator reports PASSED / FAILED / UNDETECTED for starting_buoy_shield
+        val buoyChip = WaveShieldChip("starting_buoy_shield", "起动浮标盾", ShieldCategory.COUNT_AND_ELEMENT)
+        val solPass = SolutionPath(
+            start = CellCoord(0, 5),
+            usedCharacterOrb = true,
+            characterOrbCol = 5,
+            moves = listOf(Direction.DOWN),
+            waypoints = listOf(CellCoord(0, 5), CellCoord(1, 5)),
+            stepCount = 1,
+            firstWaveCombo = 3,
+            totalCombo = 3,
+            firstWaveOrbs = 9,
+            totalOrbs = 9,
+            allHardConstraintsMet = true,
+            satisfiedFlags = ShieldStatusBits.CHAR_ORB_TERRAIN,
+            failedFlags = 0,
+            score = 1000.0,
+            tag = "Best",
+            groups = listOf(MatchSummary(Element.WOOD, 3, 1, false))
+        )
+        val vPass = ShieldVerdictEvaluator.evaluate(listOf(buoyChip), buoyBoard, solPass)
+        assertEquals(ShieldVerdictStatus.PASSED, vPass.single().status)
+
+        val solFail = solPass.copy(allHardConstraintsMet = false, failedFlags = ShieldStatusBits.CHAR_ORB_TERRAIN)
+        val vFail = ShieldVerdictEvaluator.evaluate(listOf(buoyChip), buoyBoard, solFail)
+        assertEquals(ShieldVerdictStatus.FAILED, vFail.single().status)
+
+        val noBuoyBoard = buoyBoard.copy(startingBuoyCol = -1, startingBuoyElement = Element.UNKNOWN)
+        val vUndetected = ShieldVerdictEvaluator.evaluate(listOf(buoyChip), noBuoyBoard, solPass.copy(usedCharacterOrb = false))
+        assertEquals(ShieldVerdictStatus.UNDETECTED, vUndetected.single().status)
+    }
 }

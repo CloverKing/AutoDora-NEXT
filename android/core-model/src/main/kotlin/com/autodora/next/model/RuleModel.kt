@@ -196,6 +196,8 @@ data class RuleConfig(
     val useCharacterOrb: Boolean = false,
     val characterOrbCol: Int = 0,
     val characterOrbElement: Element = Element.FIRE,
+    val autoDetectStartingBuoy: Boolean = true,
+    val characterOrbAutoElement: Boolean = true,
     val requireCharOrbPass: Boolean = false,
     val requireCharOrbEnd: Boolean = false,
 

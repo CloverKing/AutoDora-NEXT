@@ -142,10 +142,11 @@ class PathOverlayView(context: Context) : View(context) {
         val x = event.rawX
         val y = event.rawY
 
-        // Interactive Board Editor continuous drag-painting mode (改珠 / 标盾画笔)
+        // Interactive Board Editor continuous drag-painting mode (改珠 / 标盾画笔 + 头像起动浮标点击)
         if (boardEditorMode) {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                    val portraitTop = (g.topPx - 1.25f * g.cellHeight).coerceAtLeast(0f)
                     if (x in g.leftPx..g.rightPx && y in g.topPx..g.bottomPx) {
                         val col = ((x - g.leftPx) / g.cellWidth).toInt().coerceIn(0, g.cols - 1)
                         val row = ((y - g.topPx) / g.cellHeight).toInt().coerceIn(0, g.rows - 1)
@@ -154,6 +155,13 @@ class PathOverlayView(context: Context) : View(context) {
                             lastPaintedIdx = idx
                             onBoardEditorCellTouched?.invoke(row, col)
                         }
+                        return true
+                    } else if (event.actionMasked == MotionEvent.ACTION_DOWN &&
+                        x in g.leftPx..g.rightPx &&
+                        y in portraitTop..g.topPx
+                    ) {
+                        val col = ((x - g.leftPx) / g.cellWidth).toInt().coerceIn(0, g.cols - 1)
+                        onBoardEditorCellTouched?.invoke(-1, col)
                         return true
                     }
                     return false
@@ -591,6 +599,40 @@ class PathOverlayView(context: Context) : View(context) {
                 }
             }
         }
+        if (b.startingBuoyCol in 0 until b.cols) {
+            drawStartingBuoyBadge(canvas, g, b.startingBuoyCol, b.startingBuoyElement)
+        }
+    }
+
+    private fun drawStartingBuoyBadge(canvas: Canvas, g: BoardGeometry, col: Int, element: Element) {
+        val ax = g.cellCenterX(col)
+        val ay = g.characterAvatarCenterY().coerceAtLeast(28f)
+        val r = (g.cellWidth * 0.28f).coerceIn(22f, 44f)
+        val diamond = Path().apply {
+            moveTo(ax, ay - r)
+            lineTo(ax + r, ay)
+            lineTo(ax, ay + r)
+            lineTo(ax - r, ay)
+            close()
+        }
+        val hasPlayableAttr = element.isMatchable && element != Element.HEART
+        val fillCol = if (hasPlayableAttr) elementColor(element) else Color.rgb(142, 36, 170)
+        fillPaint.color = Color.argb(230, Color.red(fillCol), Color.green(fillCol), Color.blue(fillCol))
+        canvas.drawPath(diamond, fillPaint)
+        gridBorderPaint.color = Color.rgb(255, 238, 88)
+        gridBorderPaint.strokeWidth = 5f
+        canvas.drawPath(diamond, gridBorderPaint)
+        val lbl = if (hasPlayableAttr) "浮${elementShortZh(element)}" else "浮"
+        val textY = ay + r * 0.25f
+        textPaint.textSize = r * 0.72f
+        textPaint.style = Paint.Style.STROKE
+        textPaint.strokeWidth = 5f
+        textPaint.strokeJoin = Paint.Join.ROUND
+        textPaint.color = Color.argb(225, 15, 23, 42)
+        canvas.drawText(lbl, ax, textY, textPaint)
+        textPaint.style = Paint.Style.FILL
+        textPaint.color = Color.WHITE
+        canvas.drawText(lbl, ax, textY, textPaint)
     }
 
     /**
@@ -665,6 +707,9 @@ class PathOverlayView(context: Context) : View(context) {
                 }
             }
         }
+        if (b.startingBuoyCol in 0 until b.cols) {
+            drawStartingBuoyBadge(canvas, g, b.startingBuoyCol, b.startingBuoyElement)
+        }
     }
 
     private fun buildCellTag(hazards: Int, flags: Int): String {
@@ -705,19 +750,30 @@ class PathOverlayView(context: Context) : View(context) {
         val pts = sol.waypoints.map { PointF(g.cellCenterX(it.col), g.cellCenterY(it.row)) }
         val totalSegs = (pts.size - 1).coerceAtLeast(1)
 
-        // Optional Character Orb vertical pull indicator from portrait bar
+        // Optional Character Orb / Starting Buoy (起動浮標) vertical pull indicator from portrait bar
         if (sol.usedCharacterOrb) {
             val ax = g.cellCenterX(sol.characterOrbCol)
-            val ay = g.characterAvatarCenterY().coerceAtLeast(24f)
+            val ay = g.characterAvatarCenterY().coerceAtLeast(28f)
             val firstPt = pts.first()
             canvas.drawLine(ax, ay, firstPt.x, firstPt.y, pathShadowPaint)
-            pathSegmentPaint.color = Color.rgb(180, 90, 255)
+            val isBuoy = boardState?.startingBuoyCol == sol.characterOrbCol
+            val pullColor = if (isBuoy) Color.rgb(255, 214, 0) else Color.rgb(180, 90, 255)
+            pathSegmentPaint.color = pullColor
             canvas.drawLine(ax, ay, firstPt.x, firstPt.y, pathSegmentPaint)
-            fillPaint.color = Color.rgb(180, 90, 255)
-            canvas.drawCircle(ax, ay, 22f, fillPaint)
-            textPaint.color = Color.WHITE
-            textPaint.textSize = 24f
-            canvas.drawText("角", ax, ay + 8f, textPaint)
+            drawArrowHead(canvas, (ax + firstPt.x) * 0.5f, (ay + firstPt.y) * 0.5f, Math.PI * 0.5, pullColor)
+            val badgeEl = if (isBuoy) (boardState?.startingBuoyElement ?: Element.UNKNOWN) else Element.UNKNOWN
+            if (isBuoy) {
+                drawStartingBuoyBadge(canvas, g, sol.characterOrbCol, badgeEl)
+            } else {
+                fillPaint.color = pullColor
+                canvas.drawCircle(ax, ay, 24f, fillPaint)
+                gridBorderPaint.color = Color.WHITE
+                gridBorderPaint.strokeWidth = 3.5f
+                canvas.drawCircle(ax, ay, 24f, gridBorderPaint)
+                textPaint.color = Color.WHITE
+                textPaint.textSize = 24f
+                canvas.drawText("角", ax, ay + 8f, textPaint)
+            }
         }
 
         // Slight spiral micro-offset when revisiting same edge so overlapping strokes remain legible

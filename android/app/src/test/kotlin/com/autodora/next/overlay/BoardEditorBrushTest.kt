@@ -100,4 +100,50 @@ class BoardEditorBrushTest {
         assertEquals(HazardBits.NONE, b.cells[0].hazards)
         assertEquals(TileFlagBits.NONE, b.tileFlags[0])
     }
+
+    @Test
+    fun startingBuoyBrushSetsPortraitColumnMutuallyExclusiveWithGreenVortexAndClearsCleanly() {
+        val startVortex = BoardBrush.ToggleExclusiveTileFlag(
+            flag = TileFlagBits.START_ALLOWED,
+            conflictFlag = TileFlagBits.END_REQUIRED,
+            textRes = 0,
+            fallback = "绿色漩涡"
+        )
+        val teamAttrs = listOf(Element.WATER, Element.WOOD, Element.DARK, Element.LIGHT, Element.FIRE, Element.WOOD)
+
+        var b = empty6x5Board()
+        // Mark board-cell green vortex at (2, 1) first
+        b = OverlayBoardEditorController.applyBrushToBoard(b, startVortex, 2, 1)
+        assertEquals(1, b.tileFlags.count { (it and TileFlagBits.START_ALLOWED) != 0 })
+
+        // Paint Starting Buoy on col 5 (even via portrait row -1!) -> clears board-cell green vortex and sets col 5 WOOD
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.SetStartingBuoy, -1, 5, teamAttrs)
+        assertEquals(0, b.tileFlags.count { (it and TileFlagBits.START_ALLOWED) != 0 })
+        assertEquals(5, b.startingBuoyCol)
+        assertEquals(Element.WOOD, b.startingBuoyElement)
+
+        // Tap col 5 again -> toggles OFF cleanly
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.SetStartingBuoy, 0, 5, teamAttrs)
+        assertEquals(-1, b.startingBuoyCol)
+        assertEquals(Element.UNKNOWN, b.startingBuoyElement)
+
+        // Set Starting Buoy on col 2 (DARK), then setting green vortex on (1, 1) overrides portrait buoy cleanly!
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.SetStartingBuoy, 3, 2, teamAttrs)
+        assertEquals(2, b.startingBuoyCol)
+        assertEquals(Element.DARK, b.startingBuoyElement)
+        b = OverlayBoardEditorController.applyBrushToBoard(b, startVortex, 1, 1)
+        assertEquals(-1, b.startingBuoyCol)
+        assertEquals(1, b.tileFlags.count { (it and TileFlagBits.START_ALLOWED) != 0 })
+
+        // Painting Starting Buoy on a Heart-only column without portrait detection never invents an impossible Heart portrait!
+        val heartBoard = BoardState(
+            cols = 6,
+            rows = 5,
+            cells = List(30) { CellState(Element.HEART) },
+            tileFlags = List(30) { TileFlagBits.NONE }
+        )
+        val heartBuoy = OverlayBoardEditorController.applyBrushToBoard(heartBoard, BoardBrush.SetStartingBuoy, 0, 5)
+        assertEquals(5, heartBuoy.startingBuoyCol)
+        assertEquals(Element.UNKNOWN, heartBuoy.startingBuoyElement)
+    }
 }

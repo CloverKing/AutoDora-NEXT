@@ -339,5 +339,18 @@ class PathInterpolatorTest {
         val charSol = sol.copy(usedCharacterOrb = true, characterOrbCol = 2)
         val charMs = PathInterpolator.estimateSwipeDurationMs(charSol, geom, SwipeConfig(stepDurationMs = SwipeSpeedPreset.STANDARD.stepDurationMs))
         assertTrue("Character orb pull ($charMs ms) must exceed normal start ($standardMs ms)", charMs > standardMs)
+
+        // Verify Starting Buoy / Character Orb pull starts at portrait center, pulls strictly vertically through topPx to (0, col),
+        // and maintains firm grab >= 45ms + pull >= 72ms even at Turbo 24ms speed!
+        val buoySol = sol.copy(start = CellCoord(0, 5), waypoints = listOf(CellCoord(0, 5), CellCoord(1, 5)), moves = listOf(Direction.DOWN), usedCharacterOrb = true, characterOrbCol = 5)
+        val turboSegs = PathInterpolator.buildSegments(buoySol, geom, SwipeConfig(stepDurationMs = SwipeSpeedPreset.TURBO_2S.stepDurationMs, startHoldMs = 24L))
+        assertTrue("Must emit grab + vertical pull + move + settle", turboSegs.size >= 4)
+        assertTrue("Portrait grab hold (${turboSegs[0].durationMs}ms) must be >= 45ms", turboSegs[0].durationMs >= 45L)
+        assertTrue("Vertical pull duration (${turboSegs[1].durationMs}ms) must be >= 72ms", turboSegs[1].durationMs >= 72L)
+        val expectedX = geom.cellCenterX(5)
+        assertEquals("Grab starts strictly at portrait center Y", geom.characterAvatarCenterY(), turboSegs[0].points.first().y, 0.5f)
+        assertTrue("Pull segment must stay strictly vertical at col 5 X", turboSegs[1].points.all { kotlin.math.abs(it.x - expectedX) < 0.01f })
+        assertEquals("Pull passes through board topPx", geom.topPx, turboSegs[1].points[1].y, 0.5f)
+        assertEquals("Pull lands at cell (0,5) center Y", geom.cellCenterY(0), turboSegs[1].points.last().y, 0.5f)
     }
 }

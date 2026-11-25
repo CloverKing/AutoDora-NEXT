@@ -335,6 +335,8 @@
     <string name="mode_weijian_sub">Detects rows 6–8 with HP-bar isolation protection</string>
     <string name="mode_badges_title">Show Recognized Orb Badges on Path</string>
     <string name="mode_badges_sub">Displays recognized colors on preview to verify 1st-wave combos</string>
+    <string name="mode_ai_vision_title">On-Device AI Hybrid Vision (LiteRT)</string>
+    <string name="mode_ai_vision_sub">Runs multi-head CNN with CV fusion for monochrome, weakened, coagulated, blood-thorn &amp; 7 races (off = pure CV)</string>
     <string name="mode_question_mem_title">Full-Board Question Memory</string>
     <string name="mode_question_mem_sub">Silently remembers clear boards before flip; tapping Solve icon auto-triggers Hold-Nudge-Reveal on direct Question-Turn stages.</string>
     <string name="mode_human_title">Humanized Micro-Jitter</string>
@@ -361,7 +363,7 @@
     <string name="help_columns_title">Column Amelioration Guide</string>
     <string name="help_columns_body">[Purpose]\nSets vertical match length targets (Off / 3 / 4 / 5 orbs) for columns 1–6.\n\n[Scenarios]\nTriggers vertical Sword/Heart ameliorations or satisfies column-match enemy shields.</string>
     <string name="help_start_char_title">Start Position &amp; Character Orb</string>
-    <string name="help_start_char_body">[Start Position]\nDefault Any Start, or lock to Bottom-Left / Bottom-Right for fixed-origin stages.\n\n[Character Orb Pull]\nSelect Slot 1–6 to pull that member\'s Character Orb vertically into the board (initial pull does not cost a move), ideal for Character-Orb terrain stages.</string>
+    <string name="help_start_char_body">[Start Position]\nDefault Any Start, or lock to Bottom-Left / Bottom-Right; for board-cell Starting Buoys (No. 6786–6789) or Green GO vortexes, mark the cell with Green Vortex in Board Editor.\n\n[Starting Buoy (Auto-Detect) &amp; Character Orb]\n• Auto Starting Buoy (default ON) detects dimmed boards + glowing portrait Starting Buoys (No. 5893 / 7403) and that member\'s attribute, pulls their Character Orb vertically into row 0 (0 steps, clears top-row hazards), and enforces Wave-1 elimination to break Starting Buoy Character Orb Shields (No. 5894).\n• You can also manually pick Slot 1–6 &amp; attribute (or Auto Attr to read the portrait badge), or tap a portrait/column with the Starting Buoy brush in Board Editor.</string>
     <string name="help_strategy_switches_title">Advanced Strategy Switches</string>
     <string name="help_strategy_switches_body">• Force Split 3-Orb Groups: splits groups into 3-orb combos for higher count.\n• First-Wave Combos Only: scores Wave 1 only without relying on cascades.\n• Allow 8-Direction Diagonal Matches: enables diagonal matching for leaders with that skill.\n• Prioritize Enchanted / Race: prefers clearing Enchanted or Race runestones.\n• Allow Hitting Weathered: disables weathered avoidance when intentionally clearing weathered states.</string>
     <string name="help_active_shields_title">Active Wave Shields</string>
@@ -617,5 +619,12 @@
     <string name="toast_record_need_perm">Grant Screen Capture permission first to start recording</string>
     <string name="ov_record_btn">Rec</string>
     <string name="mode_floating_record_title">Floating Bar Record Button</string>
-    <string name="mode_floating_record_sub">Applies in Fast Screen Cast mode; turn off for a more compact bar while still recording from Overview</string>
+    <string name="mode_floating_record_sub">Applies in Fast Screen Cast mode; enable for one-tap Gallery recording from the floating bar, or disable for a more compact bar</string>
+
+    <!-- Starting Buoy (起動浮標) & Character Runestone Auto-Attribute -->
+    <string name="char_auto_buoy">Auto Buoy</string>
+    <string name="char_elem_auto">Auto Attr</string>
+    <string name="shield_starting_buoy">Buoy Orb Shield</string>
+    <string name="editor_brush_starting_buoy">Starting Buoy</string>
+    <string name="ov_toast_starting_buoy_not_detected">Starting Buoy not detected — tap a portrait/column in Board Editor or pick a character slot</string>
 </resources>

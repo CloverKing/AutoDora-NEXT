@@ -2009,6 +2009,48 @@ void testFullBoardLockedBloodDrainProgressiveClear() {
             "full-board locked solve should progressively clear >= 18 locked orbs");
 }
 
+// ============================================================================
+// 52. Official Starting Buoy (起動浮標 No.5893/7403) + Buoy Character Orb Shield (No.5894)
+//     Real 6x5 battle board with Slot-6 Wood member pulled onto (0,5), overwriting top-row orb/hazard
+// ============================================================================
+void testStartingBuoyCharacterOrbShield() {
+    // Exact 6x5 board from real ToS Starting Buoy gameplay (Slot 6 = Wood member replacing (0,5) Light orb)
+    BoardState b = BoardState::fromString(
+        "DLGDDL"
+        "DFDHFD"
+        "HDFGGG"
+        "FGDHGL"
+        "FFDLHD",
+        6, 5
+    );
+    // Even if (0,5) originally held an immovable/hazard orb, pulling Character Runestone overwrites it cleanly!
+    b.at(0, 5).hazards = HazardBits::Weathered;
+    b.rebuildMasks();
+
+    RuleConfig r;
+    r.useCharacterOrb = true;
+    r.characterOrbCol = 5;
+    r.characterOrbElement = Element::Wood;
+    r.requireCharOrbFirstWave = true;
+    r.maxSteps = 26;
+    r.beamWidth = 180;
+    r.maxTimeMs = 800;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "Starting Buoy Character Orb shield must return a solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.usedCharacterOrb, "solution must use Character Orb pull");
+    require(best.characterOrbCol == 5, "solution must pull from Slot 6 (col 5)");
+    require(best.start == (CellCoord{0, 5}), "board path must begin at (0,5)");
+    require(best.evaluation.allHardConstraintsMet,
+            "Starting Buoy Character Orb must be eliminated in Wave 1 to break No.5894 shield");
+    require((best.evaluation.satisfiedFlags & ShieldStatusBits::CharOrbTerrain) != 0,
+            "CharOrbTerrain shield flag must be marked satisfied");
+    require(best.simulation.firstWaveCombo >= 5, "should still achieve strong Wave-1 combo");
+}
+
 } // namespace
 
 int main() {
@@ -2065,6 +2107,7 @@ int main() {
     runTest("49. Specific Race Runestone Shield (指定种族符石盾: 神/魔精确区分)", testSpecificRaceRunestoneShield);
     runTest("50. Thorn Runestone Zero-Touch Avoidance (荊棘符石严避触碰)", testThornRunestoneZeroTouchAvoidance);
     runTest("51. Full-Board 30/30 Locked/BloodDrain Progressive Clear (全版锁定/化血最大化消除)", testFullBoardLockedBloodDrainProgressiveClear);
+    runTest("52. Official Starting Buoy (起動浮標 No.5893) + Buoy Character Orb Shield (No.5894)", testStartingBuoyCharacterOrbShield);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;

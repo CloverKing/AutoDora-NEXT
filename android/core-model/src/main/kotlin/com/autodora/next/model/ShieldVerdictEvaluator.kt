@@ -80,6 +80,7 @@ object ShieldVerdictEvaluator {
         val hasPuzzle1OnBoard = board.tileFlags.any { (it and TileFlagBits.PUZZLE_1) != 0 }
         val hasTlStartOnBoard = board.tileFlags.any { (it and TileFlagBits.START_ALLOWED) != 0 }
         val hasTlEndOnBoard = board.tileFlags.any { (it and TileFlagBits.END_REQUIRED) != 0 }
+        val hasStartingBuoyOnBoard = board.startingBuoyCol in 0 until board.cols
 
         fun evalTrafficLight(chip: WaveShieldChip?, explicitChip: Boolean): ShieldVerdict {
             val startIdx = solution.start.row * board.cols + solution.start.col
@@ -256,6 +257,19 @@ object ShieldVerdictEvaluator {
                     ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.RACE_ORB_SHIELD))
                 chip.id == "char_orb_first_wave" || chip.id == "char_orb_terrain" ->
                     ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.CHAR_ORB_TERRAIN))
+                chip.id == "starting_buoy_shield" -> {
+                    if (!hasStartingBuoyOnBoard && !solution.usedCharacterOrb) {
+                        ShieldVerdict(chip.id, chip, ShieldVerdictStatus.UNDETECTED, "missing_buoy")
+                    } else {
+                        val colOk = !hasStartingBuoyOnBoard || (solution.usedCharacterOrb && solution.characterOrbCol == board.startingBuoyCol)
+                        val clearOk = (solution.failedFlags and ShieldStatusBits.CHAR_ORB_TERRAIN) == 0
+                        ShieldVerdict(
+                            chip.id,
+                            chip,
+                            if (colOk && clearOk) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
+                        )
+                    }
+                }
                 chip.id == "forbid_weakened_orb" || chip.id == "luminous_orb_shield" ->
                     ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.HAZARDS_CLEAR))
                 chip.id == "cross_shield" || chip.id.startsWith("cross_shield_") ->
@@ -298,6 +312,18 @@ object ShieldVerdictEvaluator {
         val hasAnyPuzzleChip = seenIds.any { it in setOf("puzzle_shield", "strict_puzzle", "loose_puzzle", "enchanted_puzzle") }
         if (!hasAnyPuzzleChip && hasPuzzle1OnBoard) {
             out.add(evalPuzzle("puzzle_shield", null))
+        }
+        if ("starting_buoy_shield" !in seenIds && "char_orb_first_wave" !in seenIds && hasStartingBuoyOnBoard) {
+            val ok = solution.usedCharacterOrb &&
+                solution.characterOrbCol == board.startingBuoyCol &&
+                (solution.failedFlags and ShieldStatusBits.CHAR_ORB_TERRAIN) == 0
+            out.add(
+                ShieldVerdict(
+                    chipId = "starting_buoy_shield",
+                    chip = null,
+                    status = if (ok) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
+                )
+            )
         }
 
         return out
