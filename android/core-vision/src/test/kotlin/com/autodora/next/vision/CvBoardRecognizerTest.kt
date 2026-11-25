@@ -1872,5 +1872,73 @@ class CvBoardRecognizerTest {
         assertFalse("Normal bright board must NOT set isDimmedBoard", normalRec.isDimmedBoard)
         assertEquals("Normal bright board must NOT false-trigger Starting Buoy", -1, normalRec.startingBuoyCol)
         assertEquals(0, normalRec.questionOrbsDetected)
+
+        // Case 4: High bob-peak Starting Buoy hovering above portrait top border (y = topPx - 1.28*cell)
+        // with bright pale non-dimmed Slots 1..5 + Android Toast over row 4 + bright path lines over board!
+        val bobPx = IntArray(w * h) { 0xFF181410.toInt() }
+        val pTop = (topPx - 1.24f * cell).toInt()
+        val pBot = (topPx - 0.30f * cell).toInt()
+        for (c in 0 until 6) {
+            val x0 = c * cell + 3
+            val x1 = (c + 1) * cell - 3
+            // Bright pale portrait on Slot 4 (c=3) simulating real white-haired Light member
+            val baseCol = if (c == 3) 0xFFEAE2DC.toInt() else 0xFF9C948E.toInt()
+            for (y in pTop until pBot) {
+                for (x in x0 until x1) bobPx[y * w + x] = baseCol
+            }
+            val attrCol = orbColors[teamAttrs[c].code]
+            for (y in (topPx - 1.22f * cell).toInt() until (topPx - 0.98f * cell).toInt()) {
+                for (x in (c * cell + 0.04f * cell).toInt() until (c * cell + 0.28f * cell).toInt()) {
+                    bobPx[y * w + x] = attrCol
+                }
+            }
+        }
+        // Bob-peak golden diamond floating high above Slot 6 top edge + opaque green overlay badge over center
+        val bCx = geom.cellCenterX(5)
+        val bCy = topPx - 1.26f * cell
+        val bDr = cell * 0.26f
+        for (y in (topPx - 1.56f * cell).toInt() until pBot) {
+            for (x in 5 * cell until 6 * cell) {
+                val d = kotlin.math.abs(x - bCx) + kotlin.math.abs(y - bCy)
+                if (d <= bDr) {
+                    bobPx[y * w + x] = if (d <= bDr * 0.50f) 0xFFFFFFFA.toInt() else 0xFFF2D230.toInt()
+                }
+            }
+        }
+        // 50% dimmed 6x5 board + bright white Toast covering row 4 + bright neon path line across row 2
+        val rad = cell * 0.40f
+        for (r in 0 until 5) {
+            for (c in 0 until 6) {
+                val col = scaleColor(orbColors[(r * 2 + c) % 6], 0.52f)
+                val cx = geom.cellCenterX(c)
+                val cy = geom.cellCenterY(r)
+                for (y in (topPx + r * cell).toInt() until (topPx + (r + 1) * cell).toInt()) {
+                    for (x in c * cell until (c + 1) * cell) {
+                        val dx = x - cx
+                        val dy = y - cy
+                        if (dx * dx + dy * dy <= rad * rad) bobPx[y * w + x] = col
+                    }
+                }
+            }
+        }
+        // White Android Toast over row 4 (cols 1..4)
+        for (y in (topPx + 4.1f * cell).toInt() until (topPx + 4.85f * cell).toInt()) {
+            for (x in cell until 5 * cell) bobPx[y * w + x] = 0xFFEFECE8.toInt()
+        }
+        // Bright neon horizontal path stroke across row 2 center (6px thick)
+        val lineY = geom.cellCenterY(2).toInt()
+        for (y in (lineY - 3)..(lineY + 3)) {
+            for (x in 0 until w) bobPx[y * w + x] = 0xFF00FFFF.toInt()
+        }
+        val bobFrame = object : VisionFrame {
+            override val width = w
+            override val height = h
+            override fun getArgb(x: Int, y: Int): Int =
+                bobPx[y.coerceIn(0, h - 1) * w + x.coerceIn(0, w - 1)]
+        }
+        val bobRec = recognizer.recognizeFrames(listOf(bobFrame), geom)
+        assertTrue("Dimmed board under Toast + neon path lines must remain isDimmedBoard", bobRec.isDimmedBoard)
+        assertEquals("Bob-peak Starting Buoy above Slot 6 must be detected even with bright Slot 4", 5, bobRec.startingBuoyCol)
+        assertEquals("Bob-peak Starting Buoy attribute must still detect WOOD", Element.WOOD, bobRec.startingBuoyElement)
     }
 }

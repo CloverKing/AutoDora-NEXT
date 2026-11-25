@@ -667,12 +667,12 @@ class OverlayControllerService : Service() {
             )
         }
         summaryTitle = TextView(this).apply {
-            textSize = 10f
+            textSize = 9.5f
             setSingleLine(false)
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
             typeface = Typeface.DEFAULT_BOLD
-            maxWidth = (screenW * 0.76f).toInt()
+            maxWidth = (screenW * 0.79f).toInt()
             setOnClickListener {
                 summaryPillsExpanded = !summaryPillsExpanded
                 shieldStatusScroll.visibility = if (summaryPillsExpanded && shieldStatusRow.childCount > 0) View.VISIBLE else View.GONE
@@ -2099,7 +2099,11 @@ class OverlayControllerService : Service() {
                                     r.shatteredTilesDetected +
                                     r.bloodbathTilesDetected +
                                     r.evilEnergyOrbsDetected
+                                val hasActiveBuoyPreview = lastSolveOutput != null &&
+                                    showPath &&
+                                    ((lastRecognition?.startingBuoyCol ?: -1) >= 0 || currentSolution()?.usedCharacterOrb == true)
                                 if (r.startingBuoyCol < 0 &&
+                                    !hasActiveBuoyPreview &&
                                     AutoGridDetector.isDimmedTransitionBoard(bmp, g, r.questionOrbsDetected, specialDarkCount)
                                 ) {
                                     Triple(null, null, 3) // 3 = dimmed VICTORY / wave-walk transition veil
@@ -2656,7 +2660,7 @@ class OverlayControllerService : Service() {
                     activeBoard.startingBuoyCol == sol.characterOrbCol && it.isMatchable && it != Element.HEART
                 } ?: lastPortraitElements.getOrNull(sol.characterOrbCol)?.takeIf { it.isMatchable && it != Element.HEART }
                 val elTxt = if (buoyEl != null) LocaleHelper.elementLabel(lctx, buoyEl.code) else ""
-                append(" · ⚓").append(sol.characterOrbCol + 1).append(elTxt)
+                append(" · ⚓\u2060").append(sol.characterOrbCol + 1).append('\u2060').append(elTxt)
             }
         }
         summaryTitle.text = coreSummary + extra
