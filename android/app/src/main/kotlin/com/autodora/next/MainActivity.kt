@@ -48,13 +48,16 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var teamPresetRepository: TeamPresetRepository
+    @Inject lateinit var trainingDataRepository: TrainingDataRepository
 
     private val overlayGrantedState = MutableStateFlow(false)
     private val notificationsGrantedState = MutableStateFlow(true)
     private val benchmarkReportState = MutableStateFlow<String?>(null)
     private val isBenchmarkingState = MutableStateFlow(false)
+    private val isExportingTrainingState = MutableStateFlow(false)
     private val updateCheckState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
     private var updateDownloadJob: Job? = null
+    private var trainingExportJob: Job? = null
     private var pendingInstallApk: File? = null
     private var currentLanguage: AppLanguage = AppLanguage.SYSTEM
 
@@ -147,6 +150,8 @@ class MainActivity : ComponentActivity() {
                     val activeWaveChips by ActiveStrategyStore.activeChips.collectAsState()
                     val benchReport by benchmarkReportState.collectAsState()
                     val isBench by isBenchmarkingState.collectAsState()
+                    val trainingStats by trainingDataRepository.observeStats().collectAsState(initial = TrainingStorageStats())
+                    val isExportingTraining by isExportingTrainingState.collectAsState()
                     val updateState by updateCheckState.collectAsState()
 
                     DashboardScreen(
@@ -176,6 +181,10 @@ class MainActivity : ComponentActivity() {
                         onRequestNotifications = { requestNotificationPermission() },
                         onToggleOverlayService = { toggleOverlayService() },
                         onRunNativeBenchmark = { runOnDeviceBenchmark() },
+                        trainingStats = trainingStats,
+                        isExportingTrainingData = isExportingTraining,
+                        onExportTrainingData = { exportAndShareTrainingData() },
+                        onClearTrainingData = { clearTrainingData() },
                         onOpenGitHub = { openExternalUrl(UpdateChecker.GITHUB_REPO_URL) },
                         onCheckForUpdates = { checkForUpdates() },
                         onDownloadUpdate = { avail -> downloadAndInstallUpdate(avail) },
@@ -355,6 +364,61 @@ class MainActivity : ComponentActivity() {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         } catch (_: Exception) {
             Toast.makeText(this, lctx().getString(R.string.about_open_link_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun exportAndShareTrainingData() {
+        if (isExportingTrainingState.value) return
+        trainingExportJob?.cancel()
+        trainingExportJob = lifecycleScope.launch {
+            isExportingTrainingState.value = true
+            try {
+                val res = trainingDataRepository.exportDatasetZip(BuildConfig.VERSION_NAME)
+                val destLabel = res.publicDownloadsPath ?: res.zipFile.name
+                Toast.makeText(
+                    this@MainActivity,
+                    lctx().getString(R.string.training_collect_export_ok_fmt, res.sampleCount, destLabel),
+                    Toast.LENGTH_LONG
+                ).show()
+                val zipUri = FileProvider.getUriForFile(
+                    this@MainActivity,
+                    "$packageName.fileprovider",
+                    res.zipFile
+                )
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/zip"
+                    putExtra(Intent.EXTRA_STREAM, zipUri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(
+                    Intent.createChooser(shareIntent, lctx().getString(R.string.training_collect_share_chooser))
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@MainActivity,
+                    lctx().getString(
+                        R.string.training_collect_export_err_fmt,
+                        e.localizedMessage ?: e.javaClass.simpleName
+                    ),
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                isExportingTrainingState.value = false
+                trainingExportJob = null
+            }
+        }
+    }
+
+    private fun clearTrainingData() {
+        lifecycleScope.launch {
+            trainingDataRepository.clearAllCollectedSamples()
+            Toast.makeText(
+                this@MainActivity,
+                lctx().getString(R.string.training_collect_cleared),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 

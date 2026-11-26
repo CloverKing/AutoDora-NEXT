@@ -1,6 +1,6 @@
 # AutoDora-NEXT v3.0 系统架构、功能设计与演进规划
 
-> **当前基线版本**：`v0.5.0`（`versionCode = 500`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
+> **当前基线版本**：`v0.5.1`（`versionCode = 501`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
 > **项目定位**：面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备的**免 Root、全规格动态棋盘自适应、可自由组合解盾、问号/按珠变盘双模破局、1:1 实时盘面编排、C++20 端侧高速引擎驱动**的新一代智能转珠辅助工程。  
 > **设计基线**：全面继承并升级旧版 [AutoDora-V3.4.3](./LEGACY_AUTODORA_ANALYSIS.md) 经实战验证的悬浮窗交互、调参与「问号‧转/风化‧转」按珠重算精华；完整对照 [《神魔之塔》13 年全机制全景调研手册](./TOS_COMPLETE_MECHANICS_CATALOG.md)、[98 项官方敌技审计报告](./enemy_skill_audit.md) 与 [22 项符石状态核验报告](./runestone_status_audit.md)（官方百科 20 项 + 百科外经典 2 项）。  
 > **标定与合规原则**：所有棋盘几何探测、校准基准与视觉特征阈值均严格以**真实《神魔之塔》游戏画面**实测标定；仓库仅包含工程代码、结构化技术规范与应用自身纯净截图，严禁提交任何第三方版权游戏素材。
@@ -144,7 +144,7 @@ flowchart LR
 | **分页结构** | 3-Tab：**概览 / 策略 / 设置** | 3-Tab：**快捷 / 策略 / 设置** |
 | **抽屉色彩** | 6 色语义色条 + 浅色边框卡片（蓝/靛蓝/青绿/琥珀/绯红/紫） | 与启动页对应模块使用**完全一致的抽屉配色** |
 | **展开模式** | 默认**全部展开**，支持多抽屉同时展开或单独收起 | 调参分页与盘面编排均采用**单抽屉手风琴互斥展开**，防止遮挡游戏盘面 |
-| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`584` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
+| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`599` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
 | **主悬浮胶囊** | 概览页一键启停悬浮助手；设置支持控制 **高速录屏模式下悬浮栏是否显示录屏按钮** 以及 **横排 / 竖排** 与 **靠左 / 靠右** 4 态切换（`floatingBarVertical` + `floatingBarDockRight`） | 圆形 App 图标手柄 + 8 个常驻矢量图标（`✦` `▶` `■` `〰` `▤` `▦` `🎚` `✕`）+ 高速录屏模式下可配置增显 **`● 录屏`** 图标；支持 **4 态实时热切**（横排靠右时 App 图标居右、主栏向左展开；竖排靠左向右/靠右向左展开面板）、**拖拽松手平滑左右吸边**及 **DataStore 持久化记忆停靠侧与纵坐标** |
 
 ### 5.2 单一自动保存策略与应用内更新闭环
@@ -216,18 +216,18 @@ flowchart TD
     PathSmooth -.-> ShizukuExec
 ```
 
-### 仓库模块与测试矩阵（当前 `134` 项自动化测试全通过）
+### 仓库模块与测试矩阵（当前 `137` 项自动化测试全通过）
 
 | 模块 | 职责说明 | 自动化测试覆盖 |
 | :--- | :--- | :--- |
 | `solver-core/` | 纯 C++20 求解引擎（CMake，零 Android 依赖） | `test_main.cpp`：**52 / 52** 通过（含独立路径回放核验、起动浮标角色珠破盾、荆棘严避与全版锁定渐进消除） |
 | `android/core-model/` | 不可变棋盘/规则模型、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**13 / 13** 通过 |
 | `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`（单 VirtualDisplay GPU 零拷贝 60fps 录屏直存系统相册）、`AutoGridDetector`（含低血亮红数字血条、空血 1-HP 暗槽、全版深青 `?` 问号珠外环峰值门控与纯黑弹窗防误过） | `AutoGridDetectorTest` (14) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3) + `BuiltInScreenRecorderTest` (3)：**23 / 23** 通过 |
-| `android/core-vision/` | `CvBoardRecognizer`（`CV-Rule-v2.7`：6 色邪能外焰、全版 30/30 血浴放行/暗度隔离、`±3px` 深青 `?` 容差 + 18 项状态/地形与起动浮标自动识别）、`LiteRtOrbClassifier`（`orb_multihead_v1.tflite` 动态 Batch `[Cols×Rows, 64, 64, 3]`）、`HybridFusionPolicy`（`model_meta.json` 近零误报融合）、`HybridBoardRecognizer` | `CvBoardRecognizerTest` (23) + `HybridBoardRecognizerTest` (3)：**26 / 26** 通过 |
+| `android/core-vision/` | `CvBoardRecognizer`（`CV-Rule-v2.7` + 起动浮标自动识别）、`FlashRevealMemoryTracker`（含 `classifyDarkModalForCapture` 战中敌技弹窗/关卡资讯分离）、`LiteRtOrbClassifier`、`HybridFusionPolicy`、`HybridBoardRecognizer` | `CvBoardRecognizerTest` (24) + `HybridBoardRecognizerTest` (3)：**27 / 27** 通过 |
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`（含精准分段预计转珠耗时计算与校准头像中心垂直下拉）、`SwipeSpeedPreset` | `PathInterpolatorTest`：**9 / 9** 通过 |
-| `android/core-data/` | DataStore 设置（含 `useAiRecognizer` 开关）、Room 实时策略持久化、40 盾牌 / 98 敌技 / 22 状态目录 | 随 `:core-model` 与 `:app` 联合验证 |
+| `android/core-data/` | DataStore 设置（含 `useAiRecognizer` 与 `trainingDataCollectionEnabled`）、`AutoDoraDatabase v2`（`team_presets` + `collected_training_samples` + `captured_enemy_skills`）、`TrainingDataRepository`（无上限双轨 WebP 采集 + `TrainingZipPackager`）、目录配置 | `TrainingDataRepositoryTest`：**2 / 2** 通过 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台（含 AI 混合识盘开关）、4 态磁吸记忆悬浮服务、单抽屉调参/编排、`UpdateChecker`、未压缩打包 `assets/models/orb_multihead_v1.tflite` (`348,548 B`) | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **584 / 584** |
+| `android/app/` | 3-Tab Compose 启动台（含 AI 混合识盘 & 端侧无上限采集导出管理卡片）、4 态磁吸记忆悬浮服务（含盘面双帧/编排纠错/敌技弹窗 4 处端侧采样钩子）、单抽屉调参/编排、`UpdateChecker`、未压缩打包 `assets/models/orb_multihead_v1.tflite` (`348,548 B`) | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **599 / 599** |
 
 ---
 
@@ -238,4 +238,4 @@ flowchart TD
 | **Phase 1：纯 C++20 动态内核 + 多模块骨架** | `v0.1.0` | **已完成** — `3×3~8×8` 64-bit 位掩码求解器、最高 300 步、Android 7 模块工程与 JNI 三架构编译。 |
 | **Phase 2 & 2.5：免 Root 全链路 + 真图高精度标定** | `v0.2.x` – `v0.3.x` | **已完成** — 零拷贝 `MediaProjection`、血条防假违建、先露后藏记忆快照、免 Root 按住重算续滑、拼图/红绿灯/暴风/化血/结界识别、非战斗/VICTORY 过滤、方向逆转与逐盾 `✓/✗` 判定。 |
 | **Phase 3 & 3.5：百科全量审计 + 统一交互 + 全 6 色特殊符石 CV 与长时稳定** | `v0.4.0` – `v0.4.9` | **已完成** — 全量 98 敌技 + 22 符石状态 + 7 大官方种族全链路升级；成员起动浮标（No.5893/5894/7403）全链路支持；双模屏幕采集与内置 60fps H.264 录屏；HyperOS / Android 14–16 稳态、`0%–100%` 全态血条锚定、18 项状态/地形自动 CV 识别与统一 M3 悬浮/编排闭环。 |
-| **Phase 4：端侧多头 AI 识盘 + 敌技自动解析 + Shizuku 扩展** | `v0.5.0`（当前）– `v1.0.0` | **首版已落地（`v0.5.0`）** — ① `CV-Rule-v2.7` 补齐 6 色邪能外焰、全版 30/30 血浴与 `?` 漂移容差；② 完成 `ml/` 47 维多头训练集（`6,486` 格）与 `AutoDoraOrbNetV1`（`84,191` 参，FP32 `.tflite` `340.4 KB`）训练导出，实装 `LiteRtOrbClassifier` + 近零误报 `HybridFusionPolicy` + `HybridBoardRecognizer` + Settings 实时开关。<br>**后续迭代（`v0.5.x–v1.0.0`）**：悬浮纠错 ZIP 数据飞轮、端侧离线敌技说明自动解析（结合灰字无视过滤自动勾选波次盾）、可选 Shizuku 特权触控引擎与稳定版 `v1.0.0`。 |
+| **Phase 4：端侧多头 AI 识盘 + 双轨数据飞轮 + 敌技解析** | `v0.5.0` – `v0.5.1`（当前）– `v1.0.0` | **已落地（`v0.5.0–v0.5.1`）** — ① `CV-Rule-v2.7` + `AutoDoraOrbNetV1`（`84,191` 参，FP32 `.tflite` `340.4 KB`）+ 近零误报 `HybridFusionPolicy` 上线；② `v0.5.1` 新增 **无上限双轨端侧训练素材自采集飞轮**（`AutoDoraDatabase v2` + `TrainingDataRepository` + 弹窗分类器 + 悬浮窗 4 处采样钩子 + Settings ZIP 导出至 `Download/AutoDora-NEXT/` & 分享），同步采集盘面静止双帧 / 1:1 编排 P0 纠错与战中敌技弹窗。<br>**后续迭代（`v0.6.x–v1.0.0`）**：`ONNX Runtime Mobile` + 纯离线繁体 `PaddleOCR` 敌技弹窗识别与实时灰字无视过滤、治本级双帧整盘 `BoardMasterGridNet`、`EnemyIconNet`、可选 Shizuku 特权触控与稳定版 `v1.0.0`。 |

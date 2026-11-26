@@ -55,7 +55,9 @@ import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.OverlayPalette
 import com.autodora.next.ui.OverlayThemeResolver
+import com.autodora.next.data.*
 import com.autodora.next.vision.BoardRecognizer
+import com.autodora.next.vision.DarkModalKind
 import com.autodora.next.vision.DirectBitmapVisionFrame
 import com.autodora.next.vision.FlashRevealMemoryTracker
 import com.autodora.next.vision.RecognitionResult
@@ -85,6 +87,7 @@ class OverlayControllerService : Service() {
     @Inject lateinit var teamPresetRepository: TeamPresetRepository
     @Inject lateinit var boardRecognizer: BoardRecognizer
     @Inject lateinit var touchExecutor: TouchExecutor
+    @Inject lateinit var trainingDataRepository: TrainingDataRepository
 
     private lateinit var windowManager: WindowManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -175,6 +178,17 @@ class OverlayControllerService : Service() {
     private var backgroundWatchJob: Job? = null
     private var activeCancelToken: NativeCancelToken? = null
     private val flashMemoryTracker = FlashRevealMemoryTracker()
+
+    // Cached clean copies of the latest live board capture so P0 editor corrections preserve matching pixels
+    private var lastRawBoardFrameA: android.graphics.Bitmap? = null
+    private var lastRawBoardFrameB: android.graphics.Bitmap? = null
+    private var lastRawBoardGeom: BoardGeometry? = null
+    private var lastRawBoardAiBoard: BoardState? = null
+    private var lastRawBoardAvgConf: Float = 0f
+    private var lastRawBoardLowConf: List<Int> = emptyList()
+    private var lastRawBoardCalibSource: String = "auto"
+    private var consecutiveEnemyModalTicks = 0
+    private var consecutiveCleanIdleBattleTicks = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -285,11 +299,47 @@ class OverlayControllerService : Service() {
         return START_STICKY
     }
 
+    private fun cacheLastBoardSnapshot(
+        frameA: android.graphics.Bitmap,
+        frameB: android.graphics.Bitmap?,
+        geom: BoardGeometry,
+        aiBoard: BoardState,
+        avgConf: Float,
+        lowConf: List<Int>,
+        calibSource: String
+    ) {
+        if (frameA.isRecycled) return
+        val copyA = runCatching { frameA.copy(android.graphics.Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return
+        val copyB = frameB?.takeIf { !it.isRecycled }?.let {
+            runCatching { it.copy(android.graphics.Bitmap.Config.ARGB_8888, false) }.getOrNull()
+        }
+        clearLastBoardSnapshot()
+        lastRawBoardFrameA = copyA
+        lastRawBoardFrameB = copyB
+        lastRawBoardGeom = geom
+        lastRawBoardAiBoard = aiBoard
+        lastRawBoardAvgConf = avgConf
+        lastRawBoardLowConf = lowConf
+        lastRawBoardCalibSource = calibSource
+    }
+
+    private fun clearLastBoardSnapshot() {
+        lastRawBoardFrameA?.let { if (!it.isRecycled) it.recycle() }
+        lastRawBoardFrameB?.let { if (!it.isRecycled) it.recycle() }
+        lastRawBoardFrameA = null
+        lastRawBoardFrameB = null
+        lastRawBoardGeom = null
+        lastRawBoardAiBoard = null
+        lastRawBoardAvgConf = 0f
+        lastRawBoardLowConf = emptyList()
+    }
+
     override fun onDestroy() {
         snapAnimator?.cancel()
         snapAnimator = null
         backgroundWatchJob?.cancel()
         triggerEmergencyStop()
+        clearLastBoardSnapshot()
         serviceScope.cancel()
         removeOverlayViews()
         // Always release MediaProjection when stopping the floating assistant so system Screen Recorder
@@ -785,6 +835,26 @@ class OverlayControllerService : Service() {
             onSaveEditedBoard = {
                 val cur = editedBoard ?: return@OverlayBoardEditorController
                 savedEditedBoard = cur
+                val cachedA = lastRawBoardFrameA
+                val cachedGeom = lastRawBoardGeom
+                if (settings.trainingDataCollectionEnabled &&
+                    cachedA != null && !cachedA.isRecycled &&
+                    cachedGeom != null
+                ) {
+                    trainingDataRepository.recordBoardSample(
+                        rawFrameA = cachedA,
+                        rawFrameB = lastRawBoardFrameB?.takeIf { !it.isRecycled },
+                        geometry = cachedGeom,
+                        aiBoard = lastRawBoardAiBoard ?: cur,
+                        avgConfidence = lastRawBoardAvgConf,
+                        lowConfidenceIndices = lastRawBoardLowConf,
+                        activeWaveChips = activeWaveChips,
+                        captureMode = settings.captureMode.name,
+                        domain = TrainingSampleDomains.BOARD_EDITOR_CORRECTION,
+                        userCorrectedBoard = cur,
+                        calibrationSource = lastRawBoardCalibSource
+                    )
+                }
                 boardEditor.setSavedState(true)
                 setBoardEditorMode(false)
                 invalidateLastSolution()
@@ -1207,6 +1277,30 @@ class OverlayControllerService : Service() {
                 lastRecognition = liveRec.copy(board = effectiveBoard)
                 editedBoard = effectiveBoard
                 usedMemorizedSnapshot = resolvedFromMemory
+                val calibLabel = if (settings.calibration.bottomRatio > 0f) "manual" else "auto"
+                cacheLastBoardSnapshot(
+                    frameA = frames.first(),
+                    frameB = frames.getOrNull(1),
+                    geom = geom,
+                    aiBoard = liveRec.board,
+                    avgConf = liveRec.averageConfidence,
+                    lowConf = liveRec.lowConfidenceIndices,
+                    calibSource = calibLabel
+                )
+                if (settings.trainingDataCollectionEnabled && !resolvedFromMemory) {
+                    trainingDataRepository.recordBoardSample(
+                        rawFrameA = frames.first(),
+                        rawFrameB = frames.getOrNull(1),
+                        geometry = geom,
+                        aiBoard = liveRec.board,
+                        avgConfidence = liveRec.averageConfidence,
+                        lowConfidenceIndices = liveRec.lowConfidenceIndices,
+                        activeWaveChips = activeWaveChips,
+                        captureMode = settings.captureMode.name,
+                        domain = TrainingSampleDomains.BOARD_SOLVE,
+                        calibrationSource = calibLabel
+                    )
+                }
 
                 val ruleConfig = composeEffectiveRuleConfig(effectiveBoard)
                 if (activeWaveChips.any { it.id == "starting_buoy_shield" } &&
@@ -1883,6 +1977,15 @@ class OverlayControllerService : Service() {
                 currentGeometry = geom
                 lastRecognition = liveRec.copy(board = resolvedBoard)
                 editedBoard = resolvedBoard
+                cacheLastBoardSnapshot(
+                    frameA = frames.first(),
+                    frameB = frames.getOrNull(1),
+                    geom = geom,
+                    aiBoard = liveRec.board,
+                    avgConf = liveRec.averageConfidence,
+                    lowConf = liveRec.lowConfidenceIndices,
+                    calibSource = if (settings.calibration.bottomRatio > 0f) "manual" else "auto"
+                )
                 if (clearSavedFirst) {
                     savedEditedBoard = null
                     boardEditor.setSavedState(false)
@@ -2119,13 +2222,30 @@ class OverlayControllerService : Service() {
                         1 -> {
                             consecutiveNonBattleTicks = 0
                             consecutiveMassQuestionTicks = 0
+                            consecutiveCleanIdleBattleTicks = 0
+                            consecutiveEnemyModalTicks++
                             if (!enemyPopupCoveringBoard) {
                                 enemyPopupCoveringBoard = true
                                 refreshPathCanvas()
                             }
+                            if (consecutiveEnemyModalTicks >= 2 && settings.trainingDataCollectionEnabled) {
+                                val modalKind = withContext(Dispatchers.Default) {
+                                    FlashRevealMemoryTracker.classifyDarkModalForCapture(DirectBitmapVisionFrame(bmp))
+                                }
+                                if (modalKind != DarkModalKind.NONE) {
+                                    trainingDataRepository.recordEnemyModalSample(
+                                        rawFrame = bmp,
+                                        domain = modalKind.name,
+                                        activeWaveChips = activeWaveChips,
+                                        captureMode = settings.captureMode.name
+                                    )
+                                }
+                            }
                         }
                         2, 3 -> {
                             consecutiveMassQuestionTicks = 0
+                            consecutiveEnemyModalTicks = 0
+                            consecutiveCleanIdleBattleTicks = 0
                             consecutiveNonBattleTicks++
                             // On a dimmed VICTORY / wave transition frame, immediately hide any memorized '?' overlay
                             // on tick 1 so the translucent orb badges never linger over VICTORY or stage transitions!
@@ -2161,10 +2281,36 @@ class OverlayControllerService : Service() {
                         }
                         else -> {
                             consecutiveNonBattleTicks = 0
+                            consecutiveEnemyModalTicks = 0
                             if (geom != null && rec != null) {
                                 if (enemyPopupCoveringBoard) {
                                     enemyPopupCoveringBoard = false
                                     refreshPathCanvas()
+                                }
+                                if (!showPath &&
+                                    !boardEditorMode &&
+                                    !calibrationMode &&
+                                    !usedMemorizedSnapshot &&
+                                    lastSolveOutput == null &&
+                                    settings.trainingDataCollectionEnabled
+                                ) {
+                                    consecutiveCleanIdleBattleTicks++
+                                    if (consecutiveCleanIdleBattleTicks >= 2) {
+                                        trainingDataRepository.recordBoardSample(
+                                            rawFrameA = bmp,
+                                            rawFrameB = null,
+                                            geometry = geom,
+                                            aiBoard = rec.board,
+                                            avgConfidence = rec.averageConfidence,
+                                            lowConfidenceIndices = rec.lowConfidenceIndices,
+                                            activeWaveChips = activeWaveChips,
+                                            captureMode = settings.captureMode.name,
+                                            domain = TrainingSampleDomains.BOARD_AUTO_IDLE,
+                                            calibrationSource = if (settings.calibration.bottomRatio > 0f) "manual" else "auto"
+                                        )
+                                    }
+                                } else {
+                                    consecutiveCleanIdleBattleTicks = 0
                                 }
 
                                 // Always-On Full-Screen Question Orb Memory:

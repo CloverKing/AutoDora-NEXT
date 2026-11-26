@@ -3,4 +3,7 @@
     <cache-path
         name="apk_updates"
         path="updates/" />
+    <cache-path
+        name="training_exports"
+        path="training_exports/" />
 </paths>

@@ -627,4 +627,21 @@
     <string name="shield_starting_buoy">起动浮标盾</string>
     <string name="editor_brush_starting_buoy">起动浮标</string>
     <string name="ov_toast_starting_buoy_not_detected">未检测到起动浮标，可在盘面编排点选头像/直行或手动指定角色直行</string>
+
+    <!-- Unlimited Dual-Track On-Device Training Data Collector -->
+    <string name="section_training_collector">端侧训练素材自动采集</string>
+    <string name="training_collect_switch_title">端侧自动采集训练素材（无上限）</string>
+    <string name="training_collect_switch_sub">同时采集「盘面静止双帧 + 1:1 编排纠错」与「战中长按敌技弹窗 / 关卡资讯」；不设数量或容量上限，仅短时去重并存本地</string>
+    <string name="training_collect_stats_fmt">总计 %1$d 组（盘面 %2$d · 编排纠错 %3$d · 敌技弹窗 %4$d）· 占 %5$s MB · 无上限保留</string>
+    <string name="training_collect_btn_export">导出训练 ZIP</string>
+    <string name="training_collect_btn_exporting">正在打包…</string>
+    <string name="training_collect_btn_clear">清空样本</string>
+    <string name="training_collect_clear_confirm_title">确认清空本地训练样本？</string>
+    <string name="training_collect_clear_confirm_body">将永久删除手机内已采集的所有盘面与敌技弹窗样本（建议先导出 ZIP 备份）；已保存的敌技基础库会保留。</string>
+    <string name="training_collect_export_ok_fmt">已导出 %1$d 组样本至 %2$s</string>
+    <string name="training_collect_export_err_fmt">导出训练包失败：%1$s</string>
+    <string name="training_collect_share_chooser">分享或保存训练数据集 ZIP</string>
+    <string name="training_collect_cleared">已清空本地训练样本缓存</string>
+    <string name="training_collect_on_badge">采集中 · %1$d</string>
+    <string name="training_collect_off_badge">已暂停</string>
 </resources>

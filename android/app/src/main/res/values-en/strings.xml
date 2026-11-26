@@ -627,4 +627,21 @@
     <string name="shield_starting_buoy">Buoy Orb Shield</string>
     <string name="editor_brush_starting_buoy">Starting Buoy</string>
     <string name="ov_toast_starting_buoy_not_detected">Starting Buoy not detected — tap a portrait/column in Board Editor or pick a character slot</string>
+
+    <!-- Unlimited Dual-Track On-Device Training Data Collector -->
+    <string name="section_training_collector">On-Device Training Collector</string>
+    <string name="training_collect_switch_title">Auto-Collect Training Data (Unlimited)</string>
+    <string name="training_collect_switch_sub">Captures both static dual-frame boards + 1:1 editor corrections and in-battle enemy skill popups / stage info locally with zero size or count caps</string>
+    <string name="training_collect_stats_fmt">Total %1$d (Boards %2$d · Editor %3$d · Enemy Modals %4$d) · %5$s MB · Unlimited</string>
+    <string name="training_collect_btn_export">Export ZIP</string>
+    <string name="training_collect_btn_exporting">Packaging…</string>
+    <string name="training_collect_btn_clear">Clear Samples</string>
+    <string name="training_collect_clear_confirm_title">Clear all local training samples?</string>
+    <string name="training_collect_clear_confirm_body">Permanently deletes all captured board images and enemy popup captures from device storage. Export ZIP first to keep a backup.</string>
+    <string name="training_collect_export_ok_fmt">Exported %1$d samples to %2$s</string>
+    <string name="training_collect_export_err_fmt">Failed to export training ZIP: %1$s</string>
+    <string name="training_collect_share_chooser">Share or Save Training Dataset ZIP</string>
+    <string name="training_collect_cleared">Local training sample cache cleared</string>
+    <string name="training_collect_on_badge">Recording · %1$d</string>
+    <string name="training_collect_off_badge">Paused</string>
 </resources>

@@ -54,6 +54,7 @@ ml\.venv\Scripts\python.exe -m ml.export_litert
   5. `head_hazards` `[22..38]` (17, Sigmoid 多标签)：17 类核心异常/锁定/刺血/炸弹等位
   6. `head_tile_overlay` `[39..46]` (8, Sigmoid 多标签)：拼图 / 暴风 / 碎裂 / 燃烧 / 灼热 / 血浴 / 黑洞 / 红绿灯
 
-## 3. 合规与 Git 卫生约束
+## 3. 端侧无上限双轨采集飞轮与合规规范（`v0.5.1` 已落地）
 
+- **App 端侧双轨采集导出格式**：`v0.5.1` 已上线 `TrainingDataRepository` + `Room AutoDoraDatabase v2`，在日常游玩时无上限收集两类高价值样本并一键打包导出 `AutoDora_TrainingData_<ts>.zip`（含根目录 `manifest.json`、`enemy_skills_master.json`、`boards/*_{a,b}.webp`、`viewports/*_upper.webp`、`enemy_popups/*_full.webp` 与 `meta/*.json` 含 P0 人工编排纠错 diff）；导出的 ZIP 可直接解压归档至 `backups/phase4_v2_inbox/device_exports/` 对接下一代 `BoardMasterGridNet` 与 `EnemyPopupParser` 训练。
 - **严禁提交第三方版权素材或大体积训练中间产物**：`backups/`、`ml/datasets/`、`ml/runs/`、`ml/checkpoints/` 与 `ml/.venv/` 均已配置 `.gitignore` 忽略，Git 仓库仅保留纯训练/导出脚本与自主权重的轻量模型资产 `android/app/src/main/assets/models/{orb_multihead_v1.tflite, model_meta.json}`。

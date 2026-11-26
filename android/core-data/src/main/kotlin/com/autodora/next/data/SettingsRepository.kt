@@ -67,6 +67,7 @@ data class AppSettings(
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
     val useAiRecognizer: Boolean = true,        // Phase 4 LiteRT + CV Hybrid recognition (falls back to pure CV if off)
+    val trainingDataCollectionEnabled: Boolean = true, // Unlimited dual-track on-device capture (boards + enemy popups)
     val showOrbBadgesOnPath: Boolean = true,    // Show compact recognized orb badges so users verify board accuracy at a glance
     val holdReplanEnabled: Boolean = false,     // Toggle mode: when ON, '行' executes Hold-and-Replan (按住重算)
     val holdReplanDelayMs: Long = 560L,         // Max wait ceiling for '?' flip reveal animation (exits early once revealed!)
@@ -124,6 +125,7 @@ class SettingsRepository(private val context: Context) {
         val HUMAN_MODE = booleanPreferencesKey("touch_human_mode")
         val MULTI_FRAME_COUNT = intPreferencesKey("vision_multi_frames")
         val USE_AI_RECOGNIZER = booleanPreferencesKey("vision_use_ai_recognizer")
+        val TRAINING_DATA_COLLECTION_ENABLED = booleanPreferencesKey("ml_training_data_collection_enabled")
         val SHOW_ORB_BADGES = booleanPreferencesKey("ux_show_orb_badges")
 
         val HOLD_REPLAN_ENABLED = booleanPreferencesKey("touch_hold_replan_enabled")
@@ -162,6 +164,7 @@ class SettingsRepository(private val context: Context) {
         humanMode = p[Keys.HUMAN_MODE] ?: false,
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
         useAiRecognizer = p[Keys.USE_AI_RECOGNIZER] ?: true,
+        trainingDataCollectionEnabled = p[Keys.TRAINING_DATA_COLLECTION_ENABLED] ?: true,
         showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
         holdReplanEnabled = p[Keys.HOLD_REPLAN_ENABLED] ?: false,
         holdReplanDelayMs = (p[Keys.HOLD_REPLAN_DELAY_MS] ?: 560L).coerceIn(240L, 900L),
@@ -206,6 +209,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.HUMAN_MODE] = next.humanMode
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)
             p[Keys.USE_AI_RECOGNIZER] = next.useAiRecognizer
+            p[Keys.TRAINING_DATA_COLLECTION_ENABLED] = next.trainingDataCollectionEnabled
             p[Keys.SHOW_ORB_BADGES] = next.showOrbBadgesOnPath
             p[Keys.HOLD_REPLAN_ENABLED] = next.holdReplanEnabled
             p[Keys.HOLD_REPLAN_DELAY_MS] = next.holdReplanDelayMs.coerceIn(240L, 900L)

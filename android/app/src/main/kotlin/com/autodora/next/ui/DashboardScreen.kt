@@ -42,6 +42,7 @@ import com.autodora.next.capture.CaptureRouter
 import com.autodora.next.data.*
 import com.autodora.next.model.*
 import com.autodora.next.touch.SwipeSpeedPreset
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -68,6 +69,10 @@ fun DashboardScreen(
     activeWaveChips: List<WaveShieldChip>,
     benchmarkReport: String?,
     isBenchmarking: Boolean,
+    trainingStats: TrainingStorageStats = TrainingStorageStats(),
+    isExportingTrainingData: Boolean = false,
+    onExportTrainingData: () -> Unit = {},
+    onClearTrainingData: () -> Unit = {},
     updateCheckState: UpdateCheckState = UpdateCheckState.Idle,
     onRequestOverlay: () -> Unit,
     onOpenAccessibility: () -> Unit,
@@ -225,6 +230,10 @@ fun DashboardScreen(
                     settings = settings,
                     benchmarkReport = benchmarkReport,
                     isBenchmarking = isBenchmarking,
+                    trainingStats = trainingStats,
+                    isExportingTrainingData = isExportingTrainingData,
+                    onExportTrainingData = onExportTrainingData,
+                    onClearTrainingData = onClearTrainingData,
                     updateCheckState = updateCheckState,
                     onUpdateSettings = onUpdateSettings,
                     onRunNativeBenchmark = onRunNativeBenchmark,
@@ -591,6 +600,10 @@ private fun SettingsTab(
     settings: AppSettings,
     benchmarkReport: String?,
     isBenchmarking: Boolean,
+    trainingStats: TrainingStorageStats,
+    isExportingTrainingData: Boolean,
+    onExportTrainingData: () -> Unit,
+    onClearTrainingData: () -> Unit,
     updateCheckState: UpdateCheckState,
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onRunNativeBenchmark: () -> Unit,
@@ -614,6 +627,7 @@ private fun SettingsTab(
     val parsedSteps = maxStepsInput.toIntOrNull()
     val maxStepsError = maxStepsInput.isNotEmpty() && (parsedSteps == null || parsedSteps !in 8..300)
     var countdownMenuExpanded by remember { mutableStateOf(false) }
+    var showClearTrainingConfirm by remember { mutableStateOf(false) }
 
     val msUnit = stringResource(R.string.unit_ms)
     val activeSpeed = SwipeSpeedPreset.fromStepDurationMs(settings.stepDurationMs)
@@ -1228,6 +1242,95 @@ private fun SettingsTab(
                     onCheckedChange = { v -> onUpdateSettings { it.copy(showFloatingRecordButton = v) } }
                 )
             }
+        }
+
+        // 4.5. Teal Drawer: Unlimited Dual-Track On-Device Training Data Collector
+        val mbUsedText = String.format(Locale.US, "%.2f", trainingStats.totalBytes / (1024.0 * 1024.0))
+        ColoredCollapsibleDrawerCard(
+            title = stringResource(R.string.section_training_collector),
+            accentColor = DrawerAccentColors.Teal,
+            summaryText = if (settings.trainingDataCollectionEnabled) {
+                stringResource(R.string.training_collect_on_badge, trainingStats.totalSamples)
+            } else {
+                stringResource(R.string.training_collect_off_badge)
+            },
+            highlighted = settings.trainingDataCollectionEnabled && trainingStats.totalSamples > 0,
+            initialExpanded = true
+        ) {
+            SwitchSettingRow(
+                title = stringResource(R.string.training_collect_switch_title),
+                subtitle = stringResource(R.string.training_collect_switch_sub),
+                checked = settings.trainingDataCollectionEnabled,
+                onCheckedChange = { v -> onUpdateSettings { it.copy(trainingDataCollectionEnabled = v) } }
+            )
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.training_collect_stats_fmt,
+                        trainingStats.totalSamples,
+                        trainingStats.boardSamples,
+                        trainingStats.editorCorrectionSamples,
+                        trainingStats.enemyModalSamples,
+                        mbUsedText
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = onExportTrainingData,
+                    enabled = !isExportingTrainingData && trainingStats.totalSamples > 0,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        stringResource(
+                            if (isExportingTrainingData) R.string.training_collect_btn_exporting
+                            else R.string.training_collect_btn_export
+                        ),
+                        maxLines = 1
+                    )
+                }
+                OutlinedButton(
+                    onClick = { showClearTrainingConfirm = true },
+                    enabled = !isExportingTrainingData && trainingStats.totalSamples > 0,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.training_collect_btn_clear), maxLines = 1)
+                }
+            }
+        }
+
+        if (showClearTrainingConfirm) {
+            AlertDialog(
+                onDismissRequest = { showClearTrainingConfirm = false },
+                title = { Text(stringResource(R.string.training_collect_clear_confirm_title)) },
+                text = { Text(stringResource(R.string.training_collect_clear_confirm_body)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showClearTrainingConfirm = false
+                            onClearTrainingData()
+                        }
+                    ) {
+                        Text(stringResource(R.string.training_collect_btn_clear))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearTrainingConfirm = false }) {
+                        Text(stringResource(R.string.about_update_cancel_btn))
+                    }
+                }
+            )
         }
 
         // 5. Indigo Drawer: Local Engine Benchmark

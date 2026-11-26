@@ -627,4 +627,21 @@
     <string name="shield_starting_buoy">起動浮標盾</string>
     <string name="editor_brush_starting_buoy">起動浮標</string>
     <string name="ov_toast_starting_buoy_not_detected">未偵測到起動浮標，可在盤面編排點選頭像/直行或手動指定角色直行</string>
+
+    <!-- Unlimited Dual-Track On-Device Training Data Collector -->
+    <string name="section_training_collector">端側訓練素材自動擷取</string>
+    <string name="training_collect_switch_title">端側自動擷取訓練素材（無上限）</string>
+    <string name="training_collect_switch_sub">同步擷取「盤面靜止雙幀 + 1:1 編排糾錯」與「戰中長按敵技彈窗 / 關卡資訊」；不設張數或容量上限，僅短時去重存於本機</string>
+    <string name="training_collect_stats_fmt">總計 %1$d 組（盤面 %2$d · 編排糾錯 %3$d · 敵技彈窗 %4$d）· 佔 %5$s MB · 無上限保留</string>
+    <string name="training_collect_btn_export">匯出訓練 ZIP</string>
+    <string name="training_collect_btn_exporting">正在打包…</string>
+    <string name="training_collect_btn_clear">清空樣本</string>
+    <string name="training_collect_clear_confirm_title">確認清空本機訓練樣本？</string>
+    <string name="training_collect_clear_confirm_body">將永久刪除手機內已擷取的所有盤面與敵技彈窗樣本（建議先匯出 ZIP 備份）；已保存的敵技基礎庫會保留。</string>
+    <string name="training_collect_export_ok_fmt">已匯出 %1$d 組樣本至 %2$s</string>
+    <string name="training_collect_export_err_fmt">匯出訓練包失敗：%1$s</string>
+    <string name="training_collect_share_chooser">分享或儲存訓練資料集 ZIP</string>
+    <string name="training_collect_cleared">已清空本機訓練樣本快取</string>
+    <string name="training_collect_on_badge">擷取中 · %1$d</string>
+    <string name="training_collect_off_badge">已暫停</string>
 </resources>
