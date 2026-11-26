@@ -644,4 +644,32 @@
     <string name="training_collect_cleared">已清空本地训练样本缓存</string>
     <string name="training_collect_on_badge">采集中 · %1$d</string>
     <string name="training_collect_off_badge">已暂停</string>
+
+    <!-- Pure-Offline PP-OCRv5 ONNX Enemy Skill Recognition & Board Auto-Policy -->
+    <string name="mode_enemy_ocr_title">离线敌技弹窗智能识别</string>
+    <string name="mode_enemy_ocr_sub">长按敌人弹窗时自动离线识字并装配 ✦AI 解版策略；自动识别灰字无视技能，仍完整归档本地知识库，过关波次切换自动清零</string>
+    <string name="training_collect_stats_v2_fmt">总计 %1$d 组（盘面 %2$d · 编排纠错 %3$d · 敌技弹窗 %4$d）· 知识库 %5$d 条 · 占 %6$s MB</string>
+    <string name="ov_ai_chip_prefix">✦AI </string>
+    <string name="ov_bypassed_grey_pill_fmt">⊘ 灰字已无视×%1$d</string>
+    <string name="ov_toast_bypassed_restored_fmt">已手动启用被无视的 %1$d 条敌技约束</string>
+    <string name="ov_toast_ocr_applied_fmt">✦AI 已自动装配 %1$d 项本波解版策略</string>
+    <string name="ov_toast_ocr_bypassed_fmt">（已自动无视 %1$d 条灰字敌技）</string>
+    <string name="ov_toast_ocr_stage_archived_fmt">✦AI 已归档 %1$d 条关卡敌技至本地知识库</string>
+    <string name="ov_toast_wave_auto_cleared">已进入下一波，已清除上一波 ✦AI 临时策略</string>
+    <string name="policy_burn">避燃</string>
+    <string name="policy_scorch">避灼</string>
+    <string name="policy_sticky">避黏</string>
+    <string name="policy_purgatory">避炼狱</string>
+    <string name="policy_bomb">避炸</string>
+    <string name="policy_weathered">避风化</string>
+    <string name="policy_electrified">避电击</string>
+    <string name="policy_petrified">解石化</string>
+    <string name="policy_ice">解冰封</string>
+    <string name="policy_blood_drain">避吸血</string>
+    <string name="policy_evil">清邪气</string>
+    <string name="policy_luminous">消流光</string>
+    <string name="policy_black_hole">避黑洞</string>
+    <string name="policy_bloodbath">避血浴</string>
+    <string name="policy_barrier">结界</string>
+    <string name="policy_shattered">碎裂</string>
 </resources>

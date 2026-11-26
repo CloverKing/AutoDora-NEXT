@@ -105,6 +105,9 @@ interface CapturedEnemySkillDao {
     @Query("SELECT COUNT(*) FROM captured_enemy_skills")
     fun observeCount(): Flow<Int>
 
+    @Query("SELECT * FROM captured_enemy_skills WHERE skillHash = :hash LIMIT 1")
+    suspend fun getByHash(hash: String): CapturedEnemySkillEntity?
+
     @Query("SELECT * FROM captured_enemy_skills ORDER BY lastSeenMs DESC")
     suspend fun getAllOrdered(): List<CapturedEnemySkillEntity>
 

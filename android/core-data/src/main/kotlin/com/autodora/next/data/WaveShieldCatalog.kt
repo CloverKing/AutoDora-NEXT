@@ -107,25 +107,45 @@ object WaveShieldCatalog {
 }
 
 /**
+ * Greyed-out enemy skill currently bypassed by the player's team leaders/skills (ToS 2025.41+).
+ * Preserved verbatim in Room knowledge DB and surfaced as a muted recoverable pill in the overlay.
+ */
+data class BypassedEnemySkill(
+    val titleZhTw: String,
+    val chips: List<WaveShieldChip>
+)
+
+/**
  * Process-wide live reactive strategy state shared seamlessly between DashboardScreen and OverlayControllerService.
- * Holds active per-wave WaveShieldChips (from parameterized Shield Controls OR automatic Enemy Skill Recognition).
+ * Holds active per-wave WaveShieldChips (from parameterized Shield Controls OR automatic Enemy Skill Recognition),
+ * with strict 4-tier arbitration: User Manual > Popup OCR > Enemy Icon > Board Markers.
  */
 object ActiveStrategyStore {
     private val _activeChips = MutableStateFlow<List<WaveShieldChip>>(emptyList())
     val activeChips: StateFlow<List<WaveShieldChip>> = _activeChips.asStateFlow()
 
+    private val _bypassedGreySkills = MutableStateFlow<List<BypassedEnemySkill>>(emptyList())
+    val bypassedGreySkills: StateFlow<List<BypassedEnemySkill>> = _bypassedGreySkills.asStateFlow()
+
+    private val dismissedAutoChipIds = LinkedHashSet<String>()
+
+    @Synchronized
     fun toggleChip(chip: WaveShieldChip) {
         val current = _activeChips.value.toMutableList()
         val existingIdx = current.indexOfFirst { it.id == chip.id }
         if (existingIdx >= 0) {
+            if (current[existingIdx].autoDetected) dismissedAutoChipIds.add(chip.id)
             current.removeAt(existingIdx)
         } else {
+            if (!chip.autoDetected) dismissedAutoChipIds.remove(chip.id)
             current.add(chip)
         }
         _activeChips.value = current
     }
 
+    @Synchronized
     fun upsertChip(chip: WaveShieldChip) {
+        if (!chip.autoDetected) dismissedAutoChipIds.remove(chip.id)
         val current = _activeChips.value.toMutableList()
         val existingIdx = current.indexOfFirst { it.id == chip.id }
         if (existingIdx >= 0) {
@@ -140,27 +160,125 @@ object ActiveStrategyStore {
      * Atomically replaces any chips whose IDs belong to [exclusiveIds] with [replacement] (or removes all if null).
      * Powers clean parameterized Shield Controllers (Combo mode, Puzzle mode, Per-Element matrix, etc.).
      */
+    @Synchronized
     fun replaceGroup(exclusiveIds: Set<String>, replacement: WaveShieldChip?) {
         val current = _activeChips.value.filterNot { it.id in exclusiveIds }.toMutableList()
         if (replacement != null) {
+            if (!replacement.autoDetected) dismissedAutoChipIds.remove(replacement.id)
             current.add(replacement)
         }
         _activeChips.value = current
     }
 
+    @Synchronized
     fun replaceByPrefix(prefixes: List<String>, replacement: WaveShieldChip?) {
         val current = _activeChips.value.filterNot { chip -> prefixes.any { chip.id.startsWith(it) } }.toMutableList()
         if (replacement != null) {
+            if (!replacement.autoDetected) dismissedAutoChipIds.remove(replacement.id)
             current.add(replacement)
         }
         _activeChips.value = current
     }
 
+    @Synchronized
     fun removeChip(id: String) {
+        val existing = _activeChips.value.firstOrNull { it.id == id }
+        if (existing?.autoDetected == true) {
+            dismissedAutoChipIds.add(id)
+        }
         _activeChips.value = _activeChips.value.filterNot { it.id == id }
     }
 
+    /**
+     * Applies [incoming] enemy-skill chips using strict 4-tier arbitration:
+     *  - Never resurrects an auto chip ID manually dismissed (`×`) during the same wave.
+     *  - Never overwrites a user-configured manual chip (`autoDetected == false`) of the same ID or exclusive group.
+     *  - Replaces stale auto chips in the same exclusive group/ID cleanly.
+     * Returns the number of auto chips newly added or updated.
+     */
+    @Synchronized
+    fun applyAutoDetectedChips(
+        incoming: List<WaveShieldChip>,
+        bypassed: List<BypassedEnemySkill> = emptyList()
+    ): Int {
+        _bypassedGreySkills.value = bypassed
+        if (incoming.isEmpty()) return 0
+
+        val current = _activeChips.value.toMutableList()
+        var appliedCount = 0
+
+        for (rawChip in incoming) {
+            val chip = rawChip.copy(autoDetected = true)
+            if (chip.id in dismissedAutoChipIds) continue
+
+            val groupIds = exclusiveGroupFor(chip.id)
+            val hasManualConflict = current.any { existing ->
+                !existing.autoDetected && (existing.id == chip.id || existing.id in groupIds)
+            }
+            if (hasManualConflict) continue
+
+            val sameIdx = current.indexOfFirst { it.id == chip.id }
+            if (sameIdx >= 0) {
+                if (current[sameIdx] != chip) {
+                    current[sameIdx] = chip
+                    appliedCount++
+                }
+            } else {
+                current.removeAll { it.autoDetected && it.id in groupIds }
+                current.add(chip)
+                appliedCount++
+            }
+        }
+        _activeChips.value = current
+        return appliedCount
+    }
+
+    /**
+     * Allows user to manually override and activate a previously bypassed grey-text enemy skill in one tap.
+     */
+    @Synchronized
+    fun restoreBypassedSkill(skill: BypassedEnemySkill): Int {
+        _bypassedGreySkills.value = _bypassedGreySkills.value.filterNot { it == skill }
+        var restored = 0
+        for (c in skill.chips) {
+            val manualChip = c.copy(autoDetected = false)
+            dismissedAutoChipIds.remove(manualChip.id)
+            val groupIds = exclusiveGroupFor(manualChip.id)
+            val current = _activeChips.value.filterNot { it.id in groupIds }.toMutableList()
+            current.add(manualChip)
+            _activeChips.value = current
+            restored++
+        }
+        return restored
+    }
+
+    /**
+     * Clears ONLY auto-detected per-wave chips on wave transition, preserving user's manual chips
+     * and resetting the wave-local dismissal guard. Returns the count of cleared auto chips.
+     */
+    @Synchronized
+    fun clearAutoDetectedChips(): Int {
+        val before = _activeChips.value
+        val remaining = before.filterNot { it.autoDetected }
+        val removed = before.size - remaining.size
+        _activeChips.value = remaining
+        _bypassedGreySkills.value = emptyList()
+        dismissedAutoChipIds.clear()
+        return removed
+    }
+
+    @Synchronized
     fun clearAll() {
         _activeChips.value = emptyList()
+        _bypassedGreySkills.value = emptyList()
+        dismissedAutoChipIds.clear()
+    }
+
+    private fun exclusiveGroupFor(chipId: String): Set<String> = when {
+        chipId in WaveShieldCatalog.COMBO_EXCLUSIVE_IDS -> WaveShieldCatalog.COMBO_EXCLUSIVE_IDS
+        chipId in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS -> WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS
+        chipId in WaveShieldCatalog.CROSS_EXCLUSIVE_IDS -> WaveShieldCatalog.CROSS_EXCLUSIVE_IDS
+        chipId in WaveShieldCatalog.STEP_EXCLUSIVE_IDS -> WaveShieldCatalog.STEP_EXCLUSIVE_IDS
+        else -> setOf(chipId)
     }
 }

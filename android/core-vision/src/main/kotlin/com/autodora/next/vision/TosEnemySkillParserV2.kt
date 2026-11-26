@@ -1,0 +1,963 @@
+package com.autodora.next.vision
+
+import com.autodora.next.model.Element
+import com.autodora.next.model.RaceType
+import com.autodora.next.model.ShieldCategory
+import com.autodora.next.model.WaveShieldChip
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.io.File
+import java.security.MessageDigest
+import kotlin.math.abs
+
+@Serializable
+data class EnemySkillRuleEntry(
+    val id: String,
+    val chipId: String,
+    val label: String,
+    val category: String,
+    val pattern: String,
+    val intGroup: Int = 0,
+    val elementGroup: Int = 0,
+    val defaultInt: Int = 0
+)
+
+@Serializable
+data class EnemySkillRuleSet(
+    val version: String = "2026.11-v2",
+    val rules: List<EnemySkillRuleEntry> = emptyList()
+)
+
+data class BoardVisualHints(
+    val hasMonochrome: Boolean = false,
+    val hasDisguise: Boolean = false,
+    val hasBurning: Boolean = false,
+    val hasScorching: Boolean = false,
+    val hasSticky: Boolean = false,
+    val hasStorm: Boolean = false,
+    val hasShattered: Boolean = false,
+    val hasBlackHole: Boolean = false,
+    val hasBloodbath: Boolean = false,
+    val hasBarrier: Boolean = false,
+    val hasPurgatoryFire: Boolean = false,
+    val hasMud: Boolean = false,
+    val hasMiasma: Boolean = false
+) {
+    fun mergeWith(other: BoardVisualHints): BoardVisualHints = BoardVisualHints(
+        hasMonochrome = hasMonochrome || other.hasMonochrome,
+        hasDisguise = hasDisguise || other.hasDisguise,
+        hasBurning = hasBurning || other.hasBurning,
+        hasScorching = hasScorching || other.hasScorching,
+        hasSticky = hasSticky || other.hasSticky,
+        hasStorm = hasStorm || other.hasStorm,
+        hasShattered = hasShattered || other.hasShattered,
+        hasBlackHole = hasBlackHole || other.hasBlackHole,
+        hasBloodbath = hasBloodbath || other.hasBloodbath,
+        hasBarrier = hasBarrier || other.hasBarrier,
+        hasPurgatoryFire = hasPurgatoryFire || other.hasPurgatoryFire,
+        hasMud = hasMud || other.hasMud,
+        hasMiasma = hasMiasma || other.hasMiasma
+    )
+}
+
+object EnemySkillParseStatus {
+    const val PARSED = "PARSED"
+    const val NON_BOARD_KNOWN = "NON_BOARD_KNOWN"
+    const val UNPARSED = "UNPARSED"
+}
+
+data class ParsedEnemySkillBlock(
+    val skillHash: String,
+    val titleZhTw: String,
+    val rawBodyZhTw: String,
+    val normalizedText: String,
+    val isGreyBypassed: Boolean,
+    val matchedRuleIds: List<String>,
+    val chips: List<WaveShieldChip>,
+    val visualHints: BoardVisualHints,
+    val parseStatus: String
+)
+
+data class EnemySkillParseResult(
+    val allBlocks: List<ParsedEnemySkillBlock>,
+    val activeChips: List<WaveShieldChip>,
+    val bypassedBlocks: List<ParsedEnemySkillBlock>,
+    val combinedHints: BoardVisualHints,
+    val hasNoSkillBanner: Boolean = false
+)
+
+/**
+ * Upgraded 98-Skill Tower of Saviors Traditional/Simplified Enemy Skill Parser (Phase 4.2 V2).
+ *
+ * Guarantees strict separation between Knowledge Collection and Live Battle Strategy:
+ *  - [EnemySkillParseResult.allBlocks] ALWAYS preserves EVERY non-chrome enemy skill verbatim
+ *    (including greyed-out bypassed skills) for persistence into the local Room knowledge DB.
+ *  - [EnemySkillParseResult.activeChips] dynamically EXCLUDES greyed-out bypassed skill blocks so
+ *    bypassed skills never over-constrain the C++20 solver during battle.
+ */
+class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
+
+    private data class CompiledRule(
+        val entry: EnemySkillRuleEntry,
+        val regex: Regex,
+        val category: ShieldCategory
+    )
+
+    private val compiled: List<CompiledRule> = ruleSet.rules.mapNotNull { entry ->
+        val regex = runCatching { Regex(entry.pattern, RegexOption.IGNORE_CASE) }.getOrNull() ?: return@mapNotNull null
+        val cat = runCatching { ShieldCategory.valueOf(entry.category) }.getOrElse { ShieldCategory.COMBO }
+        CompiledRule(entry, regex, cat)
+    }
+
+    /**
+     * Parses OCR lines (carrying per-line greyed-out luminance flags) into structured skill blocks
+     * and merged active battle WaveShieldChips.
+     */
+    fun parseLines(ocrLines: List<OcrTextLine>): EnemySkillParseResult {
+        if (ocrLines.isEmpty()) {
+            return EnemySkillParseResult(emptyList(), emptyList(), emptyList(), BoardVisualHints())
+        }
+        val blocks = segmentOcrLinesIntoBlocks(ocrLines)
+        return evaluateSegmentedBlocks(blocks)
+    }
+
+    /**
+     * Convenience entry point for plain text tests/tools (lines optionally prefixed with "[GREY] ").
+     */
+    fun parsePlainText(rawText: String, defaultGrey: Boolean = false): EnemySkillParseResult {
+        val fakeLines = ArrayList<OcrTextLine>()
+        var y = 10
+        for (rawLine in rawText.replace('\r', '\n').lineSequence()) {
+            val trimmed = rawLine.trim()
+            if (trimmed.isEmpty()) {
+                y += 45 // blank line forces block boundary
+                continue
+            }
+            val isGrey = defaultGrey || trimmed.startsWith("[GREY]", ignoreCase = true)
+            val clean = if (trimmed.startsWith("[GREY]", ignoreCase = true)) {
+                trimmed.substring(6).trim()
+            } else {
+                trimmed
+            }
+            if (clean.isEmpty()) continue
+            fakeLines.add(
+                OcrTextLine(
+                    text = clean,
+                    left = 20,
+                    top = y,
+                    right = 800,
+                    bottom = y + 24,
+                    confidence = 0.99f,
+                    isGreyBypassed = isGrey
+                )
+            )
+            y += 28
+        }
+        return parseLines(fakeLines)
+    }
+
+    private data class RawSkillSegment(
+        val rawLines: List<String>,
+        val isGreyBypassed: Boolean
+    )
+
+    private fun segmentOcrLinesIntoBlocks(ocrLines: List<OcrTextLine>): List<RawSkillSegment> {
+        val kept = ocrLines.filter { line ->
+            val raw = line.text.trim()
+            raw.length >= 2 && !isChromeOrStatLine(normalizeText(raw))
+        }
+        if (kept.isEmpty()) return emptyList()
+
+        val heights = kept.map { (it.bottom - it.top).coerceAtLeast(12) }.sorted()
+        val medianH = heights[heights.size / 2].toFloat()
+
+        val segments = ArrayList<RawSkillSegment>()
+        var currentLines = ArrayList<String>()
+        var currentGrey = kept[0].isGreyBypassed
+        var prevBottom = kept[0].bottom
+
+        for ((idx, line) in kept.withIndex()) {
+            val raw = line.text.trim()
+            val startsNewMarker = idx > 0 && startsSkillBlockMarker(raw)
+            val largeVerticalGap = idx > 0 && (line.top - prevBottom) > medianH * 1.15f
+            val greyTransition = idx > 0 && line.isGreyBypassed != currentGrey
+
+            if (currentLines.isNotEmpty() && (startsNewMarker || largeVerticalGap || greyTransition)) {
+                segments.add(RawSkillSegment(currentLines.toList(), currentGrey))
+                currentLines = ArrayList()
+                currentGrey = line.isGreyBypassed
+            }
+            currentLines.add(raw)
+            prevBottom = line.bottom
+        }
+        if (currentLines.isNotEmpty()) {
+            segments.add(RawSkillSegment(currentLines.toList(), currentGrey))
+        }
+        return segments
+    }
+
+    private fun evaluateSegmentedBlocks(segments: List<RawSkillSegment>): EnemySkillParseResult {
+        val parsedBlocks = ArrayList<ParsedEnemySkillBlock>(segments.size)
+        val bypassedBlocks = ArrayList<ParsedEnemySkillBlock>()
+        var combinedHints = BoardVisualHints()
+        var hasNoSkillBanner = false
+
+        val mergedActiveMap = LinkedHashMap<String, WaveShieldChip>()
+
+        for (seg in segments) {
+            val rawBody = seg.rawLines.joinToString("\n").trim()
+            val norm = normalizeText(rawBody)
+            if (norm.isBlank()) continue
+            if (norm == "没有技能" || norm == "无技能") {
+                hasNoSkillBanner = true
+                continue
+            }
+
+            val title = extractSkillTitle(seg.rawLines)
+            val blockMatchedIds = ArrayList<String>()
+            val blockChips = ArrayList<WaveShieldChip>()
+
+            // 1. Run typed extractors first for complex parameterized ToS mechanics
+            extractTypedChips(norm, blockMatchedIds, blockChips)
+
+            // 2. Run JSON regex rules
+            applyJsonRules(norm, blockMatchedIds, blockChips)
+
+            // 3. Deduplicate & arbitrate within this block
+            val canonicalBlockChips = consolidateChipList(blockChips)
+            val hints = extractBoardVisualHints(norm)
+            val isKnownNonBoard = canonicalBlockChips.isEmpty() && !hasAnyVisualHint(hints) && matchesKnownNonBoardSkill(norm)
+
+            val parseStatus = when {
+                canonicalBlockChips.isNotEmpty() || hasAnyVisualHint(hints) -> EnemySkillParseStatus.PARSED
+                isKnownNonBoard -> EnemySkillParseStatus.NON_BOARD_KNOWN
+                else -> EnemySkillParseStatus.UNPARSED
+            }
+
+            val block = ParsedEnemySkillBlock(
+                skillHash = computeSkillHash(title, norm),
+                titleZhTw = title,
+                rawBodyZhTw = rawBody,
+                normalizedText = norm,
+                isGreyBypassed = seg.isGreyBypassed,
+                matchedRuleIds = blockMatchedIds.distinct(),
+                chips = canonicalBlockChips,
+                visualHints = hints,
+                parseStatus = parseStatus
+            )
+            parsedBlocks.add(block)
+
+            if (seg.isGreyBypassed) {
+                bypassedBlocks.add(block)
+            } else {
+                combinedHints = combinedHints.mergeWith(hints)
+                for (chip in canonicalBlockChips) {
+                    mergeChipIntoGlobalMap(mergedActiveMap, chip)
+                }
+            }
+        }
+
+        val finalActiveChips = consolidateChipList(mergedActiveMap.values.toList())
+        return EnemySkillParseResult(
+            allBlocks = parsedBlocks,
+            activeChips = finalActiveChips,
+            bypassedBlocks = bypassedBlocks,
+            combinedHints = combinedHints,
+            hasNoSkillBanner = hasNoSkillBanner
+        )
+    }
+
+    private fun extractTypedChips(
+        norm: String,
+        matchedIds: MutableList<String>,
+        chips: MutableList<WaveShieldChip>
+    ) {
+        // A. Puzzle Shield (#1 指定形狀盾 / 強化拼圖盾 / 嚴格拼圖 / 屬性拼圖)
+        if (norm.contains("拼图") || norm.contains("指定形状")) {
+            val strict = norm.contains("不可黏连") || norm.contains("不可相连") || norm.contains("严格") ||
+                Regex("拼图盾\\s*[-·]?\\s*限").containsMatchIn(norm) || norm.contains("指定形状")
+            val ench = norm.contains("强化")
+            val elemMatch = Regex("([水火木光暗心])(?:属性)?[^\\n]{0,6}?(?:拼图|指定形状)|(?:拼图|指定形状)[^\\n]{0,6}?([水火木光暗心])(?:属性)?符石")
+                .find(norm)
+            val elemChar = elemMatch?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.firstOrNull()
+            val elemCode = elemChar?.let { charToElementCode(it) } ?: -1
+            val packed = (if (strict) 1 else 0) or
+                (if (ench) 2 else 0) or
+                (if (elemCode in 0..5) ((elemCode + 1) shl 2) else 0)
+            matchedIds.add("typed_puzzle_shield")
+            chips.add(
+                WaveShieldChip(
+                    id = "puzzle_shield",
+                    label = if (strict) "严格拼图盾" else "普通拼图盾",
+                    category = ShieldCategory.SHAPE_AND_PUZZLE,
+                    autoDetected = true,
+                    paramInt = packed
+                )
+            )
+        }
+
+        // B. Step Range (#60 步數盾 e.g. 25~30 步 / 25至30步) & Exact Steps
+        val stepRangeMatch = Regex("(?<!\\d)(\\d{1,3})\\s*(?:至|[-~～]|到)\\s*(\\d{1,3})\\s*步").find(norm)
+        if (stepRangeMatch != null) {
+            val a = stepRangeMatch.groupValues[1].toIntOrNull()?.coerceIn(1, 200)
+            val b = stepRangeMatch.groupValues[2].toIntOrNull()?.coerceIn(1, 200)
+            if (a != null && b != null) {
+                val lo = minOf(a, b)
+                val hi = maxOf(a, b)
+                matchedIds.add("typed_step_range")
+                chips.add(
+                    WaveShieldChip(
+                        id = "step_range",
+                        label = "步数盾 $lo-$hi",
+                        category = ShieldCategory.HAZARD_AND_PATH,
+                        autoDetected = true,
+                        paramInt = (lo and 0xFF) or ((hi and 0xFF) shl 8)
+                    )
+                )
+            }
+        } else {
+            val exactStepsMatch = Regex("(?:刚好|恰好|指定|正好)\\s*(\\d{1,3})\\s*步").find(norm)
+            val sVal = exactStepsMatch?.groupValues?.getOrNull(1)?.toIntOrNull()?.coerceIn(1, 200)
+            if (sVal != null) {
+                matchedIds.add("typed_exact_steps")
+                chips.add(
+                    WaveShieldChip(
+                        id = "exact_steps",
+                        label = "恰好 $sVal 步",
+                        category = ShieldCategory.HAZARD_AND_PATH,
+                        autoDetected = true,
+                        paramInt = sVal
+                    )
+                )
+            }
+        }
+
+        // C. Equal Combo Elements (#9 連擊相等盾 — generalized 2..6 colors)
+        if (Regex("(?:连击相等|同等\\s*(?:combo|c)|连击数(?:须)?相等|combo数(?:须)?相等|同等连击)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
+            val mask = extractElementMaskNearKeywords(norm)
+            val effMask = if (Integer.bitCount(mask) >= 2) mask else ((1 shl Element.LIGHT.code) or (1 shl Element.DARK.code))
+            matchedIds.add("typed_equal_combo_elements")
+            chips.add(
+                WaveShieldChip(
+                    id = "equal_pair_light_dark",
+                    label = "${formatElementsCn(effMask)}同等 C",
+                    category = ShieldCategory.COMBO,
+                    autoDetected = true,
+                    paramElementMask = 0x100 or effMask
+                )
+            )
+        }
+
+        // D. Race Orb Shield (#35/general 种族符石盾 -> exact RaceType.bitMask in paramInt)
+        if (Regex("(?:种族|人族|神族|魔族|兽类|兽族|龙类|龙族|妖精|机械族?)[^\\n]{0,6}?符石").containsMatchIn(norm)) {
+            var raceMask = 0
+            if (norm.contains("神族") || norm.contains("神")) {
+                if (Regex("神(?:族|\\.魔|、|及|与|与|和)?").containsMatchIn(norm) && norm.contains("符石")) {
+                    // Check explicit race keywords carefully so "神魔之塔" won't trigger
+                    if (norm.contains("神族") || Regex("[神魔人兽龙妖机][、,及与和]+[神魔人兽龙妖机]").containsMatchIn(norm)) {
+                        raceMask = raceMask or RaceType.GOD.bitMask
+                    }
+                }
+            }
+            if (norm.contains("魔族")) raceMask = raceMask or RaceType.DEMON.bitMask
+            if (norm.contains("人族") || norm.contains("人类")) raceMask = raceMask or RaceType.HUMAN.bitMask
+            if (norm.contains("兽类") || norm.contains("兽族")) raceMask = raceMask or RaceType.BEAST.bitMask
+            if (norm.contains("龙类") || norm.contains("龙族")) raceMask = raceMask or RaceType.DRAGON.bitMask
+            if (norm.contains("妖精")) raceMask = raceMask or RaceType.ELF.bitMask
+            if (norm.contains("机械")) raceMask = raceMask or RaceType.MACHINA.bitMask
+            val listMatch = Regex("([神魔人兽龙妖机](?:[、,及与和/][神魔人兽龙妖机])+)").find(norm)
+            if (listMatch != null) {
+                for (ch in listMatch.groupValues[1]) {
+                    when (ch) {
+                        '神' -> raceMask = raceMask or RaceType.GOD.bitMask
+                        '魔' -> raceMask = raceMask or RaceType.DEMON.bitMask
+                        '人' -> raceMask = raceMask or RaceType.HUMAN.bitMask
+                        '兽' -> raceMask = raceMask or RaceType.BEAST.bitMask
+                        '龙' -> raceMask = raceMask or RaceType.DRAGON.bitMask
+                        '妖' -> raceMask = raceMask or RaceType.ELF.bitMask
+                        '机' -> raceMask = raceMask or RaceType.MACHINA.bitMask
+                    }
+                }
+            }
+            val elemMask = extractElementMaskNearKeywords(norm)
+            matchedIds.add("typed_race_orb_shield")
+            chips.add(
+                WaveShieldChip(
+                    id = "race_orb_shield",
+                    label = "种族符石首消",
+                    category = ShieldCategory.COUNT_AND_ELEMENT,
+                    autoDetected = true,
+                    paramInt = raceMask and 0x7F,
+                    paramElementMask = elemMask
+                )
+            )
+        }
+
+        // E. Explicit multi-attribute shield (#3 強化突破, #4-#7 二/三/四/五屬盾 & compound variants)
+        val hasElemShieldTrigger = norm.contains("同时消除") ||
+            Regex("(?:二|三|四|两|2|3|4)属(?:强化)?盾").containsMatchIn(norm) ||
+            Regex("只受.+?属性.+?攻击").containsMatchIn(norm) ||
+            Regex("属性符石(?:才可|方可)造成").containsMatchIn(norm)
+        if (hasElemShieldTrigger && !norm.contains("五属") && !norm.contains("5属") &&
+            !norm.contains("连击相等") && !norm.contains("同等")
+        ) {
+            val mask = extractElementMaskNearKeywords(norm)
+            if (Integer.bitCount(mask) in 2..5 || (Integer.bitCount(mask) >= 1 && norm.contains("强化") && norm.contains("突破"))) {
+                val isFirstWaveStrict = Regex("首[批消][^\\n]{0,12}?同时消除").containsMatchIn(norm)
+                val allEnch = norm.contains("强化")
+                // Support partial enchanted list like "水火强化及暗符石" if present, else apply to mask
+                val enchMask = if (allEnch) extractEnchantedSubMask(norm, mask) else 0
+                val packedMask = mask or ((enchMask and 0x3F) shl 8)
+                var pInt = 0
+                if (allEnch && enchMask == mask) pInt = pInt or 1
+                if (isFirstWaveStrict) pInt = pInt or 2
+                matchedIds.add("typed_require_elements")
+                chips.add(
+                    WaveShieldChip(
+                        id = "require_elements",
+                        label = formatElementsCn(mask) + if (enchMask != 0) "强" else "盾",
+                        category = ShieldCategory.COUNT_AND_ELEMENT,
+                        autoDetected = true,
+                        paramInt = pInt,
+                        paramElementMask = packedMask
+                    )
+                )
+            }
+        }
+
+        // F. Anti-first-wave (#10 反首消符石盾 / #46 符石連擊零化) with enumerated separator list (e.g. 水、火及心符石)
+        val antiListMatch = Regex("(?:反首消|首[批消][^\\n]{0,6}?禁消|不可首[批消]消除|符石连击零化)[^\\n]{0,18}?([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,5})").find(norm)
+        if (antiListMatch != null) {
+            val mask = parseElementMask(antiListMatch.groupValues[1])
+            if (mask != 0) {
+                matchedIds.add("typed_anti_first_wave")
+                chips.add(
+                    WaveShieldChip(
+                        id = "anti_first_wave",
+                        label = "反首消${formatElementsCn(mask)}",
+                        category = ShieldCategory.COUNT_AND_ELEMENT,
+                        autoDetected = true,
+                        paramElementMask = mask
+                    )
+                )
+            }
+        }
+
+        // G. Forbid-all (#62 回復顛倒 / 禁消) with enumerated list
+        if (norm.contains("回复颠倒") || norm.contains("回复力变为伤害")) {
+            matchedIds.add("typed_recovery_reversal")
+            chips.add(
+                WaveShieldChip(
+                    id = "forbid_all",
+                    label = "禁消心(回复颠倒)",
+                    category = ShieldCategory.COUNT_AND_ELEMENT,
+                    autoDetected = true,
+                    paramElementMask = 1 shl Element.HEART.code
+                )
+            )
+        } else {
+            val forbidListMatch = Regex("(?:无法消除|全禁消|(?<!首[批消])不可消除)[^\\n]{0,14}?([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,4})(?:属性)?符石").find(norm)
+            if (forbidListMatch != null && !norm.contains("符石禁咒")) {
+                val mask = parseElementMask(forbidListMatch.groupValues[1])
+                if (mask != 0) {
+                    matchedIds.add("typed_forbid_all")
+                    chips.add(
+                        WaveShieldChip(
+                            id = "forbid_all",
+                            label = "禁消${formatElementsCn(mask)}",
+                            category = ShieldCategory.COUNT_AND_ELEMENT,
+                            autoDetected = true,
+                            paramElementMask = mask
+                        )
+                    )
+                }
+            }
+        }
+
+        // H. Clear-All Element (#12 全消盾) with enumerated list
+        val clearAllMatch = Regex("(?:全消盾|首[批消]消除(?:场上)?所有)[^\\n]{0,12}?([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,4})").find(norm)
+        if (clearAllMatch != null) {
+            val mask = parseElementMask(clearAllMatch.groupValues[1])
+            if (mask != 0) {
+                matchedIds.add("typed_clear_all_element")
+                chips.add(
+                    WaveShieldChip(
+                        id = "clear_all_element",
+                        label = "首消全${formatElementsCn(mask)}",
+                        category = ShieldCategory.COUNT_AND_ELEMENT,
+                        autoDetected = true,
+                        paramElementMask = mask
+                    )
+                )
+            }
+        }
+
+        // I. Cross (#14), L (#16), T (#15) with optional explicit elements & distinct flag
+        if (norm.contains("十字") && (norm.contains("相异") || norm.contains("不同"))) {
+            val cnt = when {
+                Regex("(?:三|3)\\s*(?:组|个)?\\s*十字").containsMatchIn(norm) -> 3
+                Regex("(?:双|二|2)\\s*(?:组|个)?\\s*十字").containsMatchIn(norm) -> 2
+                else -> 2
+            }
+            val em = extractElementMaskNearKeywords(norm)
+            matchedIds.add("typed_cross_distinct")
+            chips.add(
+                WaveShieldChip(
+                    id = "cross_shield",
+                    label = "${cnt}相异十字盾",
+                    category = ShieldCategory.SHAPE_AND_PUZZLE,
+                    autoDetected = true,
+                    paramInt = cnt or 0x20,
+                    paramElementMask = em
+                )
+            )
+        } else if (norm.contains("十字") && extractElementMaskNearKeywords(norm) != 0) {
+            val em = extractElementMaskNearKeywords(norm)
+            val cnt = when {
+                Regex("(?:三|3)\\s*(?:组|个)?\\s*十字").containsMatchIn(norm) -> 3
+                Regex("(?:双|二|2)\\s*(?:组|个)?\\s*十字").containsMatchIn(norm) -> 2
+                else -> 1
+            }
+            matchedIds.add("typed_cross_elem")
+            chips.add(
+                WaveShieldChip(
+                    id = "cross_shield",
+                    label = "${formatElementsCn(em)}十字盾",
+                    category = ShieldCategory.SHAPE_AND_PUZZLE,
+                    autoDetected = true,
+                    paramInt = cnt,
+                    paramElementMask = em
+                )
+            )
+        }
+        if (Regex("(?:(?<![a-zA-Z])l[ \\t]*[形字])(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
+            val em = extractElementMaskNearKeywords(norm)
+            if (em != 0) {
+                matchedIds.add("typed_l_shape_elem")
+                chips.add(WaveShieldChip("l_shape", "${formatElementsCn(em)} L形盾", ShieldCategory.SHAPE_AND_PUZZLE, true, paramElementMask = em))
+            }
+        }
+        if (Regex("(?:(?<![a-zA-Z])t[ \\t]*[形字])(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
+            val em = extractElementMaskNearKeywords(norm)
+            if (em != 0) {
+                matchedIds.add("typed_t_shape_elem")
+                chips.add(WaveShieldChip("t_shape", "${formatElementsCn(em)} T形盾", ShieldCategory.SHAPE_AND_PUZZLE, true, paramElementMask = em))
+            }
+        }
+
+        // J. #64 凝護 (e.g. 灵之凝护 / 心之凝护 -> maximize Heart)
+        val condenseMatch = Regex("([水火木光暗心灵])之凝护").find(norm)
+        if (condenseMatch != null) {
+            val el = when (condenseMatch.groupValues[1]) {
+                "水" -> Element.WATER
+                "火" -> Element.FIRE
+                "木" -> Element.WOOD
+                "光" -> Element.LIGHT
+                "暗" -> Element.DARK
+                else -> Element.HEART
+            }
+            matchedIds.add("typed_condense_shield")
+            chips.add(
+                WaveShieldChip(
+                    id = "elem_burst_shield",
+                    label = "${condenseMatch.groupValues[1]}之凝护",
+                    category = ShieldCategory.COUNT_AND_ELEMENT,
+                    autoDetected = true,
+                    paramInt = 9,
+                    paramElementMask = el.bitMask
+                )
+            )
+        }
+
+        // K. Elemental Death-Rattle Gauges #89-#93 (冰魄暴劫, 熔焰焚爆, 风刃蔓藤, 圣剑裁决, 深渊灭袭)
+        val deathRattlePairs = listOf(
+            "冰魄暴劫" to (Element.WATER to Element.WOOD),
+            "熔焰焚爆" to (Element.FIRE to Element.WATER),
+            "风刃蔓藤" to (Element.WOOD to Element.FIRE),
+            "圣剑裁决" to (Element.LIGHT to Element.DARK),
+            "深渊灭袭" to (Element.DARK to Element.LIGHT)
+        )
+        for ((kw, pair) in deathRattlePairs) {
+            if (norm.contains(kw)) {
+                val (badEl, goodEl) = pair
+                matchedIds.add("typed_gauge_$kw")
+                chips.add(WaveShieldChip("forbid_all", "避消(${kw})", ShieldCategory.COUNT_AND_ELEMENT, true, paramElementMask = badEl.bitMask))
+                chips.add(WaveShieldChip("elem_burst_shield", "减伤(${kw})", ShieldCategory.COUNT_AND_ELEMENT, true, paramInt = 6, paramElementMask = goodEl.bitMask))
+            }
+        }
+
+        // L. #79 温律临界
+        if (norm.contains("温律临界")) {
+            if (norm.contains("降低温度")) {
+                val m = Regex("([水火木光暗心])符石[^\\n]{0,8}降低").find(norm)?.groupValues?.getOrNull(1)
+                val code = m?.firstOrNull()?.let { charToElementCode(it) } ?: Element.WATER.code
+                matchedIds.add("typed_temp_critical")
+                chips.add(WaveShieldChip("elem_burst_shield", "温律临界", ShieldCategory.COUNT_AND_ELEMENT, true, paramInt = 5, paramElementMask = 1 shl code))
+            }
+        }
+    }
+
+    private fun applyJsonRules(
+        norm: String,
+        matchedIds: MutableList<String>,
+        chips: MutableList<WaveShieldChip>
+    ) {
+        val currentIds = chips.map { it.id }.toHashSet()
+        for (rule in compiled) {
+            val matches = rule.regex.findAll(norm).toList()
+            if (matches.isEmpty()) continue
+            val entry = rule.entry
+
+            // Skip redundant generic fallback rules when a stronger/more specific variant already matched
+            if (entry.chipId == "loose_puzzle" && "puzzle_shield" in currentIds) continue
+            if (entry.chipId == "strict_puzzle" && "puzzle_shield" in currentIds) continue
+            if (entry.chipId == "enchanted_puzzle" && "puzzle_shield" in currentIds) continue
+            if (entry.chipId == "five_elements" && ("five_elements_enchanted" in currentIds || "five_elements" in currentIds)) continue
+            if (entry.chipId == "cross_shield" && "cross_shield" in currentIds) continue
+            if (entry.chipId == "l_shape" && "l_shape" in currentIds) continue
+            if (entry.chipId == "t_shape" && "t_shape" in currentIds) continue
+            if (entry.chipId == "exact_combo" && "exact_first_combo" in currentIds) continue
+            if (entry.chipId == "min_combo" && "min_first_combo" in currentIds) continue
+            if (entry.chipId == "step_limit" && ("step_range" in currentIds || "exact_steps" in currentIds)) continue
+
+            // If a non-merge rule has multiple matches (e.g. title without digit + body with digit),
+            // prefer the match that captures an explicit int parameter before falling back to match #1.
+            val orderedMatches = if (entry.intGroup > 0 && entry.chipId !in MASK_MERGE_CHIP_IDS && matches.size > 1) {
+                val withInt = matches.filter { m ->
+                    (entry.intGroup until m.groupValues.size).any { idx -> m.groupValues[idx].toIntOrNull() != null }
+                }
+                withInt.ifEmpty { matches }
+            } else {
+                matches
+            }
+
+            for (match in orderedMatches) {
+                var paramInt = entry.defaultInt
+                if (entry.intGroup > 0) {
+                    val extracted = (entry.intGroup until match.groupValues.size)
+                        .firstNotNullOfOrNull { idx -> match.groupValues.getOrNull(idx)?.toIntOrNull() }
+                    if (extracted != null) paramInt = extracted
+                }
+                // Detect cumulative / total-combo parity scope when odd/even combo specifies 累积/合共
+                if (entry.chipId == "odd_combo" || entry.chipId == "even_combo") {
+                    paramInt = if (norm.contains("累积") || norm.contains("合共") || norm.contains("总共")) 1 else 0
+                }
+
+                var elemMask = 0
+                var elemText = ""
+                if (entry.elementGroup > 0) {
+                    val rawElems = (entry.elementGroup until match.groupValues.size)
+                        .mapNotNull { idx -> match.groupValues.getOrNull(idx)?.takeIf { it.isNotEmpty() } }
+                        .firstOrNull { parseElementMask(it) != 0 }
+                        .orEmpty()
+                    elemText = rawElems
+                    elemMask = parseElementMask(rawElems)
+                    if (elemMask == 0) continue
+                }
+
+                // Avoid misclassifying unmatchable "无法消除" as forbid_all if already parsed as unmatchable
+                val finalLabel = entry.label
+                    .replace("{n}", paramInt.toString())
+                    .replace("{elem}", elemText)
+
+                chips.add(
+                    WaveShieldChip(
+                        id = entry.chipId,
+                        label = finalLabel,
+                        category = rule.category,
+                        autoDetected = true,
+                        paramInt = paramInt,
+                        paramElementMask = elemMask
+                    )
+                )
+                currentIds.add(entry.chipId)
+                if (entry.id !in matchedIds) matchedIds.add(entry.id)
+                if (entry.chipId !in MASK_MERGE_CHIP_IDS) break
+            }
+        }
+    }
+
+    private fun extractEnchantedSubMask(norm: String, totalMask: Int): Int {
+        var enchMask = 0
+        val segs = Regex("([水火木光暗心](?:[、,与及和\\s]*[水火木光暗心])*)强化").findAll(norm)
+        for (m in segs) {
+            enchMask = enchMask or parseElementMask(m.groupValues[1])
+        }
+        return if (enchMask != 0) (enchMask and totalMask) else totalMask
+    }
+
+    private fun consolidateChipList(raw: List<WaveShieldChip>): List<WaveShieldChip> {
+        if (raw.isEmpty()) return emptyList()
+        val byKey = LinkedHashMap<String, WaveShieldChip>()
+        for (chip in raw) {
+            mergeChipIntoGlobalMap(byKey, chip)
+        }
+        // Cross-rule precedence filtering: more specific rule suppresses weaker duplicate
+        val ids = byKey.values.map { it.id }.toSet()
+        return byKey.values.filter { chip ->
+            when (chip.id) {
+                "five_elements" -> "five_elements_enchanted" !in ids
+                "exact_combo" -> "exact_first_combo" !in ids
+                "min_combo" -> "min_first_combo" !in ids && "exact_first_combo" !in ids && "exact_combo" !in ids
+                "loose_puzzle", "strict_puzzle", "enchanted_puzzle" -> "puzzle_shield" !in ids
+                "step_limit" -> "step_range" !in ids && "exact_steps" !in ids
+                "first_wave_only" -> "no_cascade" !in ids
+                else -> true
+            }
+        }
+    }
+
+    private fun mergeChipIntoGlobalMap(
+        target: MutableMap<String, WaveShieldChip>,
+        incoming: WaveShieldChip
+    ) {
+        if (incoming.id in MASK_MERGE_CHIP_IDS && incoming.paramElementMask != 0) {
+            val prev = target[incoming.id]
+            if (prev == null) {
+                target[incoming.id] = incoming
+            } else if (incoming.id == "require_elements") {
+                val reqMask = (prev.paramElementMask and 0x3F) or (incoming.paramElementMask and 0x3F)
+                val enchMask = ((prev.paramElementMask ushr 8) and 0x3F) or ((incoming.paramElementMask ushr 8) and 0x3F) or
+                    (if ((prev.paramInt and 1) != 0) (prev.paramElementMask and 0x3F) else 0) or
+                    (if ((incoming.paramInt and 1) != 0) (incoming.paramElementMask and 0x3F) else 0)
+                val mergedInt = (prev.paramInt or incoming.paramInt) and (if (enchMask == reqMask) 3 else 2)
+                target[incoming.id] = prev.copy(
+                    paramInt = mergedInt,
+                    paramElementMask = reqMask or ((enchMask and 0x3F) shl 8)
+                )
+            } else {
+                target[incoming.id] = prev.copy(
+                    paramInt = maxOf(prev.paramInt, incoming.paramInt),
+                    paramElementMask = prev.paramElementMask or incoming.paramElementMask
+                )
+            }
+            return
+        }
+
+        val prev = target[incoming.id]
+        if (prev == null) {
+            target[incoming.id] = incoming
+            return
+        }
+        target[incoming.id] = when (incoming.id) {
+            "cross_shield" -> {
+                val cnt = maxOf(prev.paramInt and 0x0F, incoming.paramInt and 0x0F)
+                val dist = (prev.paramInt and 0x20) or (incoming.paramInt and 0x20)
+                prev.copy(
+                    paramInt = cnt or dist,
+                    paramElementMask = prev.paramElementMask or incoming.paramElementMask
+                )
+            }
+            "puzzle_shield" -> {
+                val packed = (prev.paramInt and 3) or (incoming.paramInt and 3) or
+                    (if ((incoming.paramInt ushr 2) != 0) (incoming.paramInt and 0x3C) else (prev.paramInt and 0x3C))
+                prev.copy(paramInt = packed)
+            }
+            "race_orb_shield" -> prev.copy(
+                paramInt = (prev.paramInt and 0x7F) or (incoming.paramInt and 0x7F),
+                paramElementMask = prev.paramElementMask or incoming.paramElementMask
+            )
+            "equal_pair_light_dark" -> prev.copy(
+                paramElementMask = 0x100 or (prev.paramElementMask and 0x3F) or (incoming.paramElementMask and 0x3F)
+            )
+            "l_shape", "t_shape" -> prev.copy(
+                paramElementMask = prev.paramElementMask or incoming.paramElementMask
+            )
+            else -> {
+                val base = if (incoming.paramInt >= prev.paramInt) incoming else prev
+                base.copy(paramElementMask = prev.paramElementMask or incoming.paramElementMask)
+            }
+        }
+    }
+
+    private fun extractBoardVisualHints(norm: String): BoardVisualHints = BoardVisualHints(
+        hasMonochrome = norm.contains("幽闭空间") || norm.contains("黑白"),
+        hasDisguise = norm.contains("移形换影") || norm.contains("伪装成"),
+        hasBurning = norm.contains("燃烧"),
+        hasScorching = norm.contains("灼热地") || norm.contains("灼热地形"),
+        hasSticky = norm.contains("黏腐") || norm.contains("粘腐") || norm.contains("连环光牢"),
+        hasStorm = norm.contains("暴风"),
+        hasShattered = norm.contains("碎裂"),
+        hasBlackHole = norm.contains("黑洞"),
+        hasBloodbath = norm.contains("血浴"),
+        hasBarrier = norm.contains("结界地") || norm.contains("结界地形"),
+        hasPurgatoryFire = norm.contains("炼狱之火"),
+        hasMud = norm.contains("泥沼"),
+        hasMiasma = norm.contains("瘴气")
+    )
+
+    private fun hasAnyVisualHint(h: BoardVisualHints): Boolean =
+        h.hasMonochrome || h.hasDisguise || h.hasBurning || h.hasScorching ||
+            h.hasSticky || h.hasStorm || h.hasShattered || h.hasBlackHole ||
+            h.hasBloodbath || h.hasBarrier || h.hasPurgatoryFire || h.hasMud || h.hasMiasma
+
+    private fun matchesKnownNonBoardSkill(norm: String): Boolean =
+        KNOWN_NON_BOARD_KEYWORDS.any { norm.contains(it) }
+
+    companion object {
+        private const val RULES_ASSET_V2 = "tos_enemy_skill_rules_v2.json"
+        private val json = Json { ignoreUnknownKeys = true }
+
+        private val MASK_MERGE_CHIP_IDS = setOf(
+            "elem_burst_shield", "require_elements", "anti_first_wave",
+            "forbid_all", "clear_all_element", "unmatchable_elements"
+        )
+
+        private val CHROME_LINE_REGEX = Regex(
+            "^(?:wave\\s*\\d+(?:\\s*(?:current|next))?|current|next|boss|hp|atk|def|cd\\s*\\d*|lv\\.?\\s*\\d+|turn\\s*\\d+|第\\s*\\d+\\s*[层波]|基本资讯|关卡资讯|队伍资讯|敌人技能|离开战斗|关闭|取消|确定|点击空白处关闭)$",
+            RegexOption.IGNORE_CASE
+        )
+        private val PURE_NUMBER_STAT_REGEX = Regex("^[x×]?\\s*[\\d,./+%\\-\\s]+$", RegexOption.IGNORE_CASE)
+        private val STAT_PREFIX_REGEX = Regex("^(?:hp|atk|def|cd|lv|ep|turn)\\s*[:：]?\\s*[\\d,./+%\\-]+$", RegexOption.IGNORE_CASE)
+
+        private val BLOCK_START_REGEX = Regex("^(?:[▼▶►▸•●◆◇※]|【[^】]{1,24}】)")
+
+        private val KNOWN_NON_BOARD_KEYWORDS = listOf(
+            "攻前盾", "首杀盾", "防御盾", "无法控制", "中毒", "亡命爆击", "隐身",
+            "技能重置", "附加消除", "即效永生", "连击护盾", "连击法印护盾", "反馈",
+            "终结倒数", "减伤状态", "混沌值", "崩坏值", "腐化", "石牢", "锈化值",
+            "灵罩", "脉流", "两相消耗", "炎之气", "囚锢生命力", "能力点代价",
+            "开技消耗代价", "ep代价", "cd增加", "ep减少", "减伤抗性", "连击攻击",
+            "连击", "状态弱攻", "越战越强", "回复力"
+        )
+
+        fun isChromeOrStatLine(normalizedLine: String): Boolean {
+            val s = normalizedLine.trim()
+            if (s.length < 2 && s != "0") return true
+            if (CHROME_LINE_REGEX.matches(s)) return true
+            if (STAT_PREFIX_REGEX.matches(s)) return true
+            if (PURE_NUMBER_STAT_REGEX.matches(s)) return true
+            return false
+        }
+
+        private fun startsSkillBlockMarker(rawLine: String): Boolean {
+            val trimmed = rawLine.trim()
+            if (BLOCK_START_REGEX.containsMatchIn(trimmed)) {
+                // Inline status nouns like 【護盾】 mid-sentence won't hit at start unless wrapped nicely;
+                // a line starting with ▼/▶/•/【...】 in ToS UI denotes a new enemy skill entry.
+                return true
+            }
+            return false
+        }
+
+        private fun extractSkillTitle(rawLines: List<String>): String {
+            val first = rawLines.firstOrNull().orEmpty().trim()
+            val bracketMatch = Regex("【([^】]{1,28})】").find(first)
+            if (bracketMatch != null) return bracketMatch.groupValues[1].trim()
+            val cleaned = first.trimStart('▼', '▶', '►', '▸', '•', '●', '◆', '◇', '※', ' ')
+            return cleaned.take(36)
+        }
+
+        fun computeSkillHash(title: String, normalizedBody: String): String {
+            val canonical = (normalizeText(title) + "|" + normalizedBody)
+                .replace(Regex("\\s+"), "")
+            val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
+            return digest.take(8).joinToString("") { "%02x".format(it) }
+        }
+
+        fun extractElementMaskNearKeywords(norm: String): Int {
+            // Strip neutral phrases so unrelated chars like 水/火 don't leak if none exist;
+            // ToS enemy skill prose uses exact element kanji for orb types.
+            return parseElementMask(norm)
+        }
+
+        fun parseElementMask(chars: String): Int {
+            var mask = 0
+            for (ch in chars) {
+                val code = charToElementCode(ch)
+                if (code >= 0) mask = mask or (1 shl code)
+            }
+            return mask
+        }
+
+        private fun charToElementCode(ch: Char): Int = when (ch) {
+            '水' -> Element.WATER.code
+            '火' -> Element.FIRE.code
+            '木' -> Element.WOOD.code
+            '光' -> Element.LIGHT.code
+            '暗' -> Element.DARK.code
+            '心' -> Element.HEART.code
+            else -> -1
+        }
+
+        fun formatElementsCn(mask: Int): String {
+            val chars = charArrayOf('水', '火', '木', '光', '暗', '心')
+            val sb = StringBuilder()
+            for (i in 0 until 6) {
+                if ((mask and (1 shl i)) != 0) sb.append(chars[i])
+            }
+            return sb.toString()
+        }
+
+        fun normalizeText(raw: String): String {
+            val sb = StringBuilder(raw.length)
+            for (ch in raw) {
+                sb.append(TRAD_TO_SIMP_MAP[ch] ?: ch)
+            }
+            return sb.toString()
+                .replace('\r', '\n')
+                .replace(Regex("[ \t]+"), " ")
+                .trim()
+        }
+
+        fun fromJson(jsonText: String): TosEnemySkillParserV2 {
+            val set = runCatching { json.decodeFromString<EnemySkillRuleSet>(jsonText) }
+                .getOrElse { EnemySkillRuleSet() }
+            return TosEnemySkillParserV2(set)
+        }
+
+        fun loadFromAssets(assetsOpen: (String) -> String): TosEnemySkillParserV2 {
+            val raw = runCatching { assetsOpen(RULES_ASSET_V2) }.getOrElse { "{}" }
+            return fromJson(raw)
+        }
+
+        fun loadFromContext(context: android.content.Context): TosEnemySkillParserV2 {
+            val overrideFile = File(context.filesDir, RULES_ASSET_V2)
+            val jsonText = if (overrideFile.exists() && overrideFile.length() > 16) {
+                runCatching { overrideFile.readText(Charsets.UTF_8) }
+                    .getOrElse { context.assets.open(RULES_ASSET_V2).bufferedReader().use { it.readText() } }
+            } else {
+                runCatching { context.assets.open(RULES_ASSET_V2).bufferedReader().use { it.readText() } }
+                    .getOrElse { "{}" }
+            }
+            return fromJson(jsonText)
+        }
+
+        private val TRAD_TO_SIMP_MAP: Map<Char, Char> = mapOf(
+            '屬' to '属', '強' to '强', '圖' to '图', '連' to '连', '擊' to '击', '撃' to '击',
+            '雙' to '双', '單' to '单', '燒' to '烧', '蝕' to '蚀', '種' to '种',
+            '數' to '数', '顆' to '颗', '軌' to '轨', '跡' to '迹', '轉' to '转',
+            '鎖' to '锁', '風' to '风', '電' to '电', '體' to '体', '無' to '无',
+            '視' to '视', '計' to '计', '僅' to '仅', '隻' to '只', '與' to '与',
+            '類' to '类', '龍' to '龙', '獸' to '兽', '機' to '机', '術' to '术',
+            '個' to '个', '組' to '组', '沒' to '没', '嚴' to '严', '須' to '须',
+            '為' to '为', '開' to '开', '關' to '关', '點' to '点', '線' to '线',
+            '場' to '场', '滿' to '满', '動' to '动', '傷' to '伤', '減' to '减',
+            '區' to '区', '異' to '异', '變' to '变', '換' to '换', '經' to '经',
+            '過' to '过', '對' to '对', '應' to '应', '於' to '于', '會' to '会',
+            '資' to '资', '訊' to '讯', '離' to '离', '戰' to '战', '鬥' to '斗',
+            '隊' to '队', '敵' to '敌', '護' to '护', '圍' to '围', '繞' to '绕',
+            '積' to '积', '達' to '达', '觸' to '触', '發' to '发', '時' to '时',
+            '當' to '当', '後' to '后', '該' to '该', '內' to '内', '並' to '并',
+            '將' to '将', '橫' to '横', '問' to '问', '號' to '号', '隱' to '隐',
+            '條' to '条', '補' to '补', '進' to '进', '實' to '实', '選' to '选',
+            '擇' to '择', '狀' to '状', '殺' to '杀', '禦' to '御', '記' to '记',
+            '氣' to '气', '結' to '结', '閉' to '闭', '間' to '间', '熱' to '热',
+            '陰' to '阴', '陽' to '阳', '靈' to '灵', '脈' to '脉', '鏽' to '锈',
+            '溫' to '温', '臨' to '临', '獄' to '狱', '煉' to '炼', '復' to '复',
+            '顛' to '颠', '終' to '终', '錮' to '锢', '籠' to '笼', '標' to '标',
+            '啟' to '启', '紅' to '红', '綠' to '绿', '燈' to '灯', '壞' to '坏',
+            '續' to '续', '絕' to '绝', '滅' to '灭', '襲' to '袭', '淵' to '渊',
+            '劍' to '剑', '聖' to '圣', '決' to '决', '兩' to '两', '負' to '负',
+            '饋' to '馈', '態' to '态', '偽' to '伪', '裝' to '装', '讓' to '让',
+            '這' to '这', '彈' to '弹', '亂' to '乱', '凍' to '冻', '盡' to '尽',
+            '餘' to '余', '從' to '从', '迴' to '回', '環' to '环', '欄' to '栏',
+            '荊' to '荆', '顯' to '显', '藍' to '蓝', '黃' to '黄', '濕' to '湿',
+            '溼' to '湿', '剛' to '刚', '夠' to '够', '齊' to '齐',
+            '０' to '0', '１' to '1', '２' to '2', '３' to '3', '４' to '4',
+            '５' to '5', '６' to '6', '７' to '7', '８' to '8', '９' to '9',
+            '＋' to '+', '－' to '-', '×' to 'x', '≧' to '≥', '＞' to '>',
+            '～' to '~'
+        )
+    }
+}

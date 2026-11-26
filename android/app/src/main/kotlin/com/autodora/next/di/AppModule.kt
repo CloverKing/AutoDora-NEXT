@@ -8,6 +8,8 @@ import com.autodora.next.touch.AccessibilityTouchExecutor
 import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.vision.BoardRecognizer
 import com.autodora.next.vision.HybridBoardRecognizer
+import com.autodora.next.vision.PaddleOcrOnnxEngine
+import com.autodora.next.vision.TosEnemySkillParserV2
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -41,6 +43,18 @@ object AppModule {
     @Singleton
     fun provideBoardRecognizer(@ApplicationContext context: Context): BoardRecognizer {
         return HybridBoardRecognizer(context)
+    }
+
+    @Provides
+    @Singleton
+    fun providePaddleOcrOnnxEngine(@ApplicationContext context: Context): PaddleOcrOnnxEngine {
+        return PaddleOcrOnnxEngine(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideTosEnemySkillParserV2(@ApplicationContext context: Context): TosEnemySkillParserV2 {
+        return TosEnemySkillParserV2.loadFromContext(context)
     }
 
     @Provides

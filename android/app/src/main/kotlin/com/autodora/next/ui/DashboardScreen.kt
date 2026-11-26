@@ -1169,6 +1169,13 @@ private fun SettingsTab(
                     onCheckedChange = { v -> onUpdateSettings { it.copy(useAiRecognizer = v) } }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                SwitchSettingRow(
+                    title = stringResource(R.string.mode_enemy_ocr_title),
+                    subtitle = stringResource(R.string.mode_enemy_ocr_sub),
+                    checked = settings.autoEnemySkillOcrEnabled,
+                    onCheckedChange = { v -> onUpdateSettings { it.copy(autoEnemySkillOcrEnabled = v) } }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
                     Text(
                         text = stringResource(R.string.mode_question_mem_title),
@@ -1269,11 +1276,12 @@ private fun SettingsTab(
             ) {
                 Text(
                     text = stringResource(
-                        R.string.training_collect_stats_fmt,
+                        R.string.training_collect_stats_v2_fmt,
                         trainingStats.totalSamples,
                         trainingStats.boardSamples,
                         trainingStats.editorCorrectionSamples,
                         trainingStats.enemyModalSamples,
+                        trainingStats.capturedEnemySkillsCount,
                         mbUsedText
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -1289,7 +1297,7 @@ private fun SettingsTab(
             ) {
                 FilledTonalButton(
                     onClick = onExportTrainingData,
-                    enabled = !isExportingTrainingData && trainingStats.totalSamples > 0,
+                    enabled = !isExportingTrainingData && (trainingStats.totalSamples > 0 || trainingStats.capturedEnemySkillsCount > 0),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(

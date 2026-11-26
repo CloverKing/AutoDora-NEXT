@@ -22,5 +22,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.litert)
+    implementation(libs.onnxruntime.android)
     testImplementation(libs.junit)
 }

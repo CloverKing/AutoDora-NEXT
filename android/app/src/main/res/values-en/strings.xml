@@ -644,4 +644,32 @@
     <string name="training_collect_cleared">Local training sample cache cleared</string>
     <string name="training_collect_on_badge">Recording · %1$d</string>
     <string name="training_collect_off_badge">Paused</string>
+
+    <!-- Pure-Offline PP-OCRv5 ONNX Enemy Skill Recognition & Board Auto-Policy -->
+    <string name="mode_enemy_ocr_title">Offline Enemy Skill Popup OCR</string>
+    <string name="mode_enemy_ocr_sub">Silently reads long-pressed enemy popups via offline PP-OCRv5 to apply ✦AI shield chips; skips greyed-out bypassed skills while archiving all skills to local DB</string>
+    <string name="training_collect_stats_v2_fmt">Total %1$d (Boards %2$d · Editor %3$d · Popups %4$d) · Skills DB %5$d · %6$s MB</string>
+    <string name="ov_ai_chip_prefix">✦AI </string>
+    <string name="ov_bypassed_grey_pill_fmt">⊘ Bypassed×%1$d</string>
+    <string name="ov_toast_bypassed_restored_fmt">Restored %1$d bypassed enemy skill constraints</string>
+    <string name="ov_toast_ocr_applied_fmt">✦AI applied %1$d wave shield rules</string>
+    <string name="ov_toast_ocr_bypassed_fmt"> (%1$d grey bypassed)</string>
+    <string name="ov_toast_ocr_stage_archived_fmt">✦AI archived %1$d stage skills to local DB</string>
+    <string name="ov_toast_wave_auto_cleared">Wave cleared — removed previous ✦AI shield chips</string>
+    <string name="policy_burn">NoBurn</string>
+    <string name="policy_scorch">NoScorch</string>
+    <string name="policy_sticky">AvoidSticky</string>
+    <string name="policy_purgatory">AvoidPurgatory</string>
+    <string name="policy_bomb">AvoidBomb</string>
+    <string name="policy_weathered">AvoidWeathered</string>
+    <string name="policy_electrified">AvoidElec</string>
+    <string name="policy_petrified">CrackPetrified</string>
+    <string name="policy_ice">CrackIce</string>
+    <string name="policy_blood_drain">AvoidDrain</string>
+    <string name="policy_evil">ClearEvil</string>
+    <string name="policy_luminous">ClearLuminous</string>
+    <string name="policy_black_hole">AvoidBlackHole</string>
+    <string name="policy_bloodbath">AvoidBloodbath</string>
+    <string name="policy_barrier">Barrier</string>
+    <string name="policy_shattered">Shattered</string>
 </resources>

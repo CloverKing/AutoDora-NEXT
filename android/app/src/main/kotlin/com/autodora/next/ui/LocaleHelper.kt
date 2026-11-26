@@ -17,6 +17,7 @@ import com.autodora.next.model.TargetShape
 import com.autodora.next.model.TeamBasePreset
 import com.autodora.next.model.WaveShieldChip
 import com.autodora.next.touch.SwipeSpeedPreset
+import com.autodora.next.vision.BoardAutoPolicyItem
 import java.util.Locale
 
 /**
@@ -349,6 +350,29 @@ object LocaleHelper {
         5 -> ctx.getString(R.string.puzzle_shape_rect)
         6 -> ctx.getString(R.string.puzzle_shape_u)
         else -> ctx.getString(R.string.puzzle_shape_auto)
+    }
+
+    fun formatBoardPolicyItem(ctx: Context, item: BoardAutoPolicyItem): String {
+        val labelRes = when (item.code) {
+            "burn" -> R.string.policy_burn
+            "scorch" -> R.string.policy_scorch
+            "sticky" -> R.string.policy_sticky
+            "purgatory" -> R.string.policy_purgatory
+            "bomb" -> R.string.policy_bomb
+            "weathered" -> R.string.policy_weathered
+            "electrified" -> R.string.policy_electrified
+            "petrified" -> R.string.policy_petrified
+            "ice" -> R.string.policy_ice
+            "blood_drain" -> R.string.policy_blood_drain
+            "evil" -> R.string.policy_evil
+            "luminous" -> R.string.policy_luminous
+            "black_hole" -> R.string.policy_black_hole
+            "bloodbath" -> R.string.policy_bloodbath
+            "barrier" -> R.string.policy_barrier
+            "shattered" -> R.string.policy_shattered
+            else -> return "${item.code}×${item.count}"
+        }
+        return "${ctx.getString(labelRes)}×${item.count}"
     }
 
     fun elementBadgeArgb(elemIndex: Int): Int = when (elemIndex) {

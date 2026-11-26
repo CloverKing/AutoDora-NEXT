@@ -51,6 +51,17 @@ data class TrainingExportResult(
     val zipBytes: Long
 )
 
+data class CapturedEnemySkillInput(
+    val skillHash: String,
+    val titleZhTw: String,
+    val rawBodyZhTw: String,
+    val sourceType: String,
+    val stageName: String = "",
+    val waveIndex: Int = 0,
+    val parseStatus: String,
+    val mappedChips: List<WaveShieldChip>
+)
+
 @Serializable
 data class TrainingSampleSidecar(
     val schemaVersion: Int = 1,
@@ -626,6 +637,39 @@ class TrainingDataRepository(
             } catch (_: Throwable) {
             } finally {
                 if (!fullCopy.isRecycled) fullCopy.recycle()
+            }
+        }
+    }
+
+    /**
+     * Persists ALL recognized enemy skill blocks (including greyed-out bypassed skills!) into
+     * Room `captured_enemy_skills` keyed by [CapturedEnemySkillInput.skillHash] so the user's
+     * authoritative enemy-skill knowledge base keeps growing with zero loss of bypassed entries.
+     */
+    fun recordCapturedEnemySkills(items: List<CapturedEnemySkillInput>) {
+        if (items.isEmpty()) return
+        val now = System.currentTimeMillis()
+        ioScope.launch {
+            for (item in items) {
+                if (item.skillHash.isBlank() || item.rawBodyZhTw.isBlank()) continue
+                runCatching {
+                    val existing = enemySkillDao.getByHash(item.skillHash)
+                    val chipsJson = json.encodeToString(item.mappedChips)
+                    val entity = CapturedEnemySkillEntity(
+                        skillHash = item.skillHash,
+                        titleZhTw = item.titleZhTw.ifBlank { existing?.titleZhTw.orEmpty() },
+                        rawBodyZhTw = item.rawBodyZhTw,
+                        sourceType = if (existing == null) item.sourceType else existing.sourceType,
+                        stageName = item.stageName.ifBlank { existing?.stageName.orEmpty() },
+                        waveIndex = if (item.waveIndex > 0) item.waveIndex else (existing?.waveIndex ?: 0),
+                        parseStatus = item.parseStatus,
+                        mappedChipsJson = chipsJson,
+                        hitCount = (existing?.hitCount ?: 0) + 1,
+                        firstSeenMs = existing?.firstSeenMs ?: now,
+                        lastSeenMs = now
+                    )
+                    enemySkillDao.upsert(entity)
+                }
             }
         }
     }

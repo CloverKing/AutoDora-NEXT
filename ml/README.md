@@ -54,7 +54,8 @@ ml\.venv\Scripts\python.exe -m ml.export_litert
   5. `head_hazards` `[22..38]` (17, Sigmoid 多标签)：17 类核心异常/锁定/刺血/炸弹等位
   6. `head_tile_overlay` `[39..46]` (8, Sigmoid 多标签)：拼图 / 暴风 / 碎裂 / 燃烧 / 灼热 / 血浴 / 黑洞 / 红绿灯
 
-## 3. 端侧无上限双轨采集飞轮与合规规范（`v0.5.1` 已落地）
+## 3. 端侧无上限双轨采集飞轮、PP-OCRv5 ONNX 离线识字与合规规范（`v0.5.1–v0.6.0`）
 
 - **App 端侧双轨采集导出格式**：`v0.5.1` 已上线 `TrainingDataRepository` + `Room AutoDoraDatabase v2`，在日常游玩时无上限收集两类高价值样本并一键打包导出 `AutoDora_TrainingData_<ts>.zip`（含根目录 `manifest.json`、`enemy_skills_master.json`、`boards/*_{a,b}.webp`、`viewports/*_upper.webp`、`enemy_popups/*_full.webp` 与 `meta/*.json` 含 P0 人工编排纠错 diff）；导出的 ZIP 可直接解压归档至 `backups/phase4_v2_inbox/device_exports/` 对接下一代 `BoardMasterGridNet` 与 `EnemyPopupParser` 训练。
-- **严禁提交第三方版权素材或大体积训练中间产物**：`backups/`、`ml/datasets/`、`ml/runs/`、`ml/checkpoints/` 与 `ml/.venv/` 均已配置 `.gitignore` 忽略，Git 仓库仅保留纯训练/导出脚本与自主权重的轻量模型资产 `android/app/src/main/assets/models/{orb_multihead_v1.tflite, model_meta.json}`。
+- **纯离线 PP-OCRv5 Mobile ONNX 推理资产（`v0.6.0`）**：`android/app/src/main/assets/ocr/` 集成 RapidAI `ch_PP-OCRv5_det_mobile.onnx` (`4,819,576 B`)、`ch_PP-OCRv5_rec_mobile.onnx` (`16,631,306 B`) 与 `ppocrv5_dict.txt` (`18,383` 字表)，由 `ONNX Runtime Mobile 1.32.0` 驱动 `PaddleOcrOnnxEngine` + `TosEnemySkillParserV2`；识别出的全部技能（含灰字无视技能）均按 `skillHash` 实时累积写入 Room `captured_enemy_skills` 知识库（随训练集 ZIP 导出至 `enemy_skills_master.json`）。
+- **严禁提交第三方版权素材或大体积训练中间产物**：`backups/`、`ml/datasets/`、`ml/runs/`、`ml/checkpoints/` 与 `ml/.venv/` 均已配置 `.gitignore` 忽略，Git 仓库仅保留纯训练/导出脚本与轻量化自主/公开端侧推理资产（`assets/models/` 与 `assets/ocr/`）。
