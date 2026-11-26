@@ -1,6 +1,6 @@
 # AutoDora-NEXT v3.0 系统架构、功能设计与演进规划
 
-> **当前基线版本**：`v0.6.0`（`versionCode = 600`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
+> **当前基线版本**：`v0.7.0`（`versionCode = 700`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
 > **项目定位**：面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备的**免 Root、全规格动态棋盘自适应、可自由组合解盾、问号/按珠变盘双模破局、1:1 实时盘面编排、C++20 端侧高速引擎驱动**的新一代智能转珠辅助工程。  
 > **设计基线**：全面继承并升级旧版 [AutoDora-V3.4.3](./LEGACY_AUTODORA_ANALYSIS.md) 经实战验证的悬浮窗交互、调参与「问号‧转/风化‧转」按珠重算精华；完整对照 [《神魔之塔》13 年全机制全景调研手册](./TOS_COMPLETE_MECHANICS_CATALOG.md)、[98 项官方敌技审计报告](./enemy_skill_audit.md) 与 [22 项符石状态核验报告](./runestone_status_audit.md)（官方百科 20 项 + 百科外经典 2 项）。  
 > **标定与合规原则**：所有棋盘几何探测、校准基准与视觉特征阈值均严格以**真实《神魔之塔》游戏画面**实测标定；仓库仅包含工程代码、结构化技术规范与应用自身纯净截图，严禁提交任何第三方版权游戏素材。
@@ -73,7 +73,11 @@ flowchart LR
 5. **纯离线 PP-OCRv5 ONNX 敌技解析 + 四级策略仲裁与盘面自策略摘要（`PaddleOcrOnnxEngine` + `TosEnemySkillParserV2` + `BoardAutoPolicySummary`，`v0.6.0`）**：
    - 集成 `com.microsoft.onnxruntime:onnxruntime-android:1.32.0` 与 RapidAI PP-OCRv5 Mobile 模型（`ch_PP-OCRv5_det_mobile.onnx` `4.60 MB` + `ch_PP-OCRv5_rec_mobile.onnx` `15.86 MB` + `ppocrv5_dict.txt` `18,383` 字符表，均以 `noCompress` 打包于 `assets/ocr/`）。
    - `OverlayControllerService` 在 `watchStatus == 1` 且 `consecutiveEnemyModalTicks >= 2` 时依据内部 dHash 去重后台执行 `PaddleOcrOnnxEngine.recognize(bmp, modalKind)`（DBNet 四连通提取 + 阅读序聚类 + 48px SVTR-CTC 解码 + 前景 `p50Lum/p95Lum/vividRatio` 灰字识别）与 `TosEnemySkillParserV2.parseLines(...)`（`tos_enemy_skill_rules_v2.json` 覆盖全 63 项盘面敌技 + 已知非盘面技分类 + UI 铬条/`HP/DEF 0` 防误触）。
-   - **知识库归档与实时解版严格分离**：`allBlocks`（含灰字已被队长/队伍无视的技能）全量持久化至 Room `captured_enemy_skills`（保留首次/末次见时间与 `hitCount`）；而在战斗弹窗（`ENEMY_LONG_PRESS_POPUP`）模式下，`activeChips` 动态过滤灰字块，通过 `ActiveStrategyStore.applyAutoDetectedChips(...)` 执行四级仲裁（`用户手动 > 弹窗 OCR ✦AI > 敌技图标 > 盘面自动`，并维护波次内 `dismissedAutoChipIds` 防用户手删回弹），过关波次切换（`watchStatus == 3`）自动清除 `autoDetected == true` 临时芯片；同时在结果卡片追加 `BoardAutoPolicySummary` 自动避让/清除徽标。
+   - **知识库归档与实时解版严格分离**：`allBlocks`（含灰字已被队长/队伍无视的技能）全量持久化至 Room `captured_enemy_skills`（保留首次/末次见时间与 `hitCount`）；而在战斗弹窗（`ENEMY_LONG_PRESS_POPUP`）模式下，`activeChips` 动态过滤灰字块，通过 `ActiveStrategyStore.applyAutoDetectedChips(...)` 执行四级仲裁（`用户手动 > 弹窗 OCR ✦AI > 敌技图标 > 盘面自动`，并维护波次内 `dismissedAutoChipIds` 防用户手删回弹），过关波次切换（`watchStatus == 3` 暗化转场 + `WaveTransitionDetector` 上方敌区 dHash 突变双保险）自动清除或推进临时策略；同时在结果卡片追加 `BoardAutoPolicySummary` 自动避让/清除徽标。
+6. **关前全波次剧本、视觉 hints 闭环与热更新体系（`v0.7.0`）**：
+   - `StageWaveScriptParser` + Room `AutoDoraDatabase v3`（`MIGRATION_2_3` 无损新增 `stage_wave_scripts` 表）+ `ActiveStageScriptStore`：自动将关前/战中「关卡资讯」弹窗或外部导入的 Wiki JSON 编译为按波次索引的 `StageWaveScript`，并在悬浮窗顶部通过紧凑 `‹ Wk/N › ×` 步进胶囊同步驱动每波自动换盾与视觉提示。
+   - `BoardVisualHints`（`core-model`）联动 `HybridFusionPolicy`：识别 `幽閉空間` 时以 `visualHints.hasMonochrome` 降低阈值激活 AI 灰度判色恢复通道；识别 `移形換影` 时在悬浮栏渲染一键跳转 1:1 盘面编排的橙色警示胶囊。
+   - `HotReloadEnemySkillParser` + 主控台「敌技知识库、热更新与剧本」抽屉：支持知识库按状态筛选浏览、复制未解析清单、`tos_enemy_skill_rules_v2.json` 热更新校验重载/重置、关卡剧本管理与实时文案试算器。
 
 ### 2.2 全屏问号珠双模破局引擎
 
@@ -148,7 +152,7 @@ flowchart LR
 | **分页结构** | 3-Tab：**概览 / 策略 / 设置** | 3-Tab：**快捷 / 策略 / 设置** |
 | **抽屉色彩** | 6 色语义色条 + 浅色边框卡片（蓝/靛蓝/青绿/琥珀/绯红/紫） | 与启动页对应模块使用**完全一致的抽屉配色** |
 | **展开模式** | 默认**全部展开**，支持多抽屉同时展开或单独收起 | 调参分页与盘面编排均采用**单抽屉手风琴互斥展开**，防止遮挡游戏盘面 |
-| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`625` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
+| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`662` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
 | **主悬浮胶囊** | 概览页一键启停悬浮助手；设置支持控制 **高速录屏模式下悬浮栏是否显示录屏按钮** 以及 **横排 / 竖排** 与 **靠左 / 靠右** 4 态切换（`floatingBarVertical` + `floatingBarDockRight`） | 圆形 App 图标手柄 + 8 个常驻矢量图标（`✦` `▶` `■` `〰` `▤` `▦` `🎚` `✕`）+ 高速录屏模式下可配置增显 **`● 录屏`** 图标；支持 **4 态实时热切**（横排靠右时 App 图标居右、主栏向左展开；竖排靠左向右/靠右向左展开面板）、**拖拽松手平滑左右吸边**及 **DataStore 持久化记忆停靠侧与纵坐标** |
 
 ### 5.2 单一自动保存策略与应用内更新闭环
@@ -221,18 +225,19 @@ flowchart TD
     PathSmooth -.-> ShizukuExec
 ```
 
-### 仓库模块与测试矩阵（当前 `147` 项自动化测试全通过）
+### 仓库模块与测试矩阵（当前 `156` 项自动化测试全通过）
 
 | 模块 | 职责说明 | 自动化测试覆盖 |
 | :--- | :--- | :--- |
 | `solver-core/` | 纯 C++20 求解引擎（CMake，零 Android 依赖） | `test_main.cpp`：**52 / 52** 通过（含独立路径回放核验、起动浮标角色珠破盾、荆棘严避与全版锁定渐进消除） |
-| `android/core-model/` | 不可变棋盘/规则模型、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**13 / 13** 通过 |
+| `android/core-model/` | 不可变棋盘/规则模型（含 `StageScriptModel` / `BoardVisualHints`）、`RuleComposer`、`ShieldVerdictEvaluator` | `RuleComposerTest`：**13 / 13** 通过 |
 | `android/core-capture/` | `AccessibilityScreenCapturer`（Android 11+ 兼容系统录屏）+ `MediaProjectionCapturer` + `EglCaptureRelay` + `BuiltInScreenRecorder`（单 VirtualDisplay GPU 零拷贝 60fps 录屏直存系统相册）、`AutoGridDetector`（含低血亮红数字血条、空血 1-HP 暗槽、全版深青 `?` 问号珠外环峰值门控与纯黑弹窗防误过） | `AutoGridDetectorTest` (14) + `ScreenCaptureSessionTest` (3) + `AccessibilityScreenCapturerTest` (3) + `BuiltInScreenRecorderTest` (3)：**23 / 23** 通过 |
-| `android/core-vision/` | `CvBoardRecognizer`、`FlashRevealMemoryTracker`、`LiteRtOrbClassifier` + `HybridBoardRecognizer`、`PaddleOcrOnnxEngine` + `PaddleOcrPostprocess`（PP-OCRv5 Mobile ONNX Runtime 1.32.0）、`TosEnemySkillParserV2`、`BoardAutoPolicySummary` | `CvBoardRecognizerTest` (24) + `HybridBoardRecognizerTest` (3) + `PaddleOcrPostprocessTest` (4) + `TosEnemySkillParserV2Test` (3)：**34 / 34** 通过 |
+| `android/core-vision/` | `CvBoardRecognizer`、`FlashRevealMemoryTracker`、`LiteRtOrbClassifier` + `HybridBoardRecognizer`（含 `visualHints.hasMonochrome` 联动）、`PaddleOcrOnnxEngine` + `PaddleOcrPostprocess`、`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`、`StageWaveScriptParser`、`WaveTransitionDetector`、`BoardAutoPolicySummary` | `CvBoardRecognizerTest` (24) + `HybridBoardRecognizerTest` (4) + `PaddleOcrPostprocessTest` (4) + `TosEnemySkillParserV2Test` (3) + `StageWaveScriptParserTest` (2) + `WaveTransitionDetectorTest` (1)：**38 / 38** 通过 |
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`（含精准分段预计转珠耗时计算与校准头像中心垂直下拉）、`SwipeSpeedPreset` | `PathInterpolatorTest`：**9 / 9** 通过 |
-| `android/core-data/` | DataStore 设置（含 `useAiRecognizer`、`autoEnemySkillOcrEnabled` 与 `trainingDataCollectionEnabled`）、`AutoDoraDatabase v2`（`team_presets` + `collected_training_samples` + `captured_enemy_skills`）、`ActiveStrategyStore`（4 级仲裁 + 灰字复原 + 换波清除）、`TrainingDataRepository`、目录配置 | `ActiveStrategyStoreTest` (3) + `TrainingDataRepositoryTest` (2)：**5 / 5** 通过 |
+| `android/core-data/` | DataStore 设置、`AutoDoraDatabase v3`（`team_presets` + `collected_training_samples` + `captured_enemy_skills` + `stage_wave_scripts`）、`ActiveStrategyStore`、`StageWaveScriptRepository` + `ActiveStageScriptStore`、`TrainingDataRepository`、目录配置 | `ActiveStrategyStoreTest` (3) + `TrainingDataRepositoryTest` (2) + `ActiveStageScriptStoreTest` (1)：**6 / 6** 通过 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台、4 态磁吸记忆悬浮服务（含静默 PP-OCRv5 弹窗识字、`✦AI` / 灰字无视 / 自动避障胶囊、4 处端侧采集钩子）、单抽屉调参/编排、`UpdateChecker`、未压缩打包 `orb_multihead_v1.tflite` (`348,548 B`) + `ch_PP-OCRv5_{det,rec}_mobile.onnx` (`21,450,882 B`) | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **625 / 625** |
+| `android/app/` | 3-Tab Compose 启动台（含敌技知识库/热更新/试算器/剧本管理抽屉）、4 态悬浮服务（`‹ Wk/N ›` 步进器 + `✦AI` / 灰字 / 视觉 hints / 自动避障胶囊 + 双保险换波检测）、单抽屉调参/编排、`UpdateChecker` | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **662 / 662** |
+| `ml/` | `AutoDoraOrbNetV1`、`ingest_device_export.py`、`extract_youtube_frames.py`、Stage 2A `BoardMasterGridNet` + Stage 2B `EnemyIconNet` 训练与 ONNX 导出验证管线 | `test_ml_pipeline.py`：**4 / 4** 通过 |
 
 ---
 
@@ -243,4 +248,4 @@ flowchart TD
 | **Phase 1：纯 C++20 动态内核 + 多模块骨架** | `v0.1.0` | **已完成** — `3×3~8×8` 64-bit 位掩码求解器、最高 300 步、Android 7 模块工程与 JNI 三架构编译。 |
 | **Phase 2 & 2.5：免 Root 全链路 + 真图高精度标定** | `v0.2.x` – `v0.3.x` | **已完成** — 零拷贝 `MediaProjection`、血条防假违建、先露后藏记忆快照、免 Root 按住重算续滑、拼图/红绿灯/暴风/化血/结界识别、非战斗/VICTORY 过滤、方向逆转与逐盾 `✓/✗` 判定。 |
 | **Phase 3 & 3.5：百科全量审计 + 统一交互 + 全 6 色特殊符石 CV 与长时稳定** | `v0.4.0` – `v0.4.9` | **已完成** — 全量 98 敌技 + 22 符石状态 + 7 大官方种族全链路升级；成员起动浮标（No.5893/5894/7403）全链路支持；双模屏幕采集与内置 60fps H.264 录屏；HyperOS / Android 14–16 稳态、`0%–100%` 全态血条锚定、18 项状态/地形自动 CV 识别与统一 M3 悬浮/编排闭环。 |
-| **Phase 4：端侧多头 AI 识盘 + 双轨数据飞轮 + 离线敌技识别** | `v0.5.0` – `v0.6.0`（当前）– `v1.0.0` | **已落地（`v0.5.0–v0.6.0`）** — ① `CV-Rule-v2.7` + `AutoDoraOrbNetV1`（`.tflite` `340.4 KB`）+ `HybridFusionPolicy`；② `v0.5.1` 无上限双轨端侧训练素材自采集飞轮（`AutoDoraDatabase v2` + `TrainingDataRepository` + Settings ZIP 导出）；③ `v0.6.0` **纯离线 `ONNX Runtime Mobile 1.32.0` + `PP-OCRv5 Mobile` 敌技弹窗静默识别 + `TosEnemySkillParserV2`（全 63 盘面敌技规则 + 灰字动态无视且全文归档）+ `ActiveStrategyStore` 四级仲裁/换波清零 + `BoardAutoPolicySummary` 盘面自策略徽标**。<br>**后续迭代（`v0.6.x–v1.0.0`）**：治本级双帧整盘 `BoardMasterGridNet`、`EnemyIconNet`、R8/ABI 瘦身（Phase D）、可选 Shizuku 触控与稳定版 `v1.0.0`。 |
+| **Phase 4：端侧多头 AI 识盘 + 双轨飞轮 + 离线敌技/全波剧本体系** | `v0.5.0` – `v0.7.0`（当前）– `v1.0.0` | **已落地（`v0.5.0–v0.7.0`）** — ① `CV-Rule-v2.7` + `AutoDoraOrbNetV1` + `HybridFusionPolicy`；② `v0.5.1` 无上限双轨采集飞轮；③ `v0.6.0` 纯离线 `ONNX Runtime Mobile` + `PP-OCRv5` 弹窗识字 + `TosEnemySkillParserV2` + 四级仲裁；④ `v0.7.0` **Room `v3` 全波次剧本 & Wiki JSON 导入（`‹ Wk/N ›` 步进）、`WaveTransitionDetector` 双保险换波、`BoardVisualHints` 幽闭/移形换影视觉联动、主控台知识库/规则热更新/离线试算器与 PC 端 Stage 2A/2B 训练导出管线**。<br>**后续迭代（`v0.8.x–v1.0.0`）**：训练并接入 `BoardMasterGridNet` 与 `EnemyIconNet` ONNX 权重、R8/ABI 瘦身（Phase D）、可选 Shizuku 触控与稳定版 `v1.0.0`。 |

@@ -127,6 +127,9 @@ object ActiveStrategyStore {
     private val _bypassedGreySkills = MutableStateFlow<List<BypassedEnemySkill>>(emptyList())
     val bypassedGreySkills: StateFlow<List<BypassedEnemySkill>> = _bypassedGreySkills.asStateFlow()
 
+    private val _activeVisualHints = MutableStateFlow(BoardVisualHints())
+    val activeVisualHints: StateFlow<BoardVisualHints> = _activeVisualHints.asStateFlow()
+
     private val dismissedAutoChipIds = LinkedHashSet<String>()
 
     @Synchronized
@@ -252,6 +255,11 @@ object ActiveStrategyStore {
         return restored
     }
 
+    @Synchronized
+    fun setActiveVisualHints(hints: BoardVisualHints) {
+        _activeVisualHints.value = hints
+    }
+
     /**
      * Clears ONLY auto-detected per-wave chips on wave transition, preserving user's manual chips
      * and resetting the wave-local dismissal guard. Returns the count of cleared auto chips.
@@ -263,6 +271,7 @@ object ActiveStrategyStore {
         val removed = before.size - remaining.size
         _activeChips.value = remaining
         _bypassedGreySkills.value = emptyList()
+        _activeVisualHints.value = BoardVisualHints()
         dismissedAutoChipIds.clear()
         return removed
     }
@@ -271,6 +280,7 @@ object ActiveStrategyStore {
     fun clearAll() {
         _activeChips.value = emptyList()
         _bypassedGreySkills.value = emptyList()
+        _activeVisualHints.value = BoardVisualHints()
         dismissedAutoChipIds.clear()
     }
 

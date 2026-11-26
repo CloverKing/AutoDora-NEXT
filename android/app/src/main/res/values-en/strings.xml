@@ -672,4 +672,43 @@
     <string name="policy_bloodbath">AvoidBloodbath</string>
     <string name="policy_barrier">Barrier</string>
     <string name="policy_shattered">Shattered</string>
+
+    <!-- v0.7.0 Stage Wave Scripts, Visual Hints & Enemy Knowledge Hub -->
+    <string name="ov_toast_monochrome_ai_boost">✦AI detected Monochrome: AI grayscale recovery boosted</string>
+    <string name="ov_toast_stage_script_loaded_fmt">✦AI loaded %1$d-wave stage script (W%2$d)</string>
+    <string name="ov_toast_stage_wave_next_fmt">Stage script switched to Wave %1$d</string>
+    <string name="ov_toast_stage_script_done">Stage script completed; cleared temporary chips</string>
+    <string name="ov_hint_monochrome_pill">◐ MonoAI</string>
+    <string name="ov_hint_disguise_edit_pill">⚠ Disguised·Edit</string>
+    <string name="knowledge_rules_reset_ok_fmt">Restored %1$d built-in enemy skill rules</string>
+    <string name="knowledge_stage_activated_fmt">Loaded stage script: %1$s (%2$d waves)</string>
+    <string name="knowledge_import_failed">Failed to read or parse JSON file</string>
+    <string name="knowledge_rules_imported_ok_fmt">Hot-reloaded %1$d custom enemy skill rules</string>
+    <string name="knowledge_stage_import_empty">No valid stage waves found in file</string>
+    <string name="knowledge_stage_imported_ok_fmt">Imported %1$d stage wave scripts</string>
+    <string name="section_enemy_knowledge_hub">Skill DB, Hot Rules &amp; Stage Scripts</string>
+    <string name="knowledge_hub_badge_fmt">%1$d skills · %2$d stages</string>
+    <string name="knowledge_hub_stats_fmt">Parsed %1$d · Non-board %2$d · Unparsed %3$d · Stage scripts %4$d\nParser rules: %5$s</string>
+    <string name="knowledge_btn_browse_skills">Browse DB</string>
+    <string name="knowledge_btn_copy_unparsed">Copy Unparsed</string>
+    <string name="knowledge_copied_unparsed_fmt">Copied %1$d unparsed skills to clipboard</string>
+    <string name="knowledge_no_unparsed">No unparsed enemy skills right now</string>
+    <string name="knowledge_tester_title">Offline Skill Rule Tester</string>
+    <string name="knowledge_tester_hint">Paste in-game skill description to preview generated shield chips</string>
+    <string name="knowledge_tester_result_fmt">Matched %1$d shield constraints:</string>
+    <string name="knowledge_btn_import_rules">Import Rules JSON</string>
+    <string name="knowledge_btn_reset_rules">Reset Built-in Rules</string>
+    <string name="knowledge_custom_rules_active">Custom hot-reloaded rule file is active</string>
+    <string name="knowledge_btn_import_stages">Import Stage Scripts</string>
+    <string name="knowledge_stage_list_title">Saved Stage Wave Scripts</string>
+    <string name="knowledge_stage_item_fmt">%1$d waves · %2$s</string>
+    <string name="knowledge_btn_activate_stage">Load</string>
+    <string name="knowledge_btn_stop_stage">Stop</string>
+    <string name="knowledge_dialog_title">Captured Enemy Skill DB</string>
+    <string name="knowledge_filter_all">All</string>
+    <string name="knowledge_filter_parsed">Parsed</string>
+    <string name="knowledge_filter_unparsed">Unparsed</string>
+    <string name="knowledge_filter_nonboard">Non-board</string>
+    <string name="knowledge_empty_list">No enemy skills match the current filter</string>
+    <string name="knowledge_hit_fmt">Hits: %1$d</string>
 </resources>

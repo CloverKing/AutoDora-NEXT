@@ -2,10 +2,10 @@
 
 > **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
 
-[![Version](https://img.shields.io/badge/version-v0.6.0-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.6.0)
+[![Version](https://img.shields.io/badge/version-v0.7.0-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.7.0)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
-[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%2095%20JVM%20Passing-2E7D32.svg)](#快速构建与测试)
+[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%20100%20JVM%20%2B%204%20ML%20Passing-2E7D32.svg)](#快速构建与测试)
 [![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#多语言主题与应用内更新)
 
 ---
@@ -54,7 +54,11 @@
   - **端侧无上限双轨训练数据自动采集与一键导出（`v0.5.1`）**：后台与交互采集链路同步落盘至 `filesDir/training_inbox` + Room `AutoDoraDatabase v2`，同时记录 **① 盘面静止双帧 WebP + 1:1 盘面编排 P0 人工纠错真值** 与 **② 战中长按敌技弹窗 / 关卡资讯 WebP**；采用 dHash 短时去重、**不设容量与张数上限**，支持在「设置 → 端侧训练素材自动采集」随时一键导出完整 ZIP（保存至 `Download/AutoDora-NEXT/` 并调起系统分享）。
   - **纯离线 PP-OCRv5 ONNX 敌技识别与四级解版仲裁闭环（`v0.6.0`）**：零 Google 服务依赖集成 `ONNX Runtime Mobile 1.32.0` + RapidAI **`ch_PP-OCRv5_{det,rec}_mobile.onnx`**（合计 `20.46 MB` 未压缩打包于 `assets/ocr/`，自带 `18,383` 字符集），在战中长按敌人或打开关卡资讯弹窗时后台静默触发 **`PaddleOcrOnnxEngine` + `TosEnemySkillParserV2`**（`tos_enemy_skill_rules_v2.json` 覆盖全部 63 项盘面相关官方敌技 + 起动浮标 + 元素暴劫计）：
     - **采集归档与战斗策略严格分离**：所有识别出的敌技（含**灰字已被队长/队伍无视的技能**）均按键值去重**100% 原文归档**至本地 Room `captured_enemy_skills` 知识库并计入 ZIP 导出；而在战斗解版装配时，通过实机校准的亮度/饱和度门控（`p50 < 95 && p95 ∈ [85..162] && vivid < 5%`）动态忽略灰字无效技能，并在波次盾栏以可点按复原的 **`⊘ 灰字已无视×N`** 灰色胶囊展示。
-    - **四级优先级仲裁 + 过关自动清零**：严格遵守 `用户手动 > 弹窗 OCR (✦AI) > 敌技图标 > 盘面自动特征`，同一波次内用户点击 `×` 删除某项 `✦AI` 盾牌后绝不重复弹出，进入下一波转场时自动清除所有 `✦AI` 临时盾牌（严格保留常驻手动策略）；结果卡片同步展示 **`BoardAutoPolicySummary` 自动避让/清除策略徽标**（`🛡 避燃×N / 避炸×N / 解石化×N` 等）。
+    - **四级优先级仲裁 + 双保险过关自动清零**：严格遵守 `用户手动 > 弹窗 OCR (✦AI) > 敌技图标 > 盘面自动特征`，同一波次内用户点击 `×` 删除某项 `✦AI` 盾牌后绝不重复弹出；进入下一波转场时经由**暗化转场与上方敌区 dHash 突变双重判别**（`WaveTransitionDetector`）自动清除或推进临时策略（严格保留常驻手动策略）；结果卡片同步展示 **`BoardAutoPolicySummary` 自动避让/清除策略徽标**（`🛡 避燃×N / 避炸×N / 解石化×N` 等）。
+  - **关前全波次剧本、视觉联动与知识库闭环（`v0.7.0`）**：
+    - **关前全波次剧本 & Wiki 联动（`StageWaveScript`）**：识别「关卡资讯」时自动按 `WAVE 1..N / BOSS` 切分剧本存入 Room `AutoDoraDatabase v3` 并一键激活，支持悬浮窗 **`‹ W2/5 › ×`** 波次步进器与导入外部爬库 Wiki JSON（自动按现行规则编译解版芯片），实现进关看一次资讯、全程免逐波长按敌人。
+    - **`BoardVisualHints` 视觉反哺**：识别「幽闭空间」时自动切换 `HybridFusionPolicy` 灰度判色增强通道（悬浮栏同步显示 `◐ 幽闭AI`）；识别「移形换影」时显示可点击的 **`⚠ 移形换影·编排`** 一键直达 1:1 盘面编排。
+    - **主控台「敌技知识库、热更新与离线试算器」**：实时浏览与筛选本地已采集敌技（`已解析 / 非盘面 / 待补规则`）、一键复制待补新敌技文本、导入/恢复 **`tos_enemy_skill_rules_v2.json` 规则热更新**，并内置离线文案试算器实时预览生成盾牌；PC 端同步补齐 [ml/](file:///c:/Users/wangg/OneDrive/Programs/Antigravity/AutoDora-NEXT/ml/README.md) ZIP 回流加权（P0=4.0×）、视频双帧去重及 Stage 2A `BoardMasterGridNet` / Stage 2B `EnemyIconNet` ONNX 训练导出管线。
   - **全量明显符石状态自动识别（全 6 色笛卡尔积通用去色偏）**：**电击符石（`电`，支持闪光峰值与低亮弱电弧全 6 色双相检测、剥离电光还原底层珠色并豁免红绿灯误起手，永不误判为 `?`）**、**冻结（`冻`）与冰封（`冰`）颜色无关方形晶格检测（6 色全覆盖且与暗珠冰封清晰解耦，同时豁免木/火冻结误报红绿灯）**、**爆破炸弹（`炸`，中心红核+金属灰环+外缘底色还原）**、**邪恶能量（`邪`，放宽至光/心较亮暗化底珠通用）**、**炼狱之火（`狱`，洋红火环主导保护防底色干扰）**、**石化符石（`石`）**、**化血 / 全版 30 颗锁定符石（`血`）**、**荆棘符石（`棘`）**。
   - **盘面地形与盾框自动识别**：**燃烧地形（`燃`，去除光珠高亮偏置全 6 色通用，并收紧拼图金框至纯黄金色 `35°–64°` 彻底杜绝连续 `1×6` 燃烧横行/围城被误判为拼图盾）**、**血浴地形（`浴`）**、**碎裂地形（`碎`，优先区分于暴风雾气）**、暴风区域（`暴风`）、经典金色与现代金属拼图框、**起结有序 V4 识别**（24 角度外环绿芒扫描突破种族角标遮挡、火珠邻格红溢抑制与官方单点绿/红漩涡约束）；所有自动检出状态与地形均在路径预览层同步渲染高对比角标。
   - 结界地形兼容识别，以及非战斗活动列表（强制校验盘面上方血条隔离带，根除自身半透明记忆圆圈自激反馈循环）、关卡转场、`VICTORY` 结算画面与敌技详情弹窗的自动静默拦截，彻底消除非战斗残留浮动识别层。
@@ -96,7 +100,7 @@
 
 ### 5. 多语言、主题与应用内更新
 
-- **四套资源三语实时热切**：内置 **简体中文 / 繁體中文 / English / 跟随系统**（`625` 项面向玩家的纯终态文案词条 100% 四语言对齐），无需重启应用实时刷新主界面与悬浮窗。
+- **四套资源三语实时热切**：内置 **简体中文 / 繁體中文 / English / 跟随系统**（`662` 项面向玩家的纯终态文案词条 100% 四语言对齐），无需重启应用实时刷新主界面与悬浮窗。
 - **Material You 双主题联动与暗色高对比适配**：支持 **跟随系统 / 明亮 / 黑暗** 三态，主控台与游戏内悬浮栏/调参面板/编排面板同步换肤，并对暗色模式下的「本波已启用解盾」激活条与彩色抽屉摘要徽章进行独立高对比度适配（彻底杜绝动态取色下浅底浅字问题）。
 - **应用内双通道检更与自动安装**：在「设置 → 关于与版本」内置 GitHub 仓库入口与检查更新，采用 **`api.github.com` → `github.com/releases.atom` + `expanded_assets` 免限流自动降级双通道**（彻底规避共享 IP/代理环境下的匿名 API `HTTP 403` 限流）；发现新版本后点击 **「下载并安装」** 直接在 App 内流式下载 GitHub Release 安装包（自动跟随 CDN 重定向、实时 MB/百分比进度条、随时取消、旧缓存自动清理、`PK\x03\x04` 完整校验），下载完成自动通过 `FileProvider` 拉起 Android 系统安装器完成升级（若尚未允许「安装未知应用」，自动引导授权并在返回后无缝续接安装）。
 
@@ -129,9 +133,9 @@ AutoDora-NEXT/
 │   ├── app/                      # 3-Tab 启动台、圆形图标悬浮栏、3-Tab 单抽屉调参面板、1:1 盘面编排、应用内更新器
 │   ├── core-model/               # 跨层不可变模型、两层 RuleComposer、ShieldVerdictEvaluator 逐盾核验器
 │   ├── core-capture/             # 双模采集（无障碍截屏 + MediaProjection + 内置 H.264 录屏存相册）、血条锚定 6×5↔6×8 自动规格探测
-│   ├── core-vision/              # CV-Rule-v2.7 多帧融合、FlashRevealMemoryTracker、LiteRtOrbClassifier + HybridBoardRecognizer、PaddleOcrOnnxEngine + TosEnemySkillParserV2 + BoardAutoPolicySummary
+│   ├── core-vision/              # CV-Rule-v2.7 多帧融合、FlashRevealMemoryTracker、LiteRtOrbClassifier + HybridBoardRecognizer、PaddleOcrOnnxEngine + HotReloadEnemySkillParser + StageWaveScriptParser + WaveTransitionDetector + BoardAutoPolicySummary
 │   ├── core-touch/               # 免 Root AccessibilityService 分段手势、角色珠下拉、按住重算续滑、6 档速度与镜像反转
-│   ├── core-data/                # DataStore 设置（AI 识盘 / 离线敌技 OCR / 端侧采集开关）、Room v2（预设/训练样本/敌技知识库）、ActiveStrategyStore 四级仲裁、TrainingDataRepository ZIP 导出、98 敌技 & 22 符石目录
+│   ├── core-data/                # DataStore 设置、Room v3（预设/训练样本/敌技知识库/关卡波次剧本）、ActiveStrategyStore + ActiveStageScriptStore、TrainingDataRepository ZIP 导出、98 敌技 & 22 符石目录
 │   └── solver-jni/               # NDK/JNI 桥接（arm64-v8a / armeabi-v7a / x86_64，-O3 优化）
 ├── ml/                           # AutoDoraOrbNetV1 多头轻量 CNN 训练、近零误报校准与 LiteRT 导出管线
 └── docs/                         # 系统架构、机制全景手册、百科审计规范与应用干净截图（docs/images/）
@@ -148,11 +152,12 @@ AutoDora-NEXT/
   - **Material 3 / Material You 3-Tab 启动页 + 同色系悬浮 3-Tab 单抽屉调参面板 + 4 态磁吸记忆悬浮栏**（横排靠左/横排靠右向左展开/竖排靠左/竖排靠右，松手左右平滑吸边并持久记忆停靠侧与纵坐标）。
   - **5 色单开互斥抽屉 1:1 盘面编排（打开即自动识盘 + 一键「重新识盘」）**（仅允许单一抽屉展开防遮挡 + 激活画笔标题徽标、单点互斥绿/红漩涡、多格角色通行/停放、18 项齐整符石状态画笔含荆棘/锁定、独立清除格标、「保存版面 → 主栏计算/执行」工作流）。
   - **双模免 Root 屏幕采集（Android 11+ 默认无障碍截屏兼容系统录屏 + 可选高速录屏采集自动释放 & 悬浮栏内置 H.264 MP4 录屏直存系统相册）** + **成员起动浮标（Wiki No.5893/7403）与消除起动浮标角色符石盾（No.5894）全链路自动支持**（暗化盘面线性亮度还原 + 发光头像浮标与左上角属性自动识别 + 校准头像中心严格垂直下拉 + 零配置首批消破盾 + 策略/编排双端配置）+ **空血 `1 HP` 暗槽血条锚定防假违建** + **非战斗悬浮自激拦截** + **18 项异常状态/地形自动 CV 识别与全 6 色笛卡尔积去色偏**（电击双相+底色还原、颜色无关晶格冻结/冰封、炸弹、邪能、炼狱、燃烧/血浴/碎裂、7 种族圆章 V3、起结有序 V4、石化、全版 30 颗锁定·化血、荆棘 + 跨机制防误判隔离）+ **精准 45° 斜转 `1.414×` 弧长计时** + **双端 1:1 统一四态颠倒方向操控 & 嵌套按住触发子卡片 & 可配按住显形后解盘时间（`0.15–3.5s`）** + **6 档统一速度（`2s~7s`）**、**单一自动保存策略（一键恢复默认）+ 16 形态×`1~5消` 单属性规则矩阵（一键全矩阵重置）+ 暗色模式高对比度适配**、**三语纯终态文案热切（599 词条）** 与 **免 403 限流双通道检更 + 应用内流式下载与 `FileProvider` 自动安装**。
-- [x] **Phase 4 首版与端侧双轨采集（`v0.5.0` – `v0.5.1` · 当前 `dev` 版本）**：
+- [x] **Phase 4 首版与端侧双轨采集（`v0.5.0` – `v0.6.0`）**：
   - `v0.5.0`：端侧多头轻量 CNN `AutoDoraOrbNetV1`（`84,191` 参数，BN 折叠 FP32 `.tflite` `340.4 KB`）+ 近零误报 `HybridFusionPolicy` 混合识盘正式上线；`CV-Rule-v2.7` 补齐 6 色元素着色邪能外焰、全版 30/30 血浴地形放行与 `?` 边缘漂移容差；Settings 支持 AI 混合识盘开关与规则 CV 无缝兜底。
   - `v0.5.1`：新增 **无上限双轨端侧训练素材自采集飞轮**（`Room v2` + `TrainingDataRepository` + 弹窗分类器 `classifyDarkModalForCapture` + `OverlayControllerService` 4 处采样钩子），同步收集「盘面静止双帧 + 1:1 编排 P0 人工纠错真值」与「战中长按敌技弹窗 / 关卡资讯」，在「设置」卡片提供统计、开关、一键导出 ZIP（`MediaStore.Downloads` + `FileProvider` 分享）与确认清空。
-- [x] **Phase 4.2 阶段 1A + 1C（`v0.6.0` · 当前 `dev` 版本）**：集成 `ONNX Runtime Mobile 1.32.0` + 纯离线繁简中文 `PP-OCRv5 Mobile`（`ch_PP-OCRv5_{det,rec}_mobile.onnx`）与 `TosEnemySkillParserV2`（全 63 项盘面敌技规则 + `HP/DEF 0` 与 UI 铬条拦截），实现战中弹窗静默识别、**灰字无视技能本地全文归档与实战动态跳过双轨分离**、`ActiveStrategyStore` 四级仲裁（`✦AI` 临时盾 + 换波自动清除）以及结果卡片 `BoardAutoPolicySummary` 盘面自动避障摘要。
-- [ ] **Phase 4 后续规划（`v0.6.x` – `v1.0.0`）**：治本级双帧整盘 `BoardMasterGridNet`、`EnemyIconNet` 图标识别、R8 / ABI 瘦身（Phase D）、可选 Shizuku 触控引擎与 `v1.0.0` 正式发布。
+  - `v0.6.0`：集成 `ONNX Runtime Mobile 1.32.0` + 纯离线繁简中文 `PP-OCRv5 Mobile`（`ch_PP-OCRv5_{det,rec}_mobile.onnx`）与 `TosEnemySkillParserV2`（全 63 项盘面敌技规则 + `HP/DEF 0` 与 UI 铬条拦截），实现战中弹窗静默识别、**灰字无视技能本地全文归档与实战动态跳过双轨分离**、`ActiveStrategyStore` 四级仲裁（`✦AI` 临时盾 + 换波自动清除）以及结果卡片 `BoardAutoPolicySummary` 盘面自动避障摘要。
+- [x] **Phase 4.2 非素材闭环与 Stage 2 训练管线就绪（`v0.7.0` · 当前 `dev` 版本）**：完成 **`StageWaveScriptParser` + Room `v3` 全波次剧本 & Wiki JSON 导入**（悬浮窗 `‹ W2/5 ›` 步进器）、**`WaveTransitionDetector` 上方敌区 dHash 无黑屏直切双保险换波检测**、**`BoardVisualHints` 视觉联动**（幽闭空间 AI 灰度判色增强 & 移形换影一键编排）、主控台 **敌技知识库浏览/待补导出/规则热更新/离线文案试算器**，以及 PC 端 **`ml/` 数据回流加权与 `BoardMasterGridNet` / `EnemyIconNet` ONNX 训练导出脚手架**。
+- [ ] **Phase 4 后续规划（`v0.8.x` – `v1.0.0`）**：素材回流后训练并接入 `BoardMasterGridNet` 与 `EnemyIconNet` ONNX 权重、R8 / ABI 瘦身（Phase D）、可选 Shizuku 触控引擎与 `v1.0.0` 正式发布。
 
 ---
 
@@ -160,7 +165,7 @@ AutoDora-NEXT/
 
 ### 1. 直接安装预编译 APK
 
-前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.5.0-release.apk`；`dev` 分支持续演进版本可本地构建 `AutoDora-NEXT-v0.6.0-release.apk`），安装后：
+前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.5.0-release.apk`；`dev` 分支持续演进版本可本地构建 `AutoDora-NEXT-v0.7.0-release.apk`），安装后：
 1. 在「概览 → 运行权限检查」依次授予 **悬浮窗**、**无障碍自动转珠** 与 **屏幕采集（选择「整个屏幕」）** 三项权限；
 2. 若在 Android 13+ / HyperOS / One UI / ColorOS 遇到无障碍开关受限，按概览页「无障碍受限设置指引」点击「应用详情 → 右上角 `⋮` → 允许受限设置」后即可开启；
 3. 后续版本可直接在 App 内「设置 → 关于与版本 → 检查更新 → 下载并安装」一键原地升级。
@@ -171,12 +176,18 @@ AutoDora-NEXT/
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 3. Android 全模块 JVM 单测（95/95）与 APK 构建
+### 3. Android 全模块 JVM 单测（100/100）与 APK 构建
 
 ```powershell
 # 运行全部模块单元测试并构建 Debug APK
 powershell -ExecutionPolicy Bypass -File android/build-android.ps1 core-model:test core-capture:testDebugUnitTest core-vision:testDebugUnitTest core-touch:testDebugUnitTest core-data:testDebugUnitTest app:testDebugUnitTest app:assembleDebug
 
 # 构建签名 Release APK
-powershell -ExecutionPolicy Bypass -File android/build-android.ps1 app:assembleRelease --max-workers=2
+powershell -ExecutionPolicy Bypass -File android/build-android.ps1 app:assembleRelease --max-workers=1
+```
+
+### 4. PC 端 ML 数据回流与 ONNX 导出单测（4/4）
+
+```powershell
+ml\.venv\Scripts\python.exe -m unittest discover -s ml\tests -v
 ```

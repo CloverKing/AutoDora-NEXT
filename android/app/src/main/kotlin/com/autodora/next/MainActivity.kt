@@ -35,6 +35,8 @@ import com.autodora.next.ui.AutoDoraTheme
 import com.autodora.next.ui.DashboardScreen
 import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.PermissionHealthState
+import com.autodora.next.vision.HotReloadEnemySkillParser
+import com.autodora.next.vision.StageWaveScriptParser
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -49,17 +51,33 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var teamPresetRepository: TeamPresetRepository
     @Inject lateinit var trainingDataRepository: TrainingDataRepository
+    @Inject lateinit var enemySkillParserHolder: HotReloadEnemySkillParser
+    @Inject lateinit var stageWaveScriptRepository: StageWaveScriptRepository
 
     private val overlayGrantedState = MutableStateFlow(false)
     private val notificationsGrantedState = MutableStateFlow(true)
     private val benchmarkReportState = MutableStateFlow<String?>(null)
     private val isBenchmarkingState = MutableStateFlow(false)
     private val isExportingTrainingState = MutableStateFlow(false)
+    private val customRulesTagState = MutableStateFlow("")
+    private val hasCustomRulesState = MutableStateFlow(false)
     private val updateCheckState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
     private var updateDownloadJob: Job? = null
     private var trainingExportJob: Job? = null
     private var pendingInstallApk: File? = null
     private var currentLanguage: AppLanguage = AppLanguage.SYSTEM
+
+    private val importRulesLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) importCustomRulesFromUri(uri)
+    }
+
+    private val importStageWikiLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) importStageScriptsFromUri(uri)
+    }
 
     private fun lctx(): Context = LocaleHelper.localizedContext(this, currentLanguage)
 
@@ -110,12 +128,14 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) {
         refreshPermissions()
+        syncCustomRulesStatus()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         refreshPermissions()
+        syncCustomRulesStatus()
 
         setContent {
             val settings by settingsRepository.settingsFlow.collectAsState(initial = AppSettings())
@@ -152,6 +172,12 @@ class MainActivity : ComponentActivity() {
                     val isBench by isBenchmarkingState.collectAsState()
                     val trainingStats by trainingDataRepository.observeStats().collectAsState(initial = TrainingStorageStats())
                     val isExportingTraining by isExportingTrainingState.collectAsState()
+                    val capturedEnemySkills by trainingDataRepository.observeCapturedEnemySkills().collectAsState(initial = emptyList())
+                    val savedStageScripts by stageWaveScriptRepository.observeScripts().collectAsState(initial = emptyList())
+                    val activeStageScript by ActiveStageScriptStore.activeScript.collectAsState()
+                    val activeStageWaveIndex by ActiveStageScriptStore.currentWaveIndex.collectAsState()
+                    val customRulesVersionTag by customRulesTagState.collectAsState()
+                    val hasCustomRules by hasCustomRulesState.collectAsState()
                     val updateState by updateCheckState.collectAsState()
 
                     DashboardScreen(
@@ -185,6 +211,43 @@ class MainActivity : ComponentActivity() {
                         isExportingTrainingData = isExportingTraining,
                         onExportTrainingData = { exportAndShareTrainingData() },
                         onClearTrainingData = { clearTrainingData() },
+                        capturedEnemySkills = capturedEnemySkills,
+                        savedStageScripts = savedStageScripts,
+                        activeStageScript = activeStageScript,
+                        activeStageWaveIndex = activeStageWaveIndex,
+                        rulesVersionLabel = customRulesVersionTag,
+                        hasCustomRulesOverride = hasCustomRules,
+                        onEvaluateRuleTestText = { raw -> enemySkillParserHolder.current().parsePlainText(raw) },
+                        onImportCustomRulesJson = {
+                            importRulesLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        onResetCustomRulesJson = {
+                            val cnt = enemySkillParserHolder.resetToBundled()
+                            syncCustomRulesStatus()
+                            Toast.makeText(
+                                this@MainActivity,
+                                lctx().getString(R.string.knowledge_rules_reset_ok_fmt, cnt),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        onImportStageWikiJson = {
+                            importStageWikiLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        onActivateStageScript = { script ->
+                            ActiveStageScriptStore.activateScript(script, script.waves.firstOrNull()?.waveIndex ?: 1)
+                            Toast.makeText(
+                                this@MainActivity,
+                                lctx().getString(R.string.knowledge_stage_activated_fmt, script.stageName, script.waves.size),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        onDeactivateStageScript = { ActiveStageScriptStore.clearActiveScript() },
+                        onDeleteStageScript = { key ->
+                            lifecycleScope.launch {
+                                if (activeStageScript?.stageKey == key) ActiveStageScriptStore.clearActiveScript()
+                                stageWaveScriptRepository.deleteScript(key)
+                            }
+                        },
                         onOpenGitHub = { openExternalUrl(UpdateChecker.GITHUB_REPO_URL) },
                         onCheckForUpdates = { checkForUpdates() },
                         onDownloadUpdate = { avail -> downloadAndInstallUpdate(avail) },
@@ -238,6 +301,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshPermissions()
+        syncCustomRulesStatus()
     }
 
     private fun refreshPermissions() {
@@ -418,6 +482,64 @@ class MainActivity : ComponentActivity() {
                 this@MainActivity,
                 lctx().getString(R.string.training_collect_cleared),
                 Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun syncCustomRulesStatus() {
+        val p = enemySkillParserHolder.current()
+        customRulesTagState.value = "${p.version} (${p.ruleCount})"
+        hasCustomRulesState.value = enemySkillParserHolder.hasCustomOverride()
+    }
+
+    private fun importCustomRulesFromUri(uri: Uri) {
+        lifecycleScope.launch {
+            val text = runCatching {
+                contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+            }.getOrNull()
+            if (text.isNullOrBlank()) {
+                Toast.makeText(this@MainActivity, lctx().getString(R.string.knowledge_import_failed), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val res = enemySkillParserHolder.validateAndSaveRulesJson(text)
+            res.onSuccess { count ->
+                syncCustomRulesStatus()
+                Toast.makeText(
+                    this@MainActivity,
+                    lctx().getString(R.string.knowledge_rules_imported_ok_fmt, count),
+                    Toast.LENGTH_LONG
+                ).show()
+            }.onFailure { err ->
+                Toast.makeText(
+                    this@MainActivity,
+                    "${lctx().getString(R.string.knowledge_import_failed)}: ${err.localizedMessage ?: ""}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun importStageScriptsFromUri(uri: Uri) {
+        lifecycleScope.launch {
+            val text = runCatching {
+                contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+            }.getOrNull()
+            if (text.isNullOrBlank()) {
+                Toast.makeText(this@MainActivity, lctx().getString(R.string.knowledge_import_failed), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val parsed = runCatching {
+                StageWaveScriptParser.parseStageWikiJson(text, enemySkillParserHolder.current())
+            }.getOrDefault(emptyList())
+            if (parsed.isEmpty()) {
+                Toast.makeText(this@MainActivity, lctx().getString(R.string.knowledge_stage_import_empty), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val saved = stageWaveScriptRepository.saveScripts(parsed)
+            Toast.makeText(
+                this@MainActivity,
+                lctx().getString(R.string.knowledge_stage_imported_ok_fmt, saved),
+                Toast.LENGTH_LONG
             ).show()
         }
     }

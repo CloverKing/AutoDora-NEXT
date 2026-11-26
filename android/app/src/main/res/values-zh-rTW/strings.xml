@@ -672,4 +672,43 @@
     <string name="policy_bloodbath">避血浴</string>
     <string name="policy_barrier">結界</string>
     <string name="policy_shattered">碎裂</string>
+
+    <!-- v0.7.0 Stage Wave Scripts, Visual Hints & Enemy Knowledge Hub -->
+    <string name="ov_toast_monochrome_ai_boost">✦AI 偵測到幽閉空間：已啟用灰階判色增強</string>
+    <string name="ov_toast_stage_script_loaded_fmt">✦AI 已載入 %1$d 波關卡劇本（目前 W%2$d）</string>
+    <string name="ov_toast_stage_wave_next_fmt">已切換至關卡劇本 Wave %1$d</string>
+    <string name="ov_toast_stage_script_done">關卡劇本已完結並清除臨時策略</string>
+    <string name="ov_hint_monochrome_pill">◐ 幽閉AI</string>
+    <string name="ov_hint_disguise_edit_pill">⚠ 移形換影·編排</string>
+    <string name="knowledge_rules_reset_ok_fmt">已恢復內建 %1$d 條敵技規則</string>
+    <string name="knowledge_stage_activated_fmt">已載入關卡劇本：%1$s（%2$d 波）</string>
+    <string name="knowledge_import_failed">讀取或解析 JSON 檔案失敗</string>
+    <string name="knowledge_rules_imported_ok_fmt">熱更新成功：已載入 %1$d 條敵技規則</string>
+    <string name="knowledge_stage_import_empty">檔案中未解析到有效波次關卡劇本</string>
+    <string name="knowledge_stage_imported_ok_fmt">成功匯入 %1$d 個關卡波次劇本</string>
+    <string name="section_enemy_knowledge_hub">敵技知識庫、熱更新與劇本</string>
+    <string name="knowledge_hub_badge_fmt">%1$d 技 · %2$d 關</string>
+    <string name="knowledge_hub_stats_fmt">已解析 %1$d · 已知非盤面 %2$d · 待補規則 %3$d · 關卡劇本 %4$d\n規則引擎版本：%5$s</string>
+    <string name="knowledge_btn_browse_skills">瀏覽知識庫</string>
+    <string name="knowledge_btn_copy_unparsed">複製待補規則</string>
+    <string name="knowledge_copied_unparsed_fmt">已複製 %1$d 條未解析敵技至剪貼簿</string>
+    <string name="knowledge_no_unparsed">目前沒有未解析的新敵技</string>
+    <string name="knowledge_tester_title">離線敵技文案試算器</string>
+    <string name="knowledge_tester_hint">貼上遊戲內敵技說明，即時預覽將產生的解版盾牌</string>
+    <string name="knowledge_tester_result_fmt">符合產出 %1$d 項解版策略：</string>
+    <string name="knowledge_btn_import_rules">匯入規則 JSON</string>
+    <string name="knowledge_btn_reset_rules">恢復內建規則</string>
+    <string name="knowledge_custom_rules_active">目前正在使用熱更新自訂規則檔案</string>
+    <string name="knowledge_btn_import_stages">匯入關卡劇本</string>
+    <string name="knowledge_stage_list_title">已儲存關卡波次劇本</string>
+    <string name="knowledge_stage_item_fmt">%1$d 波 · %2$s</string>
+    <string name="knowledge_btn_activate_stage">載入</string>
+    <string name="knowledge_btn_stop_stage">停用</string>
+    <string name="knowledge_dialog_title">本機敵技知識庫</string>
+    <string name="knowledge_filter_all">全部</string>
+    <string name="knowledge_filter_parsed">已解析</string>
+    <string name="knowledge_filter_unparsed">待補</string>
+    <string name="knowledge_filter_nonboard">非盤面</string>
+    <string name="knowledge_empty_list">目前篩選下暫無敵技紀錄</string>
+    <string name="knowledge_hit_fmt">命中 %1$d 次</string>
 </resources>

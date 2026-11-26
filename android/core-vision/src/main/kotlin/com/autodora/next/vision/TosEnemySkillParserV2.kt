@@ -1,5 +1,6 @@
 package com.autodora.next.vision
 
+import com.autodora.next.model.BoardVisualHints
 import com.autodora.next.model.Element
 import com.autodora.next.model.RaceType
 import com.autodora.next.model.ShieldCategory
@@ -27,38 +28,6 @@ data class EnemySkillRuleSet(
     val version: String = "2026.11-v2",
     val rules: List<EnemySkillRuleEntry> = emptyList()
 )
-
-data class BoardVisualHints(
-    val hasMonochrome: Boolean = false,
-    val hasDisguise: Boolean = false,
-    val hasBurning: Boolean = false,
-    val hasScorching: Boolean = false,
-    val hasSticky: Boolean = false,
-    val hasStorm: Boolean = false,
-    val hasShattered: Boolean = false,
-    val hasBlackHole: Boolean = false,
-    val hasBloodbath: Boolean = false,
-    val hasBarrier: Boolean = false,
-    val hasPurgatoryFire: Boolean = false,
-    val hasMud: Boolean = false,
-    val hasMiasma: Boolean = false
-) {
-    fun mergeWith(other: BoardVisualHints): BoardVisualHints = BoardVisualHints(
-        hasMonochrome = hasMonochrome || other.hasMonochrome,
-        hasDisguise = hasDisguise || other.hasDisguise,
-        hasBurning = hasBurning || other.hasBurning,
-        hasScorching = hasScorching || other.hasScorching,
-        hasSticky = hasSticky || other.hasSticky,
-        hasStorm = hasStorm || other.hasStorm,
-        hasShattered = hasShattered || other.hasShattered,
-        hasBlackHole = hasBlackHole || other.hasBlackHole,
-        hasBloodbath = hasBloodbath || other.hasBloodbath,
-        hasBarrier = hasBarrier || other.hasBarrier,
-        hasPurgatoryFire = hasPurgatoryFire || other.hasPurgatoryFire,
-        hasMud = hasMud || other.hasMud,
-        hasMiasma = hasMiasma || other.hasMiasma
-    )
-}
 
 object EnemySkillParseStatus {
     const val PARSED = "PARSED"
@@ -96,6 +65,9 @@ data class EnemySkillParseResult(
  *    bypassed skills never over-constrain the C++20 solver during battle.
  */
 class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
+
+    val version: String = ruleSet.version
+    val ruleCount: Int get() = compiled.size
 
     private data class CompiledRule(
         val entry: EnemySkillRuleEntry,
@@ -959,5 +931,56 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             '＋' to '+', '－' to '-', '×' to 'x', '≧' to '≥', '＞' to '>',
             '～' to '~'
         )
+    }
+}
+
+/**
+ * Thread-safe hot-reloadable wrapper around [TosEnemySkillParserV2] backed by
+ * `context.filesDir/tos_enemy_skill_rules_v2.json` with instant fallback to bundled APK asset.
+ */
+class HotReloadEnemySkillParser(private val context: android.content.Context) {
+
+    @Volatile
+    private var parser: TosEnemySkillParserV2 = TosEnemySkillParserV2.loadFromContext(context)
+
+    fun current(): TosEnemySkillParserV2 = parser
+
+    fun hasCustomOverride(): Boolean {
+        val f = File(context.filesDir, RULES_ASSET_V2)
+        return f.isFile && f.length() > 16L
+    }
+
+    @Synchronized
+    fun reload(): TosEnemySkillParserV2 {
+        val next = TosEnemySkillParserV2.loadFromContext(context)
+        parser = next
+        return next
+    }
+
+    @Synchronized
+    fun validateAndSaveRulesJson(jsonText: String): Result<Int> {
+        return runCatching {
+            val decoded = SHARED_JSON.decodeFromString<EnemySkillRuleSet>(jsonText)
+            require(decoded.rules.isNotEmpty()) { "Rule JSON contains 0 rules" }
+            val next = TosEnemySkillParserV2(decoded)
+            require(next.ruleCount > 0) { "No valid regex rules compiled" }
+            File(context.filesDir, RULES_ASSET_V2).writeText(jsonText, Charsets.UTF_8)
+            parser = next
+            next.ruleCount
+        }
+    }
+
+    @Synchronized
+    fun resetToBundled(): Int {
+        val f = File(context.filesDir, RULES_ASSET_V2)
+        if (f.exists()) f.delete()
+        val next = TosEnemySkillParserV2.loadFromContext(context)
+        parser = next
+        return next.ruleCount
+    }
+
+    companion object {
+        private const val RULES_ASSET_V2 = "tos_enemy_skill_rules_v2.json"
+        private val SHARED_JSON = Json { ignoreUnknownKeys = true }
     }
 }

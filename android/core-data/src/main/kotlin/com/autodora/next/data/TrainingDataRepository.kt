@@ -382,6 +382,8 @@ class TrainingDataRepository(
     private var lastModalHash: Long = 0L
     private var lastModalRecordMs: Long = 0L
 
+    fun observeCapturedEnemySkills(): Flow<List<CapturedEnemySkillEntity>> = enemySkillDao.observeAll()
+
     fun observeStats(): Flow<TrainingStorageStats> = combine(
         sampleDao.observeTotalCount(),
         sampleDao.observeBoardCount(),
@@ -783,6 +785,18 @@ class TrainingDataRepository(
     }
 
     companion object {
+        fun formatUnparsedSkillsReport(skills: List<CapturedEnemySkillEntity>): String {
+            val unparsed = skills.filter { it.parseStatus == "UNPARSED" }
+            if (unparsed.isEmpty()) return ""
+            return buildString {
+                appendLine("# AutoDora-NEXT Unparsed Enemy Skills (${unparsed.size})")
+                for (s in unparsed) {
+                    appendLine("- [${s.skillHash}] ${s.titleZhTw} (hits=${s.hitCount}, src=${s.sourceType})")
+                    appendLine("  ${s.rawBodyZhTw.replace('\n', ' ')}")
+                }
+            }.trim()
+        }
+
         fun create(context: Context): TrainingDataRepository {
             val appCtx = context.applicationContext
             return TrainingDataRepository(appCtx, AutoDoraDatabase.getInstance(appCtx))

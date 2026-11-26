@@ -46,6 +46,15 @@ data class CapturedEnemySkillEntity(
     val lastSeenMs: Long
 )
 
+@Entity(tableName = "stage_wave_scripts")
+data class StageWaveScriptEntity(
+    @PrimaryKey val stageKey: String,
+    val stageName: String,
+    val wavesJson: String,
+    val sourceType: String,
+    val updatedAtMs: Long
+)
+
 @Dao
 interface TeamPresetDao {
     @Query("SELECT * FROM team_presets ORDER BY isBuiltIn DESC, updatedAtMs DESC")
@@ -109,6 +118,9 @@ interface CapturedEnemySkillDao {
     suspend fun getByHash(hash: String): CapturedEnemySkillEntity?
 
     @Query("SELECT * FROM captured_enemy_skills ORDER BY lastSeenMs DESC")
+    fun observeAll(): Flow<List<CapturedEnemySkillEntity>>
+
+    @Query("SELECT * FROM captured_enemy_skills ORDER BY lastSeenMs DESC")
     suspend fun getAllOrdered(): List<CapturedEnemySkillEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -118,19 +130,45 @@ interface CapturedEnemySkillDao {
     suspend fun deleteAll()
 }
 
+@Dao
+interface StageWaveScriptDao {
+    @Query("SELECT * FROM stage_wave_scripts ORDER BY updatedAtMs DESC")
+    fun observeAll(): Flow<List<StageWaveScriptEntity>>
+
+    @Query("SELECT COUNT(*) FROM stage_wave_scripts")
+    fun observeCount(): Flow<Int>
+
+    @Query("SELECT * FROM stage_wave_scripts WHERE stageKey = :stageKey LIMIT 1")
+    suspend fun getByKey(stageKey: String): StageWaveScriptEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: StageWaveScriptEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<StageWaveScriptEntity>)
+
+    @Query("DELETE FROM stage_wave_scripts WHERE stageKey = :stageKey")
+    suspend fun deleteByKey(stageKey: String)
+
+    @Query("DELETE FROM stage_wave_scripts")
+    suspend fun deleteAll()
+}
+
 @Database(
     entities = [
         TeamPresetEntity::class,
         TrainingSampleEntity::class,
-        CapturedEnemySkillEntity::class
+        CapturedEnemySkillEntity::class,
+        StageWaveScriptEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AutoDoraDatabase : RoomDatabase() {
     abstract fun teamPresetDao(): TeamPresetDao
     abstract fun trainingSampleDao(): TrainingSampleDao
     abstract fun capturedEnemySkillDao(): CapturedEnemySkillDao
+    abstract fun stageWaveScriptDao(): StageWaveScriptDao
 
     companion object {
         @Volatile
@@ -177,6 +215,23 @@ abstract class AutoDoraDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `stage_wave_scripts` (
+                        `stageKey` TEXT NOT NULL,
+                        `stageName` TEXT NOT NULL,
+                        `wavesJson` TEXT NOT NULL,
+                        `sourceType` TEXT NOT NULL,
+                        `updatedAtMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`stageKey`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getInstance(context: Context): AutoDoraDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -184,7 +239,7 @@ abstract class AutoDoraDatabase : RoomDatabase() {
                     AutoDoraDatabase::class.java,
                     "autodora_next.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { instance = it }

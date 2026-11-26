@@ -61,9 +61,12 @@ import com.autodora.next.vision.BoardRecognizer
 import com.autodora.next.vision.DarkModalKind
 import com.autodora.next.vision.DirectBitmapVisionFrame
 import com.autodora.next.vision.FlashRevealMemoryTracker
+import com.autodora.next.vision.HotReloadEnemySkillParser
+import com.autodora.next.vision.HybridBoardRecognizer
 import com.autodora.next.vision.PaddleOcrOnnxEngine
 import com.autodora.next.vision.RecognitionResult
-import com.autodora.next.vision.TosEnemySkillParserV2
+import com.autodora.next.vision.StageWaveScriptParser
+import com.autodora.next.vision.WaveTransitionDetector
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -92,7 +95,8 @@ class OverlayControllerService : Service() {
     @Inject lateinit var touchExecutor: TouchExecutor
     @Inject lateinit var trainingDataRepository: TrainingDataRepository
     @Inject lateinit var paddleOcrOnnxEngine: PaddleOcrOnnxEngine
-    @Inject lateinit var enemySkillParser: TosEnemySkillParserV2
+    @Inject lateinit var enemySkillParserHolder: HotReloadEnemySkillParser
+    @Inject lateinit var stageWaveScriptRepository: StageWaveScriptRepository
 
     private lateinit var windowManager: WindowManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -104,6 +108,9 @@ class OverlayControllerService : Service() {
     private var presetRecords: List<TeamPresetRecord> = emptyList()
     private var activeWaveChips: List<WaveShieldChip> = emptyList()
     private var bypassedGreySkills: List<BypassedEnemySkill> = emptyList()
+    private var activeVisualHints: BoardVisualHints = BoardVisualHints()
+    private var activeStageScript: StageWaveScript? = null
+    private var activeStageWaveIndex: Int = 1
     private lateinit var palette: OverlayPalette
 
     // Overlay views
@@ -199,6 +206,7 @@ class OverlayControllerService : Service() {
     private var lastOcrModalTimeMs: Long = 0L
     @Volatile private var isEnemyOcrRunning = false
     private var waveAutoClearedForTransition = false
+    private val waveTransitionDetector = WaveTransitionDetector()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -295,6 +303,25 @@ class OverlayControllerService : Service() {
         serviceScope.launch {
             ActiveStrategyStore.bypassedGreySkills.collectLatest { bypassed ->
                 bypassedGreySkills = bypassed
+                refreshActiveShieldStrip()
+            }
+        }
+        serviceScope.launch {
+            ActiveStrategyStore.activeVisualHints.collectLatest { hints ->
+                activeVisualHints = hints
+                (boardRecognizer as? HybridBoardRecognizer)?.activeVisualHints = hints
+                refreshActiveShieldStrip()
+            }
+        }
+        serviceScope.launch {
+            ActiveStageScriptStore.activeScript.collectLatest { script ->
+                activeStageScript = script
+                refreshActiveShieldStrip()
+            }
+        }
+        serviceScope.launch {
+            ActiveStageScriptStore.currentWaveIndex.collectLatest { waveIdx ->
+                activeStageWaveIndex = waveIdx
                 refreshActiveShieldStrip()
             }
         }
@@ -2275,8 +2302,9 @@ class OverlayControllerService : Service() {
                                                 isEnemyOcrRunning = true
                                                 serviceScope.launch(Dispatchers.Default) {
                                                     try {
+                                                        val parser = enemySkillParserHolder.current()
                                                         val ocrRes = paddleOcrOnnxEngine.recognize(bmpCopy, modalKind)
-                                                        val parseRes = enemySkillParser.parseLines(ocrRes.lines)
+                                                        val parseRes = parser.parseLines(ocrRes.lines)
                                                         if (parseRes.allBlocks.isNotEmpty()) {
                                                             // Always archive EVERY skill block (including greyed-out bypassed skills!)
                                                             trainingDataRepository.recordCapturedEnemySkills(
@@ -2300,7 +2328,9 @@ class OverlayControllerService : Service() {
                                                                 incoming = parseRes.activeChips,
                                                                 bypassed = bypassedInputs
                                                             )
-                                                            if (applied > 0 || bypassedInputs.isNotEmpty()) {
+                                                            ActiveStrategyStore.setActiveVisualHints(parseRes.combinedHints)
+                                                            waveTransitionDetector.reset()
+                                                            if (applied > 0 || bypassedInputs.isNotEmpty() || parseRes.combinedHints.hasMonochrome) {
                                                                 withContext(Dispatchers.Main) {
                                                                     val msg = buildString {
                                                                         if (applied > 0) {
@@ -2309,13 +2339,36 @@ class OverlayControllerService : Service() {
                                                                         if (bypassedInputs.isNotEmpty()) {
                                                                             append(lctx.getString(R.string.ov_toast_ocr_bypassed_fmt, bypassedInputs.size))
                                                                         }
+                                                                        if (parseRes.combinedHints.hasMonochrome) {
+                                                                            if (isNotEmpty()) append(' ')
+                                                                            append(lctx.getString(R.string.ov_toast_monochrome_ai_boost))
+                                                                        }
                                                                     }.trim()
                                                                     if (msg.isNotEmpty()) toast(msg)
                                                                 }
                                                             }
-                                                        } else if (parseRes.allBlocks.isNotEmpty()) {
-                                                            withContext(Dispatchers.Main) {
-                                                                toast(lctx.getString(R.string.ov_toast_ocr_stage_archived_fmt, parseRes.allBlocks.size))
+                                                        } else {
+                                                            val stageParsed = StageWaveScriptParser.parseStageInfoLines(ocrRes.lines, parser)
+                                                            if (stageParsed != null) {
+                                                                stageWaveScriptRepository.saveScript(stageParsed.script)
+                                                                val entry = ActiveStageScriptStore.activateScript(
+                                                                    stageParsed.script,
+                                                                    stageParsed.detectedCurrentWave ?: 1
+                                                                )
+                                                                waveTransitionDetector.reset()
+                                                                withContext(Dispatchers.Main) {
+                                                                    toast(
+                                                                        lctx.getString(
+                                                                            R.string.ov_toast_stage_script_loaded_fmt,
+                                                                            stageParsed.script.waves.size,
+                                                                            entry?.waveIndex ?: 1
+                                                                        )
+                                                                    )
+                                                                }
+                                                            } else if (parseRes.allBlocks.isNotEmpty()) {
+                                                                withContext(Dispatchers.Main) {
+                                                                    toast(lctx.getString(R.string.ov_toast_ocr_stage_archived_fmt, parseRes.allBlocks.size))
+                                                                }
                                                             }
                                                         }
                                                     } catch (_: Throwable) {
@@ -2347,12 +2400,7 @@ class OverlayControllerService : Service() {
                             if (consecutiveNonBattleTicks >= 2) {
                                 if (watchStatus == 3 && !waveAutoClearedForTransition) {
                                     waveAutoClearedForTransition = true
-                                    lastOcrModalHash = 0L
-                                    lastOcrModalTimeMs = 0L
-                                    val clearedAuto = ActiveStrategyStore.clearAutoDetectedChips()
-                                    if (clearedAuto > 0) {
-                                        toast(lctx.getString(R.string.ov_toast_wave_auto_cleared))
-                                    }
+                                    handleWaveAdvanced()
                                 }
                                 if (watchStatus == 3 && savedEditedBoard != null) {
                                     savedEditedBoard = null
@@ -2384,6 +2432,16 @@ class OverlayControllerService : Service() {
                                 if (enemyPopupCoveringBoard) {
                                     enemyPopupCoveringBoard = false
                                     refreshPathCanvas()
+                                }
+                                if (activeStageScript != null || activeWaveChips.any { it.autoDetected }) {
+                                    val upperHash = withContext(Dispatchers.Default) {
+                                        computeUpperEnemyDHash(bmp, geom.topPx.toInt())
+                                    }
+                                    if (upperHash != 0L &&
+                                        waveTransitionDetector.onBattleUpperZoneHash(upperHash, TrainingSampleHasher::hammingDistance)
+                                    ) {
+                                        handleWaveAdvanced()
+                                    }
                                 }
                                 if (!showPath &&
                                     !boardEditorMode &&
@@ -2443,6 +2501,48 @@ class OverlayControllerService : Service() {
                 }
             }
         }
+    }
+
+    private fun handleWaveAdvanced() {
+        lastOcrModalHash = 0L
+        lastOcrModalTimeMs = 0L
+        waveTransitionDetector.reset()
+        if (ActiveStageScriptStore.activeScript.value != null) {
+            val nextEntry = ActiveStageScriptStore.advanceWaveIfActive()
+            if (nextEntry != null) {
+                toast(lctx.getString(R.string.ov_toast_stage_wave_next_fmt, nextEntry.waveIndex))
+            } else {
+                toast(lctx.getString(R.string.ov_toast_stage_script_done))
+            }
+        } else {
+            val clearedAuto = ActiveStrategyStore.clearAutoDetectedChips()
+            if (clearedAuto > 0) {
+                toast(lctx.getString(R.string.ov_toast_wave_auto_cleared))
+            }
+        }
+    }
+
+    private fun computeUpperEnemyDHash(bmp: android.graphics.Bitmap, boardTopPx: Int): Long {
+        if (boardTopPx < 120 || bmp.width < 64) return 0L
+        val y0 = (bmp.height * 0.05f).toInt().coerceIn(0, boardTopPx - 48)
+        val y1 = (boardTopPx - 36).coerceIn(y0 + 32, bmp.height - 2)
+        val x0 = (bmp.width * 0.08f).toInt()
+        val x1 = (bmp.width * 0.92f).toInt()
+        val rw = (x1 - x0).coerceAtLeast(9)
+        val rh = (y1 - y0).coerceAtLeast(8)
+        val luma = IntArray(9 * 8)
+        for (gy in 0 until 8) {
+            val py = (y0 + ((gy + 0.5f) / 8f * rh)).toInt().coerceIn(0, bmp.height - 1)
+            for (gx in 0 until 9) {
+                val px = (x0 + ((gx + 0.5f) / 9f * rw)).toInt().coerceIn(0, bmp.width - 1)
+                val argb = bmp.getPixel(px, py)
+                val r = (argb ushr 16) and 0xFF
+                val g = (argb ushr 8) and 0xFF
+                val b = argb and 0xFF
+                luma[gy * 9 + gx] = (r * 30 + g * 59 + b * 11) / 100
+            }
+        }
+        return TrainingSampleHasher.computeDHashFromLumaGrid(luma)
     }
 
     private fun computePopupInteriorDHash(bmp: android.graphics.Bitmap): Long {
@@ -2780,12 +2880,99 @@ class OverlayControllerService : Service() {
         activeShieldRow.removeAllViews()
         val hasSaved = savedEditedBoard != null
         val hasBypassed = bypassedGreySkills.isNotEmpty()
-        if ((activeWaveChips.isEmpty() && !hasSaved && !hasBypassed) || !toolbarExpanded) {
+        val hasScript = activeStageScript != null
+        val hasVisualBadges = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise
+        if ((activeWaveChips.isEmpty() && !hasSaved && !hasBypassed && !hasScript && !hasVisualBadges) || !toolbarExpanded) {
             activeShieldScroll.visibility = View.GONE
             clampControlWindowToScreen(anchorRight)
             return
         }
         val p = palette
+        val activeScriptNow = activeStageScript
+        if (activeScriptNow != null && activeScriptNow.waves.isNotEmpty()) {
+            val stepperBg = if (p.isDark) Color.rgb(28, 48, 72) else Color.rgb(227, 242, 253)
+            val stepperFg = if (p.isDark) Color.rgb(144, 202, 249) else Color.rgb(13, 71, 161)
+            val stepperStroke = Color.rgb(33, 150, 243)
+            val totalW = activeScriptNow.waves.lastOrNull()?.waveIndex ?: activeScriptNow.waves.size
+            val stepperRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), dp(1), dp(4), dp(1))
+                background = roundedBg(stepperBg, dp(6).toFloat(), stepperStroke)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(3) }
+            }
+            fun mkStepBtn(txt: String, onClick: () -> Unit) = TextView(this).apply {
+                text = txt
+                textSize = 9f
+                typeface = Typeface.DEFAULT_BOLD
+                setSingleLine(true)
+                setTextColor(stepperFg)
+                setPadding(dp(3), dp(1), dp(3), dp(1))
+                setOnClickListener { onClick() }
+            }
+            stepperRow.addView(mkStepBtn("‹") {
+                val e = ActiveStageScriptStore.stepWave(-1)
+                if (e != null) toast(lctx.getString(R.string.ov_toast_stage_wave_next_fmt, e.waveIndex))
+            })
+            stepperRow.addView(TextView(this).apply {
+                text = "W$activeStageWaveIndex/$totalW"
+                textSize = 9f
+                typeface = Typeface.DEFAULT_BOLD
+                setSingleLine(true)
+                setTextColor(stepperFg)
+                setPadding(dp(2), dp(1), dp(2), dp(1))
+            })
+            stepperRow.addView(mkStepBtn("›") {
+                val e = ActiveStageScriptStore.stepWave(+1)
+                if (e != null) toast(lctx.getString(R.string.ov_toast_stage_wave_next_fmt, e.waveIndex))
+            })
+            stepperRow.addView(mkStepBtn("×") { ActiveStageScriptStore.clearActiveScript() })
+            activeShieldRow.addView(stepperRow)
+        }
+        if (activeVisualHints.hasMonochrome) {
+            val monoPill = TextView(this).apply {
+                text = lctx.getString(R.string.ov_hint_monochrome_pill)
+                textSize = 9f
+                typeface = Typeface.DEFAULT_BOLD
+                setSingleLine(true)
+                setTextColor(if (p.isDark) Color.rgb(206, 147, 216) else Color.rgb(74, 20, 140))
+                setPadding(dp(5), dp(2), dp(5), dp(2))
+                background = roundedBg(
+                    if (p.isDark) Color.rgb(48, 28, 62) else Color.rgb(243, 229, 245),
+                    dp(6).toFloat(),
+                    Color.rgb(156, 39, 176)
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(3) }
+            }
+            activeShieldRow.addView(monoPill)
+        }
+        if (activeVisualHints.hasDisguise) {
+            val disguisePill = TextView(this).apply {
+                text = lctx.getString(R.string.ov_hint_disguise_edit_pill)
+                textSize = 9f
+                typeface = Typeface.DEFAULT_BOLD
+                setSingleLine(true)
+                setTextColor(if (p.isDark) Color.rgb(255, 224, 130) else Color.rgb(230, 81, 0))
+                setPadding(dp(5), dp(2), dp(5), dp(2))
+                background = roundedBg(
+                    if (p.isDark) Color.rgb(70, 44, 12) else Color.rgb(255, 248, 225),
+                    dp(6).toFloat(),
+                    Color.rgb(255, 152, 0)
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(3) }
+                setOnClickListener { setBoardEditorMode(true) }
+            }
+            activeShieldRow.addView(disguisePill)
+        }
         if (hasSaved) {
             val savedBg = if (p.isDark) Color.rgb(72, 46, 12) else Color.rgb(255, 243, 224)
             val savedFg = if (p.isDark) Color.rgb(255, 213, 79) else Color.rgb(191, 54, 12)

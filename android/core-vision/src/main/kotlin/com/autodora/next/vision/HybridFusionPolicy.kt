@@ -1,6 +1,7 @@
 package com.autodora.next.vision
 
 import com.autodora.next.model.BoardState
+import com.autodora.next.model.BoardVisualHints
 import com.autodora.next.model.CellState
 import com.autodora.next.model.Element
 import com.autodora.next.model.HazardBits
@@ -216,7 +217,8 @@ object HybridFusionPolicy {
         cvResult: RecognitionResult,
         predictions: List<CellModelPrediction>,
         totalElapsedMs: Double = cvResult.elapsedMs,
-        config: HybridFusionConfig = HybridFusionConfig()
+        config: HybridFusionConfig = HybridFusionConfig(),
+        visualHints: BoardVisualHints = BoardVisualHints()
     ): RecognitionResult {
         val board = cvResult.board
         val total = board.cols * board.rows
@@ -299,7 +301,7 @@ object HybridFusionPolicy {
             // 3) Fuse element
             val (cnnEl, cnnElProb) = pred.bestElement()
             val (cnnMatchEl, cnnMatchProb) = pred.bestMatchableElement()
-            val isMono = (fusedHazards and HazardBits.BLACK_WHITE) != 0
+            val isMono = (fusedHazards and HazardBits.BLACK_WHITE) != 0 || visualHints.hasMonochrome
             val isCvQuestionOrUnknown = !cvCell.element.isMatchable ||
                 (cvCell.hazards and (HazardBits.QUESTION or HazardBits.BLACK_WHITE)) != 0
 

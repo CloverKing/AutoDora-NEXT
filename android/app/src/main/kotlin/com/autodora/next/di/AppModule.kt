@@ -2,14 +2,15 @@ package com.autodora.next.di
 
 import android.content.Context
 import com.autodora.next.data.SettingsRepository
+import com.autodora.next.data.StageWaveScriptRepository
 import com.autodora.next.data.TeamPresetRepository
 import com.autodora.next.data.TrainingDataRepository
 import com.autodora.next.touch.AccessibilityTouchExecutor
 import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.vision.BoardRecognizer
+import com.autodora.next.vision.HotReloadEnemySkillParser
 import com.autodora.next.vision.HybridBoardRecognizer
 import com.autodora.next.vision.PaddleOcrOnnxEngine
-import com.autodora.next.vision.TosEnemySkillParserV2
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -41,6 +42,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideStageWaveScriptRepository(@ApplicationContext context: Context): StageWaveScriptRepository {
+        return StageWaveScriptRepository.create(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideBoardRecognizer(@ApplicationContext context: Context): BoardRecognizer {
         return HybridBoardRecognizer(context)
     }
@@ -53,8 +60,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideTosEnemySkillParserV2(@ApplicationContext context: Context): TosEnemySkillParserV2 {
-        return TosEnemySkillParserV2.loadFromContext(context)
+    fun provideHotReloadEnemySkillParser(@ApplicationContext context: Context): HotReloadEnemySkillParser {
+        return HotReloadEnemySkillParser(context)
     }
 
     @Provides

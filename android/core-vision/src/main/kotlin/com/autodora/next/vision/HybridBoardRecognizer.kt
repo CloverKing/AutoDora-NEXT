@@ -3,6 +3,7 @@ package com.autodora.next.vision
 import android.content.Context
 import android.graphics.Bitmap
 import com.autodora.next.model.BoardGeometry
+import com.autodora.next.model.BoardVisualHints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -26,6 +27,9 @@ class HybridBoardRecognizer(
 
     @Volatile
     var useAiModel: Boolean = true
+
+    @Volatile
+    var activeVisualHints: BoardVisualHints = BoardVisualHints()
 
     override val name: String
         get() = if (useAiModel && hasAiModel()) "Hybrid-LiteRT+CV-v1" else cvFallback.name
@@ -85,7 +89,8 @@ class HybridBoardRecognizer(
                 cvResult = cvResult,
                 predictions = preds,
                 totalElapsedMs = totalMs,
-                config = liteRtClassifier.fusionConfig
+                config = liteRtClassifier.fusionConfig,
+                visualHints = activeVisualHints
             )
         }
 
