@@ -711,4 +711,33 @@
     <string name="knowledge_filter_nonboard">Non-board</string>
     <string name="knowledge_empty_list">No enemy skills match the current filter</string>
     <string name="knowledge_hit_fmt">Hits: %1$d</string>
+
+    <!-- v0.7.1 Static Capture Gate, Enemy Skill Feedback & Knowledge Base CRUD -->
+    <string name="ov_toast_ocr_recognized_info_fmt">✦AI recognized &amp; archived: %1$s</string>
+    <string name="knowledge_btn_add">+ Add</string>
+    <string name="knowledge_btn_clean_noise">Clean Noise</string>
+    <string name="knowledge_btn_reparse_all">Re-parse All</string>
+    <string name="knowledge_btn_clear_all">Clear All</string>
+    <string name="knowledge_btn_delete">Delete</string>
+    <string name="knowledge_search_hint">Search title, skill text, stage or shields…</string>
+    <string name="knowledge_add_dialog_title">Add Enemy Skill Entry</string>
+    <string name="knowledge_edit_dialog_title">Edit Enemy Skill Entry</string>
+    <string name="knowledge_field_title">Skill Title (optional)</string>
+    <string name="knowledge_field_title_hint">Leave empty to auto-extract from 【Title】</string>
+    <string name="knowledge_field_body">Skill Description Text</string>
+    <string name="knowledge_field_body_hint">Enter or paste the in-game skill description</string>
+    <string name="knowledge_field_stage">Stage Name (optional)</string>
+    <string name="knowledge_field_wave">Wave</string>
+    <string name="knowledge_live_preview_fmt">Live preview: %1$s · %2$d shield chips</string>
+    <string name="knowledge_btn_save">Save</string>
+    <string name="knowledge_delete_confirm_title">Delete Skill Entry?</string>
+    <string name="knowledge_delete_confirm_body">Remove \"%1$s\" from your local skill knowledge DB?</string>
+    <string name="knowledge_clear_confirm_title">Clear Enemy Skill DB?</string>
+    <string name="knowledge_clear_confirm_body">Permanently delete all locally captured enemy skill entries? This cannot be undone.</string>
+    <string name="knowledge_saved_ok">Skill entry saved to knowledge DB</string>
+    <string name="knowledge_deleted_ok">Deleted enemy skill entry</string>
+    <string name="knowledge_cleared_ok">Cleared local enemy skill DB</string>
+    <string name="knowledge_cleaned_noise_fmt">Cleaned %1$d non-skill UI noise entries</string>
+    <string name="knowledge_no_noise_found">Knowledge DB is already clean — no UI noise found</string>
+    <string name="knowledge_reparsed_fmt">Re-evaluated %1$d entries (%2$d updated)</string>
 </resources>

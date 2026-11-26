@@ -62,6 +62,12 @@ data class CapturedEnemySkillInput(
     val mappedChips: List<WaveShieldChip>
 )
 
+data class ReparsedEnemySkillFields(
+    val titleZhTw: String,
+    val parseStatus: String,
+    val mappedChips: List<WaveShieldChip>
+)
+
 @Serializable
 data class TrainingSampleSidecar(
     val schemaVersion: Int = 1,
@@ -429,9 +435,11 @@ class TrainingDataRepository(
         val isEditorCorrection = domain == TrainingSampleDomains.BOARD_EDITOR_CORRECTION
         if (!isEditorCorrection) {
             synchronized(dedupLock) {
+                val minWindowMs = if (domain == TrainingSampleDomains.BOARD_AUTO_IDLE) 60_000L else 20_000L
+                val maxHamming = if (domain == TrainingSampleDomains.BOARD_AUTO_IDLE) 5 else 4
                 if (lastBoardRecordMs > 0L &&
-                    (now - lastBoardRecordMs) < 20_000L &&
-                    TrainingSampleHasher.hammingDistance(hash, lastBoardHash) <= 4
+                    (now - lastBoardRecordMs) < minWindowMs &&
+                    TrainingSampleHasher.hammingDistance(hash, lastBoardHash) <= maxHamming
                 ) {
                     return
                 }
@@ -583,8 +591,8 @@ class TrainingDataRepository(
         val now = System.currentTimeMillis()
         synchronized(dedupLock) {
             if (lastModalRecordMs > 0L &&
-                (now - lastModalRecordMs) < 12_000L &&
-                TrainingSampleHasher.hammingDistance(hash, lastModalHash) <= 4
+                (now - lastModalRecordMs) < 25_000L &&
+                TrainingSampleHasher.hammingDistance(hash, lastModalHash) <= 6
             ) {
                 return
             }
@@ -704,6 +712,82 @@ class TrainingDataRepository(
         )
     }
 
+    suspend fun upsertManualEnemySkill(
+        oldHash: String?,
+        newHash: String,
+        titleZhTw: String,
+        rawBodyZhTw: String,
+        stageName: String,
+        waveIndex: Int,
+        parseStatus: String,
+        mappedChips: List<WaveShieldChip>,
+        sourceType: String = "MANUAL_EDIT"
+    ) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val prev = (oldHash?.let { enemySkillDao.getByHash(it) }) ?: enemySkillDao.getByHash(newHash)
+        if (!oldHash.isNullOrBlank() && oldHash != newHash) {
+            enemySkillDao.deleteByHash(oldHash)
+        }
+        val entity = CapturedEnemySkillEntity(
+            skillHash = newHash,
+            titleZhTw = titleZhTw.trim(),
+            rawBodyZhTw = rawBodyZhTw.trim(),
+            sourceType = prev?.sourceType ?: sourceType,
+            stageName = stageName.trim(),
+            waveIndex = waveIndex.coerceAtLeast(0),
+            parseStatus = parseStatus,
+            mappedChipsJson = json.encodeToString(mappedChips),
+            hitCount = (prev?.hitCount ?: 1).coerceAtLeast(1),
+            firstSeenMs = prev?.firstSeenMs ?: now,
+            lastSeenMs = now
+        )
+        enemySkillDao.upsert(entity)
+    }
+
+    suspend fun deleteEnemySkill(skillHash: String) = withContext(Dispatchers.IO) {
+        enemySkillDao.deleteByHash(skillHash)
+    }
+
+    suspend fun clearAllEnemySkills() = withContext(Dispatchers.IO) {
+        enemySkillDao.deleteAll()
+    }
+
+    suspend fun pruneEnemySkills(shouldDelete: (CapturedEnemySkillEntity) -> Boolean): Int = withContext(Dispatchers.IO) {
+        val all = enemySkillDao.getAllOrdered()
+        val toDelete = all.filter(shouldDelete).map { it.skillHash }
+        if (toDelete.isEmpty()) return@withContext 0
+        for (chunk in toDelete.chunked(200)) {
+            enemySkillDao.deleteByHashes(chunk)
+        }
+        toDelete.size
+    }
+
+    suspend fun reparseAllEnemySkills(
+        reparse: (CapturedEnemySkillEntity) -> ReparsedEnemySkillFields
+    ): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        val all = enemySkillDao.getAllOrdered()
+        var updated = 0
+        for (entity in all) {
+            val res = reparse(entity)
+            val newChipsJson = json.encodeToString(res.mappedChips)
+            val newTitle = res.titleZhTw.ifBlank { entity.titleZhTw }
+            if (entity.parseStatus != res.parseStatus ||
+                entity.mappedChipsJson != newChipsJson ||
+                entity.titleZhTw != newTitle
+            ) {
+                enemySkillDao.upsert(
+                    entity.copy(
+                        titleZhTw = newTitle,
+                        parseStatus = res.parseStatus,
+                        mappedChipsJson = newChipsJson
+                    )
+                )
+                updated++
+            }
+        }
+        all.size to updated
+    }
+
     suspend fun clearAllCollectedSamples() = withContext(Dispatchers.IO) {
         sampleDao.deleteAll()
         inboxRoot.deleteRecursively()
@@ -785,6 +869,15 @@ class TrainingDataRepository(
     }
 
     companion object {
+        private val companionJson = Json { ignoreUnknownKeys = true }
+
+        fun decodeMappedChips(mappedChipsJson: String): List<WaveShieldChip> {
+            if (mappedChipsJson.isBlank() || mappedChipsJson == "[]") return emptyList()
+            return runCatching {
+                companionJson.decodeFromString<List<WaveShieldChip>>(mappedChipsJson)
+            }.getOrDefault(emptyList())
+        }
+
         fun formatUnparsedSkillsReport(skills: List<CapturedEnemySkillEntity>): String {
             val unparsed = skills.filter { it.parseStatus == "UNPARSED" }
             if (unparsed.isEmpty()) return ""

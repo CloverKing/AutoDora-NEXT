@@ -133,4 +133,16 @@ class TrainingDataRepositoryTest {
             tmpRoot.deleteRecursively()
         }
     }
+
+    @Test
+    fun `decodeMappedChips safely parses serialized chips and rejects malformed JSON`() {
+        val raw = """[{"id":"min_combo","label":"≥ 5 Combo","category":"COMBO","autoDetected":true,"paramInt":5,"paramElementMask":0}]"""
+        val decoded = TrainingDataRepository.decodeMappedChips(raw)
+        assertEquals(1, decoded.size)
+        assertEquals("min_combo", decoded[0].id)
+        assertEquals(5, decoded[0].paramInt)
+
+        assertTrue(TrainingDataRepository.decodeMappedChips("").isEmpty())
+        assertTrue(TrainingDataRepository.decodeMappedChips("not-json").isEmpty())
+    }
 }

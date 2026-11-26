@@ -711,4 +711,33 @@
     <string name="knowledge_filter_nonboard">非盤面</string>
     <string name="knowledge_empty_list">目前篩選下暫無敵技紀錄</string>
     <string name="knowledge_hit_fmt">命中 %1$d 次</string>
+
+    <!-- v0.7.1 Static Capture Gate, Enemy Skill Feedback & Knowledge Base CRUD -->
+    <string name="ov_toast_ocr_recognized_info_fmt">✦AI 已辨識並歸檔：%1$s</string>
+    <string name="knowledge_btn_add">+ 新增</string>
+    <string name="knowledge_btn_clean_noise">清理噪音</string>
+    <string name="knowledge_btn_reparse_all">全部重算</string>
+    <string name="knowledge_btn_clear_all">清空</string>
+    <string name="knowledge_btn_delete">刪除</string>
+    <string name="knowledge_search_hint">搜尋標題、說明原文、關卡或盾牌…</string>
+    <string name="knowledge_add_dialog_title">新增敵技詞條</string>
+    <string name="knowledge_edit_dialog_title">編輯敵技詞條</string>
+    <string name="knowledge_field_title">技能標題（選填）</string>
+    <string name="knowledge_field_title_hint">留空則自動從首行或【標題】擷取</string>
+    <string name="knowledge_field_body">敵技原文說明</string>
+    <string name="knowledge_field_body_hint">輸入或貼上遊戲內敵技完整描述</string>
+    <string name="knowledge_field_stage">關聯關卡（選填）</string>
+    <string name="knowledge_field_wave">波次</string>
+    <string name="knowledge_live_preview_fmt">即時試算狀態：%1$s · 產出 %2$d 項策略</string>
+    <string name="knowledge_btn_save">儲存</string>
+    <string name="knowledge_delete_confirm_title">刪除敵技詞條？</string>
+    <string name="knowledge_delete_confirm_body">確定從本機知識庫刪除「%1$s」嗎？</string>
+    <string name="knowledge_clear_confirm_title">清空敵技知識庫？</string>
+    <string name="knowledge_clear_confirm_body">將永久刪除本機儲存的全部敵技詞條，此操作無法復原。</string>
+    <string name="knowledge_saved_ok">敵技詞條已儲存至知識庫</string>
+    <string name="knowledge_deleted_ok">已刪除該敵技詞條</string>
+    <string name="knowledge_cleared_ok">已清空本機敵技知識庫</string>
+    <string name="knowledge_cleaned_noise_fmt">已自動清理 %1$d 條非敵技介面噪音紀錄</string>
+    <string name="knowledge_no_noise_found">目前知識庫很乾淨，未發現明顯介面噪音紀錄</string>
+    <string name="knowledge_reparsed_fmt">已依目前規則重算 %1$d 條紀錄（更新 %2$d 條）</string>
 </resources>

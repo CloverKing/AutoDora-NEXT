@@ -35,8 +35,10 @@ import com.autodora.next.ui.AutoDoraTheme
 import com.autodora.next.ui.DashboardScreen
 import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.PermissionHealthState
+import com.autodora.next.vision.EnemySkillParseStatus
 import com.autodora.next.vision.HotReloadEnemySkillParser
 import com.autodora.next.vision.StageWaveScriptParser
+import com.autodora.next.vision.TosEnemySkillParserV2
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -224,6 +226,7 @@ class MainActivity : ComponentActivity() {
                         onResetCustomRulesJson = {
                             val cnt = enemySkillParserHolder.resetToBundled()
                             syncCustomRulesStatus()
+                            reparseAllCapturedSkillsQuietly()
                             Toast.makeText(
                                 this@MainActivity,
                                 lctx().getString(R.string.knowledge_rules_reset_ok_fmt, cnt),
@@ -248,6 +251,13 @@ class MainActivity : ComponentActivity() {
                                 stageWaveScriptRepository.deleteScript(key)
                             }
                         },
+                        onUpsertEnemySkill = { oldHash, title, body, stageName, waveIdx ->
+                            upsertManualEnemySkill(oldHash, title, body, stageName, waveIdx)
+                        },
+                        onDeleteEnemySkill = { hash -> deleteEnemySkill(hash) },
+                        onCleanNoiseEnemySkills = { cleanNoiseEnemySkills() },
+                        onReparseAllEnemySkills = { reparseAllEnemySkillsWithToast() },
+                        onClearAllEnemySkills = { clearAllEnemySkills() },
                         onOpenGitHub = { openExternalUrl(UpdateChecker.GITHUB_REPO_URL) },
                         onCheckForUpdates = { checkForUpdates() },
                         onDownloadUpdate = { avail -> downloadAndInstallUpdate(avail) },
@@ -504,6 +514,7 @@ class MainActivity : ComponentActivity() {
             val res = enemySkillParserHolder.validateAndSaveRulesJson(text)
             res.onSuccess { count ->
                 syncCustomRulesStatus()
+                reparseAllCapturedSkillsQuietly()
                 Toast.makeText(
                     this@MainActivity,
                     lctx().getString(R.string.knowledge_rules_imported_ok_fmt, count),
@@ -541,6 +552,103 @@ class MainActivity : ComponentActivity() {
                 lctx().getString(R.string.knowledge_stage_imported_ok_fmt, saved),
                 Toast.LENGTH_LONG
             ).show()
+        }
+    }
+
+    private fun upsertManualEnemySkill(
+        oldHash: String?,
+        title: String,
+        body: String,
+        stageName: String,
+        waveIdx: Int
+    ) {
+        lifecycleScope.launch {
+            val cleanBody = body.trim()
+            if (cleanBody.isBlank()) return@launch
+            val parser = enemySkillParserHolder.current()
+            val parsed = parser.parsePlainText(cleanBody)
+            val firstBlk = parsed.allBlocks.firstOrNull()
+            val effTitle = title.trim()
+                .ifBlank { firstBlk?.titleZhTw.orEmpty() }
+                .ifBlank { cleanBody.lineSequence().firstOrNull().orEmpty().trim().take(36) }
+            val norm = TosEnemySkillParserV2.normalizeText(cleanBody)
+            val newHash = TosEnemySkillParserV2.computeSkillHash(effTitle, norm)
+            val status = firstBlk?.parseStatus ?: EnemySkillParseStatus.UNPARSED
+            val chips = parsed.activeChips.ifEmpty { firstBlk?.chips.orEmpty() }
+            trainingDataRepository.upsertManualEnemySkill(
+                oldHash = oldHash,
+                newHash = newHash,
+                titleZhTw = effTitle,
+                rawBodyZhTw = cleanBody,
+                stageName = stageName,
+                waveIndex = waveIdx,
+                parseStatus = status,
+                mappedChips = chips
+            )
+            Toast.makeText(this@MainActivity, lctx().getString(R.string.knowledge_saved_ok), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun deleteEnemySkill(hash: String) {
+        lifecycleScope.launch {
+            trainingDataRepository.deleteEnemySkill(hash)
+            Toast.makeText(this@MainActivity, lctx().getString(R.string.knowledge_deleted_ok), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun clearAllEnemySkills() {
+        lifecycleScope.launch {
+            trainingDataRepository.clearAllEnemySkills()
+            Toast.makeText(this@MainActivity, lctx().getString(R.string.knowledge_cleared_ok), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun cleanNoiseEnemySkills() {
+        lifecycleScope.launch {
+            val removed = trainingDataRepository.pruneEnemySkills { sk ->
+                TosEnemySkillParserV2.isLikelyNoiseEntry(sk.titleZhTw, sk.rawBodyZhTw)
+            }
+            val msg = if (removed > 0) {
+                lctx().getString(R.string.knowledge_cleaned_noise_fmt, removed)
+            } else {
+                lctx().getString(R.string.knowledge_no_noise_found)
+            }
+            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun reparseAllEnemySkillsWithToast() {
+        lifecycleScope.launch {
+            val parser = enemySkillParserHolder.current()
+            val (total, updated) = trainingDataRepository.reparseAllEnemySkills { sk ->
+                val parsed = parser.parsePlainText(sk.rawBodyZhTw)
+                val firstBlk = parsed.allBlocks.firstOrNull()
+                ReparsedEnemySkillFields(
+                    titleZhTw = sk.titleZhTw.ifBlank { firstBlk?.titleZhTw.orEmpty() },
+                    parseStatus = firstBlk?.parseStatus ?: EnemySkillParseStatus.UNPARSED,
+                    mappedChips = parsed.activeChips.ifEmpty { firstBlk?.chips.orEmpty() }
+                )
+            }
+            Toast.makeText(
+                this@MainActivity,
+                lctx().getString(R.string.knowledge_reparsed_fmt, total, updated),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun reparseAllCapturedSkillsQuietly() {
+        lifecycleScope.launch {
+            val parser = enemySkillParserHolder.current()
+            trainingDataRepository.reparseAllEnemySkills { sk ->
+                val parsed = parser.parsePlainText(sk.rawBodyZhTw)
+                val firstBlk = parsed.allBlocks.firstOrNull()
+                ReparsedEnemySkillFields(
+                    titleZhTw = sk.titleZhTw.ifBlank { firstBlk?.titleZhTw.orEmpty() },
+                    parseStatus = firstBlk?.parseStatus ?: EnemySkillParseStatus.UNPARSED,
+                    mappedChips = parsed.activeChips.ifEmpty { firstBlk?.chips.orEmpty() }
+                )
+            }
         }
     }
 

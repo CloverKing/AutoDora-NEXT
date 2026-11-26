@@ -9,7 +9,7 @@
 - **本次审计新发现并已补全/修正 (`UPGRADED`)**：`20` 项
 - **纯视觉干扰 / 印记类（已支持画笔标注，待后续端侧模型增强，`CV_PARTIAL`)**：`6` 项
 - **非盘面转珠机制（血量/CD/EP/减伤/隐身等，`NON_BOARD`)**：`35` 项
-- **端侧自动识别闭环（`v0.6.0–v0.7.0`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json` 支持主控台热更新重载）联合 `PaddleOcrOnnxEngine` 与 `StageWaveScriptParser`，支持单敌弹窗、关前全波次剧本与 Wiki JSON 自动映射，且灰字无视技能在实战解版中动态跳过（可点击 `⊘ 灰字已无视×N` 复原），同时 100% 原文归档至 Room `captured_enemy_skills`。
+- **端侧自动识别闭环（`v0.6.0–v0.7.1`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json` 支持主控台热更新重载）联合 `PaddleOcrOnnxEngine` 与 `StageWaveScriptParser`，支持单敌弹窗、关前全波次剧本（含 `BOSS` / `第1~N階段`）与 Wiki JSON 自动映射，`【X連撃零化】` / `【≥N連撃盾】` / `【電撃】` 精确解析，灰字无视技能在实战解版中动态跳过（可点击 `⊘ 灰字已无视×N` 复原），并通过 `isAuthenticEnemySkillScreen` 与主控台 **增删改查 + 清理噪音 + 全部重算** 面板保障本地 Room `captured_enemy_skills` 纯净归档。
 
 ## 二、本次审计发现并落地的核心算法、规则与 UI 升级
 

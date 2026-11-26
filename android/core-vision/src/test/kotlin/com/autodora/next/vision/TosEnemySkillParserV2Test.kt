@@ -150,4 +150,64 @@ class TosEnemySkillParserV2Test {
         assertEquals(1, res.allBlocks.size)
         assertEquals(EnemySkillParseStatus.NON_BOARD_KNOWN, res.allBlocks[0].parseStatus)
     }
+
+    @Test
+    fun `parses element zero-strike, prefix min combo, electrified hints, and rejects loading or self-toast noise`() {
+        val parser = loadParser()
+
+        // 1. 【木連撃零化】 -> anti_first_wave(WOOD), NOT swallowed by NON_BOARD_KNOWN
+        val woodZero = parser.parsePlainText(
+            """
+            【木連撃零化】
+            首批消除木符石
+            ①該回合全隊攻擊力變 0
+            ②敵人根據首消木符石組數⇒額外追打相應次數攻擊
+            """.trimIndent()
+        )
+        val antiWood = woodZero.activeChips.firstOrNull { it.id == "anti_first_wave" }
+        assertNotNull("Wood zero-strike must map to anti_first_wave!", antiWood)
+        assertEquals(Element.WOOD.bitMask, antiWood!!.paramElementMask)
+
+        // 2. 【≥5連撃盾】 -> min_combo(5)
+        val min5 = parser.parsePlainText("【≥5連撃盾】")
+        val minChip = min5.activeChips.firstOrNull { it.id == "min_combo" }
+        assertNotNull("Prefix >=5 combo shield must parse!", minChip)
+        assertEquals(5, minChip!!.paramInt)
+
+        // 3. Separate title + body gap merge & 【電撃之水】 -> hasElectrified PARSED
+        val mergedGap = parser.parseLines(
+            listOf(
+                OcrTextLine("【電撃之水】", 40, 100, 260, 128, 0.99f),
+                OcrTextLine("進場時電擊所有水符石；電擊符石一經觸碰，即時停止移動符石", 40, 165, 920, 195, 0.96f)
+            )
+        )
+        assertEquals(1, mergedGap.allBlocks.size)
+        assertEquals(EnemySkillParseStatus.PARSED, mergedGap.allBlocks[0].parseStatus)
+        assertTrue(mergedGap.combinedHints.hasElectrified)
+
+        // 4. Rejects App Toast, <W1/1>×, Loading, Victory/Complete Settlement & Friend Request noise
+        assertTrue(TosEnemySkillParserV2.isLikelyNoiseEntry("AI 已归档", "AI 已归档 2 条关卡敌技至本地知识库"))
+        assertTrue(TosEnemySkillParserV2.isLikelyNoiseEntry("<W1/1 >×", "<W1/1 >×"))
+        assertTrue(TosEnemySkillParserV2.isLikelyNoiseEntry("可愛mumu", "可愛mumu\n完美主義者\n凰族\nDual Max20"))
+
+        val fakeFriendPrompt = listOf(
+            OcrTextLine("你剛從戰鬥獲得5友情點數", 100, 300, 600, 330, 0.98f),
+            OcrTextLine("確定送出交友申請？", 140, 500, 560, 530, 0.98f)
+        )
+        assertFalse(
+            TosEnemySkillParserV2.isAuthenticEnemySkillScreen(
+                fakeFriendPrompt,
+                DarkModalKind.ENEMY_LONG_PRESS_POPUP,
+                parser.parseLines(fakeFriendPrompt)
+            )
+        )
+
+        val realPopup = listOf(
+            OcrTextLine("【連環光牢】", 100, 420, 320, 450, 0.99f),
+            OcrTextLine("敵人會射擊1直行的位置，一經觸碰即時停止移動符石", 100, 465, 860, 495, 0.97f)
+        )
+        val realRes = parser.parseLines(realPopup)
+        assertTrue(TosEnemySkillParserV2.isAuthenticEnemySkillScreen(realPopup, DarkModalKind.ENEMY_LONG_PRESS_POPUP, realRes))
+        assertTrue(realRes.combinedHints.hasSticky)
+    }
 }

@@ -44,12 +44,12 @@ object StageWaveScriptParser {
     private val json = Json { ignoreUnknownKeys = true }
 
     private val WAVE_HEADER_REGEX = Regex(
-        "(?:wave\\s*(\\d+)|第\\s*(\\d+)\\s*[层波層]|\\b(boss)\\b)",
+        "(?:wave\\s*(\\d+)|第\\s*(\\d+)\\s*(?:[层波層]|阶?段|血)|\\b(boss)\\b)",
         RegexOption.IGNORE_CASE
     )
     private val CURRENT_MARKER_REGEX = Regex("(?:current|目前|当前|進行中|进行中)", RegexOption.IGNORE_CASE)
     private val TITLE_SKIP_REGEX = Regex(
-        "^(?:基本资讯|关卡资讯|队伍资讯|敌人技能|点击空白处关闭|离开战斗|关闭|取消|确认|确定|stage\\s*info)$",
+        "^(?:基本资讯|关卡资讯|队伍资讯|敌人技能|敌技总览|快速筛选|指定筛选|战斗准备|我的队伍|预设队伍|点击空白处关闭|离开战斗|关闭|取消|确认|确定|stage\\s*info|ability)$",
         RegexOption.IGNORE_CASE
     )
 
@@ -90,7 +90,15 @@ object StageWaveScriptParser {
             }
             val bucketIdx = currentBucketIdx
             if (bucketIdx == null) {
-                if (!TITLE_SKIP_REGEX.matches(norm) && !TosEnemySkillParserV2.isChromeOrStatLine(norm)) {
+                val isUiPrepNoise = TITLE_SKIP_REGEX.matches(norm) ||
+                    TosEnemySkillParserV2.isChromeOrStatLine(norm) ||
+                    norm.contains("dual max", ignoreCase = true) ||
+                    norm.contains("all max", ignoreCase = true) ||
+                    norm.contains("知识库") ||
+                    norm.contains("已归档") ||
+                    norm.contains("新手") ||
+                    Regex("^<?w\\d+/\\d+>?×?$", RegexOption.IGNORE_CASE).matches(norm)
+                if (!isUiPrepNoise) {
                     preHeaderLines.add(raw)
                 }
             } else {
@@ -100,8 +108,13 @@ object StageWaveScriptParser {
 
         if (waveBuckets.isEmpty()) return null
 
-        val stageName = preHeaderLines.firstOrNull { it.length in 2..40 }
-            ?: fallbackStageName.ifBlank { "Stage ${waveBuckets.size}W" }
+        val stageName = preHeaderLines.firstOrNull {
+            val clean = TosEnemySkillParserV2.normalizeText(it)
+            it.length in 2..40 &&
+                !clean.contains("battle") &&
+                !clean.contains("新手") &&
+                !clean.startsWith("队伍")
+        } ?: fallbackStageName.ifBlank { "Stage ${waveBuckets.size}W" }
 
         val entries = ArrayList<StageWaveEntry>(waveBuckets.size)
         val allParsedBlocks = ArrayList<ParsedEnemySkillBlock>()
@@ -113,16 +126,20 @@ object StageWaveScriptParser {
             val titles = parsedWave.allBlocks.mapNotNull { blk ->
                 blk.titleZhTw.takeIf { it.isNotBlank() }
             }.distinct()
-            entries.add(
-                StageWaveEntry(
-                    waveIndex = idx,
-                    isBoss = isBoss,
-                    skillTitles = titles,
-                    chips = parsedWave.activeChips,
-                    visualHints = parsedWave.combinedHints
+            if (titles.isNotEmpty() || parsedWave.activeChips.isNotEmpty() || parsedWave.combinedHints.hasAny()) {
+                entries.add(
+                    StageWaveEntry(
+                        waveIndex = idx,
+                        isBoss = isBoss,
+                        skillTitles = titles,
+                        chips = parsedWave.activeChips,
+                        visualHints = parsedWave.combinedHints
+                    )
                 )
-            )
+            }
         }
+
+        if (allParsedBlocks.isEmpty() || entries.isEmpty()) return null
 
         val sortedEntries = entries.sortedBy { it.waveIndex }
         val script = StageWaveScript(

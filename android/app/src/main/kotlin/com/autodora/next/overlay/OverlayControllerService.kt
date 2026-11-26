@@ -57,7 +57,9 @@ import com.autodora.next.ui.OverlayPalette
 import com.autodora.next.ui.OverlayThemeResolver
 import com.autodora.next.data.*
 import com.autodora.next.vision.BoardAutoPolicySummary
+import com.autodora.next.vision.BoardCaptureQualityGate
 import com.autodora.next.vision.BoardRecognizer
+import com.autodora.next.vision.BoardTurnStabilityTracker
 import com.autodora.next.vision.DarkModalKind
 import com.autodora.next.vision.DirectBitmapVisionFrame
 import com.autodora.next.vision.FlashRevealMemoryTracker
@@ -65,7 +67,9 @@ import com.autodora.next.vision.HotReloadEnemySkillParser
 import com.autodora.next.vision.HybridBoardRecognizer
 import com.autodora.next.vision.PaddleOcrOnnxEngine
 import com.autodora.next.vision.RecognitionResult
+import com.autodora.next.vision.StabilityDecision
 import com.autodora.next.vision.StageWaveScriptParser
+import com.autodora.next.vision.TosEnemySkillParserV2
 import com.autodora.next.vision.WaveTransitionDetector
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -201,12 +205,15 @@ class OverlayControllerService : Service() {
     private var lastRawBoardLowConf: List<Int> = emptyList()
     private var lastRawBoardCalibSource: String = "auto"
     private var consecutiveEnemyModalTicks = 0
-    private var consecutiveCleanIdleBattleTicks = 0
+    private var lastWatchModalHash: Long = 0L
+    private var consecutiveStableModalTicks = 0
     private var lastOcrModalHash: Long = 0L
     private var lastOcrModalTimeMs: Long = 0L
     @Volatile private var isEnemyOcrRunning = false
     private var waveAutoClearedForTransition = false
     private val waveTransitionDetector = WaveTransitionDetector()
+    private var pendingStaticBoardFrame: android.graphics.Bitmap? = null
+    private val boardTurnStabilityTracker = BoardTurnStabilityTracker()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -377,12 +384,19 @@ class OverlayControllerService : Service() {
         lastRawBoardLowConf = emptyList()
     }
 
+    private fun resetIdleBoardStabilityCache() {
+        pendingStaticBoardFrame?.let { if (!it.isRecycled) it.recycle() }
+        pendingStaticBoardFrame = null
+        boardTurnStabilityTracker.reset()
+    }
+
     override fun onDestroy() {
         snapAnimator?.cancel()
         snapAnimator = null
         backgroundWatchJob?.cancel()
         triggerEmergencyStop()
         clearLastBoardSnapshot()
+        resetIdleBoardStabilityCache()
         serviceScope.cancel()
         removeOverlayViews()
         // Always release MediaProjection when stopping the floating assistant so system Screen Recorder
@@ -1096,6 +1110,7 @@ class OverlayControllerService : Service() {
         if (calibrationMode) setCalibrationMode(false)
         if (boardEditorMode) setBoardEditorMode(false)
         if (tuningDrawerOpen) setTuningDrawerOpen(false)
+        resetIdleBoardStabilityCache()
 
         // When the user saved a manually edited board via 「保存版面」, route the main floating toolbar's
         // Calculate / Play buttons directly to solve (and optionally execute) that saved board!
@@ -1492,6 +1507,7 @@ class OverlayControllerService : Service() {
         if (calibrationMode) setCalibrationMode(false)
         if (boardEditorMode) setBoardEditorMode(false)
         if (tuningDrawerOpen) setTuningDrawerOpen(false)
+        resetIdleBoardStabilityCache()
 
         activeJob = serviceScope.launch {
             // ALWAYS flush stale cached frame BEFORE capturing preBmp so Hold-and-Replan never acts on an old wave!
@@ -2175,6 +2191,13 @@ class OverlayControllerService : Service() {
         }
     }
 
+    private data class WatchFrameEval(
+        val geom: BoardGeometry?,
+        val rec: RecognitionResult?,
+        val watchStatus: Int,
+        val hasHpBar: Boolean
+    )
+
     // ==================== Always-On ~3Hz Background Watcher (Full-Board Question Orb Memory & Surface Health) ====================
     private fun ensureAlwaysOnBackgroundWatcher() {
         if (backgroundWatchJob?.isActive == true) return
@@ -2191,6 +2214,7 @@ class OverlayControllerService : Service() {
                 delay(loopDelayMs)
                 if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) {
                     consecutiveNonBattleTicks = 0
+                    resetIdleBoardStabilityCache()
                     continue
                 }
                 val capturer = activeCapturer() ?: continue
@@ -2215,10 +2239,10 @@ class OverlayControllerService : Service() {
                     }
 
                     val hasLockedMemoryOverlay = flashMemoryTracker.currentLockedSnapshot() != null || usedMemorizedSnapshot
-                    val (geom, rec, watchStatus) = withContext(Dispatchers.Default) {
+                    val eval = withContext(Dispatchers.Default) {
                         val frame = DirectBitmapVisionFrame(bmp)
                         if (FlashRevealMemoryTracker.isDarkModalCoveringBoard(frame)) {
-                            Triple(null, null, 1) // 1 = dark modal covering battle board
+                            WatchFrameEval(null, null, 1, false) // 1 = dark modal covering battle board
                         } else {
                             var g = AutoGridDetector.detect(bmp, settings.calibration)
                             // When a translucent full-board memorized '?' overlay is painted on top of the grid,
@@ -2236,9 +2260,9 @@ class OverlayControllerService : Service() {
                                 }
                             }
                             if (hasLockedMemoryOverlay && !hasHp && !g.isWeijianExpanded) {
-                                Triple(null, null, 2) // 2 = non-battle screen or left battle (breaks memory-circle self-feedback!)
+                                WatchFrameEval(null, null, 2, false) // 2 = non-battle screen or left battle (breaks memory-circle self-feedback!)
                             } else if (!AutoGridDetector.isBattleBoardPresent(bmp, g)) {
-                                Triple(null, null, 2) // 2 = non-battle screen (Home Map, Event Banners, Menus)
+                                WatchFrameEval(null, null, 2, hasHp) // 2 = non-battle screen (Home Map, Event Banners, Menus)
                             } else {
                                 val r = boardRecognizer.recognize(listOf(bmp), g)
                                 val specialDarkCount = r.bloodDrainOrbsDetected +
@@ -2253,130 +2277,165 @@ class OverlayControllerService : Service() {
                                     !hasActiveBuoyPreview &&
                                     AutoGridDetector.isDimmedTransitionBoard(bmp, g, r.questionOrbsDetected, specialDarkCount)
                                 ) {
-                                    Triple(null, null, 3) // 3 = dimmed VICTORY / wave-walk transition veil
+                                    WatchFrameEval(null, null, 3, hasHp) // 3 = dimmed VICTORY / wave-walk transition veil
                                 } else {
-                                    Triple(g, r, 0) // 0 = genuine active battle board (including dimmed 【起動浮標】!)
+                                    WatchFrameEval(g, r, 0, hasHp) // 0 = genuine active battle board (including dimmed 【起動浮標】!)
                                 }
                             }
                         }
                     }
+                    val geom = eval.geom
+                    val rec = eval.rec
 
-                    when (watchStatus) {
+                    when (eval.watchStatus) {
                         1 -> {
                             consecutiveNonBattleTicks = 0
                             consecutiveMassQuestionTicks = 0
-                            consecutiveCleanIdleBattleTicks = 0
+                            resetIdleBoardStabilityCache()
                             consecutiveEnemyModalTicks++
                             if (!enemyPopupCoveringBoard) {
                                 enemyPopupCoveringBoard = true
                                 refreshPathCanvas()
                             }
+                            val modalHash = withContext(Dispatchers.Default) { computePopupInteriorDHash(bmp) }
+                            if (lastWatchModalHash == 0L ||
+                                TrainingSampleHasher.hammingDistance(modalHash, lastWatchModalHash) > 2
+                            ) {
+                                lastWatchModalHash = modalHash
+                                consecutiveStableModalTicks = 1
+                            } else {
+                                consecutiveStableModalTicks++
+                            }
+
                             if (consecutiveEnemyModalTicks >= 2 &&
+                                consecutiveStableModalTicks >= 2 &&
+                                !isEnemyOcrRunning &&
                                 (settings.trainingDataCollectionEnabled || settings.autoEnemySkillOcrEnabled)
                             ) {
                                 val modalKind = withContext(Dispatchers.Default) {
                                     FlashRevealMemoryTracker.classifyDarkModalForCapture(DirectBitmapVisionFrame(bmp))
                                 }
-                                if (modalKind != DarkModalKind.NONE) {
-                                    if (settings.trainingDataCollectionEnabled) {
-                                        trainingDataRepository.recordEnemyModalSample(
-                                            rawFrame = bmp,
-                                            domain = modalKind.name,
-                                            activeWaveChips = activeWaveChips,
-                                            captureMode = settings.captureMode.name
-                                        )
-                                    }
-                                    if (settings.autoEnemySkillOcrEnabled && !isEnemyOcrRunning) {
-                                        val modalHash = computePopupInteriorDHash(bmp)
-                                        val nowMs = System.currentTimeMillis()
-                                        val sameRecent = lastOcrModalTimeMs > 0L &&
-                                            (nowMs - lastOcrModalTimeMs) < 8_000L &&
-                                            TrainingSampleHasher.hammingDistance(modalHash, lastOcrModalHash) <= 4
-                                        if (!sameRecent) {
-                                            lastOcrModalHash = modalHash
-                                            lastOcrModalTimeMs = nowMs
-                                            val bmpCopy = runCatching {
-                                                bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
-                                            }.getOrNull()
-                                            if (bmpCopy != null) {
-                                                isEnemyOcrRunning = true
-                                                serviceScope.launch(Dispatchers.Default) {
-                                                    try {
-                                                        val parser = enemySkillParserHolder.current()
-                                                        val ocrRes = paddleOcrOnnxEngine.recognize(bmpCopy, modalKind)
-                                                        val parseRes = parser.parseLines(ocrRes.lines)
-                                                        if (parseRes.allBlocks.isNotEmpty()) {
-                                                            // Always archive EVERY skill block (including greyed-out bypassed skills!)
-                                                            trainingDataRepository.recordCapturedEnemySkills(
-                                                                parseRes.allBlocks.map { blk ->
-                                                                    CapturedEnemySkillInput(
-                                                                        skillHash = blk.skillHash,
-                                                                        titleZhTw = blk.titleZhTw,
-                                                                        rawBodyZhTw = blk.rawBodyZhTw,
-                                                                        sourceType = modalKind.name,
-                                                                        parseStatus = blk.parseStatus,
-                                                                        mappedChips = blk.chips
-                                                                    )
-                                                                }
+                                val nowMs = System.currentTimeMillis()
+                                val sameRecent = lastOcrModalTimeMs > 0L &&
+                                    (nowMs - lastOcrModalTimeMs) < 10_000L &&
+                                    TrainingSampleHasher.hammingDistance(modalHash, lastOcrModalHash) <= 5
+                                if (modalKind != DarkModalKind.NONE && !sameRecent) {
+                                    lastOcrModalHash = modalHash
+                                    lastOcrModalTimeMs = nowMs
+                                    val bmpCopy = runCatching {
+                                        bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                                    }.getOrNull()
+                                    if (bmpCopy != null) {
+                                        isEnemyOcrRunning = true
+                                        val captureSamplesNow = settings.trainingDataCollectionEnabled
+                                        val applyAutoOcrNow = settings.autoEnemySkillOcrEnabled
+                                        val captureModeName = settings.captureMode.name
+                                        val snapshotWaveChips = activeWaveChips
+                                        serviceScope.launch(Dispatchers.Default) {
+                                            try {
+                                                val parser = enemySkillParserHolder.current()
+                                                val ocrRes = paddleOcrOnnxEngine.recognize(bmpCopy, modalKind)
+                                                val parseRes = parser.parseLines(ocrRes.lines)
+                                                val authentic = TosEnemySkillParserV2.isAuthenticEnemySkillScreen(
+                                                    ocrLines = ocrRes.lines,
+                                                    modalKind = modalKind,
+                                                    parseRes = parseRes
+                                                )
+                                                if (!authentic) {
+                                                    return@launch
+                                                }
+                                                if (captureSamplesNow) {
+                                                    trainingDataRepository.recordEnemyModalSample(
+                                                        rawFrame = bmpCopy,
+                                                        domain = modalKind.name,
+                                                        activeWaveChips = snapshotWaveChips,
+                                                        captureMode = captureModeName
+                                                    )
+                                                }
+                                                if (parseRes.allBlocks.isNotEmpty()) {
+                                                    // Always archive EVERY genuine skill block (including greyed-out bypassed skills!)
+                                                    trainingDataRepository.recordCapturedEnemySkills(
+                                                        parseRes.allBlocks.map { blk ->
+                                                            CapturedEnemySkillInput(
+                                                                skillHash = blk.skillHash,
+                                                                titleZhTw = blk.titleZhTw,
+                                                                rawBodyZhTw = blk.rawBodyZhTw,
+                                                                sourceType = modalKind.name,
+                                                                parseStatus = blk.parseStatus,
+                                                                mappedChips = blk.chips
                                                             )
                                                         }
-                                                        if (modalKind == DarkModalKind.ENEMY_LONG_PRESS_POPUP) {
-                                                            val bypassedInputs = parseRes.bypassedBlocks
-                                                                .filter { it.chips.isNotEmpty() }
-                                                                .map { BypassedEnemySkill(it.titleZhTw, it.chips) }
-                                                            val applied = ActiveStrategyStore.applyAutoDetectedChips(
-                                                                incoming = parseRes.activeChips,
-                                                                bypassed = bypassedInputs
-                                                            )
-                                                            ActiveStrategyStore.setActiveVisualHints(parseRes.combinedHints)
-                                                            waveTransitionDetector.reset()
-                                                            if (applied > 0 || bypassedInputs.isNotEmpty() || parseRes.combinedHints.hasMonochrome) {
-                                                                withContext(Dispatchers.Main) {
-                                                                    val msg = buildString {
-                                                                        if (applied > 0) {
-                                                                            append(lctx.getString(R.string.ov_toast_ocr_applied_fmt, applied))
-                                                                        }
-                                                                        if (bypassedInputs.isNotEmpty()) {
-                                                                            append(lctx.getString(R.string.ov_toast_ocr_bypassed_fmt, bypassedInputs.size))
-                                                                        }
-                                                                        if (parseRes.combinedHints.hasMonochrome) {
-                                                                            if (isNotEmpty()) append(' ')
-                                                                            append(lctx.getString(R.string.ov_toast_monochrome_ai_boost))
-                                                                        }
-                                                                    }.trim()
-                                                                    if (msg.isNotEmpty()) toast(msg)
+                                                    )
+                                                }
+                                                if (!applyAutoOcrNow) {
+                                                    return@launch
+                                                }
+                                                if (modalKind == DarkModalKind.ENEMY_LONG_PRESS_POPUP) {
+                                                    val bypassedInputs = parseRes.bypassedBlocks
+                                                        .filter { it.chips.isNotEmpty() }
+                                                        .map { BypassedEnemySkill(it.titleZhTw, it.chips) }
+                                                    val applied = ActiveStrategyStore.applyAutoDetectedChips(
+                                                        incoming = parseRes.activeChips,
+                                                        bypassed = bypassedInputs
+                                                    )
+                                                    ActiveStrategyStore.setActiveVisualHints(parseRes.combinedHints)
+                                                    waveTransitionDetector.reset()
+                                                    if (applied > 0 || bypassedInputs.isNotEmpty() || parseRes.combinedHints.hasMonochrome) {
+                                                        withContext(Dispatchers.Main) {
+                                                            val msg = buildString {
+                                                                if (applied > 0) {
+                                                                    append(lctx.getString(R.string.ov_toast_ocr_applied_fmt, applied))
                                                                 }
+                                                                if (bypassedInputs.isNotEmpty()) {
+                                                                    append(lctx.getString(R.string.ov_toast_ocr_bypassed_fmt, bypassedInputs.size))
+                                                                }
+                                                                if (parseRes.combinedHints.hasMonochrome) {
+                                                                    if (isNotEmpty()) append(' ')
+                                                                    append(lctx.getString(R.string.ov_toast_monochrome_ai_boost))
+                                                                }
+                                                            }.trim()
+                                                            if (msg.isNotEmpty()) toast(msg)
+                                                        }
+                                                    } else if (parseRes.allBlocks.isNotEmpty()) {
+                                                        val summaryTitles = parseRes.allBlocks
+                                                            .mapNotNull { it.titleZhTw.takeIf { t -> t.isNotBlank() } }
+                                                            .distinct()
+                                                            .take(3)
+                                                            .joinToString(" / ")
+                                                        if (summaryTitles.isNotBlank()) {
+                                                            withContext(Dispatchers.Main) {
+                                                                toast(lctx.getString(R.string.ov_toast_ocr_recognized_info_fmt, summaryTitles))
                                                             }
-                                                        } else {
-                                                            val stageParsed = StageWaveScriptParser.parseStageInfoLines(ocrRes.lines, parser)
-                                                            if (stageParsed != null) {
-                                                                stageWaveScriptRepository.saveScript(stageParsed.script)
-                                                                val entry = ActiveStageScriptStore.activateScript(
-                                                                    stageParsed.script,
-                                                                    stageParsed.detectedCurrentWave ?: 1
+                                                        }
+                                                    }
+                                                } else {
+                                                    val stageParsed = StageWaveScriptParser.parseStageInfoLines(ocrRes.lines, parser)
+                                                    if (stageParsed != null) {
+                                                        stageWaveScriptRepository.saveScript(stageParsed.script)
+                                                        val entry = ActiveStageScriptStore.activateScript(
+                                                            stageParsed.script,
+                                                            stageParsed.detectedCurrentWave ?: 1
+                                                        )
+                                                        waveTransitionDetector.reset()
+                                                        withContext(Dispatchers.Main) {
+                                                            toast(
+                                                                lctx.getString(
+                                                                    R.string.ov_toast_stage_script_loaded_fmt,
+                                                                    stageParsed.script.waves.size,
+                                                                    entry?.waveIndex ?: 1
                                                                 )
-                                                                waveTransitionDetector.reset()
-                                                                withContext(Dispatchers.Main) {
-                                                                    toast(
-                                                                        lctx.getString(
-                                                                            R.string.ov_toast_stage_script_loaded_fmt,
-                                                                            stageParsed.script.waves.size,
-                                                                            entry?.waveIndex ?: 1
-                                                                        )
-                                                                    )
-                                                                }
-                                                            } else if (parseRes.allBlocks.isNotEmpty()) {
-                                                                withContext(Dispatchers.Main) {
-                                                                    toast(lctx.getString(R.string.ov_toast_ocr_stage_archived_fmt, parseRes.allBlocks.size))
-                                                                }
-                                                            }
+                                                            )
                                                         }
-                                                    } catch (_: Throwable) {
-                                                    } finally {
-                                                        if (!bmpCopy.isRecycled) bmpCopy.recycle()
-                                                        isEnemyOcrRunning = false
+                                                    } else if (parseRes.allBlocks.isNotEmpty()) {
+                                                        withContext(Dispatchers.Main) {
+                                                            toast(lctx.getString(R.string.ov_toast_ocr_stage_archived_fmt, parseRes.allBlocks.size))
+                                                        }
                                                     }
                                                 }
+                                            } catch (_: Throwable) {
+                                            } finally {
+                                                if (!bmpCopy.isRecycled) bmpCopy.recycle()
+                                                isEnemyOcrRunning = false
                                             }
                                         }
                                     }
@@ -2386,11 +2445,12 @@ class OverlayControllerService : Service() {
                         2, 3 -> {
                             consecutiveMassQuestionTicks = 0
                             consecutiveEnemyModalTicks = 0
-                            consecutiveCleanIdleBattleTicks = 0
+                            lastWatchModalHash = 0L
+                            consecutiveStableModalTicks = 0
                             consecutiveNonBattleTicks++
                             // On a dimmed VICTORY / wave transition frame, immediately hide any memorized '?' overlay
                             // on tick 1 so the translucent orb badges never linger over VICTORY or stage transitions!
-                            if (watchStatus == 3 && flashMemoryTracker.currentLockedSnapshot() != null) {
+                            if (eval.watchStatus == 3 && flashMemoryTracker.currentLockedSnapshot() != null) {
                                 flashMemoryTracker.clearLock()
                                 usedMemorizedSnapshot = false
                                 refreshPathCanvas()
@@ -2398,11 +2458,12 @@ class OverlayControllerService : Service() {
                             // After 2 consecutive non-battle/transition ticks (~330ms), wipe memory & sweep overlays clean!
                             // Preserve an explicitly saved edited board outside battle unless a battle VICTORY/wave transition occurs.
                             if (consecutiveNonBattleTicks >= 2) {
-                                if (watchStatus == 3 && !waveAutoClearedForTransition) {
+                                resetIdleBoardStabilityCache()
+                                if (eval.watchStatus == 3 && !waveAutoClearedForTransition) {
                                     waveAutoClearedForTransition = true
                                     handleWaveAdvanced()
                                 }
-                                if (watchStatus == 3 && savedEditedBoard != null) {
+                                if (eval.watchStatus == 3 && savedEditedBoard != null) {
                                     savedEditedBoard = null
                                     boardEditor.setSavedState(false)
                                     refreshActiveShieldStrip()
@@ -2427,6 +2488,8 @@ class OverlayControllerService : Service() {
                         else -> {
                             consecutiveNonBattleTicks = 0
                             consecutiveEnemyModalTicks = 0
+                            lastWatchModalHash = 0L
+                            consecutiveStableModalTicks = 0
                             waveAutoClearedForTransition = false
                             if (geom != null && rec != null) {
                                 if (enemyPopupCoveringBoard) {
@@ -2450,23 +2513,66 @@ class OverlayControllerService : Service() {
                                     lastSolveOutput == null &&
                                     settings.trainingDataCollectionEnabled
                                 ) {
-                                    consecutiveCleanIdleBattleTicks++
-                                    if (consecutiveCleanIdleBattleTicks >= 2) {
-                                        trainingDataRepository.recordBoardSample(
-                                            rawFrameA = bmp,
-                                            rawFrameB = null,
+                                    val (qEval, curHash, madVsPrev) = withContext(Dispatchers.Default) {
+                                        val vf = DirectBitmapVisionFrame(bmp)
+                                        val q = BoardCaptureQualityGate.evaluateBoardCaptureQuality(
+                                            frame = vf,
                                             geometry = geom,
-                                            aiBoard = rec.board,
-                                            avgConfidence = rec.averageConfidence,
-                                            lowConfidenceIndices = rec.lowConfidenceIndices,
-                                            activeWaveChips = activeWaveChips,
-                                            captureMode = settings.captureMode.name,
-                                            domain = TrainingSampleDomains.BOARD_AUTO_IDLE,
-                                            calibrationSource = if (settings.calibration.bottomRatio > 0f) "manual" else "auto"
+                                            recognition = rec,
+                                            hasHpBar = eval.hasHpBar
                                         )
+                                        val dHash = if (q.isCleanStaticPlayable) {
+                                            BoardCaptureQualityGate.computeBoardDHash(vf, geom)
+                                        } else {
+                                            0L
+                                        }
+                                        val prev = pendingStaticBoardFrame?.takeIf { !it.isRecycled }
+                                        val mad = if (q.isCleanStaticPlayable && prev != null) {
+                                            BoardCaptureQualityGate.computeBoardGridMad(DirectBitmapVisionFrame(prev), vf, geom)
+                                        } else {
+                                            null
+                                        }
+                                        Triple(q, dHash, mad)
+                                    }
+                                    if (!qEval.isCleanStaticPlayable) {
+                                        if (qEval.rejectReason == "MID_CLEAR_EMPTY_HOLES" ||
+                                            qEval.rejectReason == "COMBO_EXPLOSION_GLOW" ||
+                                            qEval.rejectReason == "NO_HP_BAR"
+                                        ) {
+                                            resetIdleBoardStabilityCache()
+                                        }
+                                    } else {
+                                        when (boardTurnStabilityTracker.onStableFrameCheck(curHash, madVsPrev)) {
+                                            StabilityDecision.WAIT_FIRST_FRAME,
+                                            StabilityDecision.BOARD_CHANGED_RESET -> {
+                                                pendingStaticBoardFrame?.let { if (!it.isRecycled) it.recycle() }
+                                                pendingStaticBoardFrame = runCatching {
+                                                    bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                                                }.getOrNull()
+                                            }
+                                            StabilityDecision.CAPTURE_DUAL_PAIR -> {
+                                                val prevStable = pendingStaticBoardFrame?.takeIf { !it.isRecycled } ?: bmp
+                                                trainingDataRepository.recordBoardSample(
+                                                    rawFrameA = prevStable,
+                                                    rawFrameB = if (prevStable !== bmp) bmp else null,
+                                                    geometry = geom,
+                                                    aiBoard = rec.board,
+                                                    avgConfidence = rec.averageConfidence,
+                                                    lowConfidenceIndices = rec.lowConfidenceIndices,
+                                                    activeWaveChips = activeWaveChips,
+                                                    captureMode = settings.captureMode.name,
+                                                    domain = TrainingSampleDomains.BOARD_AUTO_IDLE,
+                                                    calibrationSource = if (settings.calibration.bottomRatio > 0f) "manual" else "auto"
+                                                )
+                                                pendingStaticBoardFrame?.let { if (!it.isRecycled) it.recycle() }
+                                                pendingStaticBoardFrame = null
+                                            }
+                                            StabilityDecision.SETTLING,
+                                            StabilityDecision.ALREADY_CAPTURED_THIS_TURN -> Unit
+                                        }
                                     }
                                 } else {
-                                    consecutiveCleanIdleBattleTicks = 0
+                                    resetIdleBoardStabilityCache()
                                 }
 
                                 // Always-On Full-Screen Question Orb Memory:
@@ -2506,7 +2612,10 @@ class OverlayControllerService : Service() {
     private fun handleWaveAdvanced() {
         lastOcrModalHash = 0L
         lastOcrModalTimeMs = 0L
+        lastWatchModalHash = 0L
+        consecutiveStableModalTicks = 0
         waveTransitionDetector.reset()
+        resetIdleBoardStabilityCache()
         if (ActiveStageScriptStore.activeScript.value != null) {
             val nextEntry = ActiveStageScriptStore.advanceWaveIfActive()
             if (nextEntry != null) {

@@ -109,4 +109,32 @@ class StageWaveScriptParserTest {
         assertEquals("Prebuilt Stage", structured[0].stageName)
         assertEquals("cross_shield", structured[0].waves[0].chips[0].id)
     }
+
+    @Test
+    fun `ignores icon-only Enemy Overview screen while parsing BOSS and Stage Phase headers`() {
+        val parser = loadParser()
+        val overviewOnly = listOf(
+            OcrTextLine("戰鬥準備", 40, 40, 220, 70, 0.99f),
+            OcrTextLine("敵技總覽", 40, 300, 220, 330, 0.99f),
+            OcrTextLine("1", 40, 380, 70, 405, 0.99f),
+            OcrTextLine("2", 40, 450, 70, 475, 0.99f),
+            OcrTextLine("3-1", 40, 520, 90, 545, 0.99f)
+        )
+        assertNull("Icon-only Stage Overview must NOT emit empty W1/1 script", StageWaveScriptParser.parseStageInfoLines(overviewOnly, parser))
+
+        val expandedBossLines = listOf(
+            OcrTextLine("第六十三話 機械城的異聞 戰鬥", 80, 120, 620, 150, 0.99f),
+            OcrTextLine("BOSS", 80, 220, 180, 248, 0.99f),
+            OcrTextLine("第1階段", 80, 260, 220, 286, 0.98f),
+            OcrTextLine("【電撃之水】進場時電擊所有水符石", 80, 300, 700, 330, 0.97f),
+            OcrTextLine("第2階段", 80, 360, 220, 386, 0.98f),
+            OcrTextLine("【≥5連撃盾】", 80, 400, 320, 430, 0.99f)
+        )
+        val parsed = StageWaveScriptParser.parseStageInfoLines(expandedBossLines, parser)
+        assertNotNull(parsed)
+        assertEquals("第六十三話 機械城的異聞 戰鬥", parsed!!.script.stageName)
+        assertEquals(2, parsed.script.waves.size)
+        assertTrue(parsed.script.waves[0].visualHints.hasElectrified)
+        assertEquals(5, parsed.script.waves[1].chips.first { it.id == "min_combo" }.paramInt)
+    }
 }

@@ -136,7 +136,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
     private fun segmentOcrLinesIntoBlocks(ocrLines: List<OcrTextLine>): List<RawSkillSegment> {
         val kept = ocrLines.filter { line ->
             val raw = line.text.trim()
-            raw.length >= 2 && !isChromeOrStatLine(normalizeText(raw))
+            raw.length >= 2 && !isChromeOrStatLine(normalizeText(raw)) && !isLikelyNoiseEntry(raw, raw)
         }
         if (kept.isEmpty()) return emptyList()
 
@@ -151,10 +151,19 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         for ((idx, line) in kept.withIndex()) {
             val raw = line.text.trim()
             val startsNewMarker = idx > 0 && startsSkillBlockMarker(raw)
-            val largeVerticalGap = idx > 0 && (line.top - prevBottom) > medianH * 1.15f
+            val verticalGap = if (idx > 0) (line.top - prevBottom).toFloat() else 0f
+            val largeVerticalGap = idx > 0 && verticalGap > medianH * 1.55f
             val greyTransition = idx > 0 && line.isGreyBypassed != currentGrey
 
-            if (currentLines.isNotEmpty() && (startsNewMarker || largeVerticalGap || greyTransition)) {
+            // Keep a standalone 【Skill Title】 joined with its immediately following body lines
+            val curIsStandaloneTitle = currentLines.size == 1 &&
+                STANDALONE_BRACKET_TITLE_REGEX.matches(currentLines[0].trim())
+            val keepTitleWithBody = curIsStandaloneTitle &&
+                !startsNewMarker &&
+                !greyTransition &&
+                verticalGap <= medianH * 2.8f
+
+            if (currentLines.isNotEmpty() && !keepTitleWithBody && (startsNewMarker || largeVerticalGap || greyTransition)) {
                 segments.add(RawSkillSegment(currentLines.toList(), currentGrey))
                 currentLines = ArrayList()
                 currentGrey = line.isGreyBypassed
@@ -186,6 +195,8 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             }
 
             val title = extractSkillTitle(seg.rawLines)
+            if (isLikelyNoiseEntry(title, rawBody)) continue
+
             val blockMatchedIds = ArrayList<String>()
             val blockChips = ArrayList<WaveShieldChip>()
 
@@ -397,10 +408,19 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             }
         }
 
-        // F. Anti-first-wave (#10 反首消符石盾 / #46 符石連擊零化) with enumerated separator list (e.g. 水、火及心符石)
+        // F. Anti-first-wave (#10 反首消符石盾 / #46 符石連擊零化 / 木連擊零化) with enumerated separator list
+        val zeroStrikeBodyElemMatch = Regex(
+            "首[批消]消除[^\\n]{0,8}?([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,5})符石[\\s\\S]{0,48}?(?:攻击力变\\s*0|攻击力归\\s*0|攻击无效)"
+        ).find(norm)
+        val zeroStrikeTitleElemMatch = Regex(
+            "([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,5})连击零化"
+        ).find(norm)
         val antiListMatch = Regex("(?:反首消|首[批消][^\\n]{0,6}?禁消|不可首[批消]消除|符石连击零化)[^\\n]{0,18}?([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,5})").find(norm)
-        if (antiListMatch != null) {
-            val mask = parseElementMask(antiListMatch.groupValues[1])
+        val antiElemStr = zeroStrikeBodyElemMatch?.groupValues?.getOrNull(1)
+            ?: antiListMatch?.groupValues?.getOrNull(1)
+            ?: zeroStrikeTitleElemMatch?.groupValues?.getOrNull(1)
+        if (!antiElemStr.isNullOrBlank()) {
+            val mask = parseElementMask(antiElemStr)
             if (mask != 0) {
                 matchedIds.add("typed_anti_first_wave")
                 chips.add(
@@ -747,6 +767,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         hasDisguise = norm.contains("移形换影") || norm.contains("伪装成"),
         hasBurning = norm.contains("燃烧"),
         hasScorching = norm.contains("灼热地") || norm.contains("灼热地形"),
+        hasElectrified = norm.contains("电击") && (norm.contains("符石") || norm.contains("电击之") || norm.contains("触碰") || norm.contains("电击水") || norm.contains("电击火") || norm.contains("电击木") || norm.contains("电击光") || norm.contains("电击暗")),
         hasSticky = norm.contains("黏腐") || norm.contains("粘腐") || norm.contains("连环光牢"),
         hasStorm = norm.contains("暴风"),
         hasShattered = norm.contains("碎裂"),
@@ -758,10 +779,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         hasMiasma = norm.contains("瘴气")
     )
 
-    private fun hasAnyVisualHint(h: BoardVisualHints): Boolean =
-        h.hasMonochrome || h.hasDisguise || h.hasBurning || h.hasScorching ||
-            h.hasSticky || h.hasStorm || h.hasShattered || h.hasBlackHole ||
-            h.hasBloodbath || h.hasBarrier || h.hasPurgatoryFire || h.hasMud || h.hasMiasma
+    private fun hasAnyVisualHint(h: BoardVisualHints): Boolean = h.hasAny()
 
     private fun matchesKnownNonBoardSkill(norm: String): Boolean =
         KNOWN_NON_BOARD_KEYWORDS.any { norm.contains(it) }
@@ -776,13 +794,14 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         )
 
         private val CHROME_LINE_REGEX = Regex(
-            "^(?:wave\\s*\\d+(?:\\s*(?:current|next))?|current|next|boss|hp|atk|def|cd\\s*\\d*|lv\\.?\\s*\\d+|turn\\s*\\d+|第\\s*\\d+\\s*[层波]|基本资讯|关卡资讯|队伍资讯|敌人技能|离开战斗|关闭|取消|确定|点击空白处关闭)$",
+            "^(?:wave\\s*\\d+(?:\\s*(?:current|next))?|current|next|boss|hp|atk|def|cd\\s*\\d*|lv\\.?\\s*\\d+|turn\\s*\\d+|ep|com|leader|ability|complete|victory|battle\\s*\\d+/\\d+|第\\s*\\d+\\s*(?:[层波]|阶段|血)|基本资讯|关卡资讯|队伍资讯|敌人技能|敌技总览|快速筛选|指定筛选|没有对应标签的技能|战斗准备|我的队伍|预设队伍|队伍\\s*\\d+-\\d+|战斗结算|离开战斗|返回选单|关闭|取消|确认|确定|载入中\\.{0,3}|正在前往\\.{0,3}|点击空白处关闭)$",
             RegexOption.IGNORE_CASE
         )
         private val PURE_NUMBER_STAT_REGEX = Regex("^[x×]?\\s*[\\d,./+%\\-\\s]+$", RegexOption.IGNORE_CASE)
         private val STAT_PREFIX_REGEX = Regex("^(?:hp|atk|def|cd|lv|ep|turn)\\s*[:：]?\\s*[\\d,./+%\\-]+$", RegexOption.IGNORE_CASE)
 
         private val BLOCK_START_REGEX = Regex("^(?:[▼▶►▸•●◆◇※]|【[^】]{1,24}】)")
+        private val STANDALONE_BRACKET_TITLE_REGEX = Regex("^[▼▶►▸•●◆◇※\\s]*【[^】]{1,28}】\\s*$")
 
         private val KNOWN_NON_BOARD_KEYWORDS = listOf(
             "攻前盾", "首杀盾", "防御盾", "无法控制", "中毒", "亡命爆击", "隐身",
@@ -790,8 +809,91 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             "终结倒数", "减伤状态", "混沌值", "崩坏值", "腐化", "石牢", "锈化值",
             "灵罩", "脉流", "两相消耗", "炎之气", "囚锢生命力", "能力点代价",
             "开技消耗代价", "ep代价", "cd增加", "ep减少", "减伤抗性", "连击攻击",
-            "连击", "状态弱攻", "越战越强", "回复力"
+            "连续攻击", "首攻", "非电击状态", "弱攻", "越战越强", "回复力变"
         )
+
+        private val NOISE_CONTAINS_PATTERNS = listOf(
+            Regex("已归档.*(?:敌技|知识库)"),
+            Regex("已自动装配.*解版"),
+            Regex("悬浮助手"),
+            Regex("知识库"),
+            Regex("^<?\\s*w\\d+/\\d+\\s*>?\\s*×?$", RegexOption.IGNORE_CASE),
+            Regex("获得金币|获得\\s*exp|获得友情点数|你刚从战斗获得", RegexOption.IGNORE_CASE),
+            Regex("确定送出交友申请|是否进入剧情|回复体力|请保持网络讯号良好"),
+            Regex("战斗准备|我的队伍|预设队伍|敌技总览|快速筛选|指定筛选|没有对应标签的技能"),
+            Regex("队伍空间\\s*\\d+/\\d+|队长技能|队伍技能|战友技能"),
+            Regex("(?:^|\\b)(?:dual\\s*max|all\\s*max|battle\\s*\\d+/\\d+)(?:\\b|\\d|$)", RegexOption.IGNORE_CASE),
+            Regex("新手.{0,2}用")
+        )
+
+        private val POSITIVE_SKILL_KEYWORDS = listOf(
+            "符石", "连击", "combo", "消除", "伤害", "敌人", "攻击", "盾",
+            "光牢", "电击", "起结有序", "幽闭", "燃烧", "灼热", "风化",
+            "冰封", "石化", "黏腐", "粘腐", "暴风", "碎裂", "黑洞",
+            "血浴", "炼狱", "浮标", "凝护", "拼图", "十字", "回复", "回合", "无视"
+        )
+
+        fun isLikelyNoiseEntry(title: String, rawBody: String): Boolean {
+            val normBody = normalizeText(rawBody)
+            val normTitle = normalizeText(title)
+            if (normBody.isBlank()) return true
+            if (isChromeOrStatLine(normBody)) return true
+            if (NOISE_CONTAINS_PATTERNS.any { it.containsMatchIn(normBody) || it.containsMatchIn(normTitle) }) {
+                // Keep real 【...】 enemy skill if somehow only stage prep text appeared nearby? Wait: real skills use skill bodies, not Toast/friend/team banners
+                if (!Regex("【[^】]{2,26}】").containsMatchIn(normBody) ||
+                    normBody.contains("已归档") || normBody.contains("知识库") ||
+                    normBody.contains("新手") || normBody.contains("好友")
+                ) {
+                    return true
+                }
+            }
+            // Reject pure player card / stage title stubs (no skill keywords and no 【...】)
+            val hasSkillStructure = Regex("【[^】]{2,26}】").containsMatchIn(normBody) ||
+                POSITIVE_SKILL_KEYWORDS.any { normBody.contains(it, ignoreCase = true) }
+            if (!hasSkillStructure && (normBody.length <= 24 || Regex("^第[一二三四五六七八九十百\\d]+[话章话節节]").containsMatchIn(normBody))) {
+                return true
+            }
+            return false
+        }
+
+        /**
+         * Verifies that an OCR'd dark modal screenshot is genuinely an Enemy Long-Press Popup or
+         * Stage Info modal containing real enemy-skill text — blocking startup splash, apple cutscene,
+         * loading dialogs, VICTORY / Complete settlement, friend-request prompts, and empty icon-only grids.
+         */
+        fun isAuthenticEnemySkillScreen(
+            ocrLines: List<OcrTextLine>,
+            modalKind: DarkModalKind,
+            parseRes: EnemySkillParseResult
+        ): Boolean {
+            if (ocrLines.isEmpty() || modalKind == DarkModalKind.NONE) return false
+            val fullNorm = normalizeText(ocrLines.joinToString("\n") { it.text.trim() })
+            if (fullNorm.length < 4) return false
+
+            val hardRejectKeywords = listOf(
+                "载入中", "请保持网络讯号良好", "正在前往", "战斗结算",
+                "获得金币", "获得友情点数", "你刚从战斗获得", "确定送出交友申请",
+                "是否进入剧情", "回复体力", "已回复至", "返回选单"
+            )
+            if (hardRejectKeywords.any { fullNorm.contains(it) }) return false
+            if (fullNorm.contains("complete", ignoreCase = true) && !fullNorm.contains("【")) return false
+            if (fullNorm.contains("victory", ignoreCase = true) && !fullNorm.contains("【")) return false
+            if ((fullNorm.contains("队伍空间") || fullNorm.contains("队长技能")) && !fullNorm.contains("【")) {
+                return false
+            }
+
+            if (parseRes.hasNoSkillBanner) return false
+            if (parseRes.activeChips.isNotEmpty() || parseRes.combinedHints.hasAny()) return true
+
+            return parseRes.allBlocks.any { blk ->
+                !isLikelyNoiseEntry(blk.titleZhTw, blk.rawBodyZhTw) && (
+                    Regex("【[^】]{2,26}】").containsMatchIn(blk.rawBodyZhTw) ||
+                        (blk.rawBodyZhTw.length >= 6 && POSITIVE_SKILL_KEYWORDS.any {
+                            blk.normalizedText.contains(it, ignoreCase = true)
+                        })
+                    )
+            }
+        }
 
         fun isChromeOrStatLine(normalizedLine: String): Boolean {
             val s = normalizedLine.trim()
@@ -925,7 +1027,13 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             '這' to '这', '彈' to '弹', '亂' to '乱', '凍' to '冻', '盡' to '尽',
             '餘' to '余', '從' to '从', '迴' to '回', '環' to '环', '欄' to '栏',
             '荊' to '荆', '顯' to '显', '藍' to '蓝', '黃' to '黄', '濕' to '湿',
-            '溼' to '湿', '剛' to '刚', '夠' to '够', '齊' to '齐',
+            '溼' to '湿', '剛' to '刚', '夠' to '够', '齊' to '齐', '歸' to '归',
+            '總' to '总', '覽' to '览', '篩' to '筛', '準' to '准', '備' to '备',
+            '預' to '预', '設' to '设', '階' to '阶', '載' to '载', '網' to '网',
+            '絡' to '络', '訊' to '讯', '驗' to '验', '結' to '结', '幣' to '币',
+            '獲' to '获', '劇' to '剧', '情' to '情', '體' to '体', '確' to '确',
+            '申' to '申', '請' to '请', '返' to '返', '單' to '单', '話' to '话',
+            '籤' to '签', '應' to '应', '長' to '长',
             '０' to '0', '１' to '1', '２' to '2', '３' to '3', '４' to '4',
             '５' to '5', '６' to '6', '７' to '7', '８' to '8', '９' to '9',
             '＋' to '+', '－' to '-', '×' to 'x', '≧' to '≥', '＞' to '>',

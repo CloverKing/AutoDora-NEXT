@@ -101,13 +101,15 @@ class PaddleOcrOnnxEngine(private val context: Context) {
         val w = screenBitmap.width
         val h = screenBitmap.height
         val (rx0, ry0, rx1, ry1) = when (modalKind) {
-            // Long-press popup sits in the middle card region; keep above the orb grid while still
-            // capturing lower multi-skill bullets when 2+ skills are stacked.
+            // Long-press popup sits cleanly in the middle/lower card region (38%..82% height),
+            // strictly excluding AutoDora's top floating toolbar and Android's bottom Toast band.
             DarkModalKind.ENEMY_LONG_PRESS_POPUP -> intArrayOf(
-                (w * 0.05f).toInt(), (h * 0.16f).toInt(), (w * 0.95f).toInt(), (h * 0.72f).toInt()
+                (w * 0.05f).toInt(), (h * 0.38f).toInt(), (w * 0.95f).toInt(), (h * 0.82f).toInt()
             )
+            // Stage Info modal (both pre-battle & in-battle) spans [14%..85%], below the floating toolbar
+            // and above the bottom Toast / navigation area.
             DarkModalKind.STAGE_INFO_MODAL -> intArrayOf(
-                (w * 0.04f).toInt(), (h * 0.08f).toInt(), (w * 0.96f).toInt(), (h * 0.88f).toInt()
+                (w * 0.04f).toInt(), (h * 0.14f).toInt(), (w * 0.96f).toInt(), (h * 0.85f).toInt()
             )
             DarkModalKind.NONE -> intArrayOf(0, 0, w, h)
         }

@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.autodora.next.BuildConfig
 import com.autodora.next.R
 import com.autodora.next.capture.CaptureRouter
@@ -90,6 +93,11 @@ fun DashboardScreen(
     onActivateStageScript: (StageWaveScript) -> Unit = {},
     onDeactivateStageScript: () -> Unit = {},
     onDeleteStageScript: (String) -> Unit = {},
+    onUpsertEnemySkill: (oldHash: String?, title: String, body: String, stageName: String, waveIndex: Int) -> Unit = { _, _, _, _, _ -> },
+    onDeleteEnemySkill: (String) -> Unit = {},
+    onCleanNoiseEnemySkills: () -> Unit = {},
+    onReparseAllEnemySkills: () -> Unit = {},
+    onClearAllEnemySkills: () -> Unit = {},
     updateCheckState: UpdateCheckState = UpdateCheckState.Idle,
     onRequestOverlay: () -> Unit,
     onOpenAccessibility: () -> Unit,
@@ -264,6 +272,11 @@ fun DashboardScreen(
                     onActivateStageScript = onActivateStageScript,
                     onDeactivateStageScript = onDeactivateStageScript,
                     onDeleteStageScript = onDeleteStageScript,
+                    onUpsertEnemySkill = onUpsertEnemySkill,
+                    onDeleteEnemySkill = onDeleteEnemySkill,
+                    onCleanNoiseEnemySkills = onCleanNoiseEnemySkills,
+                    onReparseAllEnemySkills = onReparseAllEnemySkills,
+                    onClearAllEnemySkills = onClearAllEnemySkills,
                     updateCheckState = updateCheckState,
                     onUpdateSettings = onUpdateSettings,
                     onRunNativeBenchmark = onRunNativeBenchmark,
@@ -647,6 +660,11 @@ private fun SettingsTab(
     onActivateStageScript: (StageWaveScript) -> Unit,
     onDeactivateStageScript: () -> Unit,
     onDeleteStageScript: (String) -> Unit,
+    onUpsertEnemySkill: (oldHash: String?, title: String, body: String, stageName: String, waveIndex: Int) -> Unit,
+    onDeleteEnemySkill: (String) -> Unit,
+    onCleanNoiseEnemySkills: () -> Unit,
+    onReparseAllEnemySkills: () -> Unit,
+    onClearAllEnemySkills: () -> Unit,
     updateCheckState: UpdateCheckState,
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onRunNativeBenchmark: () -> Unit,
@@ -673,6 +691,11 @@ private fun SettingsTab(
     var showClearTrainingConfirm by remember { mutableStateOf(false) }
     var showSkillsDialog by remember { mutableStateOf(false) }
     var skillFilterMode by remember { mutableStateOf("ALL") }
+    var skillSearchQuery by remember { mutableStateOf("") }
+    var editingSkillTarget by remember { mutableStateOf<CapturedEnemySkillEntity?>(null) }
+    var showEditSkillDialog by remember { mutableStateOf(false) }
+    var deleteSkillConfirmTarget by remember { mutableStateOf<CapturedEnemySkillEntity?>(null) }
+    var showClearAllSkillsConfirm by remember { mutableStateOf(false) }
     var ruleTestInput by remember { mutableStateOf("") }
     var copyFeedbackMsg by remember { mutableStateOf<String?>(null) }
     val clipboardManager = LocalClipboardManager.current
@@ -1299,11 +1322,11 @@ private fun SettingsTab(
             }
         }
 
-        // 4.5. Teal Drawer: Unlimited Dual-Track On-Device Training Data Collector
+        // 4.5. Rose Drawer: Unlimited Dual-Track On-Device Training Data Collector
         val mbUsedText = String.format(Locale.US, "%.2f", trainingStats.totalBytes / (1024.0 * 1024.0))
         ColoredCollapsibleDrawerCard(
             title = stringResource(R.string.section_training_collector),
-            accentColor = DrawerAccentColors.Teal,
+            accentColor = DrawerAccentColors.Rose,
             summaryText = if (settings.trainingDataCollectionEnabled) {
                 stringResource(R.string.training_collect_on_badge, trainingStats.totalSamples)
             } else {
@@ -1476,6 +1499,37 @@ private fun SettingsTab(
                     Text(stringResource(R.string.knowledge_btn_import_stages), maxLines = 1)
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        editingSkillTarget = null
+                        showEditSkillDialog = true
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(stringResource(R.string.knowledge_btn_add), maxLines = 1)
+                }
+                OutlinedButton(
+                    onClick = onCleanNoiseEnemySkills,
+                    enabled = capturedEnemySkills.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(stringResource(R.string.knowledge_btn_clean_noise), maxLines = 1)
+                }
+                OutlinedButton(
+                    onClick = onReparseAllEnemySkills,
+                    enabled = capturedEnemySkills.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(stringResource(R.string.knowledge_btn_reparse_all), maxLines = 1)
+                }
+            }
             if (hasCustomRulesOverride) {
                 TextButton(onClick = onResetCustomRulesJson) {
                     Text(stringResource(R.string.knowledge_btn_reset_rules))
@@ -1585,65 +1639,379 @@ private fun SettingsTab(
         }
 
         if (showSkillsDialog) {
-            val filtered = remember(capturedEnemySkills, skillFilterMode) {
-                when (skillFilterMode) {
+            val filtered = remember(capturedEnemySkills, skillFilterMode, skillSearchQuery) {
+                val statusFiltered = when (skillFilterMode) {
                     EnemySkillParseStatus.PARSED -> capturedEnemySkills.filter { it.parseStatus == EnemySkillParseStatus.PARSED }
                     EnemySkillParseStatus.UNPARSED -> capturedEnemySkills.filter { it.parseStatus == EnemySkillParseStatus.UNPARSED }
                     EnemySkillParseStatus.NON_BOARD_KNOWN -> capturedEnemySkills.filter { it.parseStatus == EnemySkillParseStatus.NON_BOARD_KNOWN }
                     else -> capturedEnemySkills
                 }
+                val q = skillSearchQuery.trim()
+                if (q.isEmpty()) {
+                    statusFiltered
+                } else {
+                    statusFiltered.filter { sk ->
+                        sk.titleZhTw.contains(q, ignoreCase = true) ||
+                            sk.rawBodyZhTw.contains(q, ignoreCase = true) ||
+                            sk.stageName.contains(q, ignoreCase = true) ||
+                            sk.skillHash.contains(q, ignoreCase = true) ||
+                            sk.mappedChipsJson.contains(q, ignoreCase = true)
+                    }
+                }
             }
-            AlertDialog(
+            Dialog(
                 onDismissRequest = { showSkillsDialog = false },
-                title = { Text(stringResource(R.string.knowledge_dialog_title)) },
-                text = {
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    modifier = Modifier
+                        .fillMaxWidth(0.95f)
+                        .fillMaxHeight(0.86f)
+                ) {
                     Column(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "${stringResource(R.string.knowledge_dialog_title)} (${filtered.size}/${capturedEnemySkills.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            FilledTonalButton(
+                                onClick = {
+                                    editingSkillTarget = null
+                                    showEditSkillDialog = true
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.knowledge_btn_add), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                            IconButton(
+                                onClick = { showSkillsDialog = false },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.btn_close), modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = skillSearchQuery,
+                            onValueChange = { skillSearchQuery = it },
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = {
+                                if (skillSearchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { skillSearchQuery = "" }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            },
+                            placeholder = { Text(stringResource(R.string.knowledge_search_hint), style = MaterialTheme.typography.bodySmall) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             listOf(
-                                "ALL" to R.string.knowledge_filter_all,
-                                EnemySkillParseStatus.PARSED to R.string.knowledge_filter_parsed,
-                                EnemySkillParseStatus.UNPARSED to R.string.knowledge_filter_unparsed,
-                                EnemySkillParseStatus.NON_BOARD_KNOWN to R.string.knowledge_filter_nonboard
-                            ).forEach { (key, resId) ->
+                                Triple("ALL", R.string.knowledge_filter_all, capturedEnemySkills.size),
+                                Triple(EnemySkillParseStatus.PARSED, R.string.knowledge_filter_parsed, parsedSkillCnt),
+                                Triple(EnemySkillParseStatus.UNPARSED, R.string.knowledge_filter_unparsed, unparsedSkillCnt),
+                                Triple(EnemySkillParseStatus.NON_BOARD_KNOWN, R.string.knowledge_filter_nonboard, nonBoardSkillCnt)
+                            ).forEach { (key, resId, cnt) ->
                                 FilterChip(
                                     selected = skillFilterMode == key,
                                     onClick = { skillFilterMode = key },
-                                    label = { Text(stringResource(resId), style = MaterialTheme.typography.labelSmall, maxLines = 1) }
+                                    label = {
+                                        Text("${stringResource(resId)} $cnt", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                    }
                                 )
                             }
                         }
-                        if (filtered.isEmpty()) {
-                            Text(
-                                text = stringResource(R.string.knowledge_empty_list),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Column(
-                                modifier = Modifier.verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onCleanNoiseEnemySkills,
+                                enabled = capturedEnemySkills.isNotEmpty(),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
                             ) {
-                                for (sk in filtered.take(80)) {
+                                Text(stringResource(R.string.knowledge_btn_clean_noise), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            }
+                            OutlinedButton(
+                                onClick = onReparseAllEnemySkills,
+                                enabled = capturedEnemySkills.isNotEmpty(),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                            ) {
+                                Text(stringResource(R.string.knowledge_btn_reparse_all), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            }
+                            OutlinedButton(
+                                onClick = { showClearAllSkillsConfirm = true },
+                                enabled = capturedEnemySkills.isNotEmpty(),
+                                modifier = Modifier.weight(0.85f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    stringResource(R.string.knowledge_btn_clear_all),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        if (filtered.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.knowledge_empty_list),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(filtered, key = { it.skillHash }) { sk ->
+                                    val chips = remember(sk.mappedChipsJson) {
+                                        TrainingDataRepository.decodeMappedChips(sk.mappedChipsJson)
+                                    }
+                                    val statusBadgeColor = when (sk.parseStatus) {
+                                        EnemySkillParseStatus.PARSED -> MaterialTheme.colorScheme.primaryContainer
+                                        EnemySkillParseStatus.NON_BOARD_KNOWN -> MaterialTheme.colorScheme.secondaryContainer
+                                        else -> MaterialTheme.colorScheme.errorContainer
+                                    }
+                                    val statusTextColor = when (sk.parseStatus) {
+                                        EnemySkillParseStatus.PARSED -> MaterialTheme.colorScheme.onPrimaryContainer
+                                        EnemySkillParseStatus.NON_BOARD_KNOWN -> MaterialTheme.colorScheme.onSecondaryContainer
+                                        else -> MaterialTheme.colorScheme.onErrorContainer
+                                    }
                                     Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Text(
-                                                text = "${sk.titleZhTw.ifBlank { sk.skillHash }} · ${sk.parseStatus} · ${stringResource(R.string.knowledge_hit_fmt, sk.hitCount)}",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
+                                        Column(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = sk.titleZhTw.ifBlank { sk.skillHash },
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            editingSkillTarget = sk
+                                                            showEditSkillDialog = true
+                                                        },
+                                                        modifier = Modifier.size(28.dp)
+                                                    ) {
+                                                        Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    }
+                                                    IconButton(
+                                                        onClick = { deleteSkillConfirmTarget = sk },
+                                                        modifier = Modifier.size(28.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Outlined.DeleteOutline,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.error,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Surface(shape = RoundedCornerShape(6.dp), color = statusBadgeColor) {
+                                                    Text(
+                                                        text = sk.parseStatus,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = statusTextColor,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                                Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                                                    Text(
+                                                        text = stringResource(R.string.knowledge_hit_fmt, sk.hitCount),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                                if (sk.stageName.isNotBlank()) {
+                                                    Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                                                        val stLabel = if (sk.waveIndex > 0) "${sk.stageName} W${sk.waveIndex}" else sk.stageName
+                                                        Text(
+                                                            text = stLabel,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                            maxLines = 1,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
                                             Text(
                                                 text = sk.rawBodyZhTw,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
+                                            if (chips.isNotEmpty()) {
+                                                FlowRow(
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    for (c in chips) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(6.dp),
+                                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                                                        ) {
+                                                            Text(
+                                                                text = LocaleHelper.formatWaveChipLabel(context, c),
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showEditSkillDialog) {
+            val editTarget = editingSkillTarget
+            var formTitle by remember(editTarget) { mutableStateOf(editTarget?.titleZhTw.orEmpty()) }
+            var formBody by remember(editTarget) { mutableStateOf(editTarget?.rawBodyZhTw.orEmpty()) }
+            var formStage by remember(editTarget) { mutableStateOf(editTarget?.stageName.orEmpty()) }
+            var formWave by remember(editTarget) {
+                mutableStateOf(if ((editTarget?.waveIndex ?: 0) > 0) editTarget!!.waveIndex.toString() else "")
+            }
+            val livePreview = remember(formBody, rulesVersionLabel) {
+                if (formBody.isBlank()) null else onEvaluateRuleTestText(formBody)
+            }
+            AlertDialog(
+                onDismissRequest = { showEditSkillDialog = false },
+                title = {
+                    Text(
+                        stringResource(
+                            if (editTarget == null) R.string.knowledge_add_dialog_title
+                            else R.string.knowledge_edit_dialog_title
+                        )
+                    )
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = formTitle,
+                            onValueChange = { formTitle = it },
+                            singleLine = true,
+                            label = { Text(stringResource(R.string.knowledge_field_title)) },
+                            placeholder = { Text(stringResource(R.string.knowledge_field_title_hint), style = MaterialTheme.typography.bodySmall) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = formBody,
+                            onValueChange = { formBody = it },
+                            minLines = 3,
+                            maxLines = 6,
+                            label = { Text(stringResource(R.string.knowledge_field_body)) },
+                            placeholder = { Text(stringResource(R.string.knowledge_field_body_hint), style = MaterialTheme.typography.bodySmall) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = formStage,
+                                onValueChange = { formStage = it },
+                                singleLine = true,
+                                label = { Text(stringResource(R.string.knowledge_field_stage)) },
+                                modifier = Modifier.weight(1.4f)
+                            )
+                            OutlinedTextField(
+                                value = formWave,
+                                onValueChange = { raw -> formWave = raw.filter { it.isDigit() }.take(2) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                label = { Text(stringResource(R.string.knowledge_field_wave)) },
+                                modifier = Modifier.weight(0.8f)
+                            )
+                        }
+                        if (livePreview != null) {
+                            val firstBlock = livePreview.allBlocks.firstOrNull()
+                            val pStatus = firstBlock?.parseStatus ?: EnemySkillParseStatus.UNPARSED
+                            Text(
+                                text = stringResource(R.string.knowledge_live_preview_fmt, pStatus, livePreview.activeChips.size),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            if (livePreview.activeChips.isNotEmpty()) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    for (c in livePreview.activeChips) {
+                                        AssistChip(
+                                            onClick = {},
+                                            label = { Text(LocaleHelper.formatWaveChipLabel(context, c), style = MaterialTheme.typography.labelSmall) }
+                                        )
                                     }
                                 }
                             }
@@ -1651,8 +2019,78 @@ private fun SettingsTab(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showSkillsDialog = false }) {
-                        Text(stringResource(R.string.btn_got_it))
+                    Button(
+                        enabled = formBody.isNotBlank(),
+                        onClick = {
+                            onUpsertEnemySkill(
+                                editTarget?.skillHash,
+                                formTitle.trim(),
+                                formBody.trim(),
+                                formStage.trim(),
+                                formWave.toIntOrNull() ?: 0
+                            )
+                            showEditSkillDialog = false
+                        }
+                    ) {
+                        Text(stringResource(R.string.knowledge_btn_save))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditSkillDialog = false }) {
+                        Text(stringResource(R.string.about_update_cancel_btn))
+                    }
+                }
+            )
+        }
+
+        deleteSkillConfirmTarget?.let { target ->
+            AlertDialog(
+                onDismissRequest = { deleteSkillConfirmTarget = null },
+                title = { Text(stringResource(R.string.knowledge_delete_confirm_title)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.knowledge_delete_confirm_body,
+                            target.titleZhTw.ifBlank { target.skillHash }
+                        )
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onDeleteEnemySkill(target.skillHash)
+                            deleteSkillConfirmTarget = null
+                        }
+                    ) {
+                        Text(stringResource(R.string.knowledge_btn_delete), color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { deleteSkillConfirmTarget = null }) {
+                        Text(stringResource(R.string.about_update_cancel_btn))
+                    }
+                }
+            )
+        }
+
+        if (showClearAllSkillsConfirm) {
+            AlertDialog(
+                onDismissRequest = { showClearAllSkillsConfirm = false },
+                title = { Text(stringResource(R.string.knowledge_clear_confirm_title)) },
+                text = { Text(stringResource(R.string.knowledge_clear_confirm_body)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showClearAllSkillsConfirm = false
+                            onClearAllEnemySkills()
+                        }
+                    ) {
+                        Text(stringResource(R.string.knowledge_btn_clear_all), color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearAllSkillsConfirm = false }) {
+                        Text(stringResource(R.string.about_update_cancel_btn))
                     }
                 }
             )
@@ -2075,6 +2513,7 @@ internal object DrawerAccentColors {
     val Crimson = Color(0xFFD32F2F)
     val Blue = Color(0xFF1976D2)
     val Purple = Color(0xFF7B1FA2)
+    val Rose = Color(0xFFC2185B)
 
     /** High-contrast foreground tint for summary badges & chevrons in Dark Mode. */
     fun foreground(accent: Color, isDark: Boolean): Color {
@@ -2086,6 +2525,7 @@ internal object DrawerAccentColors {
             Crimson -> Color(0xFFFFAB91)
             Blue -> Color(0xFF90CAF9)
             Purple -> Color(0xFFDFB0FF)
+            Rose -> Color(0xFFF48FB1)
             else -> Color(0xFFE0E6FF)
         }
     }

@@ -2,10 +2,10 @@
 
 > **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
 
-[![Version](https://img.shields.io/badge/version-v0.7.0-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.7.0)
+[![Version](https://img.shields.io/badge/version-v0.7.1-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.7.1)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
-[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%20100%20JVM%20%2B%204%20ML%20Passing-2E7D32.svg)](#快速构建与测试)
+[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%20105%20JVM%20%2B%204%20ML%20Passing-2E7D32.svg)](#快速构建与测试)
 [![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#多语言主题与应用内更新)
 
 ---
@@ -156,7 +156,9 @@ AutoDora-NEXT/
   - `v0.5.0`：端侧多头轻量 CNN `AutoDoraOrbNetV1`（`84,191` 参数，BN 折叠 FP32 `.tflite` `340.4 KB`）+ 近零误报 `HybridFusionPolicy` 混合识盘正式上线；`CV-Rule-v2.7` 补齐 6 色元素着色邪能外焰、全版 30/30 血浴地形放行与 `?` 边缘漂移容差；Settings 支持 AI 混合识盘开关与规则 CV 无缝兜底。
   - `v0.5.1`：新增 **无上限双轨端侧训练素材自采集飞轮**（`Room v2` + `TrainingDataRepository` + 弹窗分类器 `classifyDarkModalForCapture` + `OverlayControllerService` 4 处采样钩子），同步收集「盘面静止双帧 + 1:1 编排 P0 人工纠错真值」与「战中长按敌技弹窗 / 关卡资讯」，在「设置」卡片提供统计、开关、一键导出 ZIP（`MediaStore.Downloads` + `FileProvider` 分享）与确认清空。
   - `v0.6.0`：集成 `ONNX Runtime Mobile 1.32.0` + 纯离线繁简中文 `PP-OCRv5 Mobile`（`ch_PP-OCRv5_{det,rec}_mobile.onnx`）与 `TosEnemySkillParserV2`（全 63 项盘面敌技规则 + `HP/DEF 0` 与 UI 铬条拦截），实现战中弹窗静默识别、**灰字无视技能本地全文归档与实战动态跳过双轨分离**、`ActiveStrategyStore` 四级仲裁（`✦AI` 临时盾 + 换波自动清除）以及结果卡片 `BoardAutoPolicySummary` 盘面自动避障摘要。
-- [x] **Phase 4.2 非素材闭环与 Stage 2 训练管线就绪（`v0.7.0` · 当前 `dev` 版本）**：完成 **`StageWaveScriptParser` + Room `v3` 全波次剧本 & Wiki JSON 导入**（悬浮窗 `‹ W2/5 ›` 步进器）、**`WaveTransitionDetector` 上方敌区 dHash 无黑屏直切双保险换波检测**、**`BoardVisualHints` 视觉联动**（幽闭空间 AI 灰度判色增强 & 移形换影一键编排）、主控台 **敌技知识库浏览/待补导出/规则热更新/离线文案试算器**，以及 PC 端 **`ml/` 数据回流加权与 `BoardMasterGridNet` / `EnemyIconNet` ONNX 训练导出脚手架**。
+- [x] **Phase 4.2 非素材闭环、采集门控修复与知识库完整管理（`v0.7.0` – `v0.7.1` · 当前 `dev` 版本）**：
+  - `v0.7.0`：完成 **`StageWaveScriptParser` + Room `v3` 全波次剧本 & Wiki JSON 导入**（悬浮窗 `‹ W2/5 ›` 步进器）、**`WaveTransitionDetector` 上方敌区 dHash 无黑屏直切双保险换波检测**、**`BoardVisualHints` 视觉联动**（幽闭空间 AI 灰度判色增强 & 移形换影一键编排）、主控台热更新/离线文案试算器，以及 PC 端 **`ml/` 数据回流加权与 `BoardMasterGridNet` / `EnemyIconNet` ONNX 训练导出脚手架**。
+  - `v0.7.1`：新增 **`BoardCaptureQualityGate` + `BoardTurnStabilityTracker` 静止双帧稳定门控**（每回合仅采 1 对清晰可操作双帧，彻底拒绝消珠黑格/天降 Combo 爆炸/暗化回合末与选战友误采）、收紧 `PaddleOcrOnnxEngine` ROI 避开悬浮条与 Toast 并将敌技落盘移至 `isAuthenticEnemySkillScreen` 强校验之后、修复 `【X連撃零化】` / `【≥N連撃盾】` / `【電撃之水】` 解析与长按识别明确 Toast 反馈；设置页采集抽屉改用独立 **`Rose` 玫瑰红** 区分 `Teal`，并上线 **敌技知识库完整增删改查管理面板（`+ 新增` / 编辑 / 删除 / 搜索 / 状态筛选 / `清理噪音` / `全部重算` / `清空`）**。
 - [ ] **Phase 4 后续规划（`v0.8.x` – `v1.0.0`）**：素材回流后训练并接入 `BoardMasterGridNet` 与 `EnemyIconNet` ONNX 权重、R8 / ABI 瘦身（Phase D）、可选 Shizuku 触控引擎与 `v1.0.0` 正式发布。
 
 ---
@@ -165,7 +167,7 @@ AutoDora-NEXT/
 
 ### 1. 直接安装预编译 APK
 
-前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.5.0-release.apk`；`dev` 分支持续演进版本可本地构建 `AutoDora-NEXT-v0.7.0-release.apk`），安装后：
+前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.5.0-release.apk`；`dev` 分支持续演进版本可本地构建 `AutoDora-NEXT-v0.7.1-release.apk`），安装后：
 1. 在「概览 → 运行权限检查」依次授予 **悬浮窗**、**无障碍自动转珠** 与 **屏幕采集（选择「整个屏幕」）** 三项权限；
 2. 若在 Android 13+ / HyperOS / One UI / ColorOS 遇到无障碍开关受限，按概览页「无障碍受限设置指引」点击「应用详情 → 右上角 `⋮` → 允许受限设置」后即可开启；
 3. 后续版本可直接在 App 内「设置 → 关于与版本 → 检查更新 → 下载并安装」一键原地升级。
@@ -176,7 +178,7 @@ AutoDora-NEXT/
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 3. Android 全模块 JVM 单测（100/100）与 APK 构建
+### 3. Android 全模块 JVM 单测（105/105）与 APK 构建
 
 ```powershell
 # 运行全部模块单元测试并构建 Debug APK

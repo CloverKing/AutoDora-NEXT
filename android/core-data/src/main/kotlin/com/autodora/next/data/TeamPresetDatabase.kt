@@ -126,6 +126,12 @@ interface CapturedEnemySkillDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: CapturedEnemySkillEntity)
 
+    @Query("DELETE FROM captured_enemy_skills WHERE skillHash = :hash")
+    suspend fun deleteByHash(hash: String)
+
+    @Query("DELETE FROM captured_enemy_skills WHERE skillHash IN (:hashes)")
+    suspend fun deleteByHashes(hashes: List<String>)
+
     @Query("DELETE FROM captured_enemy_skills")
     suspend fun deleteAll()
 }

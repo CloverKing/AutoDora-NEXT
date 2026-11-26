@@ -12,6 +12,7 @@ data class BoardVisualHints(
     val hasDisguise: Boolean = false,
     val hasBurning: Boolean = false,
     val hasScorching: Boolean = false,
+    val hasElectrified: Boolean = false,
     val hasSticky: Boolean = false,
     val hasStorm: Boolean = false,
     val hasShattered: Boolean = false,
@@ -27,6 +28,7 @@ data class BoardVisualHints(
         hasDisguise = hasDisguise || other.hasDisguise,
         hasBurning = hasBurning || other.hasBurning,
         hasScorching = hasScorching || other.hasScorching,
+        hasElectrified = hasElectrified || other.hasElectrified,
         hasSticky = hasSticky || other.hasSticky,
         hasStorm = hasStorm || other.hasStorm,
         hasShattered = hasShattered || other.hasShattered,
@@ -40,7 +42,7 @@ data class BoardVisualHints(
 
     fun hasAny(): Boolean =
         hasMonochrome || hasDisguise || hasBurning || hasScorching ||
-            hasSticky || hasStorm || hasShattered || hasBlackHole ||
+            hasElectrified || hasSticky || hasStorm || hasShattered || hasBlackHole ||
             hasBloodbath || hasBarrier || hasPurgatoryFire || hasMud || hasMiasma
 }
 
