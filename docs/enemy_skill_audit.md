@@ -9,7 +9,7 @@
 - **本次审计新发现并已补全/修正 (`UPGRADED`)**：`20` 项
 - **纯视觉干扰 / 印记类（已支持画笔标注，待后续端侧模型增强，`CV_PARTIAL`)**：`6` 项
 - **非盘面转珠机制（血量/CD/EP/减伤/隐身等，`NON_BOARD`)**：`35` 项
-- **端侧自动识别闭环（`v0.6.0–v0.7.2`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json v2026.11-v2.1`）联合 `PaddleOcrOnnxEngine` 与 `StageWaveScriptParser`，支持单敌弹窗、关前全波次剧本（含 `BOSS` / `第1~N階段`）与 A1 `stage_wiki_db` 一键编译剧本导入。`v0.7.2` 端侧同步 [build_unified_enemy_skill_master.py](../ml/tools/build_unified_enemy_skill_master.py) 的排版智能去换行与跨行 `【标题】` 修复，全量通过 **A4 380 条基准与 394 条唯一权威库校验**，并依据 **A2 23 张实机图标定灰字阈值（`effP92 ≤ 178 && fgChromaMean ≤ 38f`）**，灰字无视技能在实战解版中动态跳过而 100% 归档于本地 Room `captured_enemy_skills`（支持增删改查 + 噪音清理 + 全部重算）。
+- **端侧自动识别闭环（`v0.6.0–v0.8.0`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json v2026.11-v2.1` + `v0.8.0` 新增火/木/水强化等属性限制形状盾与精灵守护/符石净化/能力继承繁简对齐）联合 `PaddleOcrOnnxEngine`、`StageWaveScriptParser` 与 **Stage 2B `EnemyIconOnnxClassifier`（Tier-3 上方敌区图标检测，`neg_fp = 0/300`）**，支持单敌弹窗、关前全波次剧本（已编译刷新至 **140 关 / 498 波 / 101 阶段**）与唯一权威库（**A4 380 条基准 + 499 条唯一权威库，`429` A1 实爬 + `70` 百科兜底**）全量回归；同时依据 **A2 23 张实机图标定灰字阈值（`effP92 ≤ 178 && fgChromaMean ≤ 38f`）**，灰字无视技能在实战解版中动态跳过而 100% 归档于本地 Room `captured_enemy_skills`（支持增删改查 + 噪音清理 + 全部重算）。
 
 ## 二、本次审计发现并落地的核心算法、规则与 UI 升级
 

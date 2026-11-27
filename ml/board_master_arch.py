@@ -2,12 +2,12 @@
 BoardMasterGridNet — Next-generation full-board dual-frame multi-head architecture (Stage 2A).
 
 Consumes two aligned static frames (`frame_a`, `frame_b`) concatenated along channels:
-  Input:  [B, 6, rows * cell_px, cols * cell_px] (RGB pair, [0, 1] float32)
+  Input:  [B, 6, rows * 64, cols * 64] (RGB pair, [0, 1] float32)
   Output: [B, rows * cols, 47] aligned 1:1 with ml/schema.py & HybridFusionPolicy.kt!
 
-Supports arbitrary dynamic (cols, rows) (6x5 standard AND 6x8 Weijian expanded) by pooling
-cell feature maps cleanly into an adaptive `(rows, cols)` grid and applying global 2-layer
-Transformer self-attention across all cells (catching board-wide dark/dim themes & multi-cell puzzle borders).
+Uses pure-tensor DynamicGridAttnBlock (no baked sequence length in ONNX Reshape) and depthwise
+spatial cell pooling (stride=8 matching stem's /8 downsampling -> 8x8 sub-grid per 64px cell),
+so a SINGLE exported `.onnx` model dynamically supports 6x5 (30 cells) AND 6x8 Weijian (48 cells).
 """
 
 from __future__ import annotations
@@ -45,18 +45,53 @@ class DwConvBlock(nn.Module):
         return F.gelu(x + residual)
 
 
+class DynamicGridAttnBlock(nn.Module):
+    """Transformer encoder block with pure runtime shape arithmetic for dynamic ONNX grids."""
+
+    def __init__(self, embed_dim: int, n_heads: int = 4, dropout: float = 0.1) -> None:
+        super().__init__()
+        self.n_heads = n_heads
+        self.head_dim = embed_dim // n_heads
+        self.scale = self.head_dim ** -0.5
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.qkv = nn.Linear(embed_dim, embed_dim * 3, bias=False)
+        self.proj = nn.Linear(embed_dim, embed_dim)
+        self.drop = nn.Dropout(dropout)
+        self.norm2 = nn.LayerNorm(embed_dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim * 2, embed_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        b, n, d = x.shape
+        h = self.norm1(x)
+        qkv = self.qkv(h).reshape(b, n, 3, self.n_heads, self.head_dim)
+        q = qkv[:, :, 0].transpose(1, 2)
+        k = qkv[:, :, 1].transpose(1, 2)
+        v = qkv[:, :, 2].transpose(1, 2)
+        attn = torch.softmax(torch.matmul(q, k.transpose(-2, -1)) * self.scale, dim=-1)
+        out = torch.matmul(attn, v).transpose(1, 2).reshape(b, n, d)
+        x = x + self.drop(self.proj(out))
+        x = x + self.ffn(self.norm2(x))
+        return x
+
+
 class BoardMasterGridNet(nn.Module):
     def __init__(self, embed_dim: int = 128, n_heads: int = 4, n_layers: int = 2) -> None:
         super().__init__()
         self.embed_dim = embed_dim
         self.stem = nn.Sequential(
-            nn.Conv2d(6, 48, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(48),
+            nn.Conv2d(6, 40, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(40),
             nn.GELU(),
-            nn.Conv2d(48, 96, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(96),
+            nn.Conv2d(40, 80, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(80),
             nn.GELU(),
-            nn.Conv2d(96, embed_dim, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.Conv2d(80, embed_dim, kernel_size=3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(embed_dim),
             nn.GELU(),
         )
@@ -64,16 +99,14 @@ class BoardMasterGridNet(nn.Module):
             DwConvBlock(embed_dim),
             DwConvBlock(embed_dim),
         )
-        enc_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim,
-            nhead=n_heads,
-            dim_feedforward=embed_dim * 2,
-            dropout=0.1,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
+        # Preserve local quadrant geometry (top-right race/mark badge vs center star vs corners)
+        self.cell_spatial = nn.Conv2d(
+            embed_dim, embed_dim, kernel_size=8, stride=8, groups=embed_dim, bias=False
         )
-        self.grid_ctx = nn.TransformerEncoder(enc_layer, num_layers=n_layers)
+        self.cell_bn = nn.BatchNorm2d(embed_dim)
+        self.grid_ctx = nn.Sequential(
+            *[DynamicGridAttnBlock(embed_dim, n_heads=n_heads, dropout=0.1) for _ in range(n_layers)]
+        )
 
         self.head_is_rune = nn.Linear(embed_dim, NUM_IS_RUNE)
         self.head_element = nn.Linear(embed_dim, NUM_ELEMENTS)
@@ -88,10 +121,9 @@ class BoardMasterGridNet(nn.Module):
         rows: int = 5,
         cols: int = 6,
     ) -> dict[str, torch.Tensor]:
-        feat = self.local_blocks(self.stem(dual_board))  # [B, D, H', W']
-        # Pool cleanly to fixed cell tokens [B, D, rows, cols]
-        grid_feat = F.adaptive_avg_pool2d(feat, output_size=(rows, cols))
-        b, d, r, c = grid_feat.shape
+        feat = self.local_blocks(self.stem(dual_board))  # [B, D, H/8, W/8]
+        # Standard cell_px=64 -> H/8 = rows * 8, W/8 = cols * 8; stride-8 conv handles arbitrary dynamic (rows, cols)!
+        grid_feat = F.gelu(self.cell_bn(self.cell_spatial(feat)) + F.avg_pool2d(feat, kernel_size=8, stride=8))
         tokens = grid_feat.flatten(2).transpose(1, 2)  # [B, R*C, D]
         ctx = self.grid_ctx(tokens)
         return {

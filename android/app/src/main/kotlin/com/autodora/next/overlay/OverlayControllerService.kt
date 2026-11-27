@@ -99,6 +99,7 @@ class OverlayControllerService : Service() {
     @Inject lateinit var touchExecutor: TouchExecutor
     @Inject lateinit var trainingDataRepository: TrainingDataRepository
     @Inject lateinit var paddleOcrOnnxEngine: PaddleOcrOnnxEngine
+    @Inject lateinit var enemyIconOnnxClassifier: com.autodora.next.vision.EnemyIconOnnxClassifier
     @Inject lateinit var enemySkillParserHolder: HotReloadEnemySkillParser
     @Inject lateinit var stageWaveScriptRepository: StageWaveScriptRepository
 
@@ -214,6 +215,10 @@ class OverlayControllerService : Service() {
     private val waveTransitionDetector = WaveTransitionDetector()
     private var pendingStaticBoardFrame: android.graphics.Bitmap? = null
     private val boardTurnStabilityTracker = BoardTurnStabilityTracker()
+    private var lastIconScanTimeMs: Long = 0L
+    private var pendingIconClassKey: String = ""
+    private var consecutiveIconMatchTicks: Int = 0
+    private var lastAppliedIconWaveKey: String = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -397,6 +402,8 @@ class OverlayControllerService : Service() {
         triggerEmergencyStop()
         clearLastBoardSnapshot()
         resetIdleBoardStabilityCache()
+        runCatching { (boardRecognizer as? com.autodora.next.vision.HybridBoardRecognizer)?.close() }
+        runCatching { enemyIconOnnxClassifier.close() }
         serviceScope.cancel()
         removeOverlayViews()
         // Always release MediaProjection when stopping the floating assistant so system Screen Recorder
@@ -2505,6 +2512,42 @@ class OverlayControllerService : Service() {
                                     ) {
                                         handleWaveAdvanced()
                                     }
+                                } else if (settings.useAiRecognizer &&
+                                    settings.autoEnemySkillOcrEnabled &&
+                                    !boardEditorMode &&
+                                    !calibrationMode
+                                ) {
+                                    val nowIconMs = System.currentTimeMillis()
+                                    if ((nowIconMs - lastIconScanTimeMs) >= 1800L) {
+                                        lastIconScanTimeMs = nowIconMs
+                                        val iconRes = withContext(Dispatchers.Default) {
+                                            enemyIconOnnxClassifier.classifyBitmap(bmp)
+                                        }
+                                        if (iconRes != null && (iconRes.chips.isNotEmpty() || iconRes.hints.hasAny())) {
+                                            val key = iconRes.detectedClasses.sorted().joinToString(",")
+                                            if (key == pendingIconClassKey) {
+                                                consecutiveIconMatchTicks++
+                                            } else {
+                                                pendingIconClassKey = key
+                                                consecutiveIconMatchTicks = 1
+                                            }
+                                            if (consecutiveIconMatchTicks >= 2 && key != lastAppliedIconWaveKey) {
+                                                lastAppliedIconWaveKey = key
+                                                if (iconRes.chips.isNotEmpty()) {
+                                                    ActiveStrategyStore.applyAutoDetectedChips(iconRes.chips)
+                                                }
+                                                if (iconRes.hints.hasAny()) {
+                                                    ActiveStrategyStore.setActiveVisualHints(
+                                                        ActiveStrategyStore.activeVisualHints.value.mergeWith(iconRes.hints)
+                                                    )
+                                                }
+                                                waveTransitionDetector.reset()
+                                            }
+                                        } else {
+                                            pendingIconClassKey = ""
+                                            consecutiveIconMatchTicks = 0
+                                        }
+                                    }
                                 }
                                 if (!showPath &&
                                     !boardEditorMode &&
@@ -2614,6 +2657,10 @@ class OverlayControllerService : Service() {
         lastOcrModalTimeMs = 0L
         lastWatchModalHash = 0L
         consecutiveStableModalTicks = 0
+        lastIconScanTimeMs = 0L
+        pendingIconClassKey = ""
+        consecutiveIconMatchTicks = 0
+        lastAppliedIconWaveKey = ""
         waveTransitionDetector.reset()
         resetIdleBoardStabilityCache()
         if (ActiveStageScriptStore.activeScript.value != null) {

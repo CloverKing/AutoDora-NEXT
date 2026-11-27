@@ -1,6 +1,6 @@
 """
-Exports BoardMasterGridNet (Stage 2A) and EnemyIconNet (Stage 2B) to ONNX (opset 17)
-with numerical equivalence verification via onnxruntime CPUExecutionProvider (`max_abs_diff < 1e-4`).
+Exports BoardMasterGridNet (Stage 2A, dynamic 6x5 / 6x8 grids) and EnemyIconNet (Stage 2B)
+to ONNX (opset 17) with numerical equivalence verification via onnxruntime (`max_abs_diff < 1e-4`).
 """
 
 from __future__ import annotations
@@ -27,36 +27,35 @@ def export_board_master_to_onnx(
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     model_cpu = model.eval().cpu()
 
-    class _Wrapper(torch.nn.Module):
-        def __init__(self, inner: BoardMasterGridNet, r: int, c: int) -> None:
-            super().__init__()
-            self.inner = inner
-            self.r = r
-            self.c = c
-
-        def forward(self, dual_board: torch.Tensor) -> torch.Tensor:
-            return self.inner(dual_board, rows=self.r, cols=self.c)
-
-    wrapped = _Wrapper(model_cpu, rows, cols).eval()
-    sample = torch.rand(1, 6, rows * cell_px, cols * cell_px, dtype=torch.float32)
+    sample_5 = torch.rand(1, 6, rows * cell_px, cols * cell_px, dtype=torch.float32)
+    sample_8 = torch.rand(1, 6, 8 * cell_px, cols * cell_px, dtype=torch.float32)
 
     with torch.no_grad():
-        torch_out = wrapped(sample).numpy()
+        torch_5 = model_cpu(sample_5).numpy()
+        torch_8 = model_cpu(sample_8).numpy()
 
     torch.onnx.export(
-        wrapped,
-        (sample,),
+        model_cpu,
+        (sample_5,),
         str(dest_path),
         input_names=["dual_board"],
         output_names=["cell_probs"],
-        dynamic_axes={"dual_board": {0: "batch"}, "cell_probs": {0: "batch"}},
+        dynamic_axes={
+            "dual_board": {0: "batch", 2: "height", 3: "width"},
+            "cell_probs": {0: "batch", 1: "cells"},
+        },
         opset_version=opset,
         dynamo=False,
     )
 
     sess = ort.InferenceSession(str(dest_path), providers=["CPUExecutionProvider"])
-    ort_out = sess.run(["cell_probs"], {"dual_board": sample.numpy()})[0]
-    return float(np.max(np.abs(torch_out - ort_out)))
+    ort_5 = sess.run(["cell_probs"], {"dual_board": sample_5.numpy()})[0]
+    ort_8 = sess.run(["cell_probs"], {"dual_board": sample_8.numpy()})[0]
+    if ort_8.shape != torch_8.shape:
+        raise RuntimeError(f"Dynamic 6x8 shape mismatch: expected {torch_8.shape}, got {ort_8.shape}")
+    diff_5 = float(np.max(np.abs(torch_5 - ort_5)))
+    diff_8 = float(np.max(np.abs(torch_8 - ort_8)))
+    return max(diff_5, diff_8)
 
 
 def export_enemy_icon_to_onnx(

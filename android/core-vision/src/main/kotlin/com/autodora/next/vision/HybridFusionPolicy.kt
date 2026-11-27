@@ -258,7 +258,7 @@ object HybridFusionPolicy {
             for (oi in 0 until OrbNetSchema.NUM_TILE_OVERLAYS) {
                 val bit = OrbNetSchema.TILE_OVERLAY_BITS_MAP[oi]
                 if (bit == TileFlagBits.NONE) continue
-                val th = config.overlayThresholds[oi].coerceIn(0.50f, 0.99f)
+                val th = config.overlayThresholds[oi].coerceIn(0.40f, 1.05f)
                 if (pred.tileOverlayProbs[oi] >= th) {
                     fusedFlags = fusedFlags or bit
                 }
@@ -284,7 +284,7 @@ object HybridFusionPolicy {
             for (hi in 0 until OrbNetSchema.NUM_HAZARDS) {
                 val bit = OrbNetSchema.HAZARD_BITS_MAP[hi]
                 if (bit == HazardBits.NONE) continue
-                val th = config.hazardThresholds[hi].coerceIn(0.50f, 0.99f)
+                val th = config.hazardThresholds[hi].coerceIn(0.40f, 1.05f)
                 if (pred.hazardProbs[hi] >= th) {
                     fusedHazards = fusedHazards or bit
                 }

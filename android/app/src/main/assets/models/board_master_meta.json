@@ -1,0 +1,320 @@
+{
+  "model_name": "BoardMasterGridNetV2",
+  "schema_version": 1,
+  "input_name": "dual_board",
+  "output_name": "cell_probs",
+  "quantization": "fp32",
+  "param_count": 536719,
+  "onnx_bytes": 2176175,
+  "onnx_kb": 2125.2,
+  "onnx_parity_max_abs_diff": 1.76e-06,
+  "cpu_ms_6x5_desktop_4t": 9.17,
+  "cpu_ms_6x8_desktop_4t": 14.74,
+  "hazard_thresholds": {
+    "WEATHERED": 1.01,
+    "ELECTRIFIED": 1.01,
+    "FROZEN": 0.4,
+    "ICE_SEALED": 1.01,
+    "BLOOD_DRAIN_LOCKED": 1.01,
+    "PETRIFIED": 1.01,
+    "BOMB": 0.71,
+    "QUESTION": 1.01,
+    "BLACK_WHITE": 1.01,
+    "PURGATORY_FIRE": 1.01,
+    "EVIL_ENERGY": 1.01,
+    "THORN": 1.01,
+    "COAGULATED": 1.01,
+    "FOAM": 1.01,
+    "LUMINOUS": 1.01,
+    "MAGIC_ORB": 1.01,
+    "BLOOD_THORN": 1.01
+  },
+  "tile_overlay_thresholds": {
+    "PUZZLE": 1.01,
+    "STORM": 1.01,
+    "SHATTERED": 1.01,
+    "BURNING_TILE": 0.4,
+    "SCORCHING_TILE": 0.4,
+    "END_FORBIDDEN_BLOODBATH": 1.01,
+    "BLACK_HOLE": 1.01,
+    "TRAFFIC_LIGHT_MARKER": 0.98
+  },
+  "val_summary": {
+    "is_rune_acc": 0.9924,
+    "element_acc": 0.9688,
+    "clean_6color_element_acc": 0.9688,
+    "phase4_v1_val_element_acc": 0.9304,
+    "phase4_v1_val_clean6_acc": 0.9505,
+    "phase4_v1_val_all_clean6_acc": 0.9304,
+    "variant_acc": 0.8781,
+    "race_acc": 0.94,
+    "race_macro_recall": 0.4404,
+    "race_per_class_recall": {
+      "NONE": {
+        "cells": 2226,
+        "recall": 0.9951
+      },
+      "GOD": {
+        "cells": 1,
+        "recall": 0.0
+      },
+      "DEMON": {
+        "cells": 78,
+        "recall": 0.4744
+      },
+      "HUMAN": {
+        "cells": 60,
+        "recall": 1.0
+      },
+      "BEAST": {
+        "cells": 33,
+        "recall": 0.0303
+      },
+      "DRAGON": {
+        "cells": 4,
+        "recall": 0.25
+      },
+      "ELF": {
+        "cells": 9,
+        "recall": 0.3333
+      },
+      "MACHINA": {
+        "cells": 54,
+        "recall": 0.0
+      }
+    },
+    "dragon_race_recall": 0.25,
+    "dragon_val_cells": 4
+  },
+  "production_safety_metrics": {
+    "hazards": {
+      "WEATHERED": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 2,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "ELECTRIFIED": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 6,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "FROZEN": {
+        "threshold": 0.4,
+        "fail_safe": false,
+        "pos_val": 10,
+        "tp": 5,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.5
+      },
+      "ICE_SEALED": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 9,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "BLOOD_DRAIN_LOCKED": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "PETRIFIED": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "BOMB": {
+        "threshold": 0.71,
+        "fail_safe": false,
+        "pos_val": 15,
+        "tp": 9,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.6
+      },
+      "QUESTION": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "BLACK_WHITE": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 420,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "PURGATORY_FIRE": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 2,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "EVIL_ENERGY": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 18,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "THORN": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "COAGULATED": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 4,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "FOAM": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "LUMINOUS": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 1,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "MAGIC_ORB": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 7,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "BLOOD_THORN": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 14,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      }
+    },
+    "tile_overlay": {
+      "PUZZLE": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "STORM": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 0,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "SHATTERED": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 10,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "BURNING_TILE": {
+        "threshold": 0.4,
+        "fail_safe": false,
+        "pos_val": 5,
+        "tp": 5,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "SCORCHING_TILE": {
+        "threshold": 0.4,
+        "fail_safe": false,
+        "pos_val": 20,
+        "tp": 6,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.3
+      },
+      "END_FORBIDDEN_BLOODBATH": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 12,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "BLACK_HOLE": {
+        "threshold": 1.01,
+        "fail_safe": true,
+        "pos_val": 7,
+        "tp": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.0
+      },
+      "TRAFFIC_LIGHT_MARKER": {
+        "threshold": 0.98,
+        "fail_safe": false,
+        "pos_val": 64,
+        "tp": 17,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.2656
+      }
+    }
+  }
+}

@@ -42,10 +42,16 @@ class MlPipelineTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
-            diff_bm = export_board_master_to_onnx(bm, tmp_dir / "bm.onnx", rows=5, cols=6)
+            bm_path = tmp_dir / "bm.onnx"
+            diff_bm = export_board_master_to_onnx(bm, bm_path, rows=5, cols=6)
             diff_ei = export_enemy_icon_to_onnx(ei, tmp_dir / "ei.onnx")
             self.assertLess(diff_bm, 1e-4)
             self.assertLess(diff_ei, 1e-4)
+
+            import onnxruntime as ort
+            sess = ort.InferenceSession(str(bm_path), providers=["CPUExecutionProvider"])
+            out_dyn_8 = sess.run(["cell_probs"], {"dual_board": x8.numpy()})[0]
+            self.assertEqual(tuple(out_dyn_8.shape), (1, 48, OUTPUT_DIM))
 
     def test_train_one_run_with_p0_weights(self) -> None:
         rng = np.random.default_rng(7)

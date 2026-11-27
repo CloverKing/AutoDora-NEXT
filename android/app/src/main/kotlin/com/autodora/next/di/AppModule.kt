@@ -8,6 +8,7 @@ import com.autodora.next.data.TrainingDataRepository
 import com.autodora.next.touch.AccessibilityTouchExecutor
 import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.vision.BoardRecognizer
+import com.autodora.next.vision.EnemyIconOnnxClassifier
 import com.autodora.next.vision.HotReloadEnemySkillParser
 import com.autodora.next.vision.HybridBoardRecognizer
 import com.autodora.next.vision.PaddleOcrOnnxEngine
@@ -56,6 +57,12 @@ object AppModule {
     @Singleton
     fun providePaddleOcrOnnxEngine(@ApplicationContext context: Context): PaddleOcrOnnxEngine {
         return PaddleOcrOnnxEngine(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideEnemyIconOnnxClassifier(@ApplicationContext context: Context): EnemyIconOnnxClassifier {
+        return EnemyIconOnnxClassifier(context)
     }
 
     @Provides

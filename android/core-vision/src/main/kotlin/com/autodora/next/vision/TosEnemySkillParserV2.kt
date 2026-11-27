@@ -293,12 +293,13 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         matchedIds: MutableList<String>,
         chips: MutableList<WaveShieldChip>
     ) {
-        // A. Puzzle Shield (#1 指定形狀盾 / 強化拼圖盾 / 嚴格拼圖 / 屬性拼圖)
-        if (norm.contains("拼图") || norm.contains("指定形状")) {
-            val strict = norm.contains("不可黏连") || norm.contains("不可相连") || norm.contains("严格") ||
+        // A. Puzzle Shield (#1 指定形狀盾 / 強化拼圖盾 / 嚴格拼圖 / 屬性拼圖 / 屬性限制形狀盾)
+        if (norm.contains("拼图") || norm.contains("指定形状") || norm.contains("形状盾") || norm.contains("指定位置消除")) {
+            val strict = norm.contains("不可黏连") || norm.contains("不可相连") || norm.contains("不可连同") ||
+                norm.contains("严格") || norm.contains("限制形状盾") ||
                 Regex("拼图盾\\s*[-·]?\\s*限").containsMatchIn(norm) || norm.contains("指定形状")
             val ench = norm.contains("强化")
-            val elemMatch = Regex("([水火木光暗心])(?:属性)?[^\\n]{0,14}?(?:拼图|指定形状)|(?:拼图|指定形状)[^\\n]{0,14}?([水火木光暗心])(?:属性)?符石")
+            val elemMatch = Regex("([水火木光暗心])(?:属性)?(?:强化|限制){0,2}[^\\n]{0,14}?(?:拼图|指定形状|形状盾)|(?:拼图|指定形状|形状盾|指定位置消除)[^\\n]{0,14}?([水火木光暗心])(?:属性|强化)?符石")
                 .find(norm)
             val elemChar = elemMatch?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.firstOrNull()
             val elemCode = elemChar?.let { charToElementCode(it) } ?: -1
@@ -943,7 +944,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             "金穗圣果", "蚀骨腐果", "猎人", "猎神", "猎魔", "猎兽", "猎龙", "猎妖", "猎机",
             "无视所有减伤", "无视所有控制", "扣除召唤师", "转化为", "移动符石时间",
             "攻击力提升", "攻击力减少", "回复生命力", "回复100%", "回合后死亡", "伤害减至", "抵挡此伤害",
-            "敌方所有召唤兽"
+            "敌方所有召唤兽", "精灵守护", "符石净化", "反掌", "停止移动符石", "生命力剩1点"
         )
 
         private val NOISE_CONTAINS_PATTERNS = listOf(
@@ -1251,7 +1252,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             '変' to '变', '対' to '对', '応' to '应', '気' to '气', '悪' to '恶', '竜' to '龙',
             '獣' to '兽', '覚' to '觉', '満' to '满', '触' to '触', '発' to '发', '続' to '续',
             '経' to '经', '関' to '关', '単' to '单', '両' to '两', '残' to '残', '壊' to '坏',
-            '霊' to '灵', '黒' to '黑', '砕' to '碎', '継' to '继', '総' to '总', '蔵' to '藏',
+            '霊' to '灵', '黒' to '黑', '砕' to '碎', '継' to '继', '繼' to '继', '総' to '总', '蔵' to '藏',
             '圧' to '压', '広' to '广', '譲' to '让', '読' to '读', '伝' to '传', '効' to '效',
             '収' to '收', '実' to '实', '専' to '专', '歳' to '岁', '畳' to '叠', '称' to '称',
             '縁' to '缘', '訳' to '译', '証' to '证', '軽' to '轻', '辺' to '边', '遅' to '迟',
