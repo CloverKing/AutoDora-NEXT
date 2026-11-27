@@ -42,6 +42,9 @@ internal fun UnifiedStrategyTab(
     settings: AppSettings,
     presets: List<TeamPresetRecord>,
     activeWaveChips: List<WaveShieldChip>,
+    bypassedGreySkills: List<BypassedEnemySkill> = emptyList(),
+    activeVisualHints: BoardVisualHints = BoardVisualHints(),
+    onRestoreBypassedSkill: (BypassedEnemySkill) -> Unit = {},
     onUpdateSettings: ((AppSettings) -> AppSettings) -> Unit,
     onSavePreset: (TeamBasePreset, Boolean) -> Unit,
     onResetStrategy: () -> Unit,
@@ -252,6 +255,79 @@ internal fun UnifiedStrategyTab(
                             )
                         }
                     )
+                }
+            }
+        }
+
+        if (activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise || bypassedGreySkills.isNotEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (activeVisualHints.hasMonochrome) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = DrawerAccentColors.Purple.copy(alpha = 0.16f)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.ov_hint_monochrome_pill),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = DrawerAccentColors.foreground(DrawerAccentColors.Purple, isDark),
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                            if (activeVisualHints.hasDisguise) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = DrawerAccentColors.Amber.copy(alpha = 0.16f)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.ov_hint_disguise_edit_pill),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = DrawerAccentColors.foreground(DrawerAccentColors.Amber, isDark),
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (bypassedGreySkills.isNotEmpty()) {
+                        Text(
+                            text = stringResource(R.string.ov_bypassed_restore_hdr),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            for (sk in bypassedGreySkills) {
+                                AssistChip(
+                                    onClick = { onRestoreBypassedSkill(sk) },
+                                    label = {
+                                        Text(
+                                            text = "⊘ ${sk.titleZhTw.ifBlank { sk.chips.joinToString { it.label } }}",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -116,6 +116,8 @@ class OverlayControllerService : Service() {
     private var activeVisualHints: BoardVisualHints = BoardVisualHints()
     private var activeStageScript: StageWaveScript? = null
     private var activeStageWaveIndex: Int = 1
+    private var savedStageScripts: List<StageWaveScript> = emptyList()
+    private var totalCollectedTrainingSamples: Int = 0
     private lateinit var palette: OverlayPalette
 
     // Overlay views
@@ -316,6 +318,7 @@ class OverlayControllerService : Service() {
             ActiveStrategyStore.bypassedGreySkills.collectLatest { bypassed ->
                 bypassedGreySkills = bypassed
                 refreshActiveShieldStrip()
+                syncDrawerData()
             }
         }
         serviceScope.launch {
@@ -323,18 +326,33 @@ class OverlayControllerService : Service() {
                 activeVisualHints = hints
                 (boardRecognizer as? HybridBoardRecognizer)?.activeVisualHints = hints
                 refreshActiveShieldStrip()
+                syncDrawerData()
             }
         }
         serviceScope.launch {
             ActiveStageScriptStore.activeScript.collectLatest { script ->
                 activeStageScript = script
                 refreshActiveShieldStrip()
+                syncDrawerData()
             }
         }
         serviceScope.launch {
             ActiveStageScriptStore.currentWaveIndex.collectLatest { waveIdx ->
                 activeStageWaveIndex = waveIdx
                 refreshActiveShieldStrip()
+                syncDrawerData()
+            }
+        }
+        serviceScope.launch {
+            stageWaveScriptRepository.observeScripts().collectLatest { list ->
+                savedStageScripts = list
+                syncDrawerData()
+            }
+        }
+        serviceScope.launch {
+            trainingDataRepository.observeStats().collectLatest { st ->
+                totalCollectedTrainingSamples = st.totalSamples
+                syncDrawerData()
             }
         }
     }
@@ -986,6 +1004,22 @@ class OverlayControllerService : Service() {
             },
             onUpdateSettings = { transform ->
                 serviceScope.launch { settingsRepository.update(transform) }
+            },
+            onManualScanEnemyNow = { triggerManualEnemyScan() },
+            onActivateStageScript = { script ->
+                val firstW = script.waves.firstOrNull()?.waveIndex ?: 1
+                ActiveStageScriptStore.activateScript(script, firstW)
+                waveTransitionDetector.reset()
+                toast(lctx.getString(R.string.knowledge_stage_activated_fmt, script.stageName, script.waves.size))
+            },
+            onStepStageWave = { delta ->
+                val e = ActiveStageScriptStore.stepWave(delta)
+                if (e != null) toast(lctx.getString(R.string.ov_toast_stage_wave_next_fmt, e.waveIndex))
+            },
+            onDeactivateStageScript = { ActiveStageScriptStore.clearActiveScript() },
+            onRestoreBypassedSkill = { sk ->
+                val restored = ActiveStrategyStore.restoreBypassedSkill(sk)
+                toast(lctx.getString(R.string.ov_toast_bypassed_restored_fmt, restored))
             },
             onClose = { setTuningDrawerOpen(false) }
         )
@@ -2512,8 +2546,7 @@ class OverlayControllerService : Service() {
                                     ) {
                                         handleWaveAdvanced()
                                     }
-                                } else if (settings.useAiRecognizer &&
-                                    settings.autoEnemySkillOcrEnabled &&
+                                } else if (settings.autoEnemyIconDetectEnabled &&
                                     !boardEditorMode &&
                                     !calibrationMode
                                 ) {
@@ -3228,14 +3261,125 @@ class OverlayControllerService : Service() {
 
     private fun syncDrawerData() {
         if (!::tuningDrawer.isInitialized || !::palette.isInitialized) return
+        val engineStatus = (boardRecognizer as? HybridBoardRecognizer)?.modelDisplayStatus()
+            ?: boardRecognizer.name
         tuningDrawer.updateData(
             palette = palette,
             settings = settings,
             activePreset = activeTeamPreset(),
             activeChips = activeWaveChips,
             boardEditorOpen = boardEditorMode,
-            hasSavedBoard = savedEditedBoard != null
+            hasSavedBoard = savedEditedBoard != null,
+            savedStageScripts = savedStageScripts,
+            activeStageScript = activeStageScript,
+            activeStageWaveIndex = activeStageWaveIndex,
+            bypassedGreySkills = bypassedGreySkills,
+            activeVisualHints = activeVisualHints,
+            aiEngineStatusLabel = engineStatus,
+            collectedTrainingSamples = totalCollectedTrainingSamples
         )
+    }
+
+    private fun triggerManualEnemyScan() {
+        val cap = activeCapturer()
+        if (cap == null || !cap.isReady.value) {
+            toast(lctx.getString(R.string.ov_toast_manual_scan_need_cap))
+            return
+        }
+        setTuningDrawerOpen(false)
+        serviceScope.launch {
+            delay(140L)
+            val bmp = cap.captureBackgroundFrame() ?: run {
+                toast(lctx.getString(R.string.ov_toast_manual_scan_none))
+                return@launch
+            }
+            val isDarkModal = withContext(Dispatchers.Default) {
+                FlashRevealMemoryTracker.isDarkModalCoveringBoard(DirectBitmapVisionFrame(bmp))
+            }
+            if (isDarkModal) {
+                val modalKind = withContext(Dispatchers.Default) {
+                    val k = FlashRevealMemoryTracker.classifyDarkModalForCapture(DirectBitmapVisionFrame(bmp))
+                    if (k == DarkModalKind.NONE) DarkModalKind.ENEMY_LONG_PRESS_POPUP else k
+                }
+                val parser = enemySkillParserHolder.current()
+                val ocrRes = withContext(Dispatchers.Default) { paddleOcrOnnxEngine.recognize(bmp, modalKind) }
+                val parseRes = withContext(Dispatchers.Default) { parser.parseLines(ocrRes.lines) }
+                if (parseRes.allBlocks.isNotEmpty()) {
+                    trainingDataRepository.recordCapturedEnemySkills(
+                        parseRes.allBlocks.map { blk ->
+                            CapturedEnemySkillInput(
+                                skillHash = blk.skillHash,
+                                titleZhTw = blk.titleZhTw,
+                                rawBodyZhTw = blk.rawBodyZhTw,
+                                sourceType = modalKind.name,
+                                parseStatus = blk.parseStatus,
+                                mappedChips = blk.chips
+                            )
+                        }
+                    )
+                }
+                if (modalKind == DarkModalKind.STAGE_INFO_MODAL) {
+                    val stageParsed = withContext(Dispatchers.Default) {
+                        StageWaveScriptParser.parseStageInfoLines(ocrRes.lines, parser)
+                    }
+                    if (stageParsed != null) {
+                        stageWaveScriptRepository.saveScript(stageParsed.script)
+                        val entry = ActiveStageScriptStore.activateScript(
+                            stageParsed.script,
+                            stageParsed.detectedCurrentWave ?: 1
+                        )
+                        waveTransitionDetector.reset()
+                        toast(
+                            lctx.getString(
+                                R.string.ov_toast_stage_script_loaded_fmt,
+                                stageParsed.script.waves.size,
+                                entry?.waveIndex ?: 1
+                            )
+                        )
+                        return@launch
+                    }
+                }
+                val bypassedInputs = parseRes.bypassedBlocks
+                    .filter { it.chips.isNotEmpty() }
+                    .map { BypassedEnemySkill(it.titleZhTw, it.chips) }
+                val applied = ActiveStrategyStore.applyAutoDetectedChips(parseRes.activeChips, bypassedInputs)
+                ActiveStrategyStore.setActiveVisualHints(parseRes.combinedHints)
+                waveTransitionDetector.reset()
+                when {
+                    applied > 0 || bypassedInputs.isNotEmpty() -> {
+                        val msg = buildString {
+                            if (applied > 0) append(lctx.getString(R.string.ov_toast_ocr_applied_fmt, applied))
+                            if (bypassedInputs.isNotEmpty()) append(lctx.getString(R.string.ov_toast_ocr_bypassed_fmt, bypassedInputs.size))
+                        }.trim()
+                        if (msg.isNotEmpty()) toast(msg)
+                    }
+                    parseRes.allBlocks.isNotEmpty() -> {
+                        val titles = parseRes.allBlocks.mapNotNull { it.titleZhTw.takeIf(String::isNotBlank) }.distinct().take(3).joinToString(" / ")
+                        if (titles.isNotBlank()) toast(lctx.getString(R.string.ov_toast_ocr_recognized_info_fmt, titles))
+                    }
+                    else -> toast(lctx.getString(R.string.ov_toast_manual_scan_none))
+                }
+            } else {
+                val iconRes = withContext(Dispatchers.Default) {
+                    enemyIconOnnxClassifier.classifyBitmap(bmp)
+                }
+                if (iconRes != null && (iconRes.chips.isNotEmpty() || iconRes.hints.hasAny())) {
+                    val applied = if (iconRes.chips.isNotEmpty()) {
+                        ActiveStrategyStore.applyAutoDetectedChips(iconRes.chips)
+                    } else 0
+                    if (iconRes.hints.hasAny()) {
+                        ActiveStrategyStore.setActiveVisualHints(
+                            ActiveStrategyStore.activeVisualHints.value.mergeWith(iconRes.hints)
+                        )
+                    }
+                    waveTransitionDetector.reset()
+                    val lblSummary = iconRes.chips.joinToString("·") { it.label }.ifBlank { "视觉提示" }
+                    toast(lctx.getString(R.string.ov_toast_manual_scan_icon_fmt, applied, lblSummary))
+                } else {
+                    toast(lctx.getString(R.string.ov_toast_manual_scan_none))
+                }
+            }
+        }
     }
 
     private fun currentSolution(): SolutionPath? {

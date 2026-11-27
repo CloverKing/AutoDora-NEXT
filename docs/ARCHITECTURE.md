@@ -1,6 +1,6 @@
 # AutoDora-NEXT v3.0 系统架构、功能设计与演进规划
 
-> **当前基线版本**：`v0.8.0`（`versionCode = 800`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
+> **当前基线版本**：`v0.8.1`（`versionCode = 801`，`minSdk = 29` / `targetSdk = 35`，Android 10 ~ Android 16+）  
 > **项目定位**：面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备的**免 Root、全规格动态棋盘自适应、可自由组合解盾、问号/按珠变盘双模破局、1:1 实时盘面编排、C++20 端侧高速引擎驱动**的新一代智能转珠辅助工程。  
 > **设计基线**：全面继承并升级旧版 [AutoDora-V3.4.3](./LEGACY_AUTODORA_ANALYSIS.md) 经实战验证的悬浮窗交互、调参与「问号‧转/风化‧转」按珠重算精华；完整对照 [《神魔之塔》13 年全机制全景调研手册](./TOS_COMPLETE_MECHANICS_CATALOG.md)、[98 项官方敌技审计报告](./enemy_skill_audit.md) 与 [22 项符石状态核验报告](./runestone_status_audit.md)（官方百科 20 项 + 百科外经典 2 项）。  
 > **标定与合规原则**：所有棋盘几何探测、校准基准与视觉特征阈值均严格以**真实《神魔之塔》游戏画面**实测标定；仓库仅包含工程代码、结构化技术规范与应用自身纯净截图，严禁提交任何第三方版权游戏素材。
@@ -150,10 +150,10 @@ flowchart LR
 
 | 维度 | 启动页（Jetpack Compose Material 3） | 游戏内悬浮窗（WindowManager + 原生高帧视图） |
 | :--- | :--- | :--- |
-| **分页结构** | 3-Tab：**概览 / 策略 / 设置** | 3-Tab：**快捷 / 策略 / 设置** |
+| **分页结构** | 4-Tab：**概览 / 策略 / 敌技 / 设置** | 3-Tab：**快捷 / 策略 / 设置**（与启动页 1:1 同步） |
 | **抽屉色彩** | 6 色语义色条 + 浅色边框卡片（蓝/靛蓝/青绿/琥珀/绯红/紫） | 与启动页对应模块使用**完全一致的抽屉配色** |
 | **展开模式** | 默认**全部展开**，支持多抽屉同时展开或单独收起 | 调参分页与盘面编排均采用**单抽屉手风琴互斥展开**，防止遮挡游戏盘面 |
-| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`662` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
+| **主题与语言** | 跟随系统 / 明亮 / 黑暗 Material You（暗色模式下对「本波已启用解盾」激活条与彩色抽屉摘要徽章独立高对比度适配）；跟随系统 / 简中 / 繁中 / English（`728` 词条纯终态文案对齐） | 与启动页**实时同步换肤与热切语言**，零重启 |
 | **主悬浮胶囊** | 概览页一键启停悬浮助手；设置支持控制 **高速录屏模式下悬浮栏是否显示录屏按钮** 以及 **横排 / 竖排** 与 **靠左 / 靠右** 4 态切换（`floatingBarVertical` + `floatingBarDockRight`） | 圆形 App 图标手柄 + 8 个常驻矢量图标（`✦` `▶` `■` `〰` `▤` `▦` `🎚` `✕`）+ 高速录屏模式下可配置增显 **`● 录屏`** 图标；支持 **4 态实时热切**（横排靠右时 App 图标居右、主栏向左展开；竖排靠左向右/靠右向左展开面板）、**拖拽松手平滑左右吸边**及 **DataStore 持久化记忆停靠侧与纵坐标** |
 
 ### 5.2 单一自动保存策略与应用内更新闭环
@@ -172,7 +172,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph UI["表现与交互层 (android/app)"]
-        MainApp["DashboardScreen & UnifiedStrategyTab (3-Tab M3 + 彩色抽屉 + 引擎测速 + 应用内更新)"]
+        MainApp["DashboardScreen & UnifiedStrategyTab (4-Tab M3 + 敌技中枢 + 置顶 AI 抽屉 + 引擎测速)"]
         OverlayMgr["OverlayControllerService (4 态横/竖排×左/右胶囊 + 左右磁吸记忆 + Top-5 结果卡片 + 逐盾灯号)"]
         TuningDrawer["OverlayTuningDrawer (游戏内 3-Tab 单抽屉手风琴面板)"]
         BoardEdit["OverlayBoardEditor (5 色单开互斥抽屉 + 激活徽标 + 独立清格标 + 保存版面)"]
@@ -237,7 +237,7 @@ flowchart TD
 | `android/core-touch/` | `AccessibilityTouchExecutor`、`PathInterpolator`（含精准分段预计转珠耗时计算与校准头像中心垂直下拉）、`SwipeSpeedPreset` | `PathInterpolatorTest`：**9 / 9** 通过 |
 | `android/core-data/` | DataStore 设置、`AutoDoraDatabase v3`（`team_presets` + `collected_training_samples` + `captured_enemy_skills` + `stage_wave_scripts`）、`ActiveStrategyStore`、`StageWaveScriptRepository` + `ActiveStageScriptStore`、`TrainingDataRepository`（含知识库增删改查/噪音清理/重算）、目录配置 | `ActiveStrategyStoreTest` (3) + `TrainingDataRepositoryTest` (3) + `ActiveStageScriptStoreTest` (1)：**7 / 7** 通过 |
 | `android/solver-jni/` | C++20 NDK/JNI 桥接（`arm64-v8a` / `armeabi-v7a` / `x86_64`） | 随 Release/Debug APK 与真机/模拟器测速验证 |
-| `android/app/` | 3-Tab Compose 启动台（含 `Rose` 采集抽屉、敌技知识库完整 CRUD/噪音清理/热更新/试算器/剧本管理抽屉）、4 态悬浮服务（`‹ Wk/N ›` 步进器 + Tier-3 敌区图标扫描 + `✦AI` / 灰字 / 视觉 hints / 自动避障胶囊 + 双保险换波检测 + 静止双帧采集门控）、单抽屉调参/编排、`UpdateChecker` | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **689 / 689** |
+| `android/app/` | 4-Tab Compose 启动台（`概览 / 策略 / 敌技 / 设置`：独立 Indigo `AI 视觉与敌技识别引擎` 抽屉、独立 `敌技` Tab 含分页搜索关卡剧本浏览器与完整知识库 CRUD/噪音清理/热更新/试算器）、4 态悬浮服务（`‹ Wk/N ›` 步进器、`✦ 立即扫描敌技/图标`、Tier-3 敌区图标扫描、`⊘` 灰字撤回恢复、`Rose` 采集开关与静止双帧门控）、单抽屉调参/编排、`UpdateChecker` | `UpdateCheckerTest` (7) + `BoardEditorBrushTest` (4)：**11 / 11** 通过；四语言词条一致性 **728 / 728** |
 | `ml/` | `AutoDoraOrbNetV1`、`BoardMasterGridNetV2`（Stage 2A 双帧动态 ONNX）、`EnemyIconNetV1`（Stage 2B 图标 ONNX）、`ingest_device_export.py`、`extract_youtube_frames.py`、`build_unified_enemy_skill_master.py`、`compile_stage_wiki_bundle.py`、`build_phase4_v2_board_dataset.py`、`build_enemy_icon_dataset.py` | `test_ml_pipeline.py` (4) + `test_enemy_skill_cleaner.py` (4) + `test_stage_wiki_compiler.py` (1)：**9 / 9** 通过 |
 
 ---
@@ -249,4 +249,4 @@ flowchart TD
 | **Phase 1：纯 C++20 动态内核 + 多模块骨架** | `v0.1.0` | **已完成** — `3×3~8×8` 64-bit 位掩码求解器、最高 300 步、Android 7 模块工程与 JNI 三架构编译。 |
 | **Phase 2 & 2.5：免 Root 全链路 + 真图高精度标定** | `v0.2.x` – `v0.3.x` | **已完成** — 零拷贝 `MediaProjection`、血条防假违建、先露后藏记忆快照、免 Root 按住重算续滑、拼图/红绿灯/暴风/化血/结界识别、非战斗/VICTORY 过滤、方向逆转与逐盾 `✓/✗` 判定。 |
 | **Phase 3 & 3.5：百科全量审计 + 统一交互 + 全 6 色特殊符石 CV 与长时稳定** | `v0.4.0` – `v0.4.9` | **已完成** — 全量 98 敌技 + 22 符石状态 + 7 大官方种族全链路升级；成员起动浮标（No.5893/5894/7403）全链路支持；双模屏幕采集与内置 60fps H.264 录屏；HyperOS / Android 14–16 稳态、`0%–100%` 全态血条锚定、18 项状态/地形自动 CV 识别与统一 M3 悬浮/编排闭环。 |
-| **Phase 4：端侧多头 AI 识盘 + 双轨飞轮 + Stage 2A/2B 双 ONNX 体系** | `v0.5.0` – `v0.8.0`（当前）– `v1.0.0` | **已落地（`v0.5.0–v0.8.0`）** — ① `CV-Rule-v2.7` + `AutoDoraOrbNetV1`；② `v0.5.1` 无上限双轨采集飞轮；③ `v0.6.0` 纯离线 `ONNX Runtime Mobile` + `PP-OCRv5` 弹窗识字 + 四级仲裁；④ `v0.7.0–v0.7.2` Room `v3` 全波次剧本、`WaveTransitionDetector` 双保险换波、采集稳定门控、知识库完整 CRUD、A2 灰字标定与 A4/A1 唯一权威库统一；⑤ `v0.8.0` **Stage 2A `BoardMasterGridNetV2` ONNX（`1,276` 盘、`6×5`/`6×8` 动态支持、`clean6=96.88%`/`v1_c6=95.05%`/`race=94.00%`）与 Stage 2B `EnemyIconNetV1` ONNX（`7/24` 活跃类、`neg_fp=0/300`）双模型 GPU 训练、零误报 `1.01` 熔断校准与 Tier-3 端侧集成，权威库扩充至 `499` 技 / `140` 关剧本包**。<br>**后续迭代（`v0.9.x–v1.0.0`）**：小种族与长尾 C 类异态样本扩充、R8/ABI 瘦身（Phase D）、可选 Shizuku 触控与稳定版 `v1.0.0`。 |
+| **Phase 4：端侧多头 AI 识盘 + 双轨飞轮 + Stage 2A/2B 双 ONNX 体系** | `v0.5.0` – `v0.8.1`（当前）– `v1.0.0` | **已落地（`v0.5.0–v0.8.1`）** — ① `CV-Rule-v2.7` + `AutoDoraOrbNetV1`；② `v0.5.1` 无上限双轨采集飞轮；③ `v0.6.0` 纯离线 `ONNX Runtime Mobile` + `PP-OCRv5` 弹窗识字 + 四级仲裁；④ `v0.7.0–v0.7.2` Room `v3` 全波次剧本、`WaveTransitionDetector` 双保险换波、采集稳定门控、知识库完整 CRUD、A2 灰字标定与 A4/A1 唯一权威库统一；⑤ `v0.8.0` **Stage 2A `BoardMasterGridNetV2` ONNX（`1,276` 盘、`6×5`/`6×8` 动态支持、`clean6=96.88%`/`v1_c6=95.05%`/`race=94.00%`）与 Stage 2B `EnemyIconNetV1` ONNX（`7/24` 活跃类、`neg_fp=0/300`）双模型 GPU 训练、零误报 `1.01` 熔断校准与 Tier-3 端侧集成，权威库扩充至 `499` 技 / `140` 关剧本包**；⑥ `v0.8.1` **4-Tab 启动台（新增独立「敌技」Tab 含 `140+` 关可搜索剧本浏览器与知识库/试算器）+ 置顶 Indigo「AI 视觉与敌技识别引擎」抽屉（含独立 `autoEnemyIconDetectEnabled` 开关）+ 悬浮窗 1:1 同步（`✦ 立即扫描敌技/图标`、分页剧本选择、`⊘` 灰字撤回恢复、`Rose` 采集开关）**。<br>**后续迭代（`v0.9.x–v1.0.0`）**：小种族与长尾 C 类异态样本扩充、R8/ABI 瘦身（Phase D）、可选 Shizuku 触控与稳定版 `v1.0.0`。 |

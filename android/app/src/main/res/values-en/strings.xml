@@ -335,8 +335,8 @@
     <string name="mode_weijian_sub">Detects rows 6–8 with HP-bar isolation protection</string>
     <string name="mode_badges_title">Show Recognized Orb Badges on Path</string>
     <string name="mode_badges_sub">Displays recognized colors on preview to verify 1st-wave combos</string>
-    <string name="mode_ai_vision_title">On-Device AI Hybrid Vision (LiteRT)</string>
-    <string name="mode_ai_vision_sub">Runs multi-head CNN with CV fusion for monochrome, weakened, coagulated, blood-thorn &amp; 7 races (off = pure CV)</string>
+    <string name="mode_ai_vision_title">On-Device AI Hybrid Vision (BoardMasterV2 ONNX)</string>
+    <string name="mode_ai_vision_sub">Prioritizes Stage 2A dual-frame dynamic ONNX (6×5/6×8 Weijian &amp; 7 races), falling back seamlessly to LiteRT / Pure CV</string>
     <string name="mode_question_mem_title">Full-Board Question Memory</string>
     <string name="mode_question_mem_sub">Silently remembers clear boards before flip; tapping Solve icon auto-triggers Hold-Nudge-Reveal on direct Question-Turn stages.</string>
     <string name="mode_human_title">Humanized Micro-Jitter</string>
@@ -740,4 +740,44 @@
     <string name="knowledge_cleaned_noise_fmt">Cleaned %1$d non-skill UI noise entries</string>
     <string name="knowledge_no_noise_found">Knowledge DB is already clean — no UI noise found</string>
     <string name="knowledge_reparsed_fmt">Re-evaluated %1$d entries (%2$d updated)</string>
+    <!-- v0.8.1 4-Tab Enemy Hub, AI Vision Drawer & Synchronized Overlay Menus -->
+    <string name="tab_enemy_hub">Enemies</string>
+    <string name="section_ai_vision">AI Vision &amp; Enemy Recognition</string>
+    <string name="ai_engine_active_fmt">Active Board Engine: %1$s</string>
+    <string name="ai_models_ready_fmt">Stage 2A Board: %1$s · Stage 2B Icons: %2$s · PP-OCRv5: %3$s</string>
+    <string name="ai_model_ready">Ready</string>
+    <string name="ai_model_missing">Missing</string>
+    <string name="mode_enemy_icon_title">In-Battle Enemy Icon Detection (EnemyIconV1)</string>
+    <string name="mode_enemy_icon_sub">When no script or popup is active, runs 2-tick stable icon scanning to add safe shields &amp; Monochrome AI recovery (0 FP on negatives)</string>
+    <string name="section_stage_scripts_hub">Stage Wave Scripts</string>
+    <string name="section_enemy_kb_hub">Enemy Skill KB &amp; Hot-Reload</string>
+    <string name="section_enemy_tester_hub">Offline Enemy Skill Tester</string>
+    <string name="stage_scripts_badge_fmt">%1$d stages</string>
+    <string name="stage_scripts_active_banner_fmt">Active: %1$s · W%2$d/%3$d</string>
+    <string name="stage_scripts_stats_fmt">%1$d stage wave scripts saved; import Wiki JSON bundles or browse in-game Stage Info to auto-capture</string>
+    <string name="stage_scripts_btn_browse">Browse &amp; Search All</string>
+    <string name="stage_scripts_dialog_title">All Stage Wave Scripts</string>
+    <string name="stage_scripts_search_hint">Search stage name, wave skill or source…</string>
+    <string name="stage_scripts_empty_list">No matching stage scripts. Tap Import Stage Script above.</string>
+    <string name="stage_scripts_clear_confirm_title">Clear all stage scripts?</string>
+    <string name="stage_scripts_clear_confirm_body">Deletes all locally saved stage wave scripts and clears the active script.</string>
+    <string name="stage_scripts_cleared_ok">Cleared all stage scripts</string>
+    <string name="overview_ai_status_title">On-Device AI &amp; Script Status</string>
+    <string name="overview_no_stage_script">No active stage script (open Enemies tab to import or activate)</string>
+    <string name="ov_btn_scan_enemy_now">Scan Enemy / Icons Now</string>
+    <string name="ov_card_stage_scripts">Stage Script &amp; Enemy</string>
+    <string name="ov_stage_pick_hint">Tap an imported stage below to activate (paged):</string>
+    <string name="ov_stage_empty_hint">No stage scripts yet — import Wiki JSON in Launcher &gt; Enemies</string>
+    <string name="ov_stage_page_fmt">Page %1$d/%2$d</string>
+    <string name="ov_bypassed_restore_hdr">Bypassed grey skills (tap to restore):</string>
+    <string name="ov_toast_manual_scan_none">No enemy popup or calibrated enemy icon detected</string>
+    <string name="ov_toast_manual_scan_icon_fmt">◈ Icon ONNX added %1$d chip(s) (%2$s)</string>
+    <string name="ov_toast_manual_scan_need_cap">Grant screen capture permission before scanning enemy skills</string>
+    <string name="ov_ai_board_short">AI Hybrid Board</string>
+    <string name="ov_ai_ocr_short">Offline Popup OCR</string>
+    <string name="ov_ai_icon_short">Enemy Icon ONNX</string>
+    <string name="ov_ai_weijian_short">6×8 Weijian</string>
+    <string name="ov_collector_toggle_fmt">Collector: %1$s (%2$d pairs)</string>
+    <string name="ov_toggle_on">ON</string>
+    <string name="ov_toggle_off">OFF</string>
 </resources>

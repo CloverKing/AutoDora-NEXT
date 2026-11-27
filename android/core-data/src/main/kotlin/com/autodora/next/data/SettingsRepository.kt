@@ -66,8 +66,9 @@ data class AppSettings(
     val stepDurationMs: Long = 68L,
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
-    val useAiRecognizer: Boolean = true,        // Phase 4 LiteRT + CV Hybrid recognition (falls back to pure CV if off)
+    val useAiRecognizer: Boolean = true,        // Stage 2A BoardMasterGridNetV2 ONNX (+ LiteRT -> pure CV fallback)
     val autoEnemySkillOcrEnabled: Boolean = true, // Pure-offline PP-OCRv5 ONNX passive enemy skill popup recognition
+    val autoEnemyIconDetectEnabled: Boolean = true, // Stage 2B EnemyIconNetV1 Tier-3 upper-strip enemy icon fallback
     val trainingDataCollectionEnabled: Boolean = true, // Unlimited dual-track on-device capture (boards + enemy popups)
     val showOrbBadgesOnPath: Boolean = true,    // Show compact recognized orb badges so users verify board accuracy at a glance
     val holdReplanEnabled: Boolean = false,     // Toggle mode: when ON, '行' executes Hold-and-Replan (按住重算)
@@ -127,6 +128,7 @@ class SettingsRepository(private val context: Context) {
         val MULTI_FRAME_COUNT = intPreferencesKey("vision_multi_frames")
         val USE_AI_RECOGNIZER = booleanPreferencesKey("vision_use_ai_recognizer")
         val AUTO_ENEMY_SKILL_OCR_ENABLED = booleanPreferencesKey("vision_auto_enemy_skill_ocr")
+        val AUTO_ENEMY_ICON_DETECT_ENABLED = booleanPreferencesKey("vision_auto_enemy_icon_detect")
         val TRAINING_DATA_COLLECTION_ENABLED = booleanPreferencesKey("ml_training_data_collection_enabled")
         val SHOW_ORB_BADGES = booleanPreferencesKey("ux_show_orb_badges")
 
@@ -167,6 +169,7 @@ class SettingsRepository(private val context: Context) {
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
         useAiRecognizer = p[Keys.USE_AI_RECOGNIZER] ?: true,
         autoEnemySkillOcrEnabled = p[Keys.AUTO_ENEMY_SKILL_OCR_ENABLED] ?: true,
+        autoEnemyIconDetectEnabled = p[Keys.AUTO_ENEMY_ICON_DETECT_ENABLED] ?: true,
         trainingDataCollectionEnabled = p[Keys.TRAINING_DATA_COLLECTION_ENABLED] ?: true,
         showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
         holdReplanEnabled = p[Keys.HOLD_REPLAN_ENABLED] ?: false,
@@ -213,6 +216,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)
             p[Keys.USE_AI_RECOGNIZER] = next.useAiRecognizer
             p[Keys.AUTO_ENEMY_SKILL_OCR_ENABLED] = next.autoEnemySkillOcrEnabled
+            p[Keys.AUTO_ENEMY_ICON_DETECT_ENABLED] = next.autoEnemyIconDetectEnabled
             p[Keys.TRAINING_DATA_COLLECTION_ENABLED] = next.trainingDataCollectionEnabled
             p[Keys.SHOW_ORB_BADGES] = next.showOrbBadgesOnPath
             p[Keys.HOLD_REPLAN_ENABLED] = next.holdReplanEnabled

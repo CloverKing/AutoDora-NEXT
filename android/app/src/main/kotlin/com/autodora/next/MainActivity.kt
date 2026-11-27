@@ -31,12 +31,16 @@ import com.autodora.next.model.*
 import com.autodora.next.overlay.OverlayControllerService
 import com.autodora.next.overlay.OverlayServiceState
 import com.autodora.next.touch.AccessibilityServiceBridge
+import com.autodora.next.ui.AiModelsStatus
 import com.autodora.next.ui.AutoDoraTheme
 import com.autodora.next.ui.DashboardScreen
 import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.PermissionHealthState
+import com.autodora.next.vision.BoardRecognizer
+import com.autodora.next.vision.EnemyIconOnnxClassifier
 import com.autodora.next.vision.EnemySkillParseStatus
 import com.autodora.next.vision.HotReloadEnemySkillParser
+import com.autodora.next.vision.HybridBoardRecognizer
 import com.autodora.next.vision.StageWaveScriptParser
 import com.autodora.next.vision.TosEnemySkillParserV2
 import dagger.hilt.android.AndroidEntryPoint
@@ -55,6 +59,8 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var trainingDataRepository: TrainingDataRepository
     @Inject lateinit var enemySkillParserHolder: HotReloadEnemySkillParser
     @Inject lateinit var stageWaveScriptRepository: StageWaveScriptRepository
+    @Inject lateinit var boardRecognizer: BoardRecognizer
+    @Inject lateinit var enemyIconOnnxClassifier: EnemyIconOnnxClassifier
 
     private val overlayGrantedState = MutableStateFlow(false)
     private val notificationsGrantedState = MutableStateFlow(true)
@@ -181,6 +187,29 @@ class MainActivity : ComponentActivity() {
                     val customRulesVersionTag by customRulesTagState.collectAsState()
                     val hasCustomRules by hasCustomRulesState.collectAsState()
                     val updateState by updateCheckState.collectAsState()
+                    val bypassedGreySkills by ActiveStrategyStore.bypassedGreySkills.collectAsState()
+                    val activeVisualHints by ActiveStrategyStore.activeVisualHints.collectAsState()
+
+                    LaunchedEffect(settings.useAiRecognizer) {
+                        (boardRecognizer as? HybridBoardRecognizer)?.useAiModel = settings.useAiRecognizer
+                    }
+                    val aiModelsStatus = remember(settings.useAiRecognizer) {
+                        val hasBm = runCatching {
+                            assets.list("models")?.contains("board_master_v2.onnx") == true
+                        }.getOrDefault(false)
+                        val hasIcon = enemyIconOnnxClassifier.hasModel()
+                        val hasOcr = runCatching {
+                            assets.list("ocr")?.contains("ch_PP-OCRv5_rec_mobile.onnx") == true
+                        }.getOrDefault(false)
+                        val engineLbl = (boardRecognizer as? HybridBoardRecognizer)?.modelDisplayStatus()
+                            ?: boardRecognizer.name
+                        AiModelsStatus(
+                            boardEngineLabel = engineLbl,
+                            hasBoardMasterOnnx = hasBm,
+                            hasEnemyIconOnnx = hasIcon,
+                            hasOcrOnnx = hasOcr
+                        )
+                    }
 
                     DashboardScreen(
                         health = PermissionHealthState(
@@ -193,6 +222,9 @@ class MainActivity : ComponentActivity() {
                         settings = settings,
                         presets = presets,
                         activeWaveChips = activeWaveChips,
+                        bypassedGreySkills = bypassedGreySkills,
+                        activeVisualHints = activeVisualHints,
+                        aiModelsStatus = aiModelsStatus,
                         benchmarkReport = benchReport,
                         isBenchmarking = isBench,
                         updateCheckState = updateState,
@@ -245,12 +277,15 @@ class MainActivity : ComponentActivity() {
                             ).show()
                         },
                         onDeactivateStageScript = { ActiveStageScriptStore.clearActiveScript() },
+                        onStepStageWave = { delta -> ActiveStageScriptStore.stepWave(delta) },
                         onDeleteStageScript = { key ->
                             lifecycleScope.launch {
                                 if (activeStageScript?.stageKey == key) ActiveStageScriptStore.clearActiveScript()
                                 stageWaveScriptRepository.deleteScript(key)
                             }
                         },
+                        onClearAllStageScripts = { clearAllStageScripts() },
+                        onRestoreBypassedSkill = { sk -> ActiveStrategyStore.restoreBypassedSkill(sk) },
                         onUpsertEnemySkill = { oldHash, title, body, stageName, waveIdx ->
                             upsertManualEnemySkill(oldHash, title, body, stageName, waveIdx)
                         },
@@ -600,6 +635,14 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             trainingDataRepository.clearAllEnemySkills()
             Toast.makeText(this@MainActivity, lctx().getString(R.string.knowledge_cleared_ok), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun clearAllStageScripts() {
+        lifecycleScope.launch {
+            ActiveStageScriptStore.clearActiveScript()
+            stageWaveScriptRepository.clearAll()
+            Toast.makeText(this@MainActivity, lctx().getString(R.string.stage_scripts_cleared_ok), Toast.LENGTH_SHORT).show()
         }
     }
 
