@@ -37,8 +37,10 @@ constexpr uint32_t SameElemMultiC    = 1u << 22;
 constexpr uint32_t RaceOrbShield     = 1u << 23;
 constexpr uint32_t CharOrbTerrain    = 1u << 24;
 constexpr uint32_t TrailCellsGoal    = 1u << 25;
-constexpr uint32_t MiasmaLimit       = 1u << 26;
-constexpr uint32_t Wave1KindShield   = 1u << 27; // #57 首消相同種類盾 / #58 首消不同種類盾
+constexpr uint32_t MiasmaLimit         = 1u << 26;
+constexpr uint32_t Wave1KindShield     = 1u << 27; // #57 首消相同種類盾 / #58 首消不同種類盾
+constexpr uint32_t CustomPriorityClear = 1u << 28; // 版面编排: 必消此珠 (PRIORITY) 硬约束
+constexpr uint32_t CustomReserveKeep   = 1u << 29; // 版面编排: 保留不消 (RESERVE) 硬约束
 } // namespace ShieldStatusBits
 
 struct PathMetrics {

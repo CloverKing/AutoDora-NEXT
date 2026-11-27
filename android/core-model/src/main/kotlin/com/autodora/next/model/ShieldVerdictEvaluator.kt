@@ -32,8 +32,10 @@ object ShieldStatusBits {
     const val RACE_ORB_SHIELD     = 1 shl 23
     const val CHAR_ORB_TERRAIN    = 1 shl 24
     const val TRAIL_CELLS_GOAL    = 1 shl 25
-    const val MIASMA_LIMIT        = 1 shl 26
-    const val WAVE1_KIND_SHIELD   = 1 shl 27
+    const val MIASMA_LIMIT          = 1 shl 26
+    const val WAVE1_KIND_SHIELD     = 1 shl 27
+    const val CUSTOM_PRIORITY_CLEAR = 1 shl 28
+    const val CUSTOM_RESERVE_KEEP   = 1 shl 29
 }
 
 enum class ShieldVerdictStatus {
@@ -147,6 +149,10 @@ object ShieldVerdictEvaluator {
                 chip.id == "min_combo" -> ShieldVerdict(
                     chip.id, chip,
                     if (solution.totalCombo >= chip.paramInt) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
+                )
+                chip.id == "max_combo" -> ShieldVerdict(
+                    chip.id, chip,
+                    if (solution.totalCombo <= chip.paramInt) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
                 )
                 chip.id == "min_first_combo" -> ShieldVerdict(
                     chip.id, chip,
@@ -272,9 +278,13 @@ object ShieldVerdictEvaluator {
                 }
                 chip.id == "forbid_weakened_orb" || chip.id == "luminous_orb_shield" ->
                     ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.HAZARDS_CLEAR))
-                chip.id == "cross_shield" || chip.id.startsWith("cross_shield_") ->
+                chip.id == "keep_element_at_least_one" ->
+                    ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.ELEMENT_SHIELD))
+                chip.id == "max_element_orbs" ->
+                    ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.DIGITAL_ORB_COUNT))
+                chip.id == "forbid_cross" || chip.id == "cross_shield" || chip.id.startsWith("cross_shield_") ->
                     ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.CROSS_SHIELD))
-                chip.id == "l_shape" || chip.id == "t_shape" || chip.id == "square_2x2" ->
+                chip.id == "l_shape" || chip.id == "t_shape" || chip.id == "square_2x2" || chip.id == "square_3x3" ->
                     ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.SHAPE_SHIELD))
                 chip.id == "all_columns_ameliorate" ->
                     ShieldVerdict(chip.id, chip, bitOk(ShieldStatusBits.COLUMN_AMELIORATE))
@@ -322,6 +332,28 @@ object ShieldVerdictEvaluator {
                     chipId = "starting_buoy_shield",
                     chip = null,
                     status = if (ok) ShieldVerdictStatus.PASSED else ShieldVerdictStatus.FAILED
+                )
+            )
+        }
+        val priorityOrbCount = board.cells.count { (it.hazards and HazardBits.PRIORITY) != 0 }
+        if (priorityOrbCount > 0) {
+            out.add(
+                ShieldVerdict(
+                    chipId = "board_custom_priority",
+                    chip = null,
+                    status = bitOk(ShieldStatusBits.CUSTOM_PRIORITY_CLEAR),
+                    detailTag = "$priorityOrbCount"
+                )
+            )
+        }
+        val reserveOrbCount = board.cells.count { (it.hazards and HazardBits.RESERVE) != 0 }
+        if (reserveOrbCount > 0) {
+            out.add(
+                ShieldVerdict(
+                    chipId = "board_custom_reserve",
+                    chip = null,
+                    status = bitOk(ShieldStatusBits.CUSTOM_RESERVE_KEEP),
+                    detailTag = "$reserveOrbCount"
                 )
             )
         }

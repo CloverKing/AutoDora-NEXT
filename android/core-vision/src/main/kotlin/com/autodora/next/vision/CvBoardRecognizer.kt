@@ -103,7 +103,11 @@ class CvBoardRecognizer : BoardRecognizer {
         recognizeFrames(listOf(vf), geometry)
     }
 
-    fun recognizeFrames(frames: List<VisionFrame>, geometry: BoardGeometry): RecognitionResult {
+    fun recognizeFrames(
+        frames: List<VisionFrame>,
+        geometry: BoardGeometry,
+        visualHints: BoardVisualHints = BoardVisualHints()
+    ): RecognitionResult {
         val t0 = System.nanoTime()
         require(frames.isNotEmpty()) { "At least one frame is required for recognition" }
 
@@ -144,7 +148,7 @@ class CvBoardRecognizer : BoardRecognizer {
             for (c in 0 until cols) {
                 val idx = r * cols + c
                 abnormalStats[idx] = analyzeCellAbnormalMultiFrame(
-                    evalFrames, geometry.cellCenterX(c), geometry.cellCenterY(r), cellW, cellH
+                    evalFrames, geometry.cellCenterX(c), geometry.cellCenterY(r), cellW, cellH, visualHints
                 )
             }
         }
@@ -170,7 +174,8 @@ class CvBoardRecognizer : BoardRecognizer {
                     cy = cy,
                     radius = radius,
                     isTrafficLightStart = isTlStart,
-                    abnormal = stats
+                    abnormal = stats,
+                    visualHints = visualHints
                 )
                 val (isStormStrong, isStormWeak) = detectStormMultiFrame(evalFrames, cx, cy, cellW, cellH)
                 stormStrongFlags[idx] = isStormStrong
@@ -883,7 +888,8 @@ class CvBoardRecognizer : BoardRecognizer {
         cy: Float,
         radius: Float,
         isTrafficLightStart: Boolean = false,
-        abnormal: CellAbnormalStats? = null
+        abnormal: CellAbnormalStats? = null,
+        visualHints: BoardVisualHints = BoardVisualHints()
     ): CellState {
         // Votes per element across all frames and circular ring sample points
         val votes = FloatArray(6)
@@ -1023,94 +1029,82 @@ class CvBoardRecognizer : BoardRecognizer {
         var meanHueDeg = (atan2(hueSinSum, hueCosSum) * 180.0 / PI).toFloat()
         if (meanHueDeg < 0f) meanHueDeg += 360f
 
-        // Dedicated Petrified Runestone (#04 石化符石) Detector:
-        // Verified against real ToS gameplay (dark charcoal/navy stone >= 22% interlaced with glowing crimson-orange
-        // lava cracks >= 18%, overall muted V <= 0.64). Normal Fire orbs have slateDarkRatio == 0.00 & V >= 0.78!
-        val isPetrifiedOrb = !isTrafficLightStart &&
+        // Multi-Score Non-Waterfall Hazard & Coexistence Resolution (v0.9.0):
+        //  - Evaluates physical mutual-exclusion groups by confidence score + wave enemy-skill visualHints
+        //    instead of a rigid hardcoded if/else-if waterfall (fixing Electrified Dark/Heart/Water cross-talk!).
+        //  - Preserves legitimate coexisting states (e.g., Race Badge + Hazard, Enchanted + Thorn/BloodDrain, Thorn + Hazard).
+        val isThornOrb = !isTrafficLightStart && detectThornOverlay(frames, cx, cy, radius)
+        val thornBit = if (isThornOrb) HazardBits.THORN else HazardBits.NONE
+
+        val petrifiedRawScore = if (!isTrafficLightStart &&
             slateDarkRatio >= 0.22f &&
             lavaRedRatio >= 0.18f &&
             allAvgV <= 0.64f
-        if (isPetrifiedOrb) {
+        ) {
+            (0.82f + (slateDarkRatio - 0.22f) * 0.25f + (lavaRedRatio - 0.18f) * 0.25f).coerceIn(0.82f, 0.96f)
+        } else 0f
+
+        val petrifiedPrior = when {
+            visualHints.hasFrozenOrPetrified -> 0.08f
+            visualHints.hasElectrified && !visualHints.hasFrozenOrPetrified -> -0.10f
+            else -> 0f
+        }
+        val petrifiedScore = if (petrifiedRawScore > 0f) (petrifiedRawScore + petrifiedPrior).coerceIn(0f, 0.98f) else 0f
+
+        if (petrifiedScore >= 0.78f && (abnormal == null || petrifiedScore >= abnormal.primaryAbnormalScore)) {
             return CellState(
                 element = Element.UNKNOWN,
                 variant = Variant.NORMAL,
                 hazards = HazardBits.PETRIFIED,
-                confidence = 0.90f
+                confidence = petrifiedScore
             )
         }
 
-        // Dedicated Abnormal Runestone Status Detectors (calibrated against real ToS battle frames & all 20
-        // official encyclopedia runestone statuses with 0 false positives across 330+ normal/enchanted/race orbs!).
-        // MUST execute BEFORE lowSatRatio / isSlateQuestionOrb so bright Electrified / Frozen / Purgatory Fire orbs
-        // are NEVER misclassified as '?' Question Orbs!
-        if (!isTrafficLightStart && abnormal != null) {
+        if (!isTrafficLightStart && abnormal != null && abnormal.primaryAbnormalBit != HazardBits.NONE) {
             val baseVariant = if (hasRaceBadge) Variant.RACE else Variant.NORMAL
-
-            // 1. Ice-Sealed (#03 冰封): square purple faceted ice crystal filling corners with white crystal veins
-            if (abnormal.isIceSealed) {
-                val el = if (bestIdx >= 0) Element.fromCode(bestIdx) else Element.DARK
-                return CellState(
-                    element = el,
+            val raceVal = if (hasRaceBadge) RaceType.NONE else RaceType.NONE
+            return when (abnormal.primaryAbnormalBit) {
+                HazardBits.ICE_SEALED -> CellState(
+                    element = if (bestIdx >= 0) Element.fromCode(bestIdx) else Element.DARK,
                     variant = baseVariant,
                     hazards = HazardBits.ICE_SEALED,
-                    confidence = 0.90f
+                    confidence = abnormal.primaryAbnormalScore.coerceIn(0.82f, 0.96f),
+                    race = raceVal
                 )
-            }
-
-            // 2. Frozen (#03 凍結): square pale cyan-white faceted ice block filling all 4 corners
-            if (abnormal.isFrozen) {
-                val el = if (bestIdx >= 0) Element.fromCode(bestIdx) else Element.WATER
-                return CellState(
-                    element = el,
+                HazardBits.FROZEN -> CellState(
+                    element = if (bestIdx >= 0) Element.fromCode(bestIdx) else Element.WATER,
                     variant = baseVariant,
-                    hazards = HazardBits.FROZEN,
-                    confidence = 0.90f
+                    hazards = HazardBits.FROZEN or thornBit,
+                    confidence = abnormal.primaryAbnormalScore.coerceIn(0.82f, 0.96f),
+                    race = raceVal
                 )
-            }
-
-            // 3. Purgatory Fire (#59 煉獄之火): blinding white-hot body + vivid purple-magenta fire halo
-            if (abnormal.isPurgatoryFire) {
-                val el = abnormal.recoverElement(excludeElectricCyan = false, fallbackBestIdx = bestIdx)
-                return CellState(
-                    element = el,
+                HazardBits.PURGATORY_FIRE -> CellState(
+                    element = abnormal.recoverElement(excludeElectricCyan = false, fallbackBestIdx = bestIdx),
                     variant = baseVariant,
                     hazards = HazardBits.PURGATORY_FIRE,
-                    confidence = 0.92f
+                    confidence = abnormal.primaryAbnormalScore.coerceIn(0.84f, 0.97f),
+                    race = raceVal
                 )
-            }
-
-            // 4. Electrified (#01 電擊符石): blazing white-hot glare + electric cyan/blue lightning arcs in outer border/corners
-            //    OR crackling cyan arc phase (high avgV + strong electric cyan outer border/corners).
-            //    Recovers true underlying element (Water/Fire/Wood/Light/Dark/Heart) from non-washed outer rim pixels!
-            if (abnormal.isElectrified) {
-                val el = abnormal.recoverElement(excludeElectricCyan = true, fallbackBestIdx = bestIdx)
-                return CellState(
-                    element = el,
+                HazardBits.ELECTRIFIED -> CellState(
+                    element = abnormal.recoverElement(excludeElectricCyan = true, fallbackBestIdx = bestIdx),
                     variant = baseVariant,
-                    hazards = HazardBits.ELECTRIFIED,
-                    confidence = 0.92f
+                    hazards = HazardBits.ELECTRIFIED or thornBit,
+                    confidence = abnormal.primaryAbnormalScore.coerceIn(0.84f, 0.97f),
+                    race = raceVal
                 )
-            }
-
-            // 5. Bomb (#09 爆破炸彈): bright vivid red circular button at dead center inside matte grey metallic hex ring
-            if (abnormal.isBomb) {
-                val el = abnormal.recoverBombRimElement(fallbackBestIdx = bestIdx)
-                return CellState(
-                    element = el,
+                HazardBits.BOMB -> CellState(
+                    element = abnormal.recoverBombRimElement(fallbackBestIdx = bestIdx),
                     variant = baseVariant,
                     hazards = HazardBits.BOMB,
-                    confidence = 0.90f
+                    confidence = abnormal.primaryAbnormalScore.coerceIn(0.84f, 0.96f),
+                    race = raceVal
                 )
-            }
-
-            // 6. Evil Energy (#12 邪惡能量): deeply darkened shadowed orb speckled with glowing cyan-teal energy wisps
-            if (abnormal.isEvilEnergy) {
-                val el = if (bestIdx >= 0) Element.fromCode(bestIdx) else Element.DARK
-                return CellState(
-                    element = el,
+                else -> CellState(
+                    element = if (bestIdx >= 0) Element.fromCode(bestIdx) else Element.DARK,
                     variant = baseVariant,
                     hazards = HazardBits.EVIL_ENERGY,
-                    confidence = 0.86f
+                    confidence = abnormal.primaryAbnormalScore.coerceIn(0.80f, 0.94f),
+                    race = raceVal
                 )
             }
         }
@@ -1173,10 +1167,16 @@ class CvBoardRecognizer : BoardRecognizer {
             outerAvgV <= 0.54f
 
         if (isBloodDrainHeart || isBloodDrainColored || isBloodDrainLight) {
+            val bdStarThreshold = if (bestIdx == Element.LIGHT.code) 8 else 7
+            val bdVariant = when {
+                maxBrightStarCount >= bdStarThreshold -> Variant.ENCHANTED
+                hasRaceBadge -> Variant.RACE
+                else -> Variant.NORMAL
+            }
             return CellState(
                 element = if (isBloodDrainHeart) Element.HEART else Element.fromCode(bestIdx),
-                variant = if (hasRaceBadge) Variant.RACE else Variant.NORMAL,
-                hazards = HazardBits.BLOOD_DRAIN,
+                variant = bdVariant,
+                hazards = HazardBits.BLOOD_DRAIN or thornBit,
                 confidence = 0.88f
             )
         }
@@ -1229,19 +1229,17 @@ class CvBoardRecognizer : BoardRecognizer {
             else -> Variant.NORMAL
         }
 
-        // Dedicated Thorn Runestone (荊棘符石 / 鋼線符石) Detector:
-        // Brown spiky briar vines wrapping horizontally across the middle band of an otherwise normal orb.
-        val isThornOrb = !isTrafficLightStart && detectThornOverlay(frames, cx, cy, radius)
-
         return CellState(
             element = Element.fromCode(bestIdx),
             variant = variant,
-            hazards = if (isThornOrb) HazardBits.THORN else HazardBits.NONE,
+            hazards = thornBit,
             confidence = confidence
         )
     }
 
     private data class CellAbnormalStats(
+        val primaryAbnormalBit: Int,
+        val primaryAbnormalScore: Float,
         val isIceSealed: Boolean,
         val isFrozen: Boolean,
         val isPurgatoryFire: Boolean,
@@ -1318,14 +1316,15 @@ class CvBoardRecognizer : BoardRecognizer {
         cx: Float,
         cy: Float,
         cellW: Float,
-        cellH: Float
+        cellH: Float,
+        visualHints: BoardVisualHints = BoardVisualHints()
     ): CellAbnormalStats {
-        var anyIceSealed = false
-        var anyFrozen = false
-        var anyPurgatory = false
-        var anyElectrified = false
-        var anyBomb = false
-        var anyEvilEnergy = false
+        var peakIceSealedScore = 0f
+        var peakFrozenScore = 0f
+        var peakPurgatoryScore = 0f
+        var peakElectrifiedScore = 0f
+        var peakBombScore = 0f
+        var peakEvilEnergyScore = 0f
         var anyColorEvilCandidate = false
 
         var minAvgBodyV = 1f
@@ -1517,48 +1516,70 @@ class CvBoardRecognizer : BoardRecognizer {
                 if (cIceDark[ci] / ct >= 0.16f) iceDarkCornerHits++
             }
 
-            // 1. Ice-Sealed (#03 冰封): purple faceted crystal cube (distinguished from Frozen-on-Dark by
-            //    deeper purple body >= 0.45 + crisp veins in 0.20..0.44 + high lattice transitions >= 0.30)
-            if (icePurpBody >= 0.45f && iceWhiteBody in 0.20f..0.44f && latticeRatio >= 0.30f && iceDarkCornerHits >= 2) {
-                anyIceSealed = true
-            } else if (brightCornerHits >= 4 &&
+            // Independent Multi-Score Evaluation (replaces legacy hardcoded if/else-if waterfall!):
+            // 1. Ice-Sealed (#03 冰封): matte purple crystal cube
+            val isCrystalIceSealedCube = icePurpBody >= 0.45f &&
+                iceWhiteBody in 0.20f..0.44f &&
+                latticeRatio >= 0.30f &&
+                iceDarkCornerHits >= 2 &&
+                whCore < 0.52f
+            if (isCrystalIceSealedCube) {
+                val s = (0.88f + (icePurpBody - 0.45f) * 0.25f + (latticeRatio - 0.30f) * 0.20f)
+                    .coerceIn(0.85f, 0.96f)
+                if (s > peakIceSealedScore) peakIceSealedScore = s
+            }
+
+            // 2. Frozen (#03 凍結): frosted white crystal cube filling all 4 corners across all 6 orb colors (including Water & Dark!)
+            val isCrystalFrozenCube = !isCrystalIceSealedCube &&
+                brightCornerHits >= 4 &&
                 iceWhiteBody >= 0.38f &&
                 satColorCore >= 0.20f &&
                 latticeRatio >= 0.30f &&
                 whCore < 0.60f
-            ) {
-                // 2. Color-Invariant Frozen (#03 凍結): square ice cube covering all 4 corners + dense white crystal
-                //    lattice + ANY saturated underlying orb color + strong white/color lattice transitions (works 6/6 colors!)
-                anyFrozen = true
-            } else if (whCore >= 0.65f && whBody >= 0.52f && purgMag >= 0.12f &&
-                (elecCyanBorder < 0.14f || purgMag >= elecCyanBorder * 1.5f)
-            ) {
-                // 3. Purgatory Fire (#59 煉獄之火): blinding white-hot body + vivid neon magenta/purple halo
-                anyPurgatory = true
-            } else if ((whCore >= 0.30f && whBody >= 0.25f && elecBorder >= 0.24f && elecCyanBorder >= 0.14f) ||
-                (avgV >= 0.62f && whBody >= 0.14f && elecCyanBorder >= 0.34f && elecCornerHits >= 2) ||
-                (avgV >= 0.58f && whBody >= 0.08f && elecCyanBorder >= 0.42f && elecCornerHits >= 3)
-            ) {
-                // 4. Color-Invariant Electrified (#01 電擊): peak flash phase OR dim-phase cyan lightning border
-                //    (relaxed avgV >= 0.58..0.62 catches darker Fire/Wood/Dark orbs even on non-peak frames!)
-                anyElectrified = true
+            if (isCrystalFrozenCube) {
+                val s = (0.88f + (iceWhiteBody - 0.38f) * 0.25f + (latticeRatio - 0.30f) * 0.20f)
+                    .coerceIn(0.84f, 0.96f)
+                if (s > peakFrozenScore) peakFrozenScore = s
             }
 
-            // 5. Bomb (#09 爆破炸彈): fixed bright red core + matte grey metallic hex ring (6/6 color-invariant)
-            if (bombRed >= 0.22f && bombGrey >= 0.45f) anyBomb = true
+            // 3. Purgatory Fire (#59 煉獄之火): blinding white-hot body + thick neon-magenta fire halo
+            //    Requires stronger magenta ring when cyan lightning border is present so Electrified Dark/Heart orbs never misclassify!
+            val purgEnoughMag = (purgMag >= 0.22f && purgMag >= elecCyanBorder * 1.8f) ||
+                (purgMag >= 0.14f && elecCyanBorder < 0.09f && elecCornerHits <= 1)
+            if (whCore >= 0.65f && whBody >= 0.52f && purgEnoughMag) {
+                val s = (0.82f + (purgMag - elecCyanBorder) * 0.35f).coerceIn(0.76f, 0.96f)
+                if (s > peakPurgatoryScore) peakPurgatoryScore = s
+            }
 
-            // 6. Color-Invariant Evil Energy (#12 邪惡能量): dark shadowed orb + glowing turquoise wisps (162..198°),
-            //    relaxed avgV <= 0.34 & darkBody >= 0.54 supports brighter Light/Heart underlying orbs too!
-            //    Exclude modern dark-teal '?' Question Orbs which carry BOTH a bright white '?' glyph (>=4.5% of body)
-            //    and a crisp silver-mint circular outer rim (>=25% of r∈[0.36..0.45]).
+            // 4. Electrified (#01 電擊): peak white-core flash phase OR crackling cyan lightning border/corners
+            //    (Crystal-lattice Frozen/Ice-Sealed cubes without a blazing >=0.60 white core are excluded unless Wave Prior says Electrified!)
+            val allowElecOnCrystal = visualHints.hasElectrified && !visualHints.hasFrozenOrPetrified
+            val notPureCrystalCube = allowElecOnCrystal || (!isCrystalFrozenCube && !isCrystalIceSealedCube)
+            val elecCond1 = notPureCrystalCube && whCore >= 0.30f && whBody >= 0.25f && elecBorder >= 0.24f && elecCyanBorder >= 0.14f
+            val elecCond2 = notPureCrystalCube && avgV >= 0.62f && whBody >= 0.14f && elecCyanBorder >= 0.34f && elecCornerHits >= 2
+            val elecCond3 = notPureCrystalCube && avgV >= 0.58f && whBody >= 0.08f && elecCyanBorder >= 0.42f && elecCornerHits >= 3
+            if (elecCond1 || elecCond2 || elecCond3) {
+                val baseS = if (elecCond1) 0.85f else 0.83f
+                val s = (baseS + elecCyanBorder * 0.18f + elecCornerHits * 0.015f).coerceIn(0.80f, 0.97f)
+                if (s > peakElectrifiedScore) peakElectrifiedScore = s
+            }
+
+            // 5. Bomb (#09 爆破炸彈): fixed bright red core + matte grey metallic hex ring
+            if (bombRed >= 0.22f && bombGrey >= 0.45f) {
+                val s = (0.85f + (bombRed - 0.22f) * 0.25f).coerceIn(0.82f, 0.96f)
+                if (s > peakBombScore) peakBombScore = s
+            }
+
+            // 6. Evil Energy (#12 邪惡能量): dark shadowed orb + glowing turquoise wisps
             val questionGlyphRatio = questionGlyphHits.toFloat() / bTot
             val silverRimRatio = silverRimHits.toFloat() / max(1, silverRimTot)
             val looksLikeQuestionGlyphAndRim = questionGlyphRatio >= 0.036f && silverRimRatio >= 0.25f
             if (!looksLikeQuestionGlyphAndRim && avgV <= 0.34f && darkBody >= 0.54f && highVBody <= 0.08f && tealWisp >= 0.06f) {
-                anyEvilEnergy = true
+                val s = (0.83f + tealWisp * 0.30f).coerceIn(0.80f, 0.94f)
+                if (s > peakEvilEnergyScore) peakEvilEnergyScore = s
             }
             if (!looksLikeQuestionGlyphAndRim &&
-                !anyEvilEnergy &&
+                peakEvilEnergyScore <= 0f &&
                 crackSilver < 0.12f &&
                 bbRed < 0.45f &&
                 avgV <= 0.26f &&
@@ -1581,14 +1602,81 @@ class CvBoardRecognizer : BoardRecognizer {
             if (fireCorner > maxFireCorner) maxFireCorner = fireCorner
         }
 
+        // Apply Wave Enemy-Skill Visual Priors (SkillPriorVisionFilter at CV cell level):
+        val hasExplicitHazardHint = visualHints.hasElectrified ||
+            visualHints.hasPurgatoryFire ||
+            visualHints.hasFrozenOrPetrified ||
+            visualHints.hasWeatheredOrBomb
+        var adjIce = peakIceSealedScore
+        var adjFrz = peakFrozenScore
+        var adjPurg = peakPurgatoryScore
+        var adjElec = peakElectrifiedScore
+        var adjBomb = peakBombScore
+        val adjEvil = peakEvilEnergyScore
+
+        if (hasExplicitHazardHint) {
+            if (visualHints.hasElectrified) {
+                if (adjElec > 0f) adjElec += 0.12f
+                // If enemy explicitly spawns Electrified orbs and NOT Purgatory/Frozen/IceSealed,
+                // rescue Dark/Heart/Water Electrified orbs that spilled into adjacent HSV buckets!
+                if (!visualHints.hasPurgatoryFire && adjPurg > 0f) {
+                    if (adjElec > 0f || adjPurg < 0.93f) {
+                        adjElec = max(adjElec, adjPurg)
+                        adjPurg = 0f
+                    }
+                }
+                if (!visualHints.hasFrozenOrPetrified) {
+                    if (adjIce > 0f && (adjElec > 0f || adjIce < 0.93f)) {
+                        if (adjElec > 0f) adjIce = 0f else adjIce -= 0.18f
+                    }
+                    if (adjFrz > 0f && (adjElec > 0f || adjFrz < 0.93f)) {
+                        if (adjElec > 0f) adjFrz = 0f else adjFrz -= 0.18f
+                    }
+                }
+            }
+            if (visualHints.hasPurgatoryFire) {
+                if (adjPurg > 0f) adjPurg += 0.12f
+                if (!visualHints.hasElectrified && adjElec > 0f && adjPurg > 0f) {
+                    adjElec -= 0.14f
+                }
+            }
+            if (visualHints.hasFrozenOrPetrified) {
+                if (adjIce > 0f) adjIce += 0.10f
+                if (adjFrz > 0f) adjFrz += 0.10f
+            }
+            if (visualHints.hasWeatheredOrBomb && adjBomb > 0f) {
+                adjBomb += 0.10f
+            }
+        }
+
+        // Arbitrate winning primary abnormal state by highest post-prior score (>= 0.78f):
+        val candidates = arrayOf(
+            HazardBits.ELECTRIFIED to adjElec,
+            HazardBits.PURGATORY_FIRE to adjPurg,
+            HazardBits.ICE_SEALED to adjIce,
+            HazardBits.FROZEN to adjFrz,
+            HazardBits.BOMB to adjBomb,
+            HazardBits.EVIL_ENERGY to adjEvil
+        )
+        var winBit = HazardBits.NONE
+        var winScore = 0.78f
+        for ((bit, sc) in candidates) {
+            if (sc > winScore || (winBit == HazardBits.NONE && sc >= winScore)) {
+                winScore = sc
+                winBit = bit
+            }
+        }
+
         return CellAbnormalStats(
-            isIceSealed = anyIceSealed,
-            isFrozen = anyFrozen,
-            isPurgatoryFire = anyPurgatory,
-            isElectrified = anyElectrified,
-            isBomb = anyBomb,
-            isEvilEnergy = anyEvilEnergy,
-            isColorEvilCandidate = anyColorEvilCandidate,
+            primaryAbnormalBit = winBit,
+            primaryAbnormalScore = if (winBit != HazardBits.NONE) winScore.coerceIn(0.78f, 0.98f) else 0f,
+            isIceSealed = winBit == HazardBits.ICE_SEALED,
+            isFrozen = winBit == HazardBits.FROZEN,
+            isPurgatoryFire = winBit == HazardBits.PURGATORY_FIRE,
+            isElectrified = winBit == HazardBits.ELECTRIFIED,
+            isBomb = winBit == HazardBits.BOMB,
+            isEvilEnergy = winBit == HazardBits.EVIL_ENERGY,
+            isColorEvilCandidate = anyColorEvilCandidate && winBit == HazardBits.NONE,
             minAvgBodyV = minAvgBodyV,
             maxAvgBodyV = maxAvgBodyV,
             maxDarkBody = maxDarkBody,

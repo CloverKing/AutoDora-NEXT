@@ -610,11 +610,65 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             }
         }
 
-        // J. #64 凝護 (e.g. 灵之凝护 / 心之凝护) & Elemental Orb Armor Shield (e.g. 【木符石護盾 30 粒】)
+        // J. #64 凝護, Max Combo Cap (連擊上限盾), 3x3 Square, Max Element Orbs & Elemental Orb Armor Shield
+        val geComboAbsorbMatch = Regex(
+            "(?:达成|达)\\s*([2-9]|\\d{2})\\s*(?:combo|c(?![a-zA-Z])|连击)(?:[ \\t]*[(（]combo[)）])?(?:或以上|以上)[^\\n]{0,20}?(?:吸收|反击|零化|变\\s*0|归\\s*0|无效)",
+            RegexOption.IGNORE_CASE
+        ).find(norm)
+        val gtComboPenaltyMatch = Regex(
+            "(?:超过\\s*([1-9]\\d?)\\s*(?:combo|c(?![a-zA-Z])|连击)[^\\n]{0,20}?(?:吸收|反击|零化|变\\s*0|归\\s*0|无效)|(?:连击上限|不多于|至多|最多|不超过|≤|<=)\\s*([1-9]\\d?)\\s*(?:combo|c(?![a-zA-Z])|连击))",
+            RegexOption.IGNORE_CASE
+        ).find(norm)
+        val maxComboCap = geComboAbsorbMatch?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { (it - 1).coerceIn(1, 20) }
+            ?: gtComboPenaltyMatch?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.toIntOrNull()?.coerceIn(1, 20)
+        if (maxComboCap != null) {
+            matchedIds.add("typed_max_combo")
+            chips.add(
+                WaveShieldChip(
+                    id = "max_combo",
+                    label = "≤ $maxComboCap Combo",
+                    category = ShieldCategory.COMBO,
+                    autoDetected = true,
+                    paramInt = maxComboCap
+                )
+            )
+        }
+        if (Regex("(?:正方\\s*3\\s*[x×]\\s*3|以\\s*3\\s*[x×]\\s*3|3\\s*[x×]\\s*3\\s*(?:正方)?(?:消除|盾))", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
+            val em = extractElementMaskNearKeywords(norm)
+            matchedIds.add("typed_square_3x3")
+            chips.add(
+                WaveShieldChip(
+                    id = "square_3x3",
+                    label = "${if (em != 0) formatElementsCn(em) + " " else ""}正方 3×3 盾",
+                    category = ShieldCategory.SHAPE_AND_PUZZLE,
+                    autoDetected = true,
+                    paramInt = 1,
+                    paramElementMask = em
+                )
+            )
+        }
+        val maxOrbsMatch = Regex("(?:最多(?:只能)?消除|限消|不可消除超过|不可消除多于|消除超过|消除多于|消除不超过)\\s*(\\d{1,2})\\s*[粒颗]\\s*([水火木光暗心])").find(norm)
+        if (maxOrbsMatch != null) {
+            val cap = maxOrbsMatch.groupValues[1].toIntOrNull()?.coerceIn(0, 30)
+            val code = maxOrbsMatch.groupValues[2].firstOrNull()?.let { charToElementCode(it) } ?: -1
+            if (cap != null && code >= 0) {
+                matchedIds.add("typed_max_element_orbs")
+                chips.add(
+                    WaveShieldChip(
+                        id = "max_element_orbs",
+                        label = "${maxOrbsMatch.groupValues[2]}≤${cap}粒",
+                        category = ShieldCategory.COUNT_AND_ELEMENT,
+                        autoDetected = true,
+                        paramInt = cap,
+                        paramElementMask = 1 shl code
+                    )
+                )
+            }
+        }
         val elemArmorMatch = Regex("([水火木光暗心])符石护盾[^\\n]{0,8}?(\\d{1,3})").find(norm)
         if (elemArmorMatch != null) {
             val code = charToElementCode(elemArmorMatch.groupValues[1].first())
-            val nVal = elemArmorMatch.groupValues[2].toIntOrNull()?.coerceIn(3, 15) ?: 9
+            val nVal = elemArmorMatch.groupValues[2].toIntOrNull()?.coerceIn(3, 30) ?: 9
             if (code >= 0) {
                 matchedIds.add("typed_elem_armor_shield")
                 chips.add(
@@ -696,11 +750,13 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             if (entry.chipId == "strict_puzzle" && "puzzle_shield" in currentIds) continue
             if (entry.chipId == "enchanted_puzzle" && "puzzle_shield" in currentIds) continue
             if (entry.chipId == "five_elements" && ("five_elements_enchanted" in currentIds || "five_elements" in currentIds)) continue
-            if (entry.chipId == "cross_shield" && "cross_shield" in currentIds) continue
+            if (entry.chipId == "cross_shield" && ("cross_shield" in currentIds || "forbid_cross" in currentIds)) continue
+            if (entry.chipId == "square_3x3" && "square_3x3" in currentIds) continue
             if (entry.chipId == "l_shape" && "l_shape" in currentIds) continue
             if (entry.chipId == "t_shape" && "t_shape" in currentIds) continue
             if (entry.chipId == "exact_combo" && "exact_first_combo" in currentIds) continue
-            if (entry.chipId == "min_combo" && "min_first_combo" in currentIds) continue
+            if (entry.chipId == "min_combo" && ("min_first_combo" in currentIds || "max_combo" in currentIds)) continue
+            if (entry.chipId == "max_combo" && "max_combo" in currentIds) continue
             if (entry.chipId == "step_limit" && ("step_range" in currentIds || "exact_steps" in currentIds)) continue
             if (entry.chipId == "elem_burst_shield" && "elem_burst_shield" in currentIds) continue
             if (entry.chipId == "digital_orb_count" && (norm.contains("累积") || norm.contains("护盾"))) continue
@@ -784,7 +840,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             when (chip.id) {
                 "five_elements" -> "five_elements_enchanted" !in ids
                 "exact_combo" -> "exact_first_combo" !in ids
-                "min_combo" -> "min_first_combo" !in ids && "exact_first_combo" !in ids && "exact_combo" !in ids
+                "min_combo" -> "min_first_combo" !in ids && "exact_first_combo" !in ids && "exact_combo" !in ids && "max_combo" !in ids
                 "loose_puzzle", "strict_puzzle", "enchanted_puzzle" -> "puzzle_shield" !in ids
                 "step_limit" -> "step_range" !in ids && "exact_steps" !in ids
                 "first_wave_only" -> "no_cascade" !in ids
@@ -906,7 +962,8 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
 
         private val MASK_MERGE_CHIP_IDS = setOf(
             "elem_burst_shield", "require_elements", "anti_first_wave",
-            "forbid_all", "clear_all_element", "unmatchable_elements"
+            "forbid_all", "clear_all_element", "unmatchable_elements",
+            "keep_element_at_least_one"
         )
 
         private val CHROME_LINE_REGEX = Regex(
@@ -939,7 +996,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             "愈战愈强", "愈攻愈强", "能力继承", "双体共生", "同伴之护", "丧伴自戕",
             "提升龙脉仪", "沉默状态", "缚 - 技能", "封锁", "转化符石技能无效",
             "突击", "优先突击", "溢血攻击", "受击护盾", "亿血护盾", "五属伤害盾",
-            "回复弱化", "回复力减至", "生命禁咒", "十之诅咒", "符石转换", "符石转水",
+            "回复弱化", "回复力减至", "生命禁咒", "符石转换", "符石转水",
             "符石转火", "符石转木", "符石转光", "符石转暗", "符石转心", "围城",
             "金穗圣果", "蚀骨腐果", "猎人", "猎神", "猎魔", "猎兽", "猎龙", "猎妖", "猎机",
             "无视所有减伤", "无视所有控制", "扣除召唤师", "转化为", "移动符石时间",

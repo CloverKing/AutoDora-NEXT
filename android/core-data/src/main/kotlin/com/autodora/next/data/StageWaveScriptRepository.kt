@@ -26,12 +26,24 @@ class StageWaveScriptRepository(db: AutoDoraDatabase) {
         entities.map { entity ->
             val waves = runCatching { json.decodeFromString<List<StageWaveEntry>>(entity.wavesJson) }
                 .getOrElse { emptyList() }
+            val (ec, sc, ds, dt) = com.autodora.next.model.StageHierarchyHelper.infer(
+                rawEntry = entity.entryCategory,
+                rawSub = entity.subCategory,
+                rawSeries = entity.dungeonSeries,
+                rawDiff = entity.difficultyTag,
+                stageName = entity.stageName,
+                sourceType = entity.sourceType
+            )
             StageWaveScript(
                 stageKey = entity.stageKey,
                 stageName = entity.stageName,
                 waves = waves,
                 sourceType = entity.sourceType,
-                updatedAtMs = entity.updatedAtMs
+                updatedAtMs = entity.updatedAtMs,
+                entryCategory = ec,
+                subCategory = sc,
+                dungeonSeries = ds,
+                difficultyTag = dt
             )
         }
     }
@@ -58,13 +70,27 @@ class StageWaveScriptRepository(db: AutoDoraDatabase) {
         dao.deleteAll()
     }
 
-    private fun toEntity(s: StageWaveScript) = StageWaveScriptEntity(
-        stageKey = s.stageKey,
-        stageName = s.stageName,
-        wavesJson = json.encodeToString(s.waves),
-        sourceType = s.sourceType,
-        updatedAtMs = if (s.updatedAtMs > 0L) s.updatedAtMs else System.currentTimeMillis()
-    )
+    private fun toEntity(s: StageWaveScript): StageWaveScriptEntity {
+        val (ec, sc, ds, dt) = com.autodora.next.model.StageHierarchyHelper.infer(
+            rawEntry = s.entryCategory,
+            rawSub = s.subCategory,
+            rawSeries = s.dungeonSeries,
+            rawDiff = s.difficultyTag,
+            stageName = s.stageName,
+            sourceType = s.sourceType
+        )
+        return StageWaveScriptEntity(
+            stageKey = s.stageKey,
+            stageName = s.stageName,
+            wavesJson = json.encodeToString(s.waves),
+            sourceType = s.sourceType,
+            updatedAtMs = if (s.updatedAtMs > 0L) s.updatedAtMs else System.currentTimeMillis(),
+            entryCategory = ec,
+            subCategory = sc,
+            dungeonSeries = ds,
+            difficultyTag = dt
+        )
+    }
 
     companion object {
         fun create(context: Context): StageWaveScriptRepository {

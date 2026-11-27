@@ -251,7 +251,8 @@ class TosEnemySkillParserV2Test {
 
         val curseBlk = splitRes.allBlocks[1]
         assertEquals("十之詛咒 10%·生命禁咒", curseBlk.titleZhTw)
-        assertEquals(EnemySkillParseStatus.NON_BOARD_KNOWN, curseBlk.parseStatus)
+        assertEquals(EnemySkillParseStatus.PARSED, curseBlk.parseStatus)
+        assertTrue("十之詛咒 now maps to forbid_cross in v0.9.0", curseBlk.chips.any { it.id == "forbid_cross" })
         assertFalse("十之詛咒 must NEVER emit cross_shield!", curseBlk.chips.any { it.id == "cross_shield" })
 
         // 2. Fullwidth ASCII + OCR pipe artifact + variant kanji chrome

@@ -24,12 +24,21 @@ sealed class BoardBrush(val id: String, val fallbackLabel: String, val labelRes:
         val flag: Int,
         val conflictFlag: Int,
         val textRes: Int,
-        val fallback: String
-    ) : BoardBrush("xflag_$flag", fallback, textRes)
-    data class ToggleTileFlag(val flag: Int, val tag: String, val textRes: Int = 0) :
-        BoardBrush("flag_$flag", tag, textRes)
+        val fallback: String,
+        val idSuffix: String = ""
+    ) : BoardBrush("xflag_${flag}$idSuffix", fallback, textRes)
+    data class ToggleTileFlag(val flag: Int, val tag: String, val textRes: Int = 0, val idSuffix: String = "") :
+        BoardBrush("flag_${flag}$idSuffix", tag, textRes)
     data object SetStartingBuoy : BoardBrush("starting_buoy", "起动浮标", R.string.editor_brush_starting_buoy)
-    data class ToggleHazard(val hazard: Int, val tag: String) : BoardBrush("haz_$hazard", tag)
+    data class ToggleHazard(val hazard: Int, val tag: String, val textRes: Int = 0) :
+        BoardBrush("haz_$hazard", tag, textRes)
+    data class ToggleExclusiveHazard(
+        val hazard: Int,
+        val conflictHazard: Int,
+        val textRes: Int,
+        val fallback: String
+    ) : BoardBrush("xhaz_$hazard", fallback, textRes)
+    data object ToggleCheckpoint : BoardBrush("checkpoint_seq", "顺序途经①~④", R.string.editor_brush_checkpoint)
     data object ClearMarkers : BoardBrush("clear_cell", "清除格标", R.string.editor_btn_clear_cell)
 
     fun resolveLabel(ctx: Context): String = if (labelRes != 0) ctx.getString(labelRes) else fallbackLabel
@@ -37,8 +46,11 @@ sealed class BoardBrush(val id: String, val fallbackLabel: String, val labelRes:
 
 private data class BrushGroupSpec(
     val titleRes: Int,
+    val helpTitleRes: Int,
+    val helpBodyRes: Int,
     val accentColor: Int,
-    val rows: List<List<BoardBrush>>
+    val rows: List<List<BoardBrush>>,
+    val isCustomOpsGroup: Boolean = false
 ) {
     val brushIds: Set<String> = rows.flatten().mapTo(HashSet()) { it.id }
 }
@@ -50,44 +62,51 @@ private data class AccordionGroupViews(
     val headerRow: LinearLayout,
     val titleView: TextView,
     val activeBadge: TextView,
+    val helpBtnView: TextView,
     val chevronView: TextView,
     val dividerView: View,
     val bodyContainer: LinearLayout
 )
 
 /**
- * Grouped, Single-Open Exclusive Colored Accordion Brush Palette Panel for the 1:1 Interactive Board Editor (盘面编排).
+ * Grouped, Single-Open Exclusive 6-Drawer Colored Accordion Brush Palette Panel for the 1:1 Interactive Board Editor.
  *
- * Groups (5 distinct color-coded exclusive accordion drawers — opening one automatically collapses the other 4
- * to minimize vertical screen footprint over the puzzle board, matching Strategy drawers 1:1;
- * plus standalone 「清除格标」 tool outside all colored drawers):
+ * Groups:
  *  1. Indigo  — 珠色与珠型 (水/火/木/光/暗/心 + 强化+/弱化-)
  *  2. Purple  — 种族符石 (神族/魔族/人类/兽类/龙类/妖精/机械)
- *  3. Amber   — 拼图与起结有序 (拼图, 单点绿色漩涡, 单点红色漩涡, 多格角色通行, 多格角色停放)
+ *  3. Amber   — 拼图与起结有序 (拼图, 绿色漩涡, 红色漩涡, 起动浮标, 角色通行, 角色停放)
  *  4. Teal    — 符石状态 (全量官方符石状态)
  *  5. Crimson — 盘面地形 (燃烧/灼热/黑洞/血浴/碎裂/暴风)
+ *  6. Blue    — 自定义操作 (必消此珠 / 保留不消 / 锁定不动 / 禁碰禁行 / 顺序途经①~④ / 禁止停手 / 格内禁消 / 指定起终点 + 跨回合锁定)
  */
 class OverlayBoardEditorController(
     private val context: Context,
     private val onSaveEditedBoard: () -> Unit,
     private val onClearAllMarkers: () -> Unit,
+    private val onClearCustomOpsOnly: () -> Unit = {},
+    private val onToggleLockCustomOps: () -> Unit = {},
     private val onRescanLiveBoard: () -> Unit,
     private val onCloseEditor: () -> Unit,
+    private val onShowDrawerHelp: ((String, String) -> Unit)? = null,
     private val onPanelHeightChanged: (() -> Unit)? = null
 ) {
     val rootView: LinearLayout
     var activeBrush: BoardBrush = BoardBrush.PaintElement(Element.WATER)
         private set
 
-    private var isSavedState: Boolean = false
+    var isSavedState: Boolean = false
+        private set
     private var isScanningState: Boolean = false
-    private var expandedGroupIdx: Int? = 0 // Single-open exclusive accordion: default Group 0 (珠色与珠型) open
+    private var lockCustomOpsAcrossTurns: Boolean = false
+    private var expandedGroupIdx: Int? = 0
     private var lctx: Context = context
     private var currentPalette: OverlayPalette? = null
 
     private val brushGroups: List<BrushGroupSpec> = listOf(
         BrushGroupSpec(
             titleRes = R.string.editor_grp_orb,
+            helpTitleRes = R.string.help_editor_orb_title,
+            helpBodyRes = R.string.help_editor_orb_body,
             accentColor = ACCENT_INDIGO,
             rows = listOf(
                 listOf(
@@ -106,13 +125,17 @@ class OverlayBoardEditorController(
         ),
         BrushGroupSpec(
             titleRes = R.string.editor_grp_race,
+            helpTitleRes = R.string.help_editor_race_title,
+            helpBodyRes = R.string.help_editor_race_body,
             accentColor = ACCENT_PURPLE,
             rows = listOf(
                 listOf(
                     BoardBrush.ToggleRaceType(RaceType.GOD, R.string.race_god, "神族"),
                     BoardBrush.ToggleRaceType(RaceType.DEMON, R.string.race_demon, "魔族"),
                     BoardBrush.ToggleRaceType(RaceType.HUMAN, R.string.race_human, "人类"),
-                    BoardBrush.ToggleRaceType(RaceType.BEAST, R.string.race_beast, "兽类"),
+                    BoardBrush.ToggleRaceType(RaceType.BEAST, R.string.race_beast, "兽类")
+                ),
+                listOf(
                     BoardBrush.ToggleRaceType(RaceType.DRAGON, R.string.race_dragon, "龙类"),
                     BoardBrush.ToggleRaceType(RaceType.ELF, R.string.race_elf, "妖精"),
                     BoardBrush.ToggleRaceType(RaceType.MACHINA, R.string.race_machina, "机械")
@@ -121,6 +144,8 @@ class OverlayBoardEditorController(
         ),
         BrushGroupSpec(
             titleRes = R.string.editor_grp_shape,
+            helpTitleRes = R.string.help_editor_shape_title,
+            helpBodyRes = R.string.help_editor_shape_body,
             accentColor = ACCENT_AMBER,
             rows = listOf(
                 listOf(
@@ -147,6 +172,8 @@ class OverlayBoardEditorController(
         ),
         BrushGroupSpec(
             titleRes = R.string.editor_grp_status,
+            helpTitleRes = R.string.help_editor_status_title,
+            helpBodyRes = R.string.help_editor_status_body,
             accentColor = ACCENT_TEAL,
             rows = listOf(
                 listOf(
@@ -169,14 +196,14 @@ class OverlayBoardEditorController(
                     BoardBrush.ToggleHazard(HazardBits.LUMINOUS, "流光"),
                     BoardBrush.ToggleHazard(HazardBits.PURGATORY_FIRE, "炼狱"),
                     BoardBrush.ToggleHazard(HazardBits.THORN, "荆棘"),
-                    BoardBrush.ToggleHazard(HazardBits.LOCKED_HURT, "锁定"),
-                    BoardBrush.ToggleHazard(HazardBits.PRIORITY, "印记必消"),
-                    BoardBrush.ToggleHazard(HazardBits.RESERVE, "保留不消")
+                    BoardBrush.ToggleHazard(HazardBits.LOCKED_HURT, "锁定")
                 )
             )
         ),
         BrushGroupSpec(
             titleRes = R.string.editor_grp_terrain,
+            helpTitleRes = R.string.help_editor_terrain_title,
+            helpBodyRes = R.string.help_editor_terrain_body,
             accentColor = ACCENT_CRIMSON,
             rows = listOf(
                 listOf(
@@ -186,6 +213,52 @@ class OverlayBoardEditorController(
                     BoardBrush.ToggleTileFlag(TileFlagBits.END_FORBIDDEN, "血浴"),
                     BoardBrush.ToggleTileFlag(TileFlagBits.SHATTERED, "碎裂"),
                     BoardBrush.ToggleTileFlag(TileFlagBits.STORM, "暴风")
+                )
+            )
+        ),
+        BrushGroupSpec(
+            titleRes = R.string.editor_grp_custom_ops,
+            helpTitleRes = R.string.help_editor_custom_ops_title,
+            helpBodyRes = R.string.help_editor_custom_ops_body,
+            accentColor = ACCENT_BLUE,
+            isCustomOpsGroup = true,
+            rows = listOf(
+                listOf(
+                    BoardBrush.ToggleExclusiveHazard(
+                        hazard = HazardBits.PRIORITY,
+                        conflictHazard = HazardBits.RESERVE,
+                        textRes = R.string.editor_brush_must_clear,
+                        fallback = "必消此珠"
+                    ),
+                    BoardBrush.ToggleExclusiveHazard(
+                        hazard = HazardBits.RESERVE,
+                        conflictHazard = HazardBits.PRIORITY,
+                        textRes = R.string.editor_brush_keep_orb,
+                        fallback = "保留不消"
+                    ),
+                    BoardBrush.ToggleHazard(HazardBits.LOCKED, "锁定不动", R.string.editor_brush_locked)
+                ),
+                listOf(
+                    BoardBrush.ToggleTileFlag(TileFlagBits.NO_PASS, "禁碰禁行", R.string.editor_brush_no_pass),
+                    BoardBrush.ToggleCheckpoint,
+                    BoardBrush.ToggleTileFlag(TileFlagBits.SEALED_STONE, "格内禁消", R.string.editor_brush_sealed)
+                ),
+                listOf(
+                    BoardBrush.ToggleTileFlag(TileFlagBits.END_FORBIDDEN, "禁止停手", R.string.editor_brush_no_stop, idSuffix = "_custom"),
+                    BoardBrush.ToggleExclusiveTileFlag(
+                        flag = TileFlagBits.START_ALLOWED,
+                        conflictFlag = TileFlagBits.END_REQUIRED,
+                        textRes = R.string.editor_brush_start_cell,
+                        fallback = "指定起点",
+                        idSuffix = "_custom"
+                    ),
+                    BoardBrush.ToggleExclusiveTileFlag(
+                        flag = TileFlagBits.END_REQUIRED,
+                        conflictFlag = TileFlagBits.START_ALLOWED,
+                        textRes = R.string.editor_brush_end_cell,
+                        fallback = "指定终点",
+                        idSuffix = "_custom"
+                    )
                 )
             )
         )
@@ -205,11 +278,13 @@ class OverlayBoardEditorController(
     private val saveBoardBtn: TextView
     private val clearAllBtn: TextView
     private val exitBtn: TextView
+    private var lockCustomOpsBtn: TextView? = null
+    private var clearCustomOpsBtn: TextView? = null
 
     init {
         val dm = context.resources.displayMetrics
-        val panelWidth = minOf(dm.widthPixels - dp(16), dp(356))
-        val maxScrollH = (dm.heightPixels * 0.38f).toInt().coerceIn(dp(230), dp(310))
+        val panelWidth = minOf(dm.widthPixels - dp(16), dp(364))
+        val maxScrollH = (dm.heightPixels * 0.40f).toInt().coerceIn(dp(236), dp(326))
 
         rootView = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -236,7 +311,7 @@ class OverlayBoardEditorController(
         }
         titleLabel = TextView(context).apply {
             text = context.getString(R.string.editor_title)
-            textSize = 11.5f
+            textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
             setPadding(0, 0, dp(5), 0)
@@ -245,7 +320,7 @@ class OverlayBoardEditorController(
 
         statusBadge = TextView(context).apply {
             text = context.getString(R.string.editor_badge_editing)
-            textSize = 9f
+            textSize = 8.8f
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
             setPadding(dp(5), dp(1), dp(5), dp(1))
@@ -264,7 +339,7 @@ class OverlayBoardEditorController(
         header.addView(exitBtn)
         rootView.addView(header)
 
-        // Row 2 — Standalone Tool Bar OUTSIDE all colored group boxes: Workflow hint + 「清除格标」 brush!
+        // Row 2 — Standalone Tool Bar: Workflow hint + 重新识盘 + 清除格标
         val toolBar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -277,10 +352,9 @@ class OverlayBoardEditorController(
             }
         }
         hintLabel = TextView(context).apply {
-            text = context.getString(R.string.editor_hint_unsaved)
-            textSize = 8.8f
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
+            text = context.getString(R.string.editor_hint_auto_apply)
+            textSize = 8.6f
+            maxLines = 2
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginEnd = dp(6)
             }
@@ -290,34 +364,23 @@ class OverlayBoardEditorController(
         rescanBtn = makeHeaderBtn(
             label = context.getString(R.string.editor_btn_rescan),
             marginEndDp = 4,
-            padH = 7
+            padH = 6
         ) {
             onRescanLiveBoard()
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(22)
-            ).apply { marginEnd = dp(4) }
         }
         toolBar.addView(rescanBtn)
 
         clearCellBrushBtn = makeHeaderBtn(
             label = context.getString(R.string.editor_btn_clear_cell),
             marginEndDp = 0,
-            padH = 7
+            padH = 6
         ) {
             activeBrush = BoardBrush.ClearMarkers
             refreshBrushStyles()
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(22)
-            )
         }
         toolBar.addView(clearCellBrushBtn)
         rootView.addView(toolBar)
 
-        // Bounded vertical ScrollView containing 5 clean color-coded multi-row brush groups
         val scroll = object : ScrollView(context) {
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                 val boundedH = MeasureSpec.makeMeasureSpec(maxScrollH, MeasureSpec.AT_MOST)
@@ -350,17 +413,15 @@ class OverlayBoardEditorController(
                 }
             }
 
-            // Clickable Colored Accordion Header (matches Strategy drawers 1:1!)
             val gHdr = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(7), dp(5), dp(7), dp(5))
+                setPadding(dp(7), dp(4), dp(7), dp(4))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 setOnClickListener {
-                    // Exclusive single-open accordion: opening one drawer auto-collapses all other drawers!
                     expandedGroupIdx = if (expandedGroupIdx == gIdx) null else gIdx
                     refreshAccordionState()
                     onPanelHeightChanged?.invoke()
@@ -381,19 +442,33 @@ class OverlayBoardEditorController(
                 layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f)
             })
             val activeBadge = TextView(context).apply {
-                textSize = 8.8f
+                textSize = 8.6f
                 typeface = Typeface.DEFAULT_BOLD
                 setSingleLine(true)
-                ellipsize = TextUtils.TruncateAt.END
-                maxWidth = dp(96)
                 setPadding(dp(5), dp(1), dp(5), dp(1))
                 visibility = View.GONE
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { marginEnd = dp(5) }
+                ).apply { marginEnd = dp(4) }
             }
             gHdr.addView(activeBadge)
+
+            val helpBtn = TextView(context).apply {
+                text = "?"
+                textSize = 9f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(5) }
+                setOnClickListener {
+                    onShowDrawerHelp?.invoke(
+                        lctx.getString(group.helpTitleRes),
+                        lctx.getString(group.helpBodyRes)
+                    )
+                }
+            }
+            gHdr.addView(helpBtn)
+
             val chevron = TextView(context).apply {
                 text = if (expandedGroupIdx == gIdx) "▾" else "▸"
                 textSize = 10.5f
@@ -419,7 +494,6 @@ class OverlayBoardEditorController(
                 )
             }
 
-            // Wrapped multi-row equal-width grid rows inside collapsible body
             group.rows.forEachIndexed { rIdx, rowBrushes ->
                 val row = LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -428,7 +502,7 @@ class OverlayBoardEditorController(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     ).apply {
-                        bottomMargin = if (rIdx == group.rows.lastIndex) 0 else dp(3)
+                        bottomMargin = if (rIdx == group.rows.lastIndex && !group.isCustomOpsGroup) 0 else dp(3)
                     }
                 }
                 rowBrushes.forEachIndexed { bIdx, brush ->
@@ -444,6 +518,37 @@ class OverlayBoardEditorController(
                 }
                 bodyContainer.addView(row)
             }
+
+            if (group.isCustomOpsGroup) {
+                val opsFooter = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dp(2) }
+                }
+                val lockBtn = makeGridBrushBtn(
+                    label = context.getString(R.string.editor_lock_custom_ops),
+                    marginEndDp = 4,
+                    weight = 1.45f
+                ) {
+                    onToggleLockCustomOps()
+                }
+                val clrCustomBtn = makeGridBrushBtn(
+                    label = context.getString(R.string.editor_clear_custom_ops),
+                    marginEndDp = 0,
+                    weight = 0.85f
+                ) {
+                    onClearCustomOpsOnly()
+                }
+                lockCustomOpsBtn = lockBtn
+                clearCustomOpsBtn = clrCustomBtn
+                opsFooter.addView(lockBtn)
+                opsFooter.addView(clrCustomBtn)
+                bodyContainer.addView(opsFooter)
+            }
+
             groupBox.addView(bodyContainer)
             groupsHost.addView(groupBox)
 
@@ -455,6 +560,7 @@ class OverlayBoardEditorController(
                     headerRow = gHdr,
                     titleView = gTitle,
                     activeBadge = activeBadge,
+                    helpBtnView = helpBtn,
                     chevronView = chevron,
                     dividerView = divider,
                     bodyContainer = bodyContainer
@@ -483,6 +589,13 @@ class OverlayBoardEditorController(
         }
     }
 
+    fun setLockCustomOpsState(locked: Boolean) {
+        if (lockCustomOpsAcrossTurns != locked) {
+            lockCustomOpsAcrossTurns = locked
+            refreshCustomOpsFooter()
+        }
+    }
+
     fun applyTheme(palette: OverlayPalette, localizedContext: Context = context) {
         currentPalette = palette
         lctx = localizedContext
@@ -504,6 +617,24 @@ class OverlayBoardEditorController(
 
         refreshSaveStateChrome()
         refreshBrushStyles()
+        refreshCustomOpsFooter()
+    }
+
+    private fun refreshCustomOpsFooter() {
+        val p = currentPalette ?: return
+        lockCustomOpsBtn?.let { btn ->
+            val lbl = lctx.getString(R.string.editor_lock_custom_ops)
+            btn.text = if (lockCustomOpsAcrossTurns) "🔒 $lbl" else lbl
+            if (lockCustomOpsAcrossTurns) {
+                styleBtn(btn, ACCENT_BLUE, Color.WHITE, Color.WHITE)
+            } else {
+                styleBtn(btn, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+            }
+        }
+        clearCustomOpsBtn?.let { btn ->
+            btn.text = lctx.getString(R.string.editor_clear_custom_ops)
+            styleBtn(btn, p.errorContainer, p.onErrorContainer, null)
+        }
     }
 
     private fun refreshAccordionState() {
@@ -521,6 +652,12 @@ class OverlayBoardEditorController(
             grp.titleView.setTextColor(if (p.isDark) Color.WHITE else p.onSurface)
             grp.chevronView.text = if (isOpen) "▾" else "▸"
             grp.chevronView.setTextColor(accent)
+            grp.helpBtnView.setTextColor(p.onSurfaceVariant)
+            grp.helpBtnView.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(if (p.isDark) 44 else 24, r, g, b))
+                setStroke(dp(1), Color.argb(if (p.isDark) 130 else 95, r, g, b))
+            }
 
             if (hasActiveBrush) {
                 val activeLbl = activeBrush.resolveLabel(lctx)
@@ -579,7 +716,7 @@ class OverlayBoardEditorController(
             styleBtn(statusBadge, scanBg, scanFg, scanStroke)
             saveBoardBtn.text = if (isSavedState) "✓ ${lctx.getString(R.string.editor_btn_save)}" else lctx.getString(R.string.editor_btn_save)
             styleBtn(saveBoardBtn, p.primary, p.onPrimary, null)
-            hintLabel.text = lctx.getString(R.string.editor_hint_unsaved)
+            hintLabel.text = lctx.getString(R.string.editor_hint_auto_apply)
         } else if (isSavedState) {
             statusBadge.text = "✓ ${lctx.getString(R.string.editor_badge_saved)}"
             val savedBg = if (p.isDark) Color.rgb(22, 62, 42) else Color.rgb(232, 245, 233)
@@ -597,13 +734,12 @@ class OverlayBoardEditorController(
             styleBtn(statusBadge, editBg, editFg, editStroke)
             saveBoardBtn.text = lctx.getString(R.string.editor_btn_save)
             styleBtn(saveBoardBtn, p.primary, p.onPrimary, null)
-            hintLabel.text = lctx.getString(R.string.editor_hint_unsaved)
+            hintLabel.text = lctx.getString(R.string.editor_hint_auto_apply)
         }
     }
 
     private fun refreshBrushStyles() {
         val p = currentPalette ?: return
-        // Standalone 「清除格标」 button outside all colored groups
         val clearSel = activeBrush == BoardBrush.ClearMarkers
         val clearLbl = BoardBrush.ClearMarkers.resolveLabel(lctx)
         clearCellBrushBtn.text = if (clearSel) "●$clearLbl" else clearLbl
@@ -646,35 +782,40 @@ class OverlayBoardEditorController(
         portraitElements: List<Element> = emptyList()
     ): BoardState = applyBrushToBoard(board, activeBrush, row, col, portraitElements)
 
-    private fun makeHeaderBtn(label: String, marginEndDp: Int = 4, padH: Int = 8, onClick: () -> Unit): TextView {
+    private fun makeHeaderBtn(label: String, marginEndDp: Int = 4, padH: Int = 7, onClick: () -> Unit): TextView {
         return TextView(context).apply {
             text = label
-            textSize = 9.5f
+            textSize = 9.2f
             typeface = Typeface.DEFAULT_BOLD
             setSingleLine(true)
             gravity = Gravity.CENTER
             setPadding(dp(padH), dp(2), dp(padH), dp(2))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(23)
+                dp(22)
             ).apply { marginEnd = dp(marginEndDp) }
             setOnClickListener { onClick() }
         }
     }
 
-    private fun makeGridBrushBtn(label: String, marginEndDp: Int = 3, onClick: () -> Unit): TextView {
+    private fun makeGridBrushBtn(
+        label: String,
+        marginEndDp: Int = 3,
+        weight: Float = 1f,
+        onClick: () -> Unit
+    ): TextView {
         return TextView(context).apply {
             text = label
-            textSize = 9.0f
+            textSize = 8.8f
             typeface = Typeface.DEFAULT_BOLD
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
+            maxLines = 2
             gravity = Gravity.CENTER
-            setPadding(dp(1), dp(2), dp(1), dp(2))
+            minHeight = dp(22)
+            setPadding(dp(3), dp(3), dp(3), dp(3))
             layoutParams = LinearLayout.LayoutParams(
                 0,
-                dp(21),
-                1f
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                weight
             ).apply { marginEnd = dp(marginEndDp) }
             setOnClickListener { onClick() }
         }
@@ -706,13 +847,46 @@ class OverlayBoardEditorController(
         private const val ACCENT_AMBER = 0xFFE67600.toInt()
         private const val ACCENT_TEAL = 0xFF00897B.toInt()
         private const val ACCENT_CRIMSON = 0xFFD32F2F.toInt()
+        private const val ACCENT_BLUE = 0xFF1976D2.toInt()
         private const val ACCENT_SLATE = 0xFF475569.toInt()
 
-        /**
-         * Pure board-mutation helper shared by the interactive Board Editor and JVM unit tests.
-         * Enforces strict single-point exclusivity for Start/End vortexes (起结有序: 绿色漩涡 / 红色漩涡),
-         * multi-cell painting for Character Runestone pass/end terrains (#54 / #78), and exact 7-race selection.
-         */
+        const val CUSTOM_CELL_HAZARD_MASK: Int =
+            HazardBits.PRIORITY or HazardBits.RESERVE or HazardBits.LOCKED
+        const val CUSTOM_TILE_FLAG_MASK: Int =
+            TileFlagBits.NO_PASS or TileFlagBits.CHECKPOINT or TileFlagBits.SEALED_STONE or
+                TileFlagBits.START_ALLOWED or TileFlagBits.END_REQUIRED or TileFlagBits.END_FORBIDDEN
+
+        fun hasCustomOps(board: BoardState): Boolean {
+            if (board.orderedCheckpoints.isNotEmpty()) return true
+            if (board.cells.any { (it.hazards and CUSTOM_CELL_HAZARD_MASK) != 0 }) return true
+            return board.tileFlags.any { (it and CUSTOM_TILE_FLAG_MASK) != 0 }
+        }
+
+        fun clearCustomOpsFromBoard(board: BoardState): BoardState {
+            return board.copy(
+                cells = board.cells.map { it.copy(hazards = it.hazards and CUSTOM_CELL_HAZARD_MASK.inv()) },
+                tileFlags = board.tileFlags.map { it and CUSTOM_TILE_FLAG_MASK.inv() },
+                orderedCheckpoints = emptyList()
+            )
+        }
+
+        fun mergeLockedCustomOpsOntoBoard(template: BoardState, freshBoard: BoardState): BoardState {
+            if (template.cols != freshBoard.cols || template.rows != freshBoard.rows) return freshBoard
+            val mergedCells = freshBoard.cells.mapIndexed { idx, c ->
+                val customHaz = template.cells.getOrNull(idx)?.hazards?.and(CUSTOM_CELL_HAZARD_MASK) ?: 0
+                if (customHaz == 0) c else c.copy(hazards = c.hazards or customHaz)
+            }
+            val mergedFlags = freshBoard.tileFlags.mapIndexed { idx, f ->
+                val customFlg = template.tileFlags.getOrNull(idx)?.and(CUSTOM_TILE_FLAG_MASK) ?: 0
+                f or customFlg
+            }
+            return freshBoard.copy(
+                cells = mergedCells,
+                tileFlags = mergedFlags,
+                orderedCheckpoints = template.orderedCheckpoints.filter { it in freshBoard.cells.indices }
+            )
+        }
+
         fun applyBrushToBoard(
             board: BoardState,
             brush: BoardBrush,
@@ -723,7 +897,6 @@ class OverlayBoardEditorController(
             if (brush == BoardBrush.SetStartingBuoy) {
                 if (col !in 0 until board.cols) return board
                 val newFlags = board.tileFlags.toMutableList()
-                // Portrait Starting Buoy is mutually exclusive with board-cell START_ALLOWED vortex
                 for (i in newFlags.indices) {
                     newFlags[i] = newFlags[i] and TileFlagBits.START_ALLOWED.inv()
                 }
@@ -748,6 +921,7 @@ class OverlayBoardEditorController(
             if (idx !in board.cells.indices) return board
             val newCells = board.cells.toMutableList()
             val newFlags = board.tileFlags.toMutableList()
+            val newCheckpoints = board.orderedCheckpoints.toMutableList()
             val oldCell = newCells[idx]
             val oldFlags = newFlags[idx]
             var nextBuoyCol = board.startingBuoyCol
@@ -778,14 +952,11 @@ class OverlayBoardEditorController(
                 }
                 is BoardBrush.ToggleExclusiveTileFlag -> {
                     val alreadySet = (oldFlags and brush.flag) != 0
-                    // Clear this exclusive flag from every cell on the board first (strictly <= 1 cell!)
                     for (i in newFlags.indices) {
                         newFlags[i] = newFlags[i] and brush.flag.inv()
                     }
                     if (!alreadySet) {
-                        // Also clear conflicting start/end flag on this same cell (start != end)
                         newFlags[idx] = (newFlags[idx] and brush.conflictFlag.inv()) or brush.flag
-                        // Setting board-cell Green Start Vortex overrides portrait Starting Buoy (No. 6786-6789)
                         if (brush.flag == TileFlagBits.START_ALLOWED) {
                             nextBuoyCol = -1
                             nextBuoyEl = Element.UNKNOWN
@@ -798,6 +969,31 @@ class OverlayBoardEditorController(
                 is BoardBrush.ToggleHazard -> {
                     newCells[idx] = oldCell.copy(hazards = oldCell.hazards xor brush.hazard)
                 }
+                is BoardBrush.ToggleExclusiveHazard -> {
+                    val alreadySet = (oldCell.hazards and brush.hazard) != 0
+                    val nextHaz = if (alreadySet) {
+                        oldCell.hazards and brush.hazard.inv()
+                    } else {
+                        (oldCell.hazards and brush.conflictHazard.inv()) or brush.hazard
+                    }
+                    newCells[idx] = oldCell.copy(hazards = nextHaz)
+                }
+                BoardBrush.ToggleCheckpoint -> {
+                    val existingPos = newCheckpoints.indexOf(idx)
+                    if (existingPos >= 0) {
+                        newCheckpoints.removeAt(existingPos)
+                        newFlags[idx] = oldFlags and TileFlagBits.CHECKPOINT.inv()
+                    } else {
+                        if (newCheckpoints.size >= 4) {
+                            val evicted = newCheckpoints.removeAt(0)
+                            if (evicted in newFlags.indices) {
+                                newFlags[evicted] = newFlags[evicted] and TileFlagBits.CHECKPOINT.inv()
+                            }
+                        }
+                        newCheckpoints.add(idx)
+                        newFlags[idx] = oldFlags or TileFlagBits.CHECKPOINT
+                    }
+                }
                 BoardBrush.ClearMarkers -> {
                     newCells[idx] = oldCell.copy(
                         variant = Variant.NORMAL,
@@ -805,6 +1001,7 @@ class OverlayBoardEditorController(
                         hazards = HazardBits.NONE
                     )
                     newFlags[idx] = TileFlagBits.NONE
+                    newCheckpoints.remove(idx)
                     if (row == 0 && col == nextBuoyCol) {
                         nextBuoyCol = -1
                         nextBuoyEl = Element.UNKNOWN
@@ -815,6 +1012,7 @@ class OverlayBoardEditorController(
             return board.copy(
                 cells = newCells,
                 tileFlags = newFlags,
+                orderedCheckpoints = newCheckpoints,
                 startingBuoyCol = nextBuoyCol,
                 startingBuoyElement = nextBuoyEl
             )

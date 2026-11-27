@@ -52,7 +52,11 @@ data class StageWaveScriptEntity(
     val stageName: String,
     val wavesJson: String,
     val sourceType: String,
-    val updatedAtMs: Long
+    val updatedAtMs: Long,
+    val entryCategory: String = "",
+    val subCategory: String = "",
+    val dungeonSeries: String = "",
+    val difficultyTag: String = ""
 )
 
 @Dao
@@ -126,6 +130,9 @@ interface CapturedEnemySkillDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: CapturedEnemySkillEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<CapturedEnemySkillEntity>)
+
     @Query("DELETE FROM captured_enemy_skills WHERE skillHash = :hash")
     suspend fun deleteByHash(hash: String)
 
@@ -167,7 +174,7 @@ interface StageWaveScriptDao {
         CapturedEnemySkillEntity::class,
         StageWaveScriptEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AutoDoraDatabase : RoomDatabase() {
@@ -238,6 +245,15 @@ abstract class AutoDoraDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stage_wave_scripts` ADD COLUMN `entryCategory` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `stage_wave_scripts` ADD COLUMN `subCategory` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `stage_wave_scripts` ADD COLUMN `dungeonSeries` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `stage_wave_scripts` ADD COLUMN `difficultyTag` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): AutoDoraDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -245,7 +261,7 @@ abstract class AutoDoraDatabase : RoomDatabase() {
                     AutoDoraDatabase::class.java,
                     "autodora_next.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { instance = it }

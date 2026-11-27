@@ -9,7 +9,7 @@
 - **本次审计新发现并已补全/修正 (`UPGRADED`)**：`20` 项
 - **纯视觉干扰 / 印记类（已支持画笔标注，待后续端侧模型增强，`CV_PARTIAL`)**：`6` 项
 - **非盘面转珠机制（血量/CD/EP/减伤/隐身等，`NON_BOARD`)**：`35` 项
-- **端侧自动识别闭环（`v0.6.0–v0.8.0`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json v2026.11-v2.1` + `v0.8.0` 新增火/木/水强化等属性限制形状盾与精灵守护/符石净化/能力继承繁简对齐）联合 `PaddleOcrOnnxEngine`、`StageWaveScriptParser` 与 **Stage 2B `EnemyIconOnnxClassifier`（Tier-3 上方敌区图标检测，`neg_fp = 0/300`）**，支持单敌弹窗、关前全波次剧本（已编译刷新至 **140 关 / 498 波 / 101 阶段**）与唯一权威库（**A4 380 条基准 + 499 条唯一权威库，`429` A1 实爬 + `70` 百科兜底**）全量回归；同时依据 **A2 23 张实机图标定灰字阈值（`effP92 ≤ 178 && fgChromaMean ≤ 38f`）**，灰字无视技能在实战解版中动态跳过而 100% 归档于本地 Room `captured_enemy_skills`（支持增删改查 + 噪音清理 + 全部重算）。
+- **端侧自动识别闭环（`v0.6.0–v0.9.0`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json v2026.11-v2.2`，`v0.9.0` 全面补齐 `十之詛咒(forbid_cross)`、`連擊上限盾(max_combo)`、`正方3×3(square_3x3)`、`符石加護留底≥1(keep_element_at_least_one)`、`單屬限消≤N粒(max_element_orbs)` 及精确步数盾 `exact_steps`）联合 `EnemySkillKnowledgeMatcher`（**Tier-0 `MANUAL_EDIT` 用户手动覆写 + Tier-2 内置 `499` 条权威敌技库 `{属性}/{数字}` 骨架模糊兜底与现场参数重水合 `✦库`**）、`PaddleOcrOnnxEngine`（支持战前关卡资讯与战中敌技拆分双开关）、`StageWaveScriptParser`（内置 `140` 关三级游戏入口分类剧本包 `tos_stage_wiki_bundle_140.json`，Room `v4` 内嵌 `6` 条/页检索）以及 **全时协同 Stage 2B `EnemyIconOnnxClassifier`（后台稳态 + 算前同帧补盾，`neg_fp = 0/300`）**，实现文本、图标、剧本与本地知识库四源协同闭环。
 
 ## 二、本次审计发现并落地的核心算法、规则与 UI 升级
 

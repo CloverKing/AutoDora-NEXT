@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,89 @@ def _compute_stage_key(region: str, dungeon: str, stage_name: str, waves: list[d
     return hashlib.sha256("|".join(sig_parts).encode("utf-8")).hexdigest()[:16]
 
 
+def _clean_stage_label(s: str) -> str:
+    s = s.strip()
+    s = re.sub(r"^\d{3}_", "", s)
+    s = s.replace("ⅡI", "III").replace("Ⅱ", "II")
+    s = re.sub(r"(?<=[\u4e00-\u9fffA-Za-z])\|$", "I", s)
+    s = s.replace("|", "")
+    s = re.sub(r"_\d+$", "", s)
+    if s in ("(新手適用", "《新手適用"):
+        s = "雙週活動"
+    return s.strip()
+
+
+def _infer_hierarchy(reg_name: str, dg_name: str, stage_name: str, raw_diff: str) -> tuple[str, str, str, str]:
+    combined = f"{reg_name} {dg_name} {stage_name}"
+    if "古神遺跡" in reg_name:
+        entry = "古神遺跡"
+    elif "大型活動" in reg_name:
+        entry = "大型活動"
+    elif "故事" in reg_name:
+        entry = "故事模式"
+    elif "育成訓練" in reg_name:
+        entry = "育成訓練"
+    elif "遺跡特許" in reg_name:
+        entry = "遺跡特許"
+    else:
+        entry = "大型活動"
+
+    if entry == "古神遺跡":
+        if "災厄" in combined:
+            sub = "災厄級"
+        elif "夢魘" in combined:
+            sub = "夢魘級"
+        elif "地獄" in combined:
+            sub = "地獄級"
+        elif "是日" in combined or "資源" in combined:
+            sub = "日常遺跡"
+        else:
+            sub = "高難試煉"
+    elif entry == "大型活動":
+        if "初心" in reg_name or "精選" in combined or "契機" in combined:
+            sub = "初心試煉塔"
+        elif "每月挑戰" in combined or "挑戰任務" in combined:
+            sub = "每月挑戰"
+        elif "靈罩塔" in combined:
+            sub = "靈罩塔"
+        else:
+            sub = "雙週與活動"
+    elif entry == "故事模式":
+        if "以諾" in reg_name:
+            sub = "以諾時代"
+        elif "嶄新" in reg_name or "間章" in combined:
+            sub = "嶄新封印"
+        elif "副線" in reg_name:
+            sub = "故事副線"
+        else:
+            sub = "主線故事"
+    elif entry == "育成訓練":
+        if "敵技" in combined or "模擬應戰" in combined:
+            sub = "敵技訓練"
+        elif "之日" in combined or "靈魂石" in combined:
+            sub = "每日資源關"
+        else:
+            sub = "成長與挑戰"
+    else:
+        if "夢魘" in combined:
+            sub = "夢魘級"
+        elif "地獄" in combined:
+            sub = "地獄級"
+        else:
+            sub = "戰魂憶魂"
+
+    diff = raw_diff.strip()
+    if not diff:
+        for tag in ("災厄級", "夢魘級", "地獄級", "困難", "進階", "高級", "初級", "初階"):
+            if tag in combined:
+                diff = tag
+                break
+        if not diff and ("Extra" in combined or "Lv." in combined):
+            diff = "挑戰/Lv"
+
+    return entry, sub, dg_name, diff
+
+
 def compile_stage_wiki_bundle(wiki_data: dict[str, Any]) -> dict[str, Any]:
     """Compiles parsed `tos_current_version_stage_wiki.json` payload into App-compatible bundle."""
     compiled_stages: list[dict[str, Any]] = []
@@ -88,11 +172,13 @@ def compile_stage_wiki_bundle(wiki_data: dict[str, Any]) -> dict[str, Any]:
     for reg in wiki_data.get("regions", []):
         reg_name = (reg.get("region_name") or "").strip()
         for dg in reg.get("dungeons", []):
-            dg_name = (dg.get("dungeon_name") or "").strip()
+            dg_name = _clean_stage_label(dg.get("dungeon_name") or "")
             for st in dg.get("stages", []):
-                raw_stage_name = (st.get("stage_name") or "").strip()
+                raw_stage_name = _clean_stage_label(st.get("stage_name") or "")
                 if not raw_stage_name:
                     continue
+                if "BATTLE" in raw_stage_name.upper() and dg_name:
+                    raw_stage_name = dg_name
                 display_name = f"{dg_name} · {raw_stage_name}" if dg_name and dg_name != raw_stage_name else raw_stage_name
 
                 out_waves: list[dict[str, Any]] = []
@@ -154,12 +240,19 @@ def compile_stage_wiki_bundle(wiki_data: dict[str, Any]) -> dict[str, Any]:
                 if not out_waves:
                     continue
                 total_waves_out += len(out_waves)
+                entry_cat, sub_cat, series_name, diff_tag = _infer_hierarchy(
+                    reg_name, dg_name, raw_stage_name, st.get("difficulty") or ""
+                )
                 compiled_stages.append({
                     "stageKey": _compute_stage_key(reg_name, dg_name, raw_stage_name, out_waves),
                     "stageName": display_name,
                     "region": reg_name,
                     "dungeon": dg_name,
-                    "difficulty": st.get("difficulty") or "",
+                    "difficulty": diff_tag,
+                    "entryCategory": entry_cat,
+                    "subCategory": sub_cat,
+                    "dungeonSeries": series_name,
+                    "difficultyTag": diff_tag,
                     "waves": out_waves,
                 })
 

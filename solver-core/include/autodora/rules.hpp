@@ -8,9 +8,10 @@
 namespace autodora {
 
 enum class ElementPriority : int8_t {
-    Reserve = -1, // 保留不消
-    Normal = 0,   // 一般
-    High = 1      // 优先消除
+    KeepAtLeastOne = -2, // 留底 >= 1 (符石加護: 结算后盘面至少保留 1 粒该属符石)
+    Reserve = -1,        // 保留不消
+    Normal = 0,          // 一般
+    High = 1             // 优先消除
 };
 
 enum class MatchTiming : uint8_t {
@@ -36,7 +37,8 @@ enum class TargetShape : uint8_t {
     LShape = 12,
     TShape = 13,
     Square2x2 = 14,
-    ClearAll = 15
+    ClearAll = 15,
+    Square3x3 = 16
 };
 
 enum class NotEnoughPolicy : uint8_t {
@@ -70,7 +72,7 @@ enum class Wave1KindMode : uint8_t {
 };
 
 struct ElementRule {
-    uint8_t minMatchCount = 3; // 1, 2, 3, or 4
+    uint8_t minMatchCount = 3; // 1, 2, 3, 4, or 5
     TargetShape targetShape = TargetShape::Any;
     ElementPriority priority = ElementPriority::Normal;
     MatchTiming timing = MatchTiming::Any;
@@ -82,6 +84,9 @@ struct ElementRule {
     int8_t exactFirstWaveCombos = -1;   // -1 = 不限制
     int8_t exactFirstWaveOrbs = -1;     // -1 = 不限制
     uint8_t minFirstWaveOrbs = 0;       // 0 = 不限制
+    uint8_t minFirstWaveCombos = 0;     // 0 = 不限制 (首消 >= N 组该属)
+    int8_t maxTotalOrbs = -1;           // -1 = 不限制 (全回合消除上限 <= N 粒, 应对刺血/虚之印记)
+    uint8_t minTotalOrbs = 0;           // 0 = 不限制 (全回合累计 >= N 粒该属)
 };
 
 struct ColumnAmeliorationRule {
@@ -110,12 +115,18 @@ struct CrossShieldRule {
     int8_t requiredElement = -1;       // -1 = 任意色
     bool requireDistinctColors = false;
     uint8_t requiredElementsMask = 0;  // 非 0 时要求所选各属性均各自消出十字 (如水+火双十字)
+    bool forbidCross = false;          // 十之詛咒: 严禁首批消除任何十字形状符石!
 };
 
 struct ShapeShieldRule {
     uint8_t requireLCount = 0;
     uint8_t requireTCount = 0;
     uint8_t requireSquare2x2Count = 0;
+    uint8_t requireSquare3x3Count = 0; // 正方 3x3 九宫盾 (毒果/聖果/靈罩 3x3)
+    uint8_t lElementsMask = 0;         // 0 = 任意色, 非 0 = 限定属性掩码
+    uint8_t tElementsMask = 0;
+    uint8_t sq2x2ElementsMask = 0;
+    uint8_t sq3x3ElementsMask = 0;
     bool strictShape = false;
 };
 

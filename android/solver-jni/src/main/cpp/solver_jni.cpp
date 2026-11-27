@@ -290,24 +290,36 @@ Java_com_autodora_next_jni_NativeSolver_nativeSolve(
     rules.equalComboElementsMask          = static_cast<uint8_t>(riAt(97, 0));
     rules.unmatchableElementsMask         = static_cast<uint8_t>(riAt(98, 0));
     rules.requiredRaceTypesMask           = static_cast<uint8_t>(riAt(99, 0));
+    rules.shapeShield.requireSquare3x3Count = static_cast<uint8_t>(riAt(100, 0));
+    rules.shapeShield.lElementsMask       = static_cast<uint8_t>(riAt(101, 0));
+    rules.shapeShield.tElementsMask       = static_cast<uint8_t>(riAt(102, 0));
+    rules.shapeShield.sq2x2ElementsMask   = static_cast<uint8_t>(riAt(103, 0));
+    rules.shapeShield.sq3x3ElementsMask   = static_cast<uint8_t>(riAt(104, 0));
+    rules.crossShield.forbidCross         = riAt(105, 0) != 0;
 
     rules.stepPenaltyWeight     = rdAt(0, 0.08);
     rules.diagonalPenaltyWeight = rdAt(1, 0.05);
 
-    // 10 ints per element rule
-    for (size_t e = 0; e < kNumElements && (e * 10 + 9) < eri.size(); ++e) {
-        const size_t base = e * 10;
+    // 13 ints per element rule (backward compatible if 10 ints passed)
+    const size_t elemStride = (eri.size() >= 6 * 13) ? 13 : 10;
+    for (size_t e = 0; e < kNumElements && (e * elemStride + 9) < eri.size(); ++e) {
+        const size_t base = e * elemStride;
         auto& er = rules.elementRules[e];
-        er.minMatchCount       = static_cast<uint8_t>(eri[base + 0]);
-        er.targetShape         = static_cast<TargetShape>(eri[base + 1]);
-        er.priority            = static_cast<ElementPriority>(eri[base + 2]);
-        er.timing              = static_cast<MatchTiming>(eri[base + 3]);
-        er.requireEnchanted    = eri[base + 4] != 0;
-        er.requireRace         = eri[base + 5] != 0;
-        er.clearAllFirstWave   = eri[base + 6] != 0;
+        er.minMatchCount        = static_cast<uint8_t>(eri[base + 0]);
+        er.targetShape          = static_cast<TargetShape>(eri[base + 1]);
+        er.priority             = static_cast<ElementPriority>(eri[base + 2]);
+        er.timing               = static_cast<MatchTiming>(eri[base + 3]);
+        er.requireEnchanted     = eri[base + 4] != 0;
+        er.requireRace          = eri[base + 5] != 0;
+        er.clearAllFirstWave    = eri[base + 6] != 0;
         er.exactFirstWaveCombos = static_cast<int8_t>(eri[base + 7]);
-        er.exactFirstWaveOrbs  = static_cast<int8_t>(eri[base + 8]);
-        er.minFirstWaveOrbs    = static_cast<uint8_t>(eri[base + 9]);
+        er.exactFirstWaveOrbs   = static_cast<int8_t>(eri[base + 8]);
+        er.minFirstWaveOrbs     = static_cast<uint8_t>(eri[base + 9]);
+        if (elemStride >= 13) {
+            er.minFirstWaveCombos = static_cast<uint8_t>(eri[base + 10]);
+            er.maxTotalOrbs       = static_cast<int8_t>(eri[base + 11]);
+            er.minTotalOrbs       = static_cast<uint8_t>(eri[base + 12]);
+        }
         if (e < ew.size()) er.customWeight = ew[e];
     }
 

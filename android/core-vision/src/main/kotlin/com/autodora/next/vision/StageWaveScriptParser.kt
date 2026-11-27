@@ -27,6 +27,13 @@ private data class RawWikiWaveJson(
 private data class RawWikiStageJson(
     val stageKey: String = "",
     val stageName: String = "",
+    val region: String = "",
+    val dungeon: String = "",
+    val difficulty: String = "",
+    val entryCategory: String = "",
+    val subCategory: String = "",
+    val dungeonSeries: String = "",
+    val difficultyTag: String = "",
     val waves: List<RawWikiWaveJson> = emptyList()
 )
 
@@ -147,7 +154,11 @@ object StageWaveScriptParser {
             stageName = stageName,
             waves = sortedEntries,
             sourceType = "STAGE_INFO_OCR",
-            updatedAtMs = System.currentTimeMillis()
+            updatedAtMs = System.currentTimeMillis(),
+            entryCategory = "战中采集",
+            subCategory = "关卡资讯抓取",
+            dungeonSeries = stageName,
+            difficultyTag = com.autodora.next.model.StageHierarchyHelper.inferDifficultyTag(stageName, "")
         )
         return ParsedStageScriptResult(
             script = script,
@@ -180,12 +191,24 @@ object StageWaveScriptParser {
         if (structured != null) {
             return structured.filter { it.waves.isNotEmpty() }.map { st ->
                 val cleanWaves = st.waves.sortedBy { it.waveIndex }
+                val (ec, sc, ds, dt) = com.autodora.next.model.StageHierarchyHelper.infer(
+                    rawEntry = st.entryCategory,
+                    rawSub = st.subCategory,
+                    rawSeries = st.dungeonSeries,
+                    rawDiff = st.difficultyTag,
+                    stageName = st.stageName,
+                    sourceType = st.sourceType
+                )
                 st.copy(
                     stageKey = st.stageKey.ifBlank { computeStageKey(st.stageName, cleanWaves) },
                     stageName = st.stageName.ifBlank { "Wiki Stage" },
                     waves = cleanWaves,
                     sourceType = st.sourceType.ifBlank { "WIKI_IMPORT" },
-                    updatedAtMs = if (st.updatedAtMs > 0L) st.updatedAtMs else now
+                    updatedAtMs = if (st.updatedAtMs > 0L) st.updatedAtMs else now,
+                    entryCategory = ec,
+                    subCategory = sc,
+                    dungeonSeries = ds,
+                    difficultyTag = dt
                 )
             }
         }
@@ -228,12 +251,24 @@ object StageWaveScriptParser {
                 )
             }.sortedBy { it.waveIndex }
             val name = rawStage.stageName.ifBlank { "Wiki Stage" }
+            val (ec, sc, ds, dt) = com.autodora.next.model.StageHierarchyHelper.infer(
+                rawEntry = rawStage.entryCategory.ifBlank { rawStage.region },
+                rawSub = rawStage.subCategory,
+                rawSeries = rawStage.dungeonSeries.ifBlank { rawStage.dungeon },
+                rawDiff = rawStage.difficultyTag.ifBlank { rawStage.difficulty },
+                stageName = name,
+                sourceType = "WIKI_IMPORT"
+            )
             StageWaveScript(
                 stageKey = rawStage.stageKey.ifBlank { computeStageKey(name, waves) },
                 stageName = name,
                 waves = waves,
                 sourceType = "WIKI_IMPORT",
-                updatedAtMs = now
+                updatedAtMs = now,
+                entryCategory = ec,
+                subCategory = sc,
+                dungeonSeries = ds,
+                difficultyTag = dt
             )
         }
     }

@@ -744,6 +744,39 @@ class TrainingDataRepository(
         enemySkillDao.upsert(entity)
     }
 
+    suspend fun importAuthoritativeEnemySkills(items: List<CapturedEnemySkillInput>): Int = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext 0
+        val now = System.currentTimeMillis()
+        val existingByHash = enemySkillDao.getAllOrdered().associateBy { it.skillHash }
+        val toUpsert = ArrayList<CapturedEnemySkillEntity>(items.size)
+        for (item in items) {
+            if (item.skillHash.isBlank() || item.rawBodyZhTw.isBlank()) continue
+            val prev = existingByHash[item.skillHash]
+            if (prev != null && prev.sourceType.equals("MANUAL_EDIT", ignoreCase = true)) {
+                continue // Never overwrite user-curated manual entries!
+            }
+            toUpsert.add(
+                CapturedEnemySkillEntity(
+                    skillHash = item.skillHash,
+                    titleZhTw = item.titleZhTw.ifBlank { prev?.titleZhTw.orEmpty() },
+                    rawBodyZhTw = item.rawBodyZhTw,
+                    sourceType = prev?.sourceType ?: item.sourceType,
+                    stageName = item.stageName.ifBlank { prev?.stageName.orEmpty() },
+                    waveIndex = if (item.waveIndex > 0) item.waveIndex else (prev?.waveIndex ?: 0),
+                    parseStatus = item.parseStatus,
+                    mappedChipsJson = json.encodeToString(item.mappedChips),
+                    hitCount = (prev?.hitCount ?: 1).coerceAtLeast(1),
+                    firstSeenMs = prev?.firstSeenMs ?: now,
+                    lastSeenMs = prev?.lastSeenMs ?: now
+                )
+            )
+        }
+        if (toUpsert.isNotEmpty()) {
+            enemySkillDao.upsertAll(toUpsert)
+        }
+        toUpsert.size
+    }
+
     suspend fun deleteEnemySkill(skillHash: String) = withContext(Dispatchers.IO) {
         enemySkillDao.deleteByHash(skillHash)
     }

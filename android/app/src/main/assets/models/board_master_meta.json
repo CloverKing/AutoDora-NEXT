@@ -13,7 +13,7 @@
   "hazard_thresholds": {
     "WEATHERED": 1.01,
     "ELECTRIFIED": 1.01,
-    "FROZEN": 0.4,
+    "FROZEN": 1.01,
     "ICE_SEALED": 1.01,
     "BLOOD_DRAIN_LOCKED": 1.01,
     "PETRIFIED": 1.01,

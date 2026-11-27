@@ -125,6 +125,7 @@ object LocaleHelper {
             .joinToString("") { elementLabel(ctx, it) }
         return when (chip.id) {
             "min_combo" -> "${ctx.getString(R.string.combo_type_min_total)} ≥${chip.paramInt}"
+            "max_combo" -> "${ctx.getString(R.string.combo_type_max_total)} ≤${chip.paramInt}"
             "min_first_combo" -> "${ctx.getString(R.string.combo_type_min_first)} ≥${chip.paramInt}"
             "min_first_elem_combo" -> "${ctx.getString(R.string.combo_type_min_first_elem)} ≥${chip.paramInt}"
             "exact_combo" -> "${ctx.getString(R.string.combo_type_exact_total)} ${chip.paramInt}"
@@ -171,9 +172,14 @@ object LocaleHelper {
                 formatted.ifEmpty { chip.label }
             }
             "elem_burst_shield" -> {
-                val targetOrbs = chip.paramInt.coerceIn(3, 20)
+                val targetOrbs = chip.paramInt.coerceIn(3, 30)
                 val targetElems = elemNames.ifEmpty { elementLabel(ctx, 1) }
                 ctx.getString(R.string.elem_burst_fmt, targetElems, targetOrbs)
+            }
+            "max_element_orbs" -> {
+                val maxOrbs = chip.paramInt.coerceIn(0, 30)
+                val targetElems = elemNames.ifEmpty { elementLabel(ctx, 1) }
+                ctx.getString(R.string.elem_max_orbs_fmt, targetElems, maxOrbs)
             }
             "five_elements" -> (0..4).joinToString("") { elementLabel(ctx, it) }
             "five_elements_enchanted" -> (0..4).joinToString("") { elementLabel(ctx, it) } + "·" + ctx.getString(R.string.ov_puzzle_ench)
@@ -181,6 +187,7 @@ object LocaleHelper {
             "anti_first_wave" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_anti)}:$elemNames" else ctx.getString(R.string.elem_limit_anti)
             "forbid_all" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_forbid)}:$elemNames" else ctx.getString(R.string.elem_limit_forbid)
             "clear_all_element" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_clear_all)}:$elemNames" else ctx.getString(R.string.elem_limit_clear_all)
+            "keep_element_at_least_one" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_keep_one)}:$elemNames" else ctx.getString(R.string.elem_limit_keep_one)
             "unmatchable_elements" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.elem_limit_unmatchable)}:$elemNames" else ctx.getString(R.string.elem_limit_unmatchable)
             "digital_orb_count" -> ctx.getString(R.string.shield_digital_orbs_fmt, chip.paramInt.coerceIn(1, 48))
             "first_wave_full_clear" -> ctx.getString(R.string.shield_full_clear)
@@ -233,7 +240,9 @@ object LocaleHelper {
             }
             "l_shape" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.shield_l_shape)}·$elemNames" else ctx.getString(R.string.shield_l_shape)
             "t_shape" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.shield_t_shape)}·$elemNames" else ctx.getString(R.string.shield_t_shape)
-            "square_2x2" -> ctx.getString(R.string.shield_sq_2x2)
+            "square_2x2" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.shield_sq_2x2)}·$elemNames" else ctx.getString(R.string.shield_sq_2x2)
+            "square_3x3" -> if (elemNames.isNotEmpty()) "${ctx.getString(R.string.shield_sq_3x3)}·$elemNames" else ctx.getString(R.string.shield_sq_3x3)
+            "forbid_cross" -> ctx.getString(R.string.shield_forbid_cross)
             "all_columns_ameliorate" -> ctx.getString(R.string.shield_all_cols)
             "zero_trail_burning" -> {
                 val tLen = chip.paramInt and 0xFF
@@ -242,6 +251,7 @@ object LocaleHelper {
                 "${ctx.getString(R.string.burn_path_title)}·$lenStr·≤$maxH"
             }
             "step_limit" -> ctx.getString(R.string.shield_step_limit_fmt, chip.paramInt.coerceAtLeast(1))
+            "exact_steps" -> ctx.getString(R.string.shield_exact_steps_fmt, chip.paramInt.coerceAtLeast(1))
             "step_range" -> {
                 val lo = (chip.paramInt and 0xFF).coerceIn(1, 200)
                 val hi = ((chip.paramInt ushr 8) and 0xFF).coerceIn(lo, 200)
@@ -260,10 +270,13 @@ object LocaleHelper {
         val baseLabel = if (verdict.chip != null) {
             formatWaveChipLabel(ctx, verdict.chip!!)
         } else {
+            val cnt = verdict.detailTag?.toIntOrNull() ?: 1
             when (verdict.chipId) {
                 "traffic_light" -> ctx.getString(R.string.shield_traffic_light)
                 "puzzle_shield" -> ctx.getString(R.string.puzzle_mode_normal)
                 "starting_buoy_shield" -> ctx.getString(R.string.shield_starting_buoy)
+                "board_custom_priority" -> ctx.getString(R.string.verdict_custom_priority_fmt, cnt)
+                "board_custom_reserve" -> ctx.getString(R.string.verdict_custom_reserve_fmt, cnt)
                 else -> verdict.chipId
             }
         }
@@ -326,12 +339,14 @@ object LocaleHelper {
         TargetShape.L_SHAPE -> ctx.getString(R.string.shape_l)
         TargetShape.T_SHAPE -> ctx.getString(R.string.shape_t)
         TargetShape.SQUARE_2X2 -> ctx.getString(R.string.shape_sq2x2)
+        TargetShape.SQUARE_3X3 -> ctx.getString(R.string.shape_sq3x3)
         TargetShape.CLEAR_ALL -> ctx.getString(R.string.shape_all)
     }
 
     fun elementPriorityLabel(ctx: Context, prio: ElementPriority): String = when (prio) {
         ElementPriority.NORMAL -> ctx.getString(R.string.prio_normal)
         ElementPriority.HIGH -> ctx.getString(R.string.prio_high)
+        ElementPriority.KEEP_AT_LEAST_ONE -> ctx.getString(R.string.prio_keep_one)
         ElementPriority.RESERVE -> ctx.getString(R.string.prio_reserve)
     }
 
@@ -362,6 +377,7 @@ object LocaleHelper {
             "weathered" -> R.string.policy_weathered
             "electrified" -> R.string.policy_electrified
             "petrified" -> R.string.policy_petrified
+            "frozen" -> R.string.policy_frozen
             "ice" -> R.string.policy_ice
             "blood_drain" -> R.string.policy_blood_drain
             "evil" -> R.string.policy_evil
@@ -370,6 +386,10 @@ object LocaleHelper {
             "bloodbath" -> R.string.policy_bloodbath
             "barrier" -> R.string.policy_barrier
             "shattered" -> R.string.policy_shattered
+            "thorn" -> R.string.policy_thorn
+            "miasma" -> R.string.policy_miasma
+            "priority" -> R.string.policy_priority
+            "reserve" -> R.string.policy_reserve
             else -> return "${item.code}×${item.count}"
         }
         return "${ctx.getString(labelRes)}×${item.count}"

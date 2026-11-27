@@ -146,4 +146,52 @@ class BoardEditorBrushTest {
         assertEquals(5, heartBuoy.startingBuoyCol)
         assertEquals(Element.UNKNOWN, heartBuoy.startingBuoyElement)
     }
+
+    @Test
+    fun customOpsPriorityReserveCheckpointsClearAndCrossTurnMergeWorkCleanly() {
+        val prioBrush = BoardBrush.ToggleExclusiveHazard(HazardBits.PRIORITY, HazardBits.RESERVE, 0, "必消此珠")
+        val resvBrush = BoardBrush.ToggleExclusiveHazard(HazardBits.RESERVE, HazardBits.PRIORITY, 0, "保留不消")
+
+        var b = empty6x5Board()
+        // Add official WEATHERED hazard on cell (0,0) and custom PRIORITY on (0,0)
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.ToggleHazard(HazardBits.WEATHERED, "风化"), 0, 0)
+        b = OverlayBoardEditorController.applyBrushToBoard(b, prioBrush, 0, 0)
+        assertNotEquals(0, b.cells[0].hazards and HazardBits.PRIORITY)
+        assertNotEquals(0, b.cells[0].hazards and HazardBits.WEATHERED)
+
+        // Switching same cell to RESERVE clears PRIORITY while keeping WEATHERED intact
+        b = OverlayBoardEditorController.applyBrushToBoard(b, resvBrush, 0, 0)
+        assertEquals(0, b.cells[0].hazards and HazardBits.PRIORITY)
+        assertNotEquals(0, b.cells[0].hazards and HazardBits.RESERVE)
+        assertNotEquals(0, b.cells[0].hazards and HazardBits.WEATHERED)
+
+        // Paint 5 checkpoints -> FIFO caps at 4 ordered checkpoints and evicts the 1st!
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.ToggleCheckpoint, 0, 1) // idx 1 (evicted on 5th)
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.ToggleCheckpoint, 0, 2) // idx 2 -> ①
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.ToggleCheckpoint, 0, 3) // idx 3 -> ②
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.ToggleCheckpoint, 0, 4) // idx 4 -> ③
+        b = OverlayBoardEditorController.applyBrushToBoard(b, BoardBrush.ToggleCheckpoint, 0, 5) // idx 5 -> ④
+        assertEquals(listOf(2, 3, 4, 5), b.orderedCheckpoints)
+        assertEquals(0, b.tileFlags[1] and TileFlagBits.CHECKPOINT)
+        assertNotEquals(0, b.tileFlags[2] and TileFlagBits.CHECKPOINT)
+
+        // Cross-turn merge onto a fresh recognized board preserves fresh orb colors while carrying over custom marks
+        val freshBoard = BoardState(
+            cols = 6,
+            rows = 5,
+            cells = List(30) { CellState(Element.DARK) },
+            tileFlags = List(30) { TileFlagBits.NONE }
+        )
+        val merged = OverlayBoardEditorController.mergeLockedCustomOpsOntoBoard(b, freshBoard)
+        assertEquals(Element.DARK, merged.cells[0].element)
+        assertNotEquals(0, merged.cells[0].hazards and HazardBits.RESERVE)
+        assertEquals("Official WEATHERED must not leak across turns as a custom op", 0, merged.cells[0].hazards and HazardBits.WEATHERED)
+        assertEquals(listOf(2, 3, 4, 5), merged.orderedCheckpoints)
+
+        // clearCustomOpsFromBoard strips custom ops while keeping official WEATHERED & orb colors
+        val cleaned = OverlayBoardEditorController.clearCustomOpsFromBoard(b)
+        assertEquals(0, cleaned.cells[0].hazards and HazardBits.RESERVE)
+        assertNotEquals(0, cleaned.cells[0].hazards and HazardBits.WEATHERED)
+        assertEquals(emptyList<Int>(), cleaned.orderedCheckpoints)
+    }
 }

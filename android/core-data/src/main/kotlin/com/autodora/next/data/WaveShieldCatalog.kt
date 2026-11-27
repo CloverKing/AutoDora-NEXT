@@ -14,6 +14,7 @@ object WaveShieldCatalog {
     fun allChips(): List<WaveShieldChip> = listOf(
         // A. Combo Shields (连击盾)
         WaveShieldChip("min_combo", "≥ 7 Combo", ShieldCategory.COMBO, paramInt = 7),
+        WaveShieldChip("max_combo", "≤ 6 Combo", ShieldCategory.COMBO, paramInt = 6),
         WaveShieldChip("min_first_elem_combo", "首消 ≥5 组属性珠", ShieldCategory.COMBO, paramInt = 5),
         WaveShieldChip("exact_combo", "指定 6 Combo", ShieldCategory.COMBO, paramInt = 6),
         WaveShieldChip("exact_first_combo", "首消 6 Combo", ShieldCategory.COMBO, paramInt = 6),
@@ -38,6 +39,7 @@ object WaveShieldCatalog {
         WaveShieldChip("race_orb_shield", "种族符石首消", ShieldCategory.COUNT_AND_ELEMENT),
         WaveShieldChip("anti_first_wave_heart", "首消禁心(叠珠)", ShieldCategory.COUNT_AND_ELEMENT, paramElementMask = 1 shl Element.HEART.code),
         WaveShieldChip("forbid_all_heart", "全禁消心珠", ShieldCategory.COUNT_AND_ELEMENT, paramElementMask = 1 shl Element.HEART.code),
+        WaveShieldChip("keep_element_at_least_one", "留底心珠≥1(加护)", ShieldCategory.COUNT_AND_ELEMENT, paramElementMask = 1 shl Element.HEART.code),
 
         // C. Shape & Puzzle Shields (形状与拼图盾)
         WaveShieldChip("strict_puzzle", "严格拼图盾", ShieldCategory.SHAPE_AND_PUZZLE),
@@ -45,9 +47,11 @@ object WaveShieldCatalog {
         WaveShieldChip("enchanted_puzzle", "强化拼图盾", ShieldCategory.SHAPE_AND_PUZZLE),
         WaveShieldChip("cross_shield", "单十字盾", ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1),
         WaveShieldChip("cross_shield_2", "双十字盾", ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 2),
+        WaveShieldChip("forbid_cross", "避消十字(十之诅咒)", ShieldCategory.SHAPE_AND_PUZZLE),
         WaveShieldChip("l_shape", "L 形盾", ShieldCategory.SHAPE_AND_PUZZLE),
         WaveShieldChip("t_shape", "T 形盾", ShieldCategory.SHAPE_AND_PUZZLE),
         WaveShieldChip("square_2x2", "田字 2×2 盾", ShieldCategory.SHAPE_AND_PUZZLE),
+        WaveShieldChip("square_3x3", "正方 3×3 盾", ShieldCategory.SHAPE_AND_PUZZLE),
         WaveShieldChip("all_columns_ameliorate", "全直排 ≥ 4 消", ShieldCategory.SHAPE_AND_PUZZLE),
 
         // D. Hazard, Terrain & Path (障碍、地形与路径)
@@ -75,12 +79,12 @@ object WaveShieldCatalog {
     }
 
     val COMBO_EXCLUSIVE_IDS = setOf(
-        "min_combo", "min_first_combo", "min_first_elem_combo",
+        "min_combo", "max_combo", "min_first_combo", "min_first_elem_combo",
         "exact_combo", "exact_first_combo", "wave1_same_kind", "wave1_distinct_kind",
         "zero_combo", "odd_combo", "even_combo"
     )
     val PUZZLE_EXCLUSIVE_IDS = setOf("puzzle_shield", "loose_puzzle", "strict_puzzle", "enchanted_puzzle")
-    val CROSS_EXCLUSIVE_IDS = setOf("cross_shield", "cross_shield_2", "cross_shield_3")
+    val CROSS_EXCLUSIVE_IDS = setOf("cross_shield", "cross_shield_2", "cross_shield_3", "forbid_cross")
     val STEP_EXCLUSIVE_IDS = setOf("step_limit", "step_range", "exact_steps")
 
     /**
@@ -130,7 +134,11 @@ object ActiveStrategyStore {
     private val _activeVisualHints = MutableStateFlow(BoardVisualHints())
     val activeVisualHints: StateFlow<BoardVisualHints> = _activeVisualHints.asStateFlow()
 
+    private val _dismissedAutoPolicyCodes = MutableStateFlow<Set<String>>(emptySet())
+    val dismissedAutoPolicyCodes: StateFlow<Set<String>> = _dismissedAutoPolicyCodes.asStateFlow()
+
     private val dismissedAutoChipIds = LinkedHashSet<String>()
+    private val dismissedVisualHintKeys = LinkedHashSet<String>()
 
     @Synchronized
     fun toggleChip(chip: WaveShieldChip) {
@@ -188,9 +196,63 @@ object ActiveStrategyStore {
         val existing = _activeChips.value.firstOrNull { it.id == id }
         if (existing?.autoDetected == true) {
             dismissedAutoChipIds.add(id)
+            // Also block canonical alias family so background EnemyIconNetV1 won't re-add it this wave
+            dismissedAutoChipIds.addAll(exclusiveGroupFor(id))
         }
         _activeChips.value = _activeChips.value.filterNot { it.id == id }
     }
+
+    /**
+     * Removes a single element bit from a multi-element chip (e.g. when user resets Dark's
+     * `anti_first_wave` or `forbid_all` cell in the 6x5 Per-Element Matrix), or deletes the
+     * whole chip if that was the last element in its mask!
+     */
+    @Synchronized
+    fun removeElementFromChip(chipId: String, elementCode: Int) {
+        val bit = 1 shl elementCode
+        val current = _activeChips.value.toMutableList()
+        val idx = current.indexOfFirst { it.id == chipId }
+        if (idx < 0) return
+        val prev = current[idx]
+        val nextMask = (prev.paramElementMask and 0x3F) and bit.inv()
+        if (nextMask == 0) {
+            if (prev.autoDetected) dismissedAutoChipIds.add(chipId)
+            current.removeAt(idx)
+        } else {
+            val highBits = prev.paramElementMask and 0x3F.inv()
+            current[idx] = prev.copy(paramElementMask = highBits or nextMask, autoDetected = false)
+        }
+        _activeChips.value = current
+    }
+
+    @Synchronized
+    fun dismissVisualHint(hintKey: String) {
+        dismissedVisualHintKeys.add(hintKey)
+        _activeVisualHints.value = maskDismissedHints(_activeVisualHints.value)
+    }
+
+    @Synchronized
+    fun dismissAutoPolicyCode(code: String) {
+        _dismissedAutoPolicyCodes.value = _dismissedAutoPolicyCodes.value + code
+    }
+
+    @Synchronized
+    fun resetDismissedAutoPolicies() {
+        _dismissedAutoPolicyCodes.value = emptySet()
+    }
+
+    private fun maskDismissedHints(h: BoardVisualHints): BoardVisualHints = h.copy(
+        hasMonochrome = h.hasMonochrome && "monochrome" !in dismissedVisualHintKeys,
+        hasDisguise = h.hasDisguise && "disguise" !in dismissedVisualHintKeys,
+        hasBurning = h.hasBurning && "burning" !in dismissedVisualHintKeys,
+        hasScorching = h.hasScorching && "scorching" !in dismissedVisualHintKeys,
+        hasElectrified = h.hasElectrified && "electrified" !in dismissedVisualHintKeys,
+        hasSticky = h.hasSticky && "sticky" !in dismissedVisualHintKeys,
+        hasPurgatoryFire = h.hasPurgatoryFire && "purgatory" !in dismissedVisualHintKeys,
+        hasHiddenOrbs = h.hasHiddenOrbs && "hidden" !in dismissedVisualHintKeys,
+        hasFrozenOrPetrified = h.hasFrozenOrPetrified && "frozen_petrified" !in dismissedVisualHintKeys,
+        hasWeatheredOrBomb = h.hasWeatheredOrBomb && "weathered_bomb" !in dismissedVisualHintKeys
+    )
 
     /**
      * Applies [incoming] enemy-skill chips using strict 4-tier arbitration:
@@ -255,9 +317,60 @@ object ActiveStrategyStore {
         return restored
     }
 
+    /**
+     * Collaborative Stage 2B `EnemyIconNetV1` ONNX fusion (`v0.9.0`):
+     *  - Runs continuously & at solve-capture time EVEN WHEN Stage Scripts or Popup OCR are active!
+     *  - Supplements newly appeared shields / phase shifts / visual hints not yet in [_activeChips].
+     *  - NEVER downgrades richer parameterized OCR/Script shields of the same family (e.g. preserves
+     *    `火强化严格拼图盾` or `水火双十字盾` instead of overwriting with generic icon defaults).
+     *  - Respects user's per-wave `×` dismissals and manual overrides.
+     */
+    @Synchronized
+    fun mergeCollaborativeIconDetections(
+        iconChips: List<WaveShieldChip>,
+        iconHints: BoardVisualHints
+    ): Int {
+        var added = 0
+        if (iconChips.isNotEmpty()) {
+            val current = _activeChips.value.toMutableList()
+            for (rawChip in iconChips) {
+                val chip = rawChip.copy(autoDetected = true)
+                if (chip.id in dismissedAutoChipIds) continue
+                val familyIds = iconConflictFamilyFor(chip.id)
+                val alreadyCovered = current.any { existing ->
+                    existing.id == chip.id || existing.id in familyIds
+                }
+                if (!alreadyCovered) {
+                    current.add(chip)
+                    added++
+                }
+            }
+            if (added > 0) {
+                _activeChips.value = current
+            }
+        }
+        if (iconHints.hasAny()) {
+            val merged = maskDismissedHints(_activeVisualHints.value.mergeWith(iconHints))
+            if (merged != _activeVisualHints.value) {
+                _activeVisualHints.value = merged
+            }
+        }
+        return added
+    }
+
+    private fun iconConflictFamilyFor(chipId: String): Set<String> = when (chipId) {
+        in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS -> WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS
+        in WaveShieldCatalog.CROSS_EXCLUSIVE_IDS -> WaveShieldCatalog.CROSS_EXCLUSIVE_IDS
+        in WaveShieldCatalog.COMBO_EXCLUSIVE_IDS -> WaveShieldCatalog.COMBO_EXCLUSIVE_IDS
+        in WaveShieldCatalog.STEP_EXCLUSIVE_IDS -> WaveShieldCatalog.STEP_EXCLUSIVE_IDS
+        "five_elements" -> setOf("five_elements", "five_elements_enchanted", "require_elements")
+        "any_enchanted_orb_shield" -> setOf("any_enchanted_orb_shield", "five_elements_enchanted", "require_enchanted_elements", "require_elements")
+        else -> setOf(chipId)
+    }
+
     @Synchronized
     fun setActiveVisualHints(hints: BoardVisualHints) {
-        _activeVisualHints.value = hints
+        _activeVisualHints.value = maskDismissedHints(hints)
     }
 
     /**
@@ -271,8 +384,10 @@ object ActiveStrategyStore {
         val removed = before.size - remaining.size
         _activeChips.value = remaining
         _bypassedGreySkills.value = emptyList()
-        _activeVisualHints.value = BoardVisualHints()
         dismissedAutoChipIds.clear()
+        dismissedVisualHintKeys.clear()
+        _dismissedAutoPolicyCodes.value = emptySet()
+        _activeVisualHints.value = BoardVisualHints()
         return removed
     }
 
@@ -280,8 +395,10 @@ object ActiveStrategyStore {
     fun clearAll() {
         _activeChips.value = emptyList()
         _bypassedGreySkills.value = emptyList()
-        _activeVisualHints.value = BoardVisualHints()
         dismissedAutoChipIds.clear()
+        dismissedVisualHintKeys.clear()
+        _dismissedAutoPolicyCodes.value = emptySet()
+        _activeVisualHints.value = BoardVisualHints()
     }
 
     private fun exclusiveGroupFor(chipId: String): Set<String> = when {

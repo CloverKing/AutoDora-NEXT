@@ -62,9 +62,11 @@ import com.autodora.next.vision.BoardRecognizer
 import com.autodora.next.vision.BoardTurnStabilityTracker
 import com.autodora.next.vision.DarkModalKind
 import com.autodora.next.vision.DirectBitmapVisionFrame
+import com.autodora.next.vision.EnemySkillKnowledgeMatcher
 import com.autodora.next.vision.FlashRevealMemoryTracker
 import com.autodora.next.vision.HotReloadEnemySkillParser
 import com.autodora.next.vision.HybridBoardRecognizer
+import com.autodora.next.vision.LocalCapturedSkillRecord
 import com.autodora.next.vision.PaddleOcrOnnxEngine
 import com.autodora.next.vision.RecognitionResult
 import com.autodora.next.vision.StabilityDecision
@@ -101,6 +103,7 @@ class OverlayControllerService : Service() {
     @Inject lateinit var paddleOcrOnnxEngine: PaddleOcrOnnxEngine
     @Inject lateinit var enemyIconOnnxClassifier: com.autodora.next.vision.EnemyIconOnnxClassifier
     @Inject lateinit var enemySkillParserHolder: HotReloadEnemySkillParser
+    @Inject lateinit var knowledgeMatcher: EnemySkillKnowledgeMatcher
     @Inject lateinit var stageWaveScriptRepository: StageWaveScriptRepository
 
     private lateinit var windowManager: WindowManager
@@ -188,6 +191,8 @@ class OverlayControllerService : Service() {
     private var lastPortraitElements: List<Element> = emptyList()
     private var editedBoard: BoardState? = null
     private var savedEditedBoard: BoardState? = null
+    private var lockedCustomOpsTemplate: BoardState? = null
+    private var helpOverlayRoot: View? = null
     private var lastSolveOutput: SolveOutput? = null
     private var lastPuzzleMaskMissing = false
     private var lastTrafficLightMissing = false
@@ -251,6 +256,12 @@ class OverlayControllerService : Service() {
                 val swipeTimingChanged = settings.stepDurationMs != latest.stepDurationMs ||
                     settings.humanMode != latest.humanMode
                 settings = latest
+                if (::boardEditor.isInitialized) {
+                    boardEditor.setLockCustomOpsState(latest.lockCustomBoardOpsAcrossTurns)
+                }
+                if (!latest.lockCustomBoardOpsAcrossTurns) {
+                    lockedCustomOpsTemplate = null
+                }
                 (boardRecognizer as? com.autodora.next.vision.HybridBoardRecognizer)?.useAiModel = latest.useAiRecognizer
                 if (CaptureRouter.effectiveMode(latest.captureMode) == CaptureMode.ACCESSIBILITY &&
                     ScreenCaptureSession.capturer.value != null
@@ -355,6 +366,30 @@ class OverlayControllerService : Service() {
                 syncDrawerData()
             }
         }
+        serviceScope.launch {
+            trainingDataRepository.observeCapturedEnemySkills().collectLatest { list ->
+                knowledgeMatcher.updateLocalRecords(
+                    list.map { sk ->
+                        LocalCapturedSkillRecord(
+                            skillHash = sk.skillHash,
+                            titleZhTw = sk.titleZhTw,
+                            rawBodyZhTw = sk.rawBodyZhTw,
+                            sourceType = sk.sourceType,
+                            parseStatus = sk.parseStatus,
+                            hitCount = sk.hitCount,
+                            mappedChips = TrainingDataRepository.decodeMappedChips(sk.mappedChipsJson)
+                        )
+                    }
+                )
+            }
+        }
+        serviceScope.launch {
+            ActiveStrategyStore.dismissedAutoPolicyCodes.collectLatest {
+                if (::summaryStrip.isInitialized && lastSolveOutput != null) {
+                    updateSummaryStrip()
+                }
+            }
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -422,6 +457,7 @@ class OverlayControllerService : Service() {
         resetIdleBoardStabilityCache()
         runCatching { (boardRecognizer as? com.autodora.next.vision.HybridBoardRecognizer)?.close() }
         runCatching { enemyIconOnnxClassifier.close() }
+        dismissOverlayHelpPopup()
         serviceScope.cancel()
         removeOverlayViews()
         // Always release MediaProjection when stopping the floating assistant so system Screen Recorder
@@ -523,8 +559,13 @@ class OverlayControllerService : Service() {
         } else {
             preset.baseConfig.characterOrbElement
         }
+        val effectiveDiag = if (preset.baseConfig.useSystemDiagonal) {
+            settings.allowDiagonalMove
+        } else {
+            preset.baseConfig.allowDiagonalMove
+        }
         val mergedBase = preset.baseConfig.copy(
-            allowDiagonalMove = settings.allowDiagonalMove,
+            allowDiagonalMove = effectiveDiag,
             maxSteps = effectiveSteps,
             beamWidth = effectiveBeam,
             maxTimeMs = maxOf(global.maxTimeMs, preset.baseConfig.maxTimeMs),
@@ -803,7 +844,6 @@ class OverlayControllerService : Service() {
             textSize = 9.5f
             setSingleLine(false)
             maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
             typeface = Typeface.DEFAULT_BOLD
             maxWidth = (screenW * 0.79f).toInt()
             setOnClickListener {
@@ -917,6 +957,11 @@ class OverlayControllerService : Service() {
             onSaveEditedBoard = {
                 val cur = editedBoard ?: return@OverlayBoardEditorController
                 savedEditedBoard = cur
+                if (OverlayBoardEditorController.hasCustomOps(cur)) {
+                    lockedCustomOpsTemplate = cur
+                } else if (!settings.lockCustomBoardOpsAcrossTurns) {
+                    lockedCustomOpsTemplate = null
+                }
                 val cachedA = lastRawBoardFrameA
                 val cachedGeom = lastRawBoardGeom
                 if (settings.trainingDataCollectionEnabled &&
@@ -953,11 +998,13 @@ class OverlayControllerService : Service() {
                     editedBoard = cur.copy(
                         cells = cur.cells.map { it.copy(variant = Variant.NORMAL, race = RaceType.NONE, hazards = HazardBits.NONE) },
                         tileFlags = List(cur.cols * cur.rows) { TileFlagBits.NONE },
+                        orderedCheckpoints = emptyList(),
                         startingBuoyCol = -1,
                         startingBuoyElement = Element.UNKNOWN
                     )
                 }
                 savedEditedBoard = null
+                lockedCustomOpsTemplate = null
                 boardEditor.setSavedState(false)
                 invalidateLastSolution()
                 refreshActiveShieldStrip()
@@ -965,10 +1012,37 @@ class OverlayControllerService : Service() {
                 refreshPathCanvas()
                 toast(lctx.getString(R.string.ov_toast_board_cleared))
             },
+            onClearCustomOpsOnly = {
+                editedBoard = editedBoard?.let { OverlayBoardEditorController.clearCustomOpsFromBoard(it) }
+                savedEditedBoard = savedEditedBoard?.let { OverlayBoardEditorController.clearCustomOpsFromBoard(it) }
+                lockedCustomOpsTemplate = null
+                boardEditor.markDirty()
+                invalidateLastSolution()
+                refreshActiveShieldStrip()
+                syncDrawerData()
+                refreshPathCanvas()
+                toast(lctx.getString(R.string.ov_toast_custom_ops_cleared))
+            },
+            onToggleLockCustomOps = {
+                val nextLock = !settings.lockCustomBoardOpsAcrossTurns
+                if (nextLock) {
+                    val src = editedBoard ?: savedEditedBoard
+                    if (src != null && OverlayBoardEditorController.hasCustomOps(src)) {
+                        lockedCustomOpsTemplate = src
+                    }
+                } else {
+                    lockedCustomOpsTemplate = null
+                }
+                serviceScope.launch {
+                    settingsRepository.update { it.copy(lockCustomBoardOpsAcrossTurns = nextLock) }
+                }
+            },
             onRescanLiveBoard = { scanLiveBoardForEditor(clearSavedFirst = true, explicitTrigger = true) },
             onCloseEditor = { setBoardEditorMode(false) },
+            onShowDrawerHelp = { hTitle, hBody -> showOverlayHelpPopup(hTitle, hBody) },
             onPanelHeightChanged = { clampControlWindowToScreen(currentRightAnchorIfPinned()) }
         )
+        boardEditor.setLockCustomOpsState(settings.lockCustomBoardOpsAcrossTurns)
         panelsColumn.addView(boardEditor.rootView)
 
         // Full-Feature 3-Tab Unified Floating Drawer (快捷 | 策略 | 设置)
@@ -1021,6 +1095,7 @@ class OverlayControllerService : Service() {
                 val restored = ActiveStrategyStore.restoreBypassedSkill(sk)
                 toast(lctx.getString(R.string.ov_toast_bypassed_restored_fmt, restored))
             },
+            onShowDrawerHelp = { hTitle, hBody -> showOverlayHelpPopup(hTitle, hBody) },
             onClose = { setTuningDrawerOpen(false) }
         )
         panelsColumn.addView(tuningDrawer.rootView)
@@ -1149,7 +1224,19 @@ class OverlayControllerService : Service() {
         }
 
         if (calibrationMode) setCalibrationMode(false)
-        if (boardEditorMode) setBoardEditorMode(false)
+        // Auto-save dirty Board Editor changes when user directly clicks main toolbar 算 / 行!
+        if (boardEditorMode) {
+            val dirty = editedBoard
+            if (dirty != null && !boardEditor.isSavedState) {
+                savedEditedBoard = dirty
+                if (OverlayBoardEditorController.hasCustomOps(dirty)) {
+                    lockedCustomOpsTemplate = dirty
+                }
+                boardEditor.setSavedState(true)
+                refreshActiveShieldStrip()
+            }
+            setBoardEditorMode(false)
+        }
         if (tuningDrawerOpen) setTuningDrawerOpen(false)
         resetIdleBoardStabilityCache()
 
@@ -1188,8 +1275,13 @@ class OverlayControllerService : Service() {
 
             val trafficLightChipActive = activeWaveChips.any { it.id == "traffic_light" }
             val puzzleChipActive = activeWaveChips.any { it.id in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS }
-            val burstCount = if (trafficLightChipActive || puzzleChipActive) maxOf(settings.multiFrameCount, 4) else settings.multiFrameCount
-            val burstInterval = if (trafficLightChipActive) 85L else 50L
+            val elecOrHiddenHint = activeVisualHints.hasElectrified || activeVisualHints.hasHiddenOrbs
+            val burstCount = if (trafficLightChipActive || puzzleChipActive || elecOrHiddenHint) maxOf(settings.multiFrameCount, 4) else settings.multiFrameCount
+            val burstInterval = when {
+                trafficLightChipActive -> 85L
+                elecOrHiddenHint -> 70L
+                else -> 50L
+            }
             // Do NOT proactively call tryRecoverSurface() on static screens (lastFrameAgeMs > 2s is normal on LTPO
             // HyperOS displays whenever screen pixels are still!). Only wake SurfaceFlinger or recover if capture fails.
             var frames = capturer.captureMultiFrames(count = burstCount, intervalMs = burstInterval).toMutableList()
@@ -1312,6 +1404,21 @@ class OverlayControllerService : Service() {
                     return@launch
                 }
 
+                // Same-frame collaborative Stage 2B EnemyIconNetV1 check (~1.7ms) BEFORE board recognition & solving
+                // so newly appeared phase-2 shields or monochrome/hazard priors immediately guide this solve!
+                if (settings.autoEnemyIconDetectEnabled) {
+                    val iconRes = withContext(Dispatchers.Default) {
+                        enemyIconOnnxClassifier.classifyBitmap(frames.first())
+                    }
+                    if (iconRes != null && (iconRes.chips.isNotEmpty() || iconRes.hints.hasAny())) {
+                        ActiveStrategyStore.mergeCollaborativeIconDetections(iconRes.chips, iconRes.hints)
+                        activeWaveChips = ActiveStrategyStore.activeChips.value
+                        activeVisualHints = ActiveStrategyStore.activeVisualHints.value
+                        (boardRecognizer as? HybridBoardRecognizer)?.activeVisualHints = activeVisualHints
+                        refreshActiveShieldStrip()
+                    }
+                }
+
                 var liveRec = boardRecognizer.recognize(frames, geom)
                 lastPortraitElements = withContext(Dispatchers.Default) {
                     com.autodora.next.vision.CvBoardRecognizer.detectAllPortraitAttributes(
@@ -1371,7 +1478,13 @@ class OverlayControllerService : Service() {
                     return@launch
                 }
 
-                val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(boardToSolve)
+                val customLocked = lockedCustomOpsTemplate
+                val boardWithLockedOps = if (settings.lockCustomBoardOpsAcrossTurns && customLocked != null) {
+                    OverlayBoardEditorController.mergeLockedCustomOpsOntoBoard(customLocked, boardToSolve)
+                } else {
+                    boardToSolve
+                }
+                val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(boardWithLockedOps)
                 currentGeometry = geom
                 lastRecognition = liveRec.copy(board = effectiveBoard)
                 editedBoard = effectiveBoard
@@ -1546,7 +1659,19 @@ class OverlayControllerService : Service() {
             return
         }
         if (calibrationMode) setCalibrationMode(false)
-        if (boardEditorMode) setBoardEditorMode(false)
+        // Auto-save dirty Board Editor changes when user directly clicks main toolbar 算 / 行!
+        if (boardEditorMode) {
+            val dirty = editedBoard
+            if (dirty != null && !boardEditor.isSavedState) {
+                savedEditedBoard = dirty
+                if (OverlayBoardEditorController.hasCustomOps(dirty)) {
+                    lockedCustomOpsTemplate = dirty
+                }
+                boardEditor.setSavedState(true)
+                refreshActiveShieldStrip()
+            }
+            setBoardEditorMode(false)
+        }
         if (tuningDrawerOpen) setTuningDrawerOpen(false)
         resetIdleBoardStabilityCache()
 
@@ -2369,14 +2494,16 @@ class OverlayControllerService : Service() {
                                     if (bmpCopy != null) {
                                         isEnemyOcrRunning = true
                                         val captureSamplesNow = settings.trainingDataCollectionEnabled
-                                        val applyAutoOcrNow = settings.autoEnemySkillOcrEnabled
+                                        val allowPreBattleStageOcr = settings.autoCapturePreBattleStageInfo
+                                        val allowInBattleEnemyOcr = settings.autoCaptureInBattleEnemyInfo
                                         val captureModeName = settings.captureMode.name
                                         val snapshotWaveChips = activeWaveChips
                                         serviceScope.launch(Dispatchers.Default) {
                                             try {
                                                 val parser = enemySkillParserHolder.current()
                                                 val ocrRes = paddleOcrOnnxEngine.recognize(bmpCopy, modalKind)
-                                                val parseRes = parser.parseLines(ocrRes.lines)
+                                                val rawParseRes = parser.parseLines(ocrRes.lines)
+                                                val parseRes = knowledgeMatcher.enrichParseResult(rawParseRes, parser)
                                                 val authentic = TosEnemySkillParserV2.isAuthenticEnemySkillScreen(
                                                     ocrLines = ocrRes.lines,
                                                     modalKind = modalKind,
@@ -2393,7 +2520,11 @@ class OverlayControllerService : Service() {
                                                         captureMode = captureModeName
                                                     )
                                                 }
-                                                if (parseRes.allBlocks.isNotEmpty()) {
+                                                if (parseRes.allBlocks.isNotEmpty() &&
+                                                    ((modalKind == DarkModalKind.ENEMY_LONG_PRESS_POPUP && allowInBattleEnemyOcr) ||
+                                                        (modalKind == DarkModalKind.STAGE_INFO_MODAL && allowPreBattleStageOcr) ||
+                                                        captureSamplesNow)
+                                                ) {
                                                     // Always archive EVERY genuine skill block (including greyed-out bypassed skills!)
                                                     trainingDataRepository.recordCapturedEnemySkills(
                                                         parseRes.allBlocks.map { blk ->
@@ -2408,10 +2539,8 @@ class OverlayControllerService : Service() {
                                                         }
                                                     )
                                                 }
-                                                if (!applyAutoOcrNow) {
-                                                    return@launch
-                                                }
                                                 if (modalKind == DarkModalKind.ENEMY_LONG_PRESS_POPUP) {
+                                                    if (!allowInBattleEnemyOcr) return@launch
                                                     val bypassedInputs = parseRes.bypassedBlocks
                                                         .filter { it.chips.isNotEmpty() }
                                                         .map { BypassedEnemySkill(it.titleZhTw, it.chips) }
@@ -2450,6 +2579,7 @@ class OverlayControllerService : Service() {
                                                         }
                                                     }
                                                 } else {
+                                                    if (!allowPreBattleStageOcr) return@launch
                                                     val stageParsed = StageWaveScriptParser.parseStageInfoLines(ocrRes.lines, parser)
                                                     if (stageParsed != null) {
                                                         stageWaveScriptRepository.saveScript(stageParsed.script)
@@ -2546,7 +2676,9 @@ class OverlayControllerService : Service() {
                                     ) {
                                         handleWaveAdvanced()
                                     }
-                                } else if (settings.autoEnemyIconDetectEnabled &&
+                                }
+                                // Collaborative Stage 2B EnemyIconNetV1 runs alongside Stage Scripts & Popup OCR!
+                                if (settings.autoEnemyIconDetectEnabled &&
                                     !boardEditorMode &&
                                     !calibrationMode
                                 ) {
@@ -2566,15 +2698,7 @@ class OverlayControllerService : Service() {
                                             }
                                             if (consecutiveIconMatchTicks >= 2 && key != lastAppliedIconWaveKey) {
                                                 lastAppliedIconWaveKey = key
-                                                if (iconRes.chips.isNotEmpty()) {
-                                                    ActiveStrategyStore.applyAutoDetectedChips(iconRes.chips)
-                                                }
-                                                if (iconRes.hints.hasAny()) {
-                                                    ActiveStrategyStore.setActiveVisualHints(
-                                                        ActiveStrategyStore.activeVisualHints.value.mergeWith(iconRes.hints)
-                                                    )
-                                                }
-                                                waveTransitionDetector.reset()
+                                                ActiveStrategyStore.mergeCollaborativeIconDetections(iconRes.chips, iconRes.hints)
                                             }
                                         } else {
                                             pendingIconClassKey = ""
@@ -2694,6 +2818,7 @@ class OverlayControllerService : Service() {
         pendingIconClassKey = ""
         consecutiveIconMatchTicks = 0
         lastAppliedIconWaveKey = ""
+        lockedCustomOpsTemplate = null
         waveTransitionDetector.reset()
         resetIdleBoardStabilityCache()
         if (ActiveStageScriptStore.activeScript.value != null) {
@@ -3067,10 +3192,11 @@ class OverlayControllerService : Service() {
         if (!::activeShieldRow.isInitialized || !::palette.isInitialized) return
         val anchorRight = currentRightAnchorIfPinned()
         activeShieldRow.removeAllViews()
-        val hasSaved = savedEditedBoard != null
+        val hasSaved = savedEditedBoard != null || (settings.lockCustomBoardOpsAcrossTurns && lockedCustomOpsTemplate != null)
         val hasBypassed = bypassedGreySkills.isNotEmpty()
         val hasScript = activeStageScript != null
-        val hasVisualBadges = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise
+        val hasVisualBadges = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise ||
+            activeVisualHints.hasElectrified || activeVisualHints.hasFrozenOrPetrified
         if ((activeWaveChips.isEmpty() && !hasSaved && !hasBypassed && !hasScript && !hasVisualBadges) || !toolbarExpanded) {
             activeShieldScroll.visibility = View.GONE
             clampControlWindowToScreen(anchorRight)
@@ -3121,34 +3247,36 @@ class OverlayControllerService : Service() {
             stepperRow.addView(mkStepBtn("×") { ActiveStageScriptStore.clearActiveScript() })
             activeShieldRow.addView(stepperRow)
         }
-        if (activeVisualHints.hasMonochrome) {
-            val monoPill = TextView(this).apply {
-                text = lctx.getString(R.string.ov_hint_monochrome_pill)
+        fun addDismissibleHintPill(textStr: String, bgCol: Int, fgCol: Int, strokeCol: Int, hintKey: String) {
+            val pill = TextView(this).apply {
+                text = "$textStr ×"
                 textSize = 9f
                 typeface = Typeface.DEFAULT_BOLD
                 setSingleLine(true)
-                setTextColor(if (p.isDark) Color.rgb(206, 147, 216) else Color.rgb(74, 20, 140))
+                setTextColor(fgCol)
                 setPadding(dp(5), dp(2), dp(5), dp(2))
-                background = roundedBg(
-                    if (p.isDark) Color.rgb(48, 28, 62) else Color.rgb(243, 229, 245),
-                    dp(6).toFloat(),
-                    Color.rgb(156, 39, 176)
-                )
+                background = roundedBg(bgCol, dp(6).toFloat(), strokeCol)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginEnd = dp(3) }
+                setOnClickListener { ActiveStrategyStore.dismissVisualHint(hintKey) }
             }
-            activeShieldRow.addView(monoPill)
+            activeShieldRow.addView(pill)
+        }
+        if (activeVisualHints.hasMonochrome) {
+            addDismissibleHintPill(
+                lctx.getString(R.string.ov_hint_monochrome_pill),
+                if (p.isDark) Color.rgb(48, 28, 62) else Color.rgb(243, 229, 245),
+                if (p.isDark) Color.rgb(206, 147, 216) else Color.rgb(74, 20, 140),
+                Color.rgb(156, 39, 176),
+                "monochrome"
+            )
         }
         if (activeVisualHints.hasDisguise) {
-            val disguisePill = TextView(this).apply {
-                text = lctx.getString(R.string.ov_hint_disguise_edit_pill)
-                textSize = 9f
-                typeface = Typeface.DEFAULT_BOLD
-                setSingleLine(true)
-                setTextColor(if (p.isDark) Color.rgb(255, 224, 130) else Color.rgb(230, 81, 0))
-                setPadding(dp(5), dp(2), dp(5), dp(2))
+            val dWrap = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 background = roundedBg(
                     if (p.isDark) Color.rgb(70, 44, 12) else Color.rgb(255, 248, 225),
                     dp(6).toFloat(),
@@ -3158,9 +3286,39 @@ class OverlayControllerService : Service() {
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginEnd = dp(3) }
-                setOnClickListener { setBoardEditorMode(true) }
             }
-            activeShieldRow.addView(disguisePill)
+            val fg = if (p.isDark) Color.rgb(255, 224, 130) else Color.rgb(230, 81, 0)
+            dWrap.addView(TextView(this).apply {
+                text = lctx.getString(R.string.ov_hint_disguise_edit_pill)
+                textSize = 9f; typeface = Typeface.DEFAULT_BOLD; setSingleLine(true); setTextColor(fg)
+                setPadding(dp(5), dp(2), dp(3), dp(2))
+                setOnClickListener { setBoardEditorMode(true) }
+            })
+            dWrap.addView(TextView(this).apply {
+                text = "×"
+                textSize = 9.5f; typeface = Typeface.DEFAULT_BOLD; setSingleLine(true); setTextColor(fg)
+                setPadding(dp(3), dp(2), dp(5), dp(2))
+                setOnClickListener { ActiveStrategyStore.dismissVisualHint("disguise") }
+            })
+            activeShieldRow.addView(dWrap)
+        }
+        if (activeVisualHints.hasElectrified) {
+            addDismissibleHintPill(
+                lctx.getString(R.string.ov_hint_elec_pill),
+                if (p.isDark) Color.rgb(20, 46, 68) else Color.rgb(227, 242, 253),
+                if (p.isDark) Color.rgb(144, 202, 249) else Color.rgb(13, 71, 161),
+                Color.rgb(33, 150, 243),
+                "electrified"
+            )
+        }
+        if (activeVisualHints.hasFrozenOrPetrified) {
+            addDismissibleHintPill(
+                lctx.getString(R.string.ov_hint_frozen_pill),
+                if (p.isDark) Color.rgb(18, 52, 54) else Color.rgb(224, 247, 250),
+                if (p.isDark) Color.rgb(128, 222, 234) else Color.rgb(0, 96, 100),
+                Color.rgb(0, 172, 193),
+                "frozen_petrified"
+            )
         }
         if (hasSaved) {
             val savedBg = if (p.isDark) Color.rgb(72, 46, 12) else Color.rgb(255, 243, 224)
@@ -3180,6 +3338,7 @@ class OverlayControllerService : Service() {
                 ).apply { marginEnd = dp(3) }
                 setOnClickListener {
                     savedEditedBoard = null
+                    lockedCustomOpsTemplate = null
                     boardEditor.setSavedState(false)
                     invalidateLastSolution()
                     refreshActiveShieldStrip()
@@ -3192,7 +3351,11 @@ class OverlayControllerService : Service() {
         }
         for (chip in activeWaveChips) {
             val isAuto = chip.autoDetected
-            val prefix = if (isAuto) lctx.getString(R.string.ov_ai_chip_prefix) else ""
+            val prefix = when {
+                chip.fromKnowledgeFallback -> lctx.getString(R.string.ov_kb_chip_prefix)
+                isAuto -> lctx.getString(R.string.ov_ai_chip_prefix)
+                else -> ""
+            }
             val bg = if (isAuto) p.tertiaryContainer else p.primaryContainer
             val fg = if (isAuto) p.onTertiaryContainer else p.onPrimaryContainer
             val stroke = if (isAuto) p.tertiary else p.primary
@@ -3303,7 +3466,9 @@ class OverlayControllerService : Service() {
                 }
                 val parser = enemySkillParserHolder.current()
                 val ocrRes = withContext(Dispatchers.Default) { paddleOcrOnnxEngine.recognize(bmp, modalKind) }
-                val parseRes = withContext(Dispatchers.Default) { parser.parseLines(ocrRes.lines) }
+                val parseRes = withContext(Dispatchers.Default) {
+                    knowledgeMatcher.enrichParseResult(parser.parseLines(ocrRes.lines), parser)
+                }
                 if (parseRes.allBlocks.isNotEmpty()) {
                     trainingDataRepository.recordCapturedEnemySkills(
                         parseRes.allBlocks.map { blk ->
@@ -3364,14 +3529,7 @@ class OverlayControllerService : Service() {
                     enemyIconOnnxClassifier.classifyBitmap(bmp)
                 }
                 if (iconRes != null && (iconRes.chips.isNotEmpty() || iconRes.hints.hasAny())) {
-                    val applied = if (iconRes.chips.isNotEmpty()) {
-                        ActiveStrategyStore.applyAutoDetectedChips(iconRes.chips)
-                    } else 0
-                    if (iconRes.hints.hasAny()) {
-                        ActiveStrategyStore.setActiveVisualHints(
-                            ActiveStrategyStore.activeVisualHints.value.mergeWith(iconRes.hints)
-                        )
-                    }
+                    val applied = ActiveStrategyStore.mergeCollaborativeIconDetections(iconRes.chips, iconRes.hints)
                     waveTransitionDetector.reset()
                     val lblSummary = iconRes.chips.joinToString("·") { it.label }.ifBlank { "视觉提示" }
                     toast(lctx.getString(R.string.ov_toast_manual_scan_icon_fmt, applied, lblSummary))
@@ -3493,10 +3651,13 @@ class OverlayControllerService : Service() {
             }
             shieldStatusRow.addView(pill)
         }
-        val autoPolicies = activeBoard?.let { BoardAutoPolicySummary.analyze(it) }.orEmpty()
-        for (policy in autoPolicies.take(4)) {
+        val dismissedPolicyCodes = ActiveStrategyStore.dismissedAutoPolicyCodes.value
+        val autoPolicies = activeBoard?.let { BoardAutoPolicySummary.analyze(it) }
+            .orEmpty()
+            .filterNot { it.code in dismissedPolicyCodes }
+        for (policy in autoPolicies.take(5)) {
             val policyPill = TextView(this).apply {
-                text = "🛡 ${LocaleHelper.formatBoardPolicyItem(lctx, policy)}"
+                text = "🛡 ${LocaleHelper.formatBoardPolicyItem(lctx, policy)} ×"
                 textSize = 9f
                 setSingleLine(true)
                 typeface = Typeface.DEFAULT_BOLD
@@ -3511,6 +3672,9 @@ class OverlayControllerService : Service() {
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginEnd = dp(3) }
+                setOnClickListener {
+                    ActiveStrategyStore.dismissAutoPolicyCode(policy.code)
+                }
             }
             shieldStatusRow.addView(policyPill)
         }
@@ -3764,7 +3928,97 @@ class OverlayControllerService : Service() {
         }
     }
 
+    private fun showOverlayHelpPopup(title: String, body: String) {
+        dismissOverlayHelpPopup()
+        val p = palette
+        val scrim = FrameLayout(this).apply {
+            setBackgroundColor(Color.argb(145, 0, 0, 0))
+            setOnClickListener { dismissOverlayHelpPopup() }
+        }
+        val cardW = (screenW * 0.88f).toInt().coerceAtMost(dp(380))
+        val maxBodyH = (screenH * 0.54f).toInt().coerceAtLeast(dp(200))
+        val cardBg = Color.argb(252, Color.red(p.containerBg), Color.green(p.containerBg), Color.blue(p.containerBg))
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(cardBg, dp(14).toFloat(), p.primary)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            isClickable = true
+            layoutParams = FrameLayout.LayoutParams(cardW, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER
+            }
+        }
+        val hdr = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(8)
+            }
+        }
+        hdr.addView(TextView(this).apply {
+            text = title
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.primary)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(8)
+            }
+        })
+        hdr.addView(makeChipBtn("✕", minW = 24, padH = 6, marginEndDp = 0) { dismissOverlayHelpPopup() }.also {
+            styleChip(it, p.chipOffBg, p.onSurfaceVariant, p.chipOffStroke)
+        })
+        card.addView(hdr)
+
+        val bodyScroll = android.widget.ScrollView(this).apply {
+            isVerticalScrollBarEnabled = true
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        bodyScroll.addView(TextView(this).apply {
+            text = body
+            textSize = 11f
+            setLineSpacing(0f, 1.22f)
+            setTextColor(p.onSurface)
+            maxHeight = maxBodyH
+        })
+        card.addView(bodyScroll)
+
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(10)
+            }
+        }
+        footer.addView(makeChipBtn(lctx.getString(R.string.btn_got_it), minW = 54, padH = 10, marginEndDp = 0) {
+            dismissOverlayHelpPopup()
+        }.also {
+            styleChip(it, p.primary, p.onPrimary, null)
+        })
+        card.addView(footer)
+        scrim.addView(card)
+
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+        }
+        runCatching {
+            windowManager.addView(scrim, lp)
+            helpOverlayRoot = scrim
+        }
+    }
+
+    private fun dismissOverlayHelpPopup() {
+        val existing = helpOverlayRoot ?: return
+        helpOverlayRoot = null
+        runCatching { windowManager.removeView(existing) }
+    }
+
     private fun removeOverlayViews() {
+        dismissOverlayHelpPopup()
         listOf(pathOverlayView, controlRoot).forEach { v ->
             try {
                 windowManager.removeView(v)

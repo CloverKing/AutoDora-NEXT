@@ -75,7 +75,8 @@ class HybridBoardRecognizer(
             val t0 = System.nanoTime()
             require(frames.isNotEmpty()) { "At least one frame is required for recognition" }
             val visionFrames = frames.map { DirectBitmapVisionFrame(it) }
-            val cvResult = cvFallback.recognizeFrames(visionFrames, geometry)
+            val hints = activeVisualHints
+            val cvResult = cvFallback.recognizeFrames(visionFrames, geometry, hints)
 
             if (!useAiModel || !hasAiModel()) {
                 return@withContext cvResult
@@ -127,7 +128,8 @@ class HybridBoardRecognizer(
     ): RecognitionResult = withContext(Dispatchers.Default) {
         val t0 = System.nanoTime()
         val vf = DirectBitmapVisionFrame(bandBitmap, fullWidth, fullHeight, yOffset)
-        val cvResult = cvFallback.recognizeFrames(listOf(vf), geometry)
+        val hints = activeVisualHints
+        val cvResult = cvFallback.recognizeFrames(listOf(vf), geometry, hints)
 
         if (!useAiModel || !hasAiModel()) {
             return@withContext cvResult

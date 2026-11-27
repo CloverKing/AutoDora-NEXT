@@ -254,14 +254,27 @@ object HybridFusionPolicy {
             }
 
             // 1) Fuse per-cell tile overlays (Scorching, Black Hole, Bloodbath, Burning, Shattered, Storm)
+            //    modulated by 18-dim BoardVisualHints (SkillPriorVisionFilter)
             var fusedFlags = cvFlag
             for (oi in 0 until OrbNetSchema.NUM_TILE_OVERLAYS) {
                 val bit = OrbNetSchema.TILE_OVERLAY_BITS_MAP[oi]
                 if (bit == TileFlagBits.NONE) continue
-                val th = config.overlayThresholds[oi].coerceIn(0.40f, 1.05f)
+                val baseTh = config.overlayThresholds[oi].coerceIn(0.40f, 1.05f)
+                val priorDelta = when (oi) {
+                    OrbNetSchema.IDX_OV_BURNING -> if (visualHints.hasBurning) -0.10f else 0f
+                    OrbNetSchema.IDX_OV_SCORCHING -> if (visualHints.hasScorching) -0.10f else 0f
+                    OrbNetSchema.IDX_OV_BLOODBATH -> if (visualHints.hasBloodbath) -0.10f else 0f
+                    OrbNetSchema.IDX_OV_BLACK_HOLE -> if (visualHints.hasBlackHole) -0.10f else 0f
+                    OrbNetSchema.IDX_OV_SHATTERED -> if (visualHints.hasShattered) -0.10f else 0f
+                    else -> 0f
+                }
+                val th = if (baseTh > 1.0f) baseTh else (baseTh + priorDelta).coerceIn(0.42f, 0.99f)
                 if (pred.tileOverlayProbs[oi] >= th) {
                     fusedFlags = fusedFlags or bit
                 }
+            }
+            if (visualHints.hasBarrier && (fusedFlags and TileFlagBits.SHATTERED) == 0 && (fusedFlags and TileFlagBits.STORM) == 0) {
+                // Preserve CV barrier detections if any
             }
             val nowShattered = (fusedFlags and TileFlagBits.SHATTERED) != 0
             if (nowShattered) {
@@ -279,24 +292,27 @@ object HybridFusionPolicy {
             }
             outFlags[idx] = fusedFlags
 
-            // 2) Fuse hazards (preserving CV detections + adding high-confidence CNN hazards)
+            // 2) Fuse hazards (preserving CV detections + adding high-confidence CNN hazards + SkillPriorVisionFilter)
             var fusedHazards = cvCell.hazards
             for (hi in 0 until OrbNetSchema.NUM_HAZARDS) {
                 val bit = OrbNetSchema.HAZARD_BITS_MAP[hi]
                 if (bit == HazardBits.NONE) continue
-                val th = config.hazardThresholds[hi].coerceIn(0.40f, 1.05f)
+                val baseTh = config.hazardThresholds[hi].coerceIn(0.40f, 1.05f)
+                val priorDelta = when (bit) {
+                    HazardBits.ELECTRIFIED -> if (visualHints.hasElectrified) -0.12f else 0f
+                    HazardBits.PURGATORY_FIRE -> if (visualHints.hasPurgatoryFire) -0.12f else 0f
+                    HazardBits.FROZEN, HazardBits.ICE_SEALED, HazardBits.PETRIFIED ->
+                        if (visualHints.hasFrozenOrPetrified) -0.10f else 0f
+                    HazardBits.WEATHERED, HazardBits.BOMB ->
+                        if (visualHints.hasWeatheredOrBomb) -0.10f else 0f
+                    else -> 0f
+                }
+                val th = if (baseTh > 1.0f) baseTh else (baseTh + priorDelta).coerceIn(0.45f, 0.99f)
                 if (pred.hazardProbs[hi] >= th) {
                     fusedHazards = fusedHazards or bit
                 }
             }
-            // Enforce Frozen vs Ice-Sealed mutual exclusion by higher probability if CNN triggered both
-            if ((fusedHazards and HazardBits.FROZEN) != 0 && (fusedHazards and HazardBits.ICE_SEALED) != 0) {
-                if (pred.hazardProbs[OrbNetSchema.IDX_HAZ_ICE_SEALED] > pred.hazardProbs[OrbNetSchema.IDX_HAZ_FROZEN]) {
-                    fusedHazards = fusedHazards and HazardBits.FROZEN.inv()
-                } else {
-                    fusedHazards = fusedHazards and HazardBits.ICE_SEALED.inv()
-                }
-            }
+            fusedHazards = SkillPriorVisionFilter.filterCellHazards(fusedHazards, pred, visualHints)
 
             // 3) Fuse element
             val (cnnEl, cnnElProb) = pred.bestElement()
@@ -361,10 +377,12 @@ object HybridFusionPolicy {
 
             val pWeakened = pred.variantProbs[Variant.WEAKENED.code]
             val pEnchanted = pred.variantProbs[Variant.ENCHANTED.code]
+            val flashHazardMask = HazardBits.ELECTRIFIED or HazardBits.PURGATORY_FIRE or
+                HazardBits.FROZEN or HazardBits.ICE_SEALED or HazardBits.PETRIFIED
             val fusedVariant = when {
                 cvCell.variant == Variant.WEAKENED || pWeakened >= config.acceptWeakenedProb -> Variant.WEAKENED
                 cvCell.variant == Variant.ENCHANTED -> Variant.ENCHANTED
-                pEnchanted >= config.acceptEnchantedProb && fusedHazards == HazardBits.NONE -> Variant.ENCHANTED
+                pEnchanted >= config.acceptEnchantedProb && (fusedHazards and flashHazardMask) == 0 -> Variant.ENCHANTED
                 fusedRace != RaceType.NONE || cvCell.variant == Variant.RACE -> Variant.RACE
                 else -> Variant.NORMAL
             }
@@ -419,5 +437,67 @@ object HybridFusionPolicy {
             bloodbathTilesDetected = outFlags.count { (it and TileFlagBits.END_FORBIDDEN) != 0 },
             shatteredTilesDetected = outFlags.count { (it and TileFlagBits.SHATTERED) != 0 }
         )
+    }
+}
+
+/**
+ * Enemy-skill prior filter resolving visually ambiguous runestone effects (e.g. Electrified vs
+ * Purgatory Fire / Frozen / Ice-Sealed across Dark, Heart, and Water orbs) using the current
+ * wave's [BoardVisualHints] and enforcing ToS physical mutual-exclusion groups.
+ */
+object SkillPriorVisionFilter {
+
+    private const val IDX_HAZ_ELECTRIFIED = 1
+    private const val IDX_HAZ_PURGATORY = 9
+
+    fun filterCellHazards(
+        rawHazards: Int,
+        pred: CellModelPrediction,
+        hints: BoardVisualHints
+    ): Int {
+        var h = rawHazards
+
+        // 1. Physical mutual exclusion: Frozen vs Ice-Sealed
+        if ((h and HazardBits.FROZEN) != 0 && (h and HazardBits.ICE_SEALED) != 0) {
+            if (pred.hazardProbs[OrbNetSchema.IDX_HAZ_ICE_SEALED] > pred.hazardProbs[OrbNetSchema.IDX_HAZ_FROZEN]) {
+                h = h and HazardBits.FROZEN.inv()
+            } else {
+                h = h and HazardBits.ICE_SEALED.inv()
+            }
+        }
+
+        // 2. Physical mutual exclusion: Electrified vs Purgatory Fire
+        if ((h and HazardBits.ELECTRIFIED) != 0 && (h and HazardBits.PURGATORY_FIRE) != 0) {
+            val preferPurg = hints.hasPurgatoryFire && !hints.hasElectrified ||
+                (!hints.hasElectrified && pred.hazardProbs[IDX_HAZ_PURGATORY] > pred.hazardProbs[IDX_HAZ_ELECTRIFIED])
+            h = if (preferPurg) {
+                h and HazardBits.ELECTRIFIED.inv()
+            } else {
+                h and HazardBits.PURGATORY_FIRE.inv()
+            }
+        }
+
+        // 3. Cross-talk suppression when explicit enemy-skill visual hints are active:
+        if (hints.hasElectrified) {
+            if (!hints.hasPurgatoryFire && (h and HazardBits.PURGATORY_FIRE) != 0 &&
+                pred.hazardProbs[IDX_HAZ_PURGATORY] < 0.95f
+            ) {
+                h = (h and HazardBits.PURGATORY_FIRE.inv()) or HazardBits.ELECTRIFIED
+            }
+            if (!hints.hasFrozenOrPetrified) {
+                if ((h and HazardBits.FROZEN) != 0 && pred.hazardProbs[OrbNetSchema.IDX_HAZ_FROZEN] < 0.95f) {
+                    h = h and HazardBits.FROZEN.inv()
+                }
+                if ((h and HazardBits.ICE_SEALED) != 0 && pred.hazardProbs[OrbNetSchema.IDX_HAZ_ICE_SEALED] < 0.95f) {
+                    h = h and HazardBits.ICE_SEALED.inv()
+                }
+            }
+        } else if (hints.hasPurgatoryFire && !hints.hasElectrified) {
+            if ((h and HazardBits.ELECTRIFIED) != 0 && pred.hazardProbs[IDX_HAZ_ELECTRIFIED] < 0.95f) {
+                h = (h and HazardBits.ELECTRIFIED.inv()) or HazardBits.PURGATORY_FIRE
+            }
+        }
+
+        return h
     }
 }

@@ -31,7 +31,8 @@ data class WaveShieldChip(
     val category: ShieldCategory,
     val autoDetected: Boolean = false,
     val paramInt: Int = 0,
-    val paramElementMask: Int = 0
+    val paramElementMask: Int = 0,
+    val fromKnowledgeFallback: Boolean = false
 )
 
 /**
@@ -150,6 +151,10 @@ object RuleComposer {
                 "exact_combo" -> cfg = cfg.copy(exactTotalCombo = chip.paramInt, avoidSkyfallRisk = true)
                 "exact_first_combo" -> cfg = cfg.copy(exactFirstWaveCombo = chip.paramInt, avoidSkyfallRisk = true)
                 "min_combo" -> cfg = cfg.copy(minTotalCombo = maxOf(cfg.minTotalCombo, chip.paramInt))
+                "max_combo" -> cfg = cfg.copy(
+                    maxTotalCombo = if (cfg.maxTotalCombo >= 0) minOf(cfg.maxTotalCombo, chip.paramInt.coerceIn(0, 20)) else chip.paramInt.coerceIn(0, 20),
+                    avoidSkyfallRisk = true
+                )
                 "min_first_combo" -> cfg = cfg.copy(minFirstWaveCombo = maxOf(cfg.minFirstWaveCombo, chip.paramInt))
                 "min_first_elem_combo" -> cfg = cfg.copy(
                     minFirstWaveElementalCombo = maxOf(cfg.minFirstWaveElementalCombo, chip.paramInt.coerceIn(1, 12))
@@ -215,23 +220,22 @@ object RuleComposer {
                     unmatchableElementsMask = cfg.unmatchableElementsMask or (chip.paramElementMask and 0x3F)
                 )
                 "elem_burst_shield" -> {
-                    // Cumulative / First-Wave N-Orb Attribute Shield (e.g. 火5 / 水15 / 心5 累积符石盾):
-                    // Require eliminating the attribute, prioritize HIGH, maximize its orb count, and when
-                    // the live board currently has >= paramInt orbs of that color, enforce minFirstWaveOrbs!
+                    // Cumulative / First-Wave N-Orb Attribute Shield (e.g. 火5 / 水15 / 心30 累积符石盾):
                     val mask = chip.paramElementMask and 0x3F
                     if (mask != 0) {
                         cfg = cfg.copy(
                             requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or mask,
                             requiredTotalElementsMask = cfg.requiredTotalElementsMask or mask
                         )
-                        val targetCount = chip.paramInt.coerceIn(3, 15)
+                        val targetCount = chip.paramInt.coerceIn(3, 30)
                         for (e in 0 until 6) {
                             if ((mask and (1 shl e)) != 0) {
                                 val availOnBoard = board?.cells?.count { it.element.code == e } ?: 0
-                                val hardMin = if (board == null || availOnBoard >= targetCount) targetCount.coerceAtMost(9) else 0
+                                val hardMinW1 = if (board == null || availOnBoard >= targetCount) targetCount.coerceAtMost(15) else 0
                                 elemRules[e] = elemRules[e].copy(
                                     priority = ElementPriority.HIGH,
-                                    minFirstWaveOrbs = maxOf(elemRules[e].minFirstWaveOrbs, hardMin)
+                                    minFirstWaveOrbs = maxOf(elemRules[e].minFirstWaveOrbs, hardMinW1),
+                                    minTotalOrbs = maxOf(elemRules[e].minTotalOrbs, targetCount)
                                 )
                                 if (cfg.maximizeElementOrbIndex < 0) {
                                     cfg = cfg.copy(maximizeElementOrbIndex = e)
@@ -239,6 +243,26 @@ object RuleComposer {
                             }
                         }
                         highDifficultyShield = true
+                    }
+                }
+                "keep_element_at_least_one" -> {
+                    val mask = chip.paramElementMask and 0x3F
+                    for (e in 0 until 6) {
+                        if ((mask and (1 shl e)) != 0) {
+                            elemRules[e] = elemRules[e].copy(priority = ElementPriority.KEEP_AT_LEAST_ONE)
+                        }
+                    }
+                }
+                "max_element_orbs" -> {
+                    val mask = chip.paramElementMask and 0x3F
+                    val cap = chip.paramInt.coerceIn(0, 30)
+                    for (e in 0 until 6) {
+                        if ((mask and (1 shl e)) != 0) {
+                            val prev = elemRules[e].maxTotalOrbs
+                            elemRules[e] = elemRules[e].copy(
+                                maxTotalOrbs = if (prev >= 0) minOf(prev, cap) else cap
+                            )
+                        }
                     }
                 }
                 "first_wave_full_clear" -> {
@@ -315,11 +339,20 @@ object RuleComposer {
                     )
                     highDifficultyShield = true
                 }
+                "forbid_cross" -> {
+                    cfg = cfg.copy(crossShield = cfg.crossShield.copy(forbidCross = true))
+                }
                 "l_shape" -> {
                     // Official Skill #16 (L字限盾): strict exact 5 orbs!
                     val cnt = if (chip.paramInt > 0) chip.paramInt.coerceIn(1, 3) else 1
-                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireLCount = maxOf(cfg.shapeShield.requireLCount, cnt), strictShape = true))
                     val em = chip.paramElementMask and 0x3F
+                    cfg = cfg.copy(
+                        shapeShield = cfg.shapeShield.copy(
+                            requireLCount = maxOf(cfg.shapeShield.requireLCount, cnt),
+                            lElementsMask = cfg.shapeShield.lElementsMask or em,
+                            strictShape = true
+                        )
+                    )
                     if (em != 0) {
                         cfg = cfg.copy(requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or em)
                         for (e in 0 until 6) if ((em and (1 shl e)) != 0) elemRules[e] = elemRules[e].copy(priority = ElementPriority.HIGH)
@@ -329,15 +362,43 @@ object RuleComposer {
                 "t_shape" -> {
                     // Official Skill #15 (T字限盾): strict exact 5 orbs!
                     val cnt = if (chip.paramInt > 0) chip.paramInt.coerceIn(1, 3) else 1
-                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireTCount = maxOf(cfg.shapeShield.requireTCount, cnt), strictShape = true))
                     val em = chip.paramElementMask and 0x3F
+                    cfg = cfg.copy(
+                        shapeShield = cfg.shapeShield.copy(
+                            requireTCount = maxOf(cfg.shapeShield.requireTCount, cnt),
+                            tElementsMask = cfg.shapeShield.tElementsMask or em,
+                            strictShape = true
+                        )
+                    )
                     if (em != 0) {
                         cfg = cfg.copy(requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or em)
                         for (e in 0 until 6) if ((em and (1 shl e)) != 0) elemRules[e] = elemRules[e].copy(priority = ElementPriority.HIGH)
                     }
                     highDifficultyShield = true
                 }
-                "square_2x2" -> cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireSquare2x2Count = maxOf(cfg.shapeShield.requireSquare2x2Count, 1)))
+                "square_2x2" -> {
+                    val cnt = if (chip.paramInt > 0) chip.paramInt.coerceIn(1, 3) else 1
+                    val em = chip.paramElementMask and 0x3F
+                    cfg = cfg.copy(
+                        shapeShield = cfg.shapeShield.copy(
+                            requireSquare2x2Count = maxOf(cfg.shapeShield.requireSquare2x2Count, cnt),
+                            sq2x2ElementsMask = cfg.shapeShield.sq2x2ElementsMask or em
+                        )
+                    )
+                    highDifficultyShield = true
+                }
+                "square_3x3" -> {
+                    val cnt = if (chip.paramInt > 0) chip.paramInt.coerceIn(1, 2) else 1
+                    val em = chip.paramElementMask and 0x3F
+                    cfg = cfg.copy(
+                        shapeShield = cfg.shapeShield.copy(
+                            requireSquare3x3Count = maxOf(cfg.shapeShield.requireSquare3x3Count, cnt),
+                            sq3x3ElementsMask = cfg.shapeShield.sq3x3ElementsMask or em,
+                            strictShape = true
+                        )
+                    )
+                    highDifficultyShield = true
+                }
                 "all_columns_ameliorate" -> {
                     for (c in 0 until 6) {
                         colRules[c] = colRules[c].copy(enabled = true, minOrbs = 4)
@@ -438,7 +499,13 @@ object RuleComposer {
                     cfg = cfg.copy(requireCharOrbPass = true, requireCharOrbEnd = true)
                     highDifficultyShield = true
                 }
-                "step_limit" -> cfg = cfg.copy(maxSteps = minOf(cfg.maxSteps, chip.paramInt.coerceAtLeast(1)))
+                "step_limit" -> {
+                    val lim = chip.paramInt.coerceIn(1, 300)
+                    cfg = cfg.copy(
+                        maxSteps = if (cfg.useSystemSteps) lim else minOf(cfg.maxSteps, lim),
+                        useSystemSteps = false
+                    )
+                }
                 "step_range" -> {
                     // Official Skill #60 (步數盾): low byte = minSteps, high byte = maxSteps (e.g. 25..30)
                     val lo = (chip.paramInt and 0xFF).coerceIn(1, 200)
@@ -446,7 +513,16 @@ object RuleComposer {
                     cfg = cfg.copy(minSteps = maxOf(cfg.minSteps, lo), maxSteps = hi, useSystemSteps = false)
                     highDifficultyShield = true
                 }
-                "exact_steps" -> cfg = cfg.copy(exactSteps = chip.paramInt, maxSteps = maxOf(cfg.maxSteps, chip.paramInt))
+                "exact_steps" -> {
+                    val ex = chip.paramInt.coerceIn(1, 300)
+                    cfg = cfg.copy(
+                        exactSteps = ex,
+                        minSteps = ex,
+                        maxSteps = ex,
+                        useSystemSteps = false
+                    )
+                    highDifficultyShield = true
+                }
                 "step_hurt_minimize" -> cfg = cfg.copy(stepPenaltyWeight = 5.0)
                 "fast_first_result" -> cfg = cfg.copy(earlyStopOnGoal = true)
                 "weijian_burst" -> cfg = cfg.copy(maxSteps = maxOf(cfg.maxSteps, 60), beamWidth = maxOf(cfg.beamWidth, 220))

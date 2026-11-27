@@ -42,7 +42,7 @@ object NativeSolver {
         val tileFlags = IntArray(n) { board.tileFlags[it] }
         val checkpoints = board.orderedCheckpoints.toIntArray()
 
-        val ruleInts = IntArray(100)
+        val ruleInts = IntArray(108)
         ruleInts[0] = if (rules.allowDiagonalMove) 1 else 0
         ruleInts[1] = rules.maxSteps
         ruleInts[2] = rules.exactSteps
@@ -140,14 +140,20 @@ object NativeSolver {
         ruleInts[97] = rules.equalComboElementsMask
         ruleInts[98] = rules.unmatchableElementsMask
         ruleInts[99] = rules.requiredRaceTypesMask
+        ruleInts[100] = rules.shapeShield.requireSquare3x3Count
+        ruleInts[101] = rules.shapeShield.lElementsMask
+        ruleInts[102] = rules.shapeShield.tElementsMask
+        ruleInts[103] = rules.shapeShield.sq2x2ElementsMask
+        ruleInts[104] = rules.shapeShield.sq3x3ElementsMask
+        ruleInts[105] = if (rules.crossShield.forbidCross) 1 else 0
 
         val ruleDoubles = doubleArrayOf(rules.stepPenaltyWeight, rules.diagonalPenaltyWeight)
 
-        val elemRuleInts = IntArray(6 * 10)
+        val elemRuleInts = IntArray(6 * 13)
         val elemWeights = DoubleArray(6) { 1.0 }
         for (e in 0 until 6) {
             val er = rules.elementRules.getOrElse(e) { ElementRule() }
-            val b = e * 10
+            val b = e * 13
             elemRuleInts[b + 0] = er.minMatchCount
             elemRuleInts[b + 1] = er.targetShape.code
             elemRuleInts[b + 2] = er.priority.code
@@ -158,6 +164,9 @@ object NativeSolver {
             elemRuleInts[b + 7] = er.exactFirstWaveCombos
             elemRuleInts[b + 8] = er.exactFirstWaveOrbs
             elemRuleInts[b + 9] = er.minFirstWaveOrbs
+            elemRuleInts[b + 10] = er.minFirstWaveCombos
+            elemRuleInts[b + 11] = er.maxTotalOrbs
+            elemRuleInts[b + 12] = er.minTotalOrbs
             elemWeights[e] = er.customWeight
         }
 

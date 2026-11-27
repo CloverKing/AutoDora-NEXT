@@ -1,6 +1,37 @@
 {
-  "version": "2026.11-v2.1",
+  "version": "2026.11-v2.2",
   "rules": [
+    {
+      "id": "forbid_cross",
+      "chipId": "forbid_cross",
+      "label": "避消十字(十之诅咒)",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "(?:十之诅咒|首[批消]消除[^\\n]{0,8}?(?:【十】|十字)[^\\n]{0,16}?(?:攻击力变\\s*0|攻击力归\\s*0|攻击无效|零化))"
+    },
+    {
+      "id": "square_3x3",
+      "chipId": "square_3x3",
+      "label": "正方 3×3 盾",
+      "category": "SHAPE_AND_PUZZLE",
+      "pattern": "(?:正方\\s*3\\s*[x×]\\s*3|以\\s*3\\s*[x×]\\s*3\\s*(?:正方)?消除|3\\s*[x×]\\s*3\\s*(?:消除|盾))"
+    },
+    {
+      "id": "max_combo",
+      "chipId": "max_combo",
+      "label": "≤ {n} Combo",
+      "category": "COMBO",
+      "pattern": "(?:超过\\s*([1-9]\\d?)\\s*(?:combo|c(?![a-zA-Z])|连击)[^\\n]{0,14}?(?:零化|变\\s*0|归\\s*0|无效|反击)|(?:不多于|至多|最多|不超过|≤|<=)\\s*([1-9]\\d?)\\s*(?:combo|c(?![a-zA-Z])|连击))",
+      "intGroup": 1,
+      "defaultInt": 6
+    },
+    {
+      "id": "keep_element_at_least_one",
+      "chipId": "keep_element_at_least_one",
+      "label": "留底{elem}≥1(加护)",
+      "category": "COUNT_AND_ELEMENT",
+      "pattern": "(?:([水火木光暗心])符石加护|加护([水火木光暗心])符石|保留(?:至少)?\\s*1\\s*[粒颗]([水火木光暗心])符石)",
+      "elementGroup": 1
+    },
     {
       "id": "starting_buoy_shield",
       "chipId": "starting_buoy_shield",

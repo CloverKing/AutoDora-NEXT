@@ -279,12 +279,14 @@ double computeCrossShaping(
     return total;
 }
 
-// Laser-guided shaping for exact 5-orb L-shape (#16 L字限盾) and T-shape (#15 T字限盾)
+// Laser-guided shaping for exact 5-orb L-shape (#16 L字限盾), T-shape (#15 T字限盾), 2x2 and 3x3 Squares
 double computeLTShaping(
     const BoardState& board,
     const SimulationResult& sim,
     bool wantL,
     bool wantT,
+    uint8_t lElemMask,
+    uint8_t tElemMask,
     bool strict5,
     uint8_t cursorIdx
 ) noexcept {
@@ -306,7 +308,7 @@ double computeLTShaping(
         {{{0,2},{1,2},{2,2},{1,1},{1,0}}}  // ┤ pointing left
     }};
 
-    auto bestForTemplates = [&](const auto& templates) -> double {
+    auto bestForTemplates = [&](const auto& templates, uint8_t allowedElemMask) -> double {
         double best = -1e9;
         for (uint8_t r0 = 0; r0 + 2 < rows; ++r0) {
             for (uint8_t c0 = 0; c0 + 2 < cols; ++c0) {
@@ -320,6 +322,7 @@ double computeLTShaping(
                     const uint64_t extMask = orthogonalNeighborsMask(mask, cols, rows) & ~mask;
 
                     for (uint8_t e = 0; e < kNumElements; ++e) {
+                        if (allowedElemMask != 0 && (allowedElemMask & (1u << e)) == 0) continue;
                         if (sim.initialElementCounts[e] < 5) continue;
                         const Element el = static_cast<Element>(e);
                         uint8_t filled = 0;
@@ -345,9 +348,61 @@ double computeLTShaping(
     };
 
     double total = 0.0;
-    if (wantL) total += bestForTemplates(kLTemplates);
-    if (wantT) total += bestForTemplates(kTTemplates);
+    if (wantL) total += bestForTemplates(kLTemplates, lElemMask);
+    if (wantT) total += bestForTemplates(kTTemplates, tElemMask);
     return total;
+}
+
+double computeSquareShaping(
+    const BoardState& board,
+    const SimulationResult& sim,
+    uint8_t sideLen,
+    uint8_t allowedElemMask,
+    bool strictExact,
+    uint8_t cursorIdx
+) noexcept {
+    const uint8_t cols = board.cols;
+    const uint8_t rows = board.rows;
+    const uint8_t n = board.cellCount();
+    const uint8_t targetOrbs = static_cast<uint8_t>(sideLen * sideLen);
+    if (cols < sideLen || rows < sideLen) return 0.0;
+
+    double best = -1e9;
+    for (uint8_t r0 = 0; r0 + sideLen <= rows; ++r0) {
+        for (uint8_t c0 = 0; c0 + sideLen <= cols; ++c0) {
+            uint64_t mask = 0;
+            for (uint8_t dr = 0; dr < sideLen; ++dr) {
+                for (uint8_t dc = 0; dc < sideLen; ++dc) {
+                    mask |= bitOf(cellIndex(static_cast<uint8_t>(r0 + dr), static_cast<uint8_t>(c0 + dc), cols));
+                }
+            }
+            if ((mask & board.validMask) != mask) continue;
+            if ((mask & (board.stormMask | board.shatteredMask | board.sealedStoneMask)) != 0) continue;
+            const uint64_t extMask = orthogonalNeighborsMask(mask, cols, rows) & ~mask;
+
+            for (uint8_t e = 0; e < kNumElements; ++e) {
+                if (allowedElemMask != 0 && (allowedElemMask & (1u << e)) == 0) continue;
+                if (sim.initialElementCounts[e] < targetOrbs) continue;
+                const Element el = static_cast<Element>(e);
+                uint8_t filled = 0;
+                for (uint8_t i = 0; i < n; ++i) {
+                    if ((mask & bitOf(i)) != 0 && board.cells[i].element == el) filled++;
+                }
+                if (filled < 2) continue;
+                double val = static_cast<double>(filled) * (sideLen >= 3 ? 760.0 : 620.0);
+                val += computePullDistanceShaping(board, mask, el, false, cursorIdx, 135.0, 0.0);
+                if (strictExact) {
+                    uint8_t leaks = 0;
+                    for (uint8_t i = 0; i < n; ++i) {
+                        if ((extMask & bitOf(i)) != 0 && board.cells[i].element == el) leaks++;
+                    }
+                    val -= static_cast<double>(leaks) * (filled == targetOrbs ? 440.0 : 80.0);
+                }
+                if (val > best) best = val;
+            }
+        }
+    }
+    return (best > -1e8) ? best : 0.0;
 }
 
 double computeAnchorOrbShaping(const BoardState& board, uint8_t anchorIdx, uint8_t cursorIdx, double scale) noexcept {
@@ -467,6 +522,7 @@ EvalResult evaluateCandidate(
     double penalty = 0.0;
     double shaping = 0.0;
     double soft = 0.0;
+    bool unmetFocusShield = false;
 
     auto markFail = [&](uint32_t bit, double mult = 1.0) {
         fail |= bit;
@@ -759,11 +815,52 @@ EvalResult evaluateCandidate(
             soft += static_cast<double>(sim.coagulatedAdjacentHits) * 55.0;
         }
     }
-    if (sim.priorityOrbsRemaining > 0) {
-        soft -= static_cast<double>(sim.priorityOrbsRemaining) * 60.0;
+    // Hard Custom Board Operations: Priority (必消此珠) & Reserve (保留不消)
+    uint8_t initialPriorityCount = 0;
+    uint8_t initialReserveCount = 0;
+    for (uint8_t i = 0; i < totalCells; ++i) {
+        const uint32_t hz = boardAfterMoves.cells[i].hazards;
+        if ((hz & HazardBits::Priority) != 0) initialPriorityCount++;
+        if ((hz & HazardBits::Reserve) != 0)  initialReserveCount++;
     }
-    if (sim.reserveOrbsBroken > 0) {
-        soft -= static_cast<double>(sim.reserveOrbsBroken) * 55.0;
+    if (initialPriorityCount > 0) {
+        if (sim.priorityOrbsRemaining == 0) {
+            markSat(ShieldStatusBits::CustomPriorityClear);
+            shaping += static_cast<double>(initialPriorityCount) * 950.0;
+        } else {
+            unmetFocusShield = true;
+            markFail(ShieldStatusBits::CustomPriorityClear, static_cast<double>(sim.priorityOrbsRemaining) * 1.5);
+            for (uint8_t i = 0; i < totalCells; ++i) {
+                if ((boardAfterMoves.cells[i].hazards & HazardBits::Priority) != 0 &&
+                    (sim.allWavesClearedMask & bitOf(i)) == 0) {
+                    shaping += computeAnchorOrbShaping(boardAfterMoves, i, path.endIdx, 165.0);
+                }
+            }
+        }
+    }
+    if (initialReserveCount > 0) {
+        if (sim.reserveOrbsBroken == 0) {
+            markSat(ShieldStatusBits::CustomReserveKeep);
+            shaping += static_cast<double>(initialReserveCount) * 600.0;
+            // Skyfall-safety repulsion: keep surviving Reserve orbs away from adjacent same-color orbs!
+            const uint8_t sCols = sim.settledBoard.cols;
+            const uint8_t sRows = sim.settledBoard.rows;
+            for (uint8_t i = 0; i < totalCells; ++i) {
+                const Cell& sc = sim.settledBoard.cells[i];
+                if ((sc.hazards & HazardBits::Reserve) == 0 || !sc.isMatchable()) continue;
+                const int sr = i / sCols;
+                const int scol = i % sCols;
+                uint8_t sameAdj = 0;
+                if (sr > 0 && sim.settledBoard.cells[i - sCols].element == sc.element) sameAdj++;
+                if (sr + 1 < sRows && sim.settledBoard.cells[i + sCols].element == sc.element) sameAdj++;
+                if (scol > 0 && sim.settledBoard.cells[i - 1].element == sc.element) sameAdj++;
+                if (scol + 1 < sCols && sim.settledBoard.cells[i + 1].element == sc.element) sameAdj++;
+                shaping -= static_cast<double>(sameAdj) * 95.0;
+            }
+        } else {
+            markFail(ShieldStatusBits::CustomReserveKeep, static_cast<double>(sim.reserveOrbsBroken) * 1.6);
+            shaping -= static_cast<double>(sim.reserveOrbsBroken) * 850.0;
+        }
     }
     if (rules.allowHitWeatheredToClear && path.weatheredClearedByHit > 0) {
         soft += static_cast<double>(path.weatheredClearedByHit) * 30.0;
@@ -970,7 +1067,6 @@ EvalResult evaluateCandidate(
     // =========================================================================
     // 4. DIGITAL ORB COUNT & FULL CLEAR & ELEMENT / ENCHANTED SHIELDS
     // =========================================================================
-    bool unmetFocusShield = false;
 
     if (rules.exactFirstWaveTotalOrbs >= 0) {
         const int diff = std::abs(static_cast<int>(sim.firstWaveOrbsTotal) - static_cast<int>(rules.exactFirstWaveTotalOrbs));
@@ -1176,15 +1272,45 @@ EvalResult evaluateCandidate(
             }
         }
         if (er.minFirstWaveOrbs > 0 && sim.firstWaveElementOrbs[e] < er.minFirstWaveOrbs) {
-            markFail(ShieldStatusBits::DigitalOrbCount, 1.0);
-            shaping += static_cast<double>(sim.firstWaveElementOrbs[e]) * 120.0;
+            if (sim.initialElementCounts[e] >= er.minFirstWaveOrbs) {
+                markFail(ShieldStatusBits::DigitalOrbCount, 1.0);
+                shaping += static_cast<double>(sim.firstWaveElementOrbs[e]) * 140.0;
+            } else {
+                shaping += static_cast<double>(sim.firstWaveElementOrbs[e]) * 180.0;
+            }
+        }
+        if (er.minFirstWaveCombos > 0 && sim.firstWaveElementCombos[e] < er.minFirstWaveCombos) {
+            markFail(ShieldStatusBits::ComboShield, 1.0);
+            shaping += static_cast<double>(sim.firstWaveElementCombos[e]) * 320.0;
+        }
+        if (er.minTotalOrbs > 0 && sim.totalElementOrbs[e] < er.minTotalOrbs) {
+            if (sim.initialElementCounts[e] >= er.minTotalOrbs) {
+                markFail(ShieldStatusBits::DigitalOrbCount, 1.0);
+                shaping += static_cast<double>(sim.totalElementOrbs[e]) * 140.0;
+            } else {
+                shaping += static_cast<double>(sim.totalElementOrbs[e]) * 180.0;
+            }
+        }
+        if (er.maxTotalOrbs >= 0 && sim.totalElementOrbs[e] > static_cast<uint8_t>(er.maxTotalOrbs)) {
+            markFail(ShieldStatusBits::DigitalOrbCount, 1.2);
+            shaping -= static_cast<double>(sim.totalElementOrbs[e] - static_cast<uint8_t>(er.maxTotalOrbs)) * 340.0;
         }
 
         if (er.priority == ElementPriority::High) {
             soft += static_cast<double>(sim.totalElementCombos[e]) * 18.0 * er.customWeight;
             soft += static_cast<double>(sim.totalElementOrbs[e]) * 3.5 * er.customWeight;
+        } else if (er.priority == ElementPriority::KeepAtLeastOne) {
+            if (sim.initialElementCounts[e] > 0) {
+                if (sim.settledElementCounts[e] == 0) {
+                    markFail(ShieldStatusBits::ElementShield, 1.2);
+                    shaping -= 450.0;
+                } else {
+                    markSat(ShieldStatusBits::ElementShield);
+                    soft += 24.0;
+                }
+            }
         } else if (er.priority == ElementPriority::Reserve) {
-            soft -= static_cast<double>(sim.totalElementOrbs[e]) * 16.0;
+            soft -= static_cast<double>(sim.totalElementOrbs[e]) * 45.0;
         } else {
             soft += static_cast<double>(sim.totalElementCombos[e]) * 4.0 * er.customWeight;
         }
@@ -1204,6 +1330,7 @@ EvalResult evaluateCandidate(
                 case TargetShape::LShape: return 5;
                 case TargetShape::TShape: return 5;
                 case TargetShape::Square2x2: return 4;
+                case TargetShape::Square3x3: return 9;
                 default: return 0;
             }
         };
@@ -1250,6 +1377,9 @@ EvalResult evaluateCandidate(
                     case TargetShape::Square2x2:
                         if (g.isSquare2x2) soft += 45.0;
                         break;
+                    case TargetShape::Square3x3:
+                        if (g.isSquare3x3) soft += 75.0;
+                        break;
                     case TargetShape::ClearAll:
                         if (sim.remainingAfterFirstWave[e] == 0) soft += 50.0;
                         break;
@@ -1281,9 +1411,25 @@ EvalResult evaluateCandidate(
     }
 
     // =========================================================================
-    // 7. CROSS SHIELD & L / T / 2x2 SHAPE SHIELDS
+    // 7. CROSS SHIELD & L / T / 2x2 / 3x3 SHAPE SHIELDS
     // =========================================================================
-    if (rules.crossShield.requiredCount > 0) {
+    if (rules.crossShield.forbidCross) {
+        uint8_t forbiddenCrossHits = 0;
+        for (uint8_t gi = 0; gi < sim.groupCount; ++gi) {
+            const MatchGroup& g = sim.groups[gi];
+            if (g.wave == 1 && g.containsCross) {
+                forbiddenCrossHits++;
+            }
+        }
+        if (forbiddenCrossHits == 0) {
+            markSat(ShieldStatusBits::CrossShield);
+        } else {
+            markFail(ShieldStatusBits::CrossShield, static_cast<double>(forbiddenCrossHits) * 1.8);
+            shaping -= static_cast<double>(forbiddenCrossHits) * 900.0;
+        }
+    }
+
+    if (rules.crossShield.requiredCount > 0 && !rules.crossShield.forbidCross) {
         uint8_t crossFound = 0;
         uint8_t crossColorsMask = 0;
         for (uint8_t gi = 0; gi < sim.groupCount; ++gi) {
@@ -1321,15 +1467,29 @@ EvalResult evaluateCandidate(
     }
 
     if (rules.shapeShield.requireLCount > 0 || rules.shapeShield.requireTCount > 0 ||
-        rules.shapeShield.requireSquare2x2Count > 0) {
-        uint8_t lFound = 0, tFound = 0, sqFound = 0;
+        rules.shapeShield.requireSquare2x2Count > 0 || rules.shapeShield.requireSquare3x3Count > 0) {
+        uint8_t lFound = 0, tFound = 0, sqFound = 0, sq3Found = 0;
         for (uint8_t gi = 0; gi < sim.groupCount; ++gi) {
             const MatchGroup& g = sim.groups[gi];
             if (g.wave != 1) continue;
-            // Official Skills #15 (T字限盾) & #16 (L字限盾): strictShape enforces exact 5 orbs (no extra attached orbs)!
-            if (g.isLShape && (!rules.shapeShield.strictShape || g.orbCount == 5)) lFound++;
-            if (g.isTShape && (!rules.shapeShield.strictShape || g.orbCount == 5)) tFound++;
-            if (g.isSquare2x2 && (!rules.shapeShield.strictShape || g.orbCount == 4)) sqFound++;
+            const uint8_t eb = elementBit(g.element);
+            // Official Skills #15 (T字限盾), #16 (L字限盾), 2x2 & 3x3 Squares
+            if (g.isLShape && (!rules.shapeShield.strictShape || g.orbCount == 5) &&
+                (rules.shapeShield.lElementsMask == 0 || (rules.shapeShield.lElementsMask & eb) != 0)) {
+                lFound++;
+            }
+            if (g.isTShape && (!rules.shapeShield.strictShape || g.orbCount == 5) &&
+                (rules.shapeShield.tElementsMask == 0 || (rules.shapeShield.tElementsMask & eb) != 0)) {
+                tFound++;
+            }
+            if (g.isSquare2x2 && (!rules.shapeShield.strictShape || g.orbCount == 4) &&
+                (rules.shapeShield.sq2x2ElementsMask == 0 || (rules.shapeShield.sq2x2ElementsMask & eb) != 0)) {
+                sqFound++;
+            }
+            if (g.isSquare3x3 && (!rules.shapeShield.strictShape || g.orbCount == 9) &&
+                (rules.shapeShield.sq3x3ElementsMask == 0 || (rules.shapeShield.sq3x3ElementsMask & eb) != 0)) {
+                sq3Found++;
+            }
         }
         bool shapeOk = true;
         if (lFound < rules.shapeShield.requireLCount) {
@@ -1344,19 +1504,45 @@ EvalResult evaluateCandidate(
         }
         if (sqFound < rules.shapeShield.requireSquare2x2Count) {
             shapeOk = false;
+            unmetFocusShield = true;
             markFail(ShieldStatusBits::ShapeShield, static_cast<double>(rules.shapeShield.requireSquare2x2Count - sqFound));
+        }
+        if (sq3Found < rules.shapeShield.requireSquare3x3Count) {
+            shapeOk = false;
+            unmetFocusShield = true;
+            markFail(ShieldStatusBits::ShapeShield, static_cast<double>(rules.shapeShield.requireSquare3x3Count - sq3Found) * 1.5);
         }
         if (shapeOk) {
             markSat(ShieldStatusBits::ShapeShield);
-            shaping += 2000.0;
-        } else if (lFound < rules.shapeShield.requireLCount || tFound < rules.shapeShield.requireTCount) {
-            shaping += computeLTShaping(
-                boardAfterMoves, sim,
-                lFound < rules.shapeShield.requireLCount,
-                tFound < rules.shapeShield.requireTCount,
-                rules.shapeShield.strictShape,
-                path.endIdx
-            );
+            shaping += 2000.0 + (sq3Found > 0 ? 1200.0 : 0.0);
+        } else {
+            if (lFound < rules.shapeShield.requireLCount || tFound < rules.shapeShield.requireTCount) {
+                shaping += computeLTShaping(
+                    boardAfterMoves, sim,
+                    lFound < rules.shapeShield.requireLCount,
+                    tFound < rules.shapeShield.requireTCount,
+                    rules.shapeShield.lElementsMask,
+                    rules.shapeShield.tElementsMask,
+                    rules.shapeShield.strictShape,
+                    path.endIdx
+                );
+            }
+            if (sqFound < rules.shapeShield.requireSquare2x2Count) {
+                shaping += computeSquareShaping(
+                    boardAfterMoves, sim, 2,
+                    rules.shapeShield.sq2x2ElementsMask,
+                    rules.shapeShield.strictShape,
+                    path.endIdx
+                );
+            }
+            if (sq3Found < rules.shapeShield.requireSquare3x3Count) {
+                shaping += computeSquareShaping(
+                    boardAfterMoves, sim, 3,
+                    rules.shapeShield.sq3x3ElementsMask,
+                    rules.shapeShield.strictShape,
+                    path.endIdx
+                );
+            }
         }
     }
 

@@ -9,6 +9,7 @@ import com.autodora.next.touch.AccessibilityTouchExecutor
 import com.autodora.next.touch.TouchExecutor
 import com.autodora.next.vision.BoardRecognizer
 import com.autodora.next.vision.EnemyIconOnnxClassifier
+import com.autodora.next.vision.EnemySkillKnowledgeMatcher
 import com.autodora.next.vision.HotReloadEnemySkillParser
 import com.autodora.next.vision.HybridBoardRecognizer
 import com.autodora.next.vision.PaddleOcrOnnxEngine
@@ -69,6 +70,12 @@ object AppModule {
     @Singleton
     fun provideHotReloadEnemySkillParser(@ApplicationContext context: Context): HotReloadEnemySkillParser {
         return HotReloadEnemySkillParser(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideEnemySkillKnowledgeMatcher(@ApplicationContext context: Context): EnemySkillKnowledgeMatcher {
+        return EnemySkillKnowledgeMatcher.loadFromContext(context)
     }
 
     @Provides

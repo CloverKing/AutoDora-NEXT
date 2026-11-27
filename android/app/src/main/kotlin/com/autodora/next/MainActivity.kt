@@ -38,9 +38,11 @@ import com.autodora.next.ui.LocaleHelper
 import com.autodora.next.ui.PermissionHealthState
 import com.autodora.next.vision.BoardRecognizer
 import com.autodora.next.vision.EnemyIconOnnxClassifier
+import com.autodora.next.vision.EnemySkillKnowledgeMatcher
 import com.autodora.next.vision.EnemySkillParseStatus
 import com.autodora.next.vision.HotReloadEnemySkillParser
 import com.autodora.next.vision.HybridBoardRecognizer
+import com.autodora.next.vision.LocalCapturedSkillRecord
 import com.autodora.next.vision.StageWaveScriptParser
 import com.autodora.next.vision.TosEnemySkillParserV2
 import dagger.hilt.android.AndroidEntryPoint
@@ -61,6 +63,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var stageWaveScriptRepository: StageWaveScriptRepository
     @Inject lateinit var boardRecognizer: BoardRecognizer
     @Inject lateinit var enemyIconOnnxClassifier: EnemyIconOnnxClassifier
+    @Inject lateinit var knowledgeMatcher: EnemySkillKnowledgeMatcher
 
     private val overlayGrantedState = MutableStateFlow(false)
     private val notificationsGrantedState = MutableStateFlow(true)
@@ -193,6 +196,24 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(settings.useAiRecognizer) {
                         (boardRecognizer as? HybridBoardRecognizer)?.useAiModel = settings.useAiRecognizer
                     }
+                    LaunchedEffect(capturedEnemySkills) {
+                        knowledgeMatcher.updateLocalRecords(
+                            capturedEnemySkills.map { sk ->
+                                LocalCapturedSkillRecord(
+                                    skillHash = sk.skillHash,
+                                    titleZhTw = sk.titleZhTw,
+                                    rawBodyZhTw = sk.rawBodyZhTw,
+                                    sourceType = sk.sourceType,
+                                    parseStatus = sk.parseStatus,
+                                    hitCount = sk.hitCount,
+                                    mappedChips = TrainingDataRepository.decodeMappedChips(sk.mappedChipsJson)
+                                )
+                            }
+                        )
+                    }
+                    LaunchedEffect(Unit) {
+                        autoSeedBuiltInStageScriptsOnce()
+                    }
                     val aiModelsStatus = remember(settings.useAiRecognizer) {
                         val hasBm = runCatching {
                             assets.list("models")?.contains("board_master_v2.onnx") == true
@@ -251,7 +272,10 @@ class MainActivity : ComponentActivity() {
                         activeStageWaveIndex = activeStageWaveIndex,
                         rulesVersionLabel = customRulesVersionTag,
                         hasCustomRulesOverride = hasCustomRules,
-                        onEvaluateRuleTestText = { raw -> enemySkillParserHolder.current().parsePlainText(raw) },
+                        onEvaluateRuleTestText = { raw ->
+                            val parser = enemySkillParserHolder.current()
+                            knowledgeMatcher.enrichParseResult(parser.parsePlainText(raw), parser)
+                        },
                         onImportCustomRulesJson = {
                             importRulesLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                         },
@@ -268,6 +292,8 @@ class MainActivity : ComponentActivity() {
                         onImportStageWikiJson = {
                             importStageWikiLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                         },
+                        onImportBuiltInStageBundle = { importBuiltIn140StageScripts(showToast = true) },
+                        onImportBuiltInAuthoritativeSkills = { importBuiltIn499EnemySkills() },
                         onActivateStageScript = { script ->
                             ActiveStageScriptStore.activateScript(script, script.waves.firstOrNull()?.waveIndex ?: 1)
                             Toast.makeText(
@@ -586,6 +612,85 @@ class MainActivity : ComponentActivity() {
                 this@MainActivity,
                 lctx().getString(R.string.knowledge_stage_imported_ok_fmt, saved),
                 Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private suspend fun autoSeedBuiltInStageScriptsOnce() {
+        val prefs = getSharedPreferences("autodora_seed_flags", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("seeded_v090_stage_bundle_140", false)) return
+        val parsed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val raw = assets.open("tos_stage_wiki_bundle_140.json").bufferedReader(Charsets.UTF_8).use { it.readText() }
+                StageWaveScriptParser.parseStageWikiJson(raw, enemySkillParserHolder.current())
+            }.getOrDefault(emptyList())
+        }
+        if (parsed.isNotEmpty()) {
+            stageWaveScriptRepository.saveScripts(parsed)
+            prefs.edit().putBoolean("seeded_v090_stage_bundle_140", true).apply()
+        }
+    }
+
+    private fun importBuiltIn140StageScripts(showToast: Boolean) {
+        lifecycleScope.launch {
+            val parsed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    val raw = assets.open("tos_stage_wiki_bundle_140.json").bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    StageWaveScriptParser.parseStageWikiJson(raw, enemySkillParserHolder.current())
+                }.getOrDefault(emptyList())
+            }
+            if (parsed.isEmpty()) {
+                if (showToast) Toast.makeText(this@MainActivity, lctx().getString(R.string.knowledge_import_failed), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val saved = stageWaveScriptRepository.saveScripts(parsed)
+            if (showToast) {
+                Toast.makeText(
+                    this@MainActivity,
+                    lctx().getString(R.string.toast_builtin_stages_imported_fmt, saved),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    private fun importBuiltIn499EnemySkills() {
+        lifecycleScope.launch {
+            val imported = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val parser = enemySkillParserHolder.current()
+                val entries = knowledgeMatcher.authoritativeList()
+                val inputs = entries.map { auth ->
+                    val fullText = if (auth.titleZhTw.isNotBlank() && !auth.cleanBodyZhTw.contains(auth.titleZhTw)) {
+                        "${auth.titleZhTw}\n${auth.cleanBodyZhTw}"
+                    } else {
+                        auth.cleanBodyZhTw
+                    }
+                    val parsed = parser.parsePlainText(fullText)
+                    val firstBlk = parsed.allBlocks.firstOrNull()
+                    val cleanTitle = auth.titleZhTw.removePrefix("【").removeSuffix("】").trim()
+                        .ifBlank { firstBlk?.titleZhTw.orEmpty() }
+                    val status = when {
+                        parsed.activeChips.isNotEmpty() || parsed.combinedHints.hasAny() -> EnemySkillParseStatus.PARSED
+                        parsed.allBlocks.any { it.parseStatus == EnemySkillParseStatus.NON_BOARD_KNOWN } -> EnemySkillParseStatus.NON_BOARD_KNOWN
+                        else -> firstBlk?.parseStatus ?: EnemySkillParseStatus.UNPARSED
+                    }
+                    CapturedEnemySkillInput(
+                        skillHash = auth.hash,
+                        titleZhTw = cleanTitle,
+                        rawBodyZhTw = auth.cleanBodyZhTw,
+                        sourceType = "AUTHORITATIVE_499",
+                        stageName = auth.sampleStages.firstOrNull().orEmpty(),
+                        waveIndex = 0,
+                        parseStatus = status,
+                        mappedChips = parsed.activeChips
+                    )
+                }
+                trainingDataRepository.importAuthoritativeEnemySkills(inputs)
+            }
+            Toast.makeText(
+                this@MainActivity,
+                lctx().getString(R.string.toast_builtin_skills_imported_fmt, imported),
+                Toast.LENGTH_SHORT
             ).show()
         }
     }

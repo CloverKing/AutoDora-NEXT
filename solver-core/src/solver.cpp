@@ -28,24 +28,29 @@ constexpr uint64_t splitmix64(uint64_t x) noexcept {
 }
 
 struct ZobristTable {
-    std::array<std::array<uint64_t, 64>, kMaxCells> cellKey{};
+    std::array<std::array<uint64_t, 1024>, kMaxCells> cellKey{};
     std::array<uint64_t, kMaxCells> cursorKey{};
 
     ZobristTable() {
         uint64_t seed = 0xA070D04A20260001ULL;
         for (uint8_t i = 0; i < kMaxCells; ++i) {
             cursorKey[i] = splitmix64(seed++);
-            for (uint8_t s = 0; s < 64; ++s) {
+            for (uint16_t s = 0; s < 1024; ++s) {
                 cellKey[i][s] = splitmix64(seed++);
             }
         }
     }
 
-    static inline uint8_t cellSig(const Cell& c) noexcept {
-        const uint8_t el = static_cast<uint8_t>(c.element) & 0x0Fu;
-        const uint8_t var = static_cast<uint8_t>(c.variant) & 0x03u;
-        const uint8_t hazBit = ((c.hazards & HazardBits::Sleep) != 0) ? 2u : ((c.hazards != 0) ? 1u : 0u);
-        return static_cast<uint8_t>(((el << 2) | var) ^ (hazBit << 4)) & 0x3Fu;
+    static inline uint16_t cellSig(const Cell& c) noexcept {
+        const uint16_t el = static_cast<uint16_t>(c.element) & 0x0Fu;
+        const uint16_t var = static_cast<uint16_t>(c.variant) & 0x03u;
+        const uint16_t prio = ((c.hazards & HazardBits::Priority) != 0) ? 1u : 0u;
+        const uint16_t resv = ((c.hazards & HazardBits::Reserve) != 0) ? 1u : 0u;
+        const uint16_t slp  = ((c.hazards & HazardBits::Sleep) != 0) ? 1u : 0u;
+        const uint16_t oth  = ((c.hazards & ~(HazardBits::Priority | HazardBits::Reserve | HazardBits::Sleep)) != 0) ? 1u : 0u;
+        return static_cast<uint16_t>(
+            el | (var << 4) | (prio << 6) | (resv << 7) | (slp << 8) | (oth << 9)
+        ) & 0x3FFu;
     }
 
     uint64_t hashBoardOnly(const BoardState& b) const noexcept {
@@ -578,8 +583,8 @@ SolveOutput PuzzleSolver::solve(
                     }
 
                     SearchNode child = parent; // Flat stack copy, ZERO heap allocs!
-                    const uint8_t oldCurSig = ZobristTable::cellSig(child.board.cells[parent.curIdx]);
-                    const uint8_t oldNextSig = ZobristTable::cellSig(child.board.cells[nextIdx]);
+                    const uint16_t oldCurSig = ZobristTable::cellSig(child.board.cells[parent.curIdx]);
+                    const uint16_t oldNextSig = ZobristTable::cellSig(child.board.cells[nextIdx]);
 
                     if (rules.allowHitWeatheredToClear &&
                         (child.board.cells[nextIdx].hazards & HazardBits::Weathered) != 0) {
@@ -593,8 +598,8 @@ SolveOutput PuzzleSolver::solve(
 
                     std::swap(child.board.cells[parent.curIdx], child.board.cells[nextIdx]);
 
-                    const uint8_t newCurSig = ZobristTable::cellSig(child.board.cells[parent.curIdx]);
-                    const uint8_t newNextSig = ZobristTable::cellSig(child.board.cells[nextIdx]);
+                    const uint16_t newCurSig = ZobristTable::cellSig(child.board.cells[parent.curIdx]);
+                    const uint16_t newNextSig = ZobristTable::cellSig(child.board.cells[nextIdx]);
                     child.boardHash = parent.boardHash
                         ^ zt.cellKey[parent.curIdx][oldCurSig] ^ zt.cellKey[parent.curIdx][newCurSig]
                         ^ zt.cellKey[nextIdx][oldNextSig] ^ zt.cellKey[nextIdx][newNextSig];

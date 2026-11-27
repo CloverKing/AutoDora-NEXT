@@ -2051,6 +2051,142 @@ void testStartingBuoyCharacterOrbShield() {
     require(best.simulation.firstWaveCombo >= 5, "should still achieve strong Wave-1 combo");
 }
 
+// ============================================================================
+// 53. Hard Custom Board Operations: Priority (必消此珠) & Reserve (保留不消)
+//     Must NEVER sacrifice Priority/Reserve for +1/+2 extra Combos!
+// ============================================================================
+void testHardCustomPriorityAndReserveOrbs() {
+    BoardState b = BoardState::fromString(
+        "WWWGFL"
+        "FDHLGD"
+        "LGFHDW"
+        "DHWLGF"
+        "FLDGWH",
+        6, 5
+    );
+    // (0,0)-(0,2) are already 3 Water in a row -> mark (0,1) as RESERVE (must NOT be eliminated!)
+    // Mark distant Fire orbs (0,4) and (4,0) as PRIORITY (must BOTH be pulled together & eliminated!)
+    b.at(0, 1).hazards |= HazardBits::Reserve;
+    b.at(0, 4).hazards |= HazardBits::Priority;
+    b.at(4, 0).hazards |= HazardBits::Priority;
+    b.rebuildMasks();
+
+    RuleConfig r;
+    r.maxSteps = 26;
+    r.beamWidth = 220;
+    r.maxTimeMs = 600;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "Priority+Reserve must return a solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "both Priority clear and Reserve keep must be hard-satisfied");
+    require(best.simulation.priorityOrbsRemaining == 0, "all Priority orbs must be eliminated");
+    require(best.simulation.reserveOrbsBroken == 0, "zero Reserve orbs may be broken");
+    require((best.evaluation.satisfiedFlags & ShieldStatusBits::CustomPriorityClear) != 0, "CustomPriorityClear bit set");
+    require((best.evaluation.satisfiedFlags & ShieldStatusBits::CustomReserveKeep) != 0, "CustomReserveKeep bit set");
+}
+
+// ============================================================================
+// 54. Square 3x3 Shield (毒果/聖果 3x3) & Forbid Cross (十之詛咒)
+// ============================================================================
+void testSquare3x3AndForbidCrossShields() {
+    // 1) Square 3x3 assembly from scattered 9 Water orbs
+    BoardState b3 = BoardState::fromString(
+        "WWFLGD"
+        "WWHLDF"
+        "WGFWLD"
+        "FLWWGD"
+        "DGLHWF",
+        6, 5
+    );
+    RuleConfig r3;
+    r3.shapeShield.requireSquare3x3Count = 1;
+    r3.shapeShield.sq3x3ElementsMask = elementBit(Element::Water);
+    r3.shapeShield.strictShape = true;
+    r3.maxSteps = 28;
+    r3.beamWidth = 260;
+    r3.maxTimeMs = 800;
+
+    PuzzleSolver solver;
+    SolveOutput out3 = solver.solve(b3, r3);
+    require(!out3.solutions.empty(), "Square 3x3 shield must return a solution");
+    const auto& best3 = out3.solutions[0];
+    verifyPathReplay(b3, r3, best3);
+    require(best3.evaluation.allHardConstraintsMet, "Square 3x3 shield must be satisfied");
+    require((best3.evaluation.satisfiedFlags & ShieldStatusBits::ShapeShield) != 0, "ShapeShield satisfied for 3x3");
+
+    // 2) Forbid Cross (十之詛咒): board starts with a ready-made Fire Cross at (1,1); solver MUST break it!
+    BoardState bc = BoardState::fromString(
+        "WFLGDH"
+        "FFFLGD"
+        "GFDLHW"
+        "LDHWFG"
+        "HWFGLD",
+        6, 5
+    );
+    // Confirm initial board actually has a Cross if untouched
+    RuleConfig rCheck;
+    auto initSim = simulateBoard(bc, rCheck);
+    bool initHasCross = false;
+    for (uint8_t gi = 0; gi < initSim.groupCount; ++gi) {
+        if (initSim.groups[gi].wave == 1 && initSim.groups[gi].containsCross) initHasCross = true;
+    }
+    require(initHasCross, "initial board must contain a Fire cross");
+
+    RuleConfig rc;
+    rc.crossShield.forbidCross = true;
+    rc.minTotalCombo = 4;
+    rc.maxSteps = 20;
+    rc.beamWidth = 180;
+    rc.maxTimeMs = 450;
+
+    SolveOutput outC = solver.solve(bc, rc);
+    require(!outC.solutions.empty(), "forbidCross must return a solution");
+    const auto& bestC = outC.solutions[0];
+    verifyPathReplay(bc, rc, bestC);
+    require(bestC.evaluation.allHardConstraintsMet, "forbidCross + minCombo must pass");
+    for (uint8_t gi = 0; gi < bestC.simulation.groupCount; ++gi) {
+        if (bestC.simulation.groups[gi].wave == 1) {
+            require(!bestC.simulation.groups[gi].containsCross, "Wave-1 cross strictly forbidden by 十之詛咒");
+        }
+    }
+}
+
+// ============================================================================
+// 55. KeepAtLeastOne (符石加護: 留底>=1) & MaxTotalOrbs (刺血印記: <=N粒)
+// ============================================================================
+void testKeepAtLeastOneAndMaxElementOrbs() {
+    // Only 3 Heart orbs on board in a row -> KeepAtLeastOne on Heart MUST break the 3-match so >=1 Heart survives!
+    BoardState b = BoardState::fromString(
+        "HHHWFG"
+        "WFGLDW"
+        "FGLDWF"
+        "GLDWFG"
+        "LDWFGL",
+        6, 5
+    );
+    RuleConfig r;
+    r.elementRules[static_cast<uint8_t>(Element::Heart)].priority = ElementPriority::KeepAtLeastOne;
+    r.elementRules[static_cast<uint8_t>(Element::Water)].maxTotalOrbs = 3; // At most 3 Water orbs eliminated!
+    r.minTotalCombo = 4;
+    r.maxSteps = 22;
+    r.beamWidth = 200;
+    r.maxTimeMs = 500;
+
+    PuzzleSolver solver;
+    SolveOutput out = solver.solve(b, r);
+    require(!out.solutions.empty(), "KeepAtLeastOne + maxTotalOrbs must return a solution");
+    const auto& best = out.solutions[0];
+    verifyPathReplay(b, r, best);
+    require(best.evaluation.allHardConstraintsMet, "KeepAtLeastOne + maxTotalOrbs must pass hard constraints");
+    require(best.simulation.settledElementCounts[static_cast<uint8_t>(Element::Heart)] >= 1,
+            "at least 1 Heart orb must remain on settledBoard for 符石加護");
+    require(best.simulation.totalElementOrbs[static_cast<uint8_t>(Element::Water)] <= 3,
+            "Water orbs eliminated must be <= 3");
+}
+
 } // namespace
 
 int main() {
@@ -2108,6 +2244,9 @@ int main() {
     runTest("50. Thorn Runestone Zero-Touch Avoidance (荊棘符石严避触碰)", testThornRunestoneZeroTouchAvoidance);
     runTest("51. Full-Board 30/30 Locked/BloodDrain Progressive Clear (全版锁定/化血最大化消除)", testFullBoardLockedBloodDrainProgressiveClear);
     runTest("52. Official Starting Buoy (起動浮標 No.5893) + Buoy Character Orb Shield (No.5894)", testStartingBuoyCharacterOrbShield);
+    runTest("53. Hard Custom Priority (必消此珠) & Reserve (保留不消) Orbs", testHardCustomPriorityAndReserveOrbs);
+    runTest("54. Square 3x3 Shield (正方3x3) & Forbid Cross (十之詛咒)", testSquare3x3AndForbidCrossShields);
+    runTest("55. KeepAtLeastOne (符石加護留底>=1) & MaxTotalOrbs (<=N粒)", testKeepAtLeastOneAndMaxElementOrbs);
 
     std::cout << "\nSummary: " << gTestsPassed << " passed, " << gTestsFailed << " failed.\n";
     return (gTestsFailed == 0) ? 0 : 1;
