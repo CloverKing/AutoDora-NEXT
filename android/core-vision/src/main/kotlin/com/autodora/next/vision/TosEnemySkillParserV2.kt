@@ -134,9 +134,47 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
     )
 
     private fun segmentOcrLinesIntoBlocks(ocrLines: List<OcrTextLine>): List<RawSkillSegment> {
-        val kept = ocrLines.filter { line ->
-            val raw = line.text.trim()
-            raw.length >= 2 && !isChromeOrStatLine(normalizeText(raw)) && !isLikelyNoiseEntry(raw, raw)
+        // Keep genuine skill body lines intact during segmentation so vertical gaps never fragment a block;
+        // only drop hard UI chrome, stat lines, and self-Toast/modal banners per line.
+        val rawKept = ocrLines.filter { line ->
+            val raw = cleanRawOcrLine(line.text)
+            val norm = normalizeText(raw)
+            raw.length >= 2 &&
+                !EDGE_NOISE_LINE_REGEX.matches(norm) &&
+                !isChromeOrStatLine(norm) &&
+                !NOISE_CONTAINS_PATTERNS.any { it.containsMatchIn(norm) }
+        }
+        if (rawKept.isEmpty()) return emptyList()
+
+        // Merge wrapped split brackets like "【十之詛咒 10%·" + "生命禁咒】" before block segmentation.
+        val kept = ArrayList<OcrTextLine>(rawKept.size)
+        var i = 0
+        while (i < rawKept.size) {
+            val cur = rawKept[i]
+            val curTrim = cur.text.trim()
+            if (curTrim.startsWith("【") && !curTrim.contains("】") && i + 1 < rawKept.size) {
+                val nxt = rawKept[i + 1]
+                val nxtTrim = nxt.text.trim()
+                if (nxtTrim.contains("】") && !startsSkillBlockMarker(nxtTrim) && cur.isGreyBypassed == nxt.isGreyBypassed) {
+                    val splitAt = nxtTrim.indexOf('】')
+                    val mergedTitle = curTrim + nxtTrim.substring(0, splitAt + 1)
+                    val trailing = nxtTrim.substring(splitAt + 1).trim()
+                    kept.add(
+                        cur.copy(
+                            text = mergedTitle,
+                            right = maxOf(cur.right, nxt.right),
+                            bottom = if (trailing.isEmpty()) maxOf(cur.bottom, nxt.bottom) else cur.bottom
+                        )
+                    )
+                    if (trailing.length >= 2) {
+                        kept.add(nxt.copy(text = trailing))
+                    }
+                    i += 2
+                    continue
+                }
+            }
+            kept.add(cur.copy(text = cleanRawOcrLine(curTrim)))
+            i++
         }
         if (kept.isEmpty()) return emptyList()
 
@@ -186,7 +224,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         val mergedActiveMap = LinkedHashMap<String, WaveShieldChip>()
 
         for (seg in segments) {
-            val rawBody = seg.rawLines.joinToString("\n").trim()
+            val rawBody = unwrapGameLayoutLines(seg.rawLines)
             val norm = normalizeText(rawBody)
             if (norm.isBlank()) continue
             if (norm == "没有技能" || norm == "无技能") {
@@ -260,7 +298,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             val strict = norm.contains("不可黏连") || norm.contains("不可相连") || norm.contains("严格") ||
                 Regex("拼图盾\\s*[-·]?\\s*限").containsMatchIn(norm) || norm.contains("指定形状")
             val ench = norm.contains("强化")
-            val elemMatch = Regex("([水火木光暗心])(?:属性)?[^\\n]{0,6}?(?:拼图|指定形状)|(?:拼图|指定形状)[^\\n]{0,6}?([水火木光暗心])(?:属性)?符石")
+            val elemMatch = Regex("([水火木光暗心])(?:属性)?[^\\n]{0,14}?(?:拼图|指定形状)|(?:拼图|指定形状)[^\\n]{0,14}?([水火木光暗心])(?:属性)?符石")
                 .find(norm)
             val elemChar = elemMatch?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.firstOrNull()
             val elemCode = elemChar?.let { charToElementCode(it) } ?: -1
@@ -316,9 +354,13 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         }
 
         // C. Equal Combo Elements (#9 連擊相等盾 — generalized 2..6 colors)
-        if (Regex("(?:连击相等|同等\\s*(?:combo|c)|连击数(?:须)?相等|combo数(?:须)?相等|同等连击)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
-            val mask = extractElementMaskNearKeywords(norm)
-            val effMask = if (Integer.bitCount(mask) >= 2) mask else ((1 shl Element.LIGHT.code) or (1 shl Element.DARK.code))
+        if (Regex("(?:连击相等|同等\\s*(?:combo|c)|连击数(?:须)?相等|combo数(?:须)?相等|同等连击|相同组数的?五属)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
+            val effMask = if (norm.contains("五属") || norm.contains("5属")) {
+                0x1F
+            } else {
+                val mask = extractElementMaskNearKeywords(norm)
+                if (Integer.bitCount(mask) >= 2) mask else ((1 shl Element.LIGHT.code) or (1 shl Element.DARK.code))
+            }
             matchedIds.add("typed_equal_combo_elements")
             chips.add(
                 WaveShieldChip(
@@ -332,7 +374,11 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         }
 
         // D. Race Orb Shield (#35/general 种族符石盾 -> exact RaceType.bitMask in paramInt)
-        if (Regex("(?:种族|人族|神族|魔族|兽类|兽族|龙类|龙族|妖精|机械族?)[^\\n]{0,6}?符石").containsMatchIn(norm)) {
+        val isTransformRaceExempt = norm.contains("转化符石技能无效") || norm.contains("转化种族符石而不改变")
+        if (!isTransformRaceExempt &&
+            Regex("(?:种族|人族|神族|魔族|兽类|兽族|龙类|龙族|妖精|机械族?)[^\\n]{0,6}?符石").containsMatchIn(norm) &&
+            (norm.contains("盾") || norm.contains("消除") || norm.contains("造成伤害"))
+        ) {
             var raceMask = 0
             if (norm.contains("神族") || norm.contains("神")) {
                 if (Regex("神(?:族|\\.魔|、|及|与|与|和)?").containsMatchIn(norm) && norm.contains("符石")) {
@@ -449,7 +495,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             )
         } else {
             val forbidListMatch = Regex("(?:无法消除|全禁消|(?<!首[批消])不可消除)[^\\n]{0,14}?([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,4})(?:属性)?符石").find(norm)
-            if (forbidListMatch != null && !norm.contains("符石禁咒")) {
+            if (forbidListMatch != null && !norm.contains("禁咒")) {
                 val mask = parseElementMask(forbidListMatch.groupValues[1])
                 if (mask != 0) {
                     matchedIds.add("typed_forbid_all")
@@ -467,9 +513,11 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         }
 
         // H. Clear-All Element (#12 全消盾) with enumerated list
-        val clearAllMatch = Regex("(?:全消盾|首[批消]消除(?:场上)?所有)[^\\n]{0,12}?([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,4})").find(norm)
-        if (clearAllMatch != null) {
-            val mask = parseElementMask(clearAllMatch.groupValues[1])
+        val clearAllTitleMatch = Regex("全消([水火木光暗心]{1,3})盾").find(norm)
+        val clearAllBodyMatch = Regex("(?:全消盾|首[批消]消除(?:场上)?所有)[^\\n]{0,12}?([水火木光暗心](?:[、,与及和\\s/]*[水火木光暗心]){0,4})").find(norm)
+        val clearAllChars = clearAllTitleMatch?.groupValues?.getOrNull(1) ?: clearAllBodyMatch?.groupValues?.getOrNull(1)
+        if (!clearAllChars.isNullOrBlank()) {
+            val mask = parseElementMask(clearAllChars)
             if (mask != 0) {
                 matchedIds.add("typed_clear_all_element")
                 chips.add(
@@ -484,9 +532,13 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             }
         }
 
-        // I. Cross (#14), L (#16), T (#15) with optional explicit elements & distinct flag
-        if (norm.contains("十字") && (norm.contains("相异") || norm.contains("不同"))) {
-            val cnt = when {
+        // I. Cross (#14), L (#16), T (#15) with optional explicit elements, group count & distinct flag
+        val hasBracketCrossBody = norm.contains("【十】形") &&
+            !norm.contains("十之诅咒") &&
+            (norm.contains("造成伤害") || norm.contains("十字限") || norm.contains("十字盾") || norm.contains("十字消除"))
+        if ((norm.contains("十字") || hasBracketCrossBody) && (norm.contains("相异") || norm.contains("不同"))) {
+            val explicitCnt = Regex("(?:≥|>=)?\\s*([23])\\s*组").find(norm)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val cnt = explicitCnt ?: when {
                 Regex("(?:三|3)\\s*(?:组|个)?\\s*十字").containsMatchIn(norm) -> 3
                 Regex("(?:双|二|2)\\s*(?:组|个)?\\s*十字").containsMatchIn(norm) -> 2
                 else -> 2
@@ -503,9 +555,10 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
                     paramElementMask = em
                 )
             )
-        } else if (norm.contains("十字") && extractElementMaskNearKeywords(norm) != 0) {
+        } else if ((norm.contains("十字") || hasBracketCrossBody) && extractElementMaskNearKeywords(norm) != 0) {
             val em = extractElementMaskNearKeywords(norm)
-            val cnt = when {
+            val explicitCnt = Regex("(?:≥|>=)?\\s*([23])\\s*组").find(norm)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val cnt = explicitCnt ?: when {
                 Regex("(?:三|3)\\s*(?:组|个)?\\s*十字").containsMatchIn(norm) -> 3
                 Regex("(?:双|二|2)\\s*(?:组|个)?\\s*十字").containsMatchIn(norm) -> 2
                 else -> 1
@@ -522,22 +575,59 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
                 )
             )
         }
+        val hasShapeExplicitCount = Regex("(?:≥|>=)[ \\t]*([23])[ \\t]*组").containsMatchIn(norm)
         if (Regex("(?:(?<![a-zA-Z])l[ \\t]*[形字])(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
             val em = extractElementMaskNearKeywords(norm)
-            if (em != 0) {
+            if (em != 0 || hasShapeExplicitCount) {
                 matchedIds.add("typed_l_shape_elem")
-                chips.add(WaveShieldChip("l_shape", "${formatElementsCn(em)} L形盾", ShieldCategory.SHAPE_AND_PUZZLE, true, paramElementMask = em))
+                chips.add(
+                    WaveShieldChip(
+                        id = "l_shape",
+                        label = "${if (em != 0) formatElementsCn(em) + " " else ""}L形盾",
+                        category = ShieldCategory.SHAPE_AND_PUZZLE,
+                        autoDetected = true,
+                        paramInt = 0,
+                        paramElementMask = em
+                    )
+                )
             }
         }
         if (Regex("(?:(?<![a-zA-Z])t[ \\t]*[形字])(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
             val em = extractElementMaskNearKeywords(norm)
-            if (em != 0) {
+            if (em != 0 || hasShapeExplicitCount) {
                 matchedIds.add("typed_t_shape_elem")
-                chips.add(WaveShieldChip("t_shape", "${formatElementsCn(em)} T形盾", ShieldCategory.SHAPE_AND_PUZZLE, true, paramElementMask = em))
+                chips.add(
+                    WaveShieldChip(
+                        id = "t_shape",
+                        label = "${if (em != 0) formatElementsCn(em) + " " else ""}T形盾",
+                        category = ShieldCategory.SHAPE_AND_PUZZLE,
+                        autoDetected = true,
+                        paramInt = 0,
+                        paramElementMask = em
+                    )
+                )
             }
         }
 
-        // J. #64 凝護 (e.g. 灵之凝护 / 心之凝护 -> maximize Heart)
+        // J. #64 凝護 (e.g. 灵之凝护 / 心之凝护) & Elemental Orb Armor Shield (e.g. 【木符石護盾 30 粒】)
+        val elemArmorMatch = Regex("([水火木光暗心])符石护盾[^\\n]{0,8}?(\\d{1,3})").find(norm)
+        if (elemArmorMatch != null) {
+            val code = charToElementCode(elemArmorMatch.groupValues[1].first())
+            val nVal = elemArmorMatch.groupValues[2].toIntOrNull()?.coerceIn(3, 15) ?: 9
+            if (code >= 0) {
+                matchedIds.add("typed_elem_armor_shield")
+                chips.add(
+                    WaveShieldChip(
+                        id = "elem_burst_shield",
+                        label = "${elemArmorMatch.groupValues[1]}符石护盾",
+                        category = ShieldCategory.COUNT_AND_ELEMENT,
+                        autoDetected = true,
+                        paramInt = nVal,
+                        paramElementMask = 1 shl code
+                    )
+                )
+            }
+        }
         val condenseMatch = Regex("([水火木光暗心灵])之凝护").find(norm)
         if (condenseMatch != null) {
             val el = when (condenseMatch.groupValues[1]) {
@@ -611,6 +701,8 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             if (entry.chipId == "exact_combo" && "exact_first_combo" in currentIds) continue
             if (entry.chipId == "min_combo" && "min_first_combo" in currentIds) continue
             if (entry.chipId == "step_limit" && ("step_range" in currentIds || "exact_steps" in currentIds)) continue
+            if (entry.chipId == "elem_burst_shield" && "elem_burst_shield" in currentIds) continue
+            if (entry.chipId == "digital_orb_count" && (norm.contains("累积") || norm.contains("护盾"))) continue
 
             // If a non-merge rule has multiple matches (e.g. title without digit + body with digit),
             // prefer the match that captures an explicit int parameter before falling back to match #1.
@@ -630,6 +722,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
                         .firstNotNullOfOrNull { idx -> match.groupValues.getOrNull(idx)?.toIntOrNull() }
                     if (extracted != null) paramInt = extracted
                 }
+                if (entry.chipId == "digital_orb_count" && paramInt !in 1..30) continue
                 // Detect cumulative / total-combo parity scope when odd/even combo specifies 累积/合共
                 if (entry.chipId == "odd_combo" || entry.chipId == "even_combo") {
                     paramInt = if (norm.contains("累积") || norm.contains("合共") || norm.contains("总共")) 1 else 0
@@ -753,6 +846,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
                 paramElementMask = 0x100 or (prev.paramElementMask and 0x3F) or (incoming.paramElementMask and 0x3F)
             )
             "l_shape", "t_shape" -> prev.copy(
+                paramInt = maxOf(prev.paramInt, incoming.paramInt),
                 paramElementMask = prev.paramElementMask or incoming.paramElementMask
             )
             else -> {
@@ -768,7 +862,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         hasBurning = norm.contains("燃烧"),
         hasScorching = norm.contains("灼热地") || norm.contains("灼热地形"),
         hasElectrified = norm.contains("电击") && (norm.contains("符石") || norm.contains("电击之") || norm.contains("触碰") || norm.contains("电击水") || norm.contains("电击火") || norm.contains("电击木") || norm.contains("电击光") || norm.contains("电击暗")),
-        hasSticky = norm.contains("黏腐") || norm.contains("粘腐") || norm.contains("连环光牢"),
+        hasSticky = norm.contains("黏腐") || norm.contains("粘腐") || norm.contains("连环光牢") || norm.contains("黏附") || norm.contains("粘附"),
         hasStorm = norm.contains("暴风"),
         hasShattered = norm.contains("碎裂"),
         hasBlackHole = norm.contains("黑洞"),
@@ -776,13 +870,34 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         hasBarrier = norm.contains("结界地") || norm.contains("结界地形"),
         hasPurgatoryFire = norm.contains("炼狱之火"),
         hasMud = norm.contains("泥沼"),
-        hasMiasma = norm.contains("瘴气")
+        hasMiasma = norm.contains("瘴气"),
+        hasHiddenOrbs = norm.contains("隐藏符石") || norm.contains("隐匿之途") ||
+            norm.contains("漆黑照明") || norm.contains("漆黑结聚") ||
+            norm.contains("迷雾") || norm.contains("雾化") || norm.contains("墨汁") ||
+            norm.contains("才会显示场上的符石") || norm.contains("转为隐"),
+        hasFrozenOrPetrified = norm.contains("冻结") || norm.contains("冰封") ||
+            norm.contains("石化") || norm.contains("凝结") || norm.contains("锁定场上"),
+        hasWeatheredOrBomb = norm.contains("风化") || norm.contains("爆破炸弹") ||
+            norm.contains("化血符石") || norm.contains("缩时地") || norm.contains("之幻界"),
+        hasSpecialMarkOrFruit = norm.contains("力的印记") || norm.contains("虚之印记") ||
+            norm.contains("净化印记") || norm.contains("加护符石") ||
+            norm.contains("毒蚀圣果") || norm.contains("不朽圣果") ||
+            norm.contains("正方3x3") || norm.contains("3x3") ||
+            norm.contains("温律临界") || norm.contains("指定连击法印") ||
+            norm.contains("阴之气") || norm.contains("阳之气") || norm.contains("雷之气") ||
+            Regex("(?:\\d+\\s*粒\\s*)?符石护盾").containsMatchIn(norm) ||
+            norm.contains("全消盾") || norm.contains("首消粒数盾") ||
+            norm.contains("首消组数属性符石盾") || norm.contains("固定连击盾") ||
+            norm.contains("反首消符石盾") || norm.contains("符石连击零化") ||
+            norm.contains("步数盾") || norm.contains("步数限制") ||
+            norm.contains("累积符石盾") || norm.contains("符石禁咒") ||
+            norm.contains("二属盾") || norm.contains("四属盾") || norm.contains("凝护")
     )
 
     private fun hasAnyVisualHint(h: BoardVisualHints): Boolean = h.hasAny()
 
     private fun matchesKnownNonBoardSkill(norm: String): Boolean =
-        KNOWN_NON_BOARD_KEYWORDS.any { norm.contains(it) }
+        KNOWN_NON_BOARD_KEYWORDS.any { norm.contains(it, ignoreCase = true) }
 
     companion object {
         private const val RULES_ASSET_V2 = "tos_enemy_skill_rules_v2.json"
@@ -800,16 +915,35 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         private val PURE_NUMBER_STAT_REGEX = Regex("^[x×]?\\s*[\\d,./+%\\-\\s]+$", RegexOption.IGNORE_CASE)
         private val STAT_PREFIX_REGEX = Regex("^(?:hp|atk|def|cd|lv|ep|turn)\\s*[:：]?\\s*[\\d,./+%\\-]+$", RegexOption.IGNORE_CASE)
 
-        private val BLOCK_START_REGEX = Regex("^(?:[▼▶►▸•●◆◇※]|【[^】]{1,24}】)")
-        private val STANDALONE_BRACKET_TITLE_REGEX = Regex("^[▼▶►▸•●◆◇※\\s]*【[^】]{1,28}】\\s*$")
+        private val BLOCK_START_REGEX = Regex("^(?:[▼▶►▸]|【[^】]{1,28}】)")
+        private val STANDALONE_BRACKET_TITLE_REGEX = Regex("^[▼▶►▸\\s]*【[^】]{1,28}】\\s*$")
+        private val EDGE_NOISE_LINE_REGEX = Regex(
+            "^(?:w?ave\\s*\\d+|w\\d+/\\d+|b?oss|jss|current|next|wave|boss|hp|atk|def|cd)$",
+            RegexOption.IGNORE_CASE
+        )
+        private val CLAUSE_START_REGEX = Regex("^(?:•|·|‧|⇒|[①②③④⑤⑥⑦⑧⑨⑩]|▶|▼|【|\\(|※|★|◆)")
+        private val CJK_SPACE_BETWEEN_REGEX = Regex("(?<=[\\u4e00-\\u9fff])\\s+(?=[\\u4e00-\\u9fff])")
+        private val CJK_PIPE_ARTIFACT_REGEX = Regex("(?<=[\\u4e00-\\u9fff])[|｜](?=[\\u4e00-\\u9fff])")
+        private val SENTENCE_END_CHARS = setOf('。', '；', ';', '！', '!', '？', '?', '：', ':', ')')
 
         private val KNOWN_NON_BOARD_KEYWORDS = listOf(
             "攻前盾", "首杀盾", "防御盾", "无法控制", "中毒", "亡命爆击", "隐身",
             "技能重置", "附加消除", "即效永生", "连击护盾", "连击法印护盾", "反馈",
             "终结倒数", "减伤状态", "混沌值", "崩坏值", "腐化", "石牢", "锈化值",
             "灵罩", "脉流", "两相消耗", "炎之气", "囚锢生命力", "能力点代价",
-            "开技消耗代价", "ep代价", "cd增加", "ep减少", "减伤抗性", "连击攻击",
-            "连续攻击", "首攻", "非电击状态", "弱攻", "越战越强", "回复力变"
+            "开技消耗代价", "ep代价", "ep 代价", "cd增加", "cd 增加", "ep减少", "ep 减少",
+            "技能cd", "技能 cd", "技能ep", "技能 ep", "减伤抗性", "连击攻击",
+            "连续攻击", "首攻", "非电击状态", "弱攻", "越战越强", "回复力变",
+            "灵魂值", "生命枯竭", "净世", "佑律", "防御崩坏", "喋血屠刀", "反击",
+            "愈战愈强", "愈攻愈强", "能力继承", "双体共生", "同伴之护", "丧伴自戕",
+            "提升龙脉仪", "沉默状态", "缚 - 技能", "封锁", "转化符石技能无效",
+            "突击", "优先突击", "溢血攻击", "受击护盾", "亿血护盾", "五属伤害盾",
+            "回复弱化", "回复力减至", "生命禁咒", "十之诅咒", "符石转换", "符石转水",
+            "符石转火", "符石转木", "符石转光", "符石转暗", "符石转心", "围城",
+            "金穗圣果", "蚀骨腐果", "猎人", "猎神", "猎魔", "猎兽", "猎龙", "猎妖", "猎机",
+            "无视所有减伤", "无视所有控制", "扣除召唤师", "转化为", "移动符石时间",
+            "攻击力提升", "攻击力减少", "回复生命力", "回复100%", "回合后死亡", "伤害减至", "抵挡此伤害",
+            "敌方所有召唤兽"
         )
 
         private val NOISE_CONTAINS_PATTERNS = listOf(
@@ -834,12 +968,21 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         )
 
         fun isLikelyNoiseEntry(title: String, rawBody: String): Boolean {
+            val trimmedBody = rawBody.trim()
+            if (trimmedBody.length <= 2) return true
             val normBody = normalizeText(rawBody)
             val normTitle = normalizeText(title)
-            if (normBody.isBlank()) return true
-            if (isChromeOrStatLine(normBody)) return true
+            if (normBody.isBlank() || normBody.length <= 2) return true
+            if (EDGE_NOISE_LINE_REGEX.matches(normBody) || isChromeOrStatLine(normBody)) return true
+            // Enemy name + HP/ATK/DEF stat card accidentally captured into popup OCR (never drop bracketed 【...】 skill blocks)
+            if (!normBody.contains("【") &&
+                (Regex("\\d+(?:\\.\\d+)?兆").containsMatchIn(normBody) ||
+                    Regex("\\b\\d{1,3}(?:,\\d{3}){2,}\\b").containsMatchIn(normBody)) &&
+                !Regex("(?:符石|连击|生命力|攻击力|防御力|伤害|灵魂|技能)").containsMatchIn(normBody)
+            ) {
+                return true
+            }
             if (NOISE_CONTAINS_PATTERNS.any { it.containsMatchIn(normBody) || it.containsMatchIn(normTitle) }) {
-                // Keep real 【...】 enemy skill if somehow only stage prep text appeared nearby? Wait: real skills use skill bodies, not Toast/friend/team banners
                 if (!Regex("【[^】]{2,26}】").containsMatchIn(normBody) ||
                     normBody.contains("已归档") || normBody.contains("知识库") ||
                     normBody.contains("新手") || normBody.contains("好友")
@@ -963,13 +1106,83 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             return sb.toString()
         }
 
+        fun cleanRawOcrLine(rawLine: String): String {
+            var s = rawLine.trim()
+            if (s.isEmpty()) return ""
+            s = s.replace("「靈罩]", "「靈罩」")
+                .replace("「灵罩]", "「灵罩」")
+                .replace(Regex("CD\\s*變\\s*O"), "CD變0")
+                .replace(Regex("CD\\s*变\\s*O"), "CD变0")
+            s = CJK_PIPE_ARTIFACT_REGEX.replace(s, "")
+            return s.trim()
+        }
+
+        /**
+         * Repairs wrapped `【Title\nContinuation】` lines and unwraps mid-sentence game-layout line breaks
+         * while preserving logical bullet (`•`), arrow (`⇒`), clause (`①`), and title boundaries.
+         */
+        fun unwrapGameLayoutLines(rawLines: List<String>): String {
+            val repaired = ArrayList<String>(rawLines.size)
+            var idx = 0
+            while (idx < rawLines.size) {
+                var s = cleanRawOcrLine(rawLines[idx])
+                if (s.isEmpty() || EDGE_NOISE_LINE_REGEX.matches(normalizeText(s))) {
+                    idx++
+                    continue
+                }
+                if (s.startsWith("【") && !s.contains("】") && idx + 1 < rawLines.size) {
+                    val nxt = cleanRawOcrLine(rawLines[idx + 1])
+                    val closeIdx = nxt.indexOf('】')
+                    if (closeIdx >= 0) {
+                        s += nxt.substring(0, closeIdx + 1)
+                        val rest = nxt.substring(closeIdx + 1).trim()
+                        repaired.add(s)
+                        if (rest.isNotEmpty()) repaired.add(rest)
+                        idx += 2
+                        continue
+                    }
+                }
+                repaired.add(s)
+                idx++
+            }
+            if (repaired.isEmpty()) return ""
+
+            val merged = ArrayList<String>(repaired.size)
+            merged.add(repaired[0])
+            for (k in 1 until repaired.size) {
+                val prev = merged.last()
+                val nxt = repaired[k]
+                val prevIsTitleHeader = prev.startsWith("【") && prev.endsWith("】")
+                val keepBreak = prevIsTitleHeader ||
+                    CLAUSE_START_REGEX.containsMatchIn(nxt) ||
+                    (prev.isNotEmpty() && prev.last() in SENTENCE_END_CHARS)
+                if (keepBreak) {
+                    merged.add(nxt)
+                } else {
+                    val needsSpace = prev.isNotEmpty() && nxt.isNotEmpty() &&
+                        prev.last().code < 128 && prev.last().isLetterOrDigit() &&
+                        nxt.first().code < 128 && nxt.first().isLetterOrDigit()
+                    merged[merged.lastIndex] = if (needsSpace) "$prev $nxt" else "$prev$nxt"
+                }
+            }
+            val joined = merged.joinToString("\n").replace(Regex("[ ]+"), " ").trim()
+            return CJK_SPACE_BETWEEN_REGEX.replace(joined, "")
+        }
+
         fun normalizeText(raw: String): String {
             val sb = StringBuilder(raw.length)
             for (ch in raw) {
-                sb.append(TRAD_TO_SIMP_MAP[ch] ?: ch)
+                val asciiMapped = when (ch) {
+                    '\u3000' -> ' '
+                    in '\uFF01'..'\uFF5E' -> (ch.code - 0xFEE0).toChar()
+                    else -> ch
+                }
+                sb.append(TRAD_TO_SIMP_MAP[asciiMapped] ?: asciiMapped)
             }
-            return sb.toString()
+            val withoutPipes = CJK_PIPE_ARTIFACT_REGEX.replace(sb.toString(), "")
+            return withoutPipes
                 .replace('\r', '\n')
+                .replace(Regex("CD\\s*变\\s*O"), "CD变0")
                 .replace(Regex("[ \t]+"), " ")
                 .trim()
         }
@@ -1034,6 +1247,22 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             '獲' to '获', '劇' to '剧', '情' to '情', '體' to '体', '確' to '确',
             '申' to '申', '請' to '请', '返' to '返', '單' to '单', '話' to '话',
             '籤' to '签', '應' to '应', '長' to '长',
+            '價' to '价', '覧' to '览', '転' to '转', '図' to '图', '戦' to '战', '闘' to '斗',
+            '変' to '变', '対' to '对', '応' to '应', '気' to '气', '悪' to '恶', '竜' to '龙',
+            '獣' to '兽', '覚' to '觉', '満' to '满', '触' to '触', '発' to '发', '続' to '续',
+            '経' to '经', '関' to '关', '単' to '单', '両' to '两', '残' to '残', '壊' to '坏',
+            '霊' to '灵', '黒' to '黑', '砕' to '碎', '継' to '继', '総' to '总', '蔵' to '藏',
+            '圧' to '压', '広' to '广', '譲' to '让', '読' to '读', '伝' to '传', '効' to '效',
+            '収' to '收', '実' to '实', '専' to '专', '歳' to '岁', '畳' to '叠', '称' to '称',
+            '縁' to '缘', '訳' to '译', '証' to '证', '軽' to '轻', '辺' to '边', '遅' to '迟',
+            '鉄' to '铁', '録' to '录', '陥' to '陷', '険' to '险', '雑' to '杂', '難' to '难',
+            '静' to '静', '響' to '响', '顔' to '颜', '願' to '愿', '駆' to '驱', '験' to '验',
+            '虛' to '虚', '詛' to '诅', '隨' to '随', '喚' to '唤', '師' to '师', '優' to '优',
+            '壓' to '压', '縮' to '缩', '縛' to '缚', '淨' to '净', '疊' to '叠', '霧' to '雾',
+            '處' to '处', '劃' to '划', '擋' to '挡', '斃' to '毙', '魯' to '鲁', '儀' to '仪',
+            '儲' to '储', '奪' to '夺', '漸' to '渐', '潰' to '溃', '斷' to '断', '斬' to '斩',
+            '畫' to '画', '枯' to '枯', '竭' to '竭', '懲' to '惩', '罰' to '罚', '億' to '亿',
+            '義' to '义', '質' to '质', '號' to '号',
             '０' to '0', '１' to '1', '２' to '2', '３' to '3', '４' to '4',
             '５' to '5', '６' to '6', '７' to '7', '８' to '8', '９' to '9',
             '＋' to '+', '－' to '-', '×' to 'x', '≧' to '≥', '＞' to '>',

@@ -21,7 +21,11 @@ data class BoardVisualHints(
     val hasBarrier: Boolean = false,
     val hasPurgatoryFire: Boolean = false,
     val hasMud: Boolean = false,
-    val hasMiasma: Boolean = false
+    val hasMiasma: Boolean = false,
+    val hasHiddenOrbs: Boolean = false,
+    val hasFrozenOrPetrified: Boolean = false,
+    val hasWeatheredOrBomb: Boolean = false,
+    val hasSpecialMarkOrFruit: Boolean = false
 ) {
     fun mergeWith(other: BoardVisualHints): BoardVisualHints = BoardVisualHints(
         hasMonochrome = hasMonochrome || other.hasMonochrome,
@@ -37,13 +41,18 @@ data class BoardVisualHints(
         hasBarrier = hasBarrier || other.hasBarrier,
         hasPurgatoryFire = hasPurgatoryFire || other.hasPurgatoryFire,
         hasMud = hasMud || other.hasMud,
-        hasMiasma = hasMiasma || other.hasMiasma
+        hasMiasma = hasMiasma || other.hasMiasma,
+        hasHiddenOrbs = hasHiddenOrbs || other.hasHiddenOrbs,
+        hasFrozenOrPetrified = hasFrozenOrPetrified || other.hasFrozenOrPetrified,
+        hasWeatheredOrBomb = hasWeatheredOrBomb || other.hasWeatheredOrBomb,
+        hasSpecialMarkOrFruit = hasSpecialMarkOrFruit || other.hasSpecialMarkOrFruit
     )
 
     fun hasAny(): Boolean =
         hasMonochrome || hasDisguise || hasBurning || hasScorching ||
             hasElectrified || hasSticky || hasStorm || hasShattered || hasBlackHole ||
-            hasBloodbath || hasBarrier || hasPurgatoryFire || hasMud || hasMiasma
+            hasBloodbath || hasBarrier || hasPurgatoryFire || hasMud || hasMiasma ||
+            hasHiddenOrbs || hasFrozenOrPetrified || hasWeatheredOrBomb || hasSpecialMarkOrFruit
 }
 
 /**

@@ -26,7 +26,8 @@ data class ForegroundColorStats(
     val p50Lum: Int,
     val p95Lum: Int,
     val vividRatio: Float,
-    val isGreyBypassed: Boolean
+    val isGreyBypassed: Boolean,
+    val fgChromaMean: Float = 0f
 )
 
 data class OcrTextLine(
@@ -311,10 +312,13 @@ object PaddleOcrPostprocess {
     }
 
     /**
-     * Calibrated ToS 2025.41 / 2026.2 foreground brightness & saturation classifier:
-     * Greyed-out bypassed enemy skills render on the dark popup card with low foreground luminance
-     * (`p50Lum < 95 && p95Lum in 85..162`) and near-zero chroma (`vividRatio < 0.05f`), whereas
-     * active enemy skills render in crisp bright white (`p95 >= 185`) or vivid gold/red/cyan highlight.
+     * Calibrated against A2 live popup dataset (`emu_live_calibration_v1`, 23 screenshots / 158 text lines):
+     *  - Greyed-out bypassed skills (enemy long-press popup): `p92 = 102`, `p95 = 102`, `chroma = 0.0`
+     *  - Active bright white skills: `p92 = 221..255`, `p95 = 224..255`
+     *  - Yellow active titles: `p92 = 202..233`, `fgChromaMean = 128..168`
+     *  - Red Phase headers: `p92 = 76`, `fgChromaMean = 250+` (must NOT be flagged grey!)
+     * Optimal midpoint luminance threshold between bypassed grey (102) and bright white (255) is `178`,
+     * combined with saturation suppression (`vividRatio < 0.05f && fgChromaMean <= 38f`).
      */
     fun sampleForegroundColorStats(
         frame: VisionFrame,
@@ -330,7 +334,7 @@ object PaddleOcrPostprocess {
         val w = x1 - x0
         val h = y1 - y0
         if (w < 8 || h < 8) {
-            return ForegroundColorStats(0, 220, 250, 0.2f, false)
+            return ForegroundColorStats(0, 220, 250, 0.2f, false, 0f)
         }
 
         val stepX = max(1, w / 32)
@@ -340,6 +344,8 @@ object PaddleOcrPostprocess {
         var vividFg = 0
         var vividAll = 0
         var total = 0
+        var fgChromaSum = 0L
+        var fgChromaCount = 0
 
         var y = y0
         while (y < y1) {
@@ -351,13 +357,18 @@ object PaddleOcrPostprocess {
                 val b = argb and 0xFF
                 val maxCh = max(r, max(g, b))
                 val minCh = min(r, min(g, b))
+                val chroma = maxCh - minCh
                 val lum = (r * 30 + g * 59 + b * 11) / 100
                 allLums.add(lum)
-                val isVivid = maxCh >= 130 && (maxCh - minCh) >= 45
+                val isVivid = maxCh >= 130 && chroma >= 45
                 if (isVivid) vividAll++
                 if (lum >= 45) {
                     fgLums.add(lum)
                     if (isVivid) vividFg++
+                }
+                if (lum >= 70 || maxCh >= 85) {
+                    fgChromaSum += chroma
+                    fgChromaCount++
                 }
                 total++
                 x += stepX
@@ -366,29 +377,41 @@ object PaddleOcrPostprocess {
         }
 
         if (total < 12 || allLums.isEmpty()) {
-            return ForegroundColorStats(0, 220, 250, 0.2f, false)
+            return ForegroundColorStats(0, 220, 250, 0.2f, false, 0f)
         }
 
-        // Match EnemySkillOcrEngine's percentile calibration while checking foreground pixel presence
         allLums.sort()
         val p50 = allLums[allLums.size / 2]
+        val p92 = allLums[(allLums.size * 92) / 100]
         val p95 = allLums[(allLums.size * 95) / 100]
         val fgCount = fgLums.size
-        val fgP95 = if (fgCount >= 8) {
+        val fgP92: Int
+        val fgP95: Int
+        if (fgCount >= 8) {
             fgLums.sort()
-            fgLums[(fgCount * 95) / 100]
+            fgP92 = fgLums[(fgCount * 92) / 100]
+            fgP95 = fgLums[(fgCount * 95) / 100]
         } else {
-            p95
+            fgP92 = p92
+            fgP95 = p95
         }
+        val effectiveP92 = max(p92, fgP92)
         val effectiveP95 = max(p95, fgP95)
         val vividRatio = vividAll.toFloat() / total.toFloat()
-        val isGrey = fgCount >= 8 && p50 < 95 && effectiveP95 in 85..162 && vividRatio < 0.05f
+        val fgChromaMean = if (fgChromaCount > 0) fgChromaSum.toFloat() / fgChromaCount.toFloat() else 0f
+        val isGrey = fgCount >= 8 &&
+            p50 < 120 &&
+            effectiveP92 in 75..178 &&
+            effectiveP95 <= 182 &&
+            vividRatio < 0.05f &&
+            fgChromaMean <= 38f
         return ForegroundColorStats(
             fgPixelCount = fgCount,
             p50Lum = p50,
             p95Lum = effectiveP95,
             vividRatio = vividRatio,
-            isGreyBypassed = isGrey
+            isGreyBypassed = isGrey,
+            fgChromaMean = fgChromaMean
         )
     }
 }

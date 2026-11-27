@@ -103,6 +103,38 @@ class PaddleOcrPostprocessTest {
         }
         val goldStats = PaddleOcrPostprocess.sampleForegroundColorStats(ArrayVisionFrame(w, h, goldPixels), 0, 0, w, h)
         assertFalse("Vivid golden text must NOT be filtered as grey: $goldStats", goldStats.isGreyBypassed)
+
+        // A2 live calibration: dark-grey bypassed popup text RGB(102, 102, 102) -> p92=102, chroma=0
+        val a2GreyPixels = IntArray(w * h) { 0xFF16181E.toInt() }
+        for (y in 10 until 30) {
+            for (x in 15 until 105 step 2) {
+                a2GreyPixels[y * w + x] = 0xFF666666.toInt()
+            }
+        }
+        val a2GreyStats = PaddleOcrPostprocess.sampleForegroundColorStats(ArrayVisionFrame(w, h, a2GreyPixels), 0, 0, w, h)
+        assertTrue("A2 RGB(102,102,102) grey bypassed line must be detected: $a2GreyStats", a2GreyStats.isGreyBypassed)
+        assertTrue(a2GreyStats.fgChromaMean <= 38f)
+
+        // A2 mid-grey upper band RGB(155, 155, 155) -> still below A2 178 threshold
+        val midGreyPixels = IntArray(w * h) { 0xFF16181E.toInt() }
+        for (y in 10 until 30) {
+            for (x in 15 until 105 step 2) {
+                midGreyPixels[y * w + x] = 0xFF9B9B9B.toInt()
+            }
+        }
+        val midGreyStats = PaddleOcrPostprocess.sampleForegroundColorStats(ArrayVisionFrame(w, h, midGreyPixels), 0, 0, w, h)
+        assertTrue("RGB(155,155,155) below A2 178 threshold must detect as bypassed: $midGreyStats", midGreyStats.isGreyBypassed)
+
+        // A2 red phase header RGB(255, 0, 0) has low luma (~76) but extreme chroma (~255) -> MUST NOT be bypassed!
+        val redPhasePixels = IntArray(w * h) { 0xFF141010.toInt() }
+        for (y in 10 until 30) {
+            for (x in 15 until 105 step 2) {
+                redPhasePixels[y * w + x] = 0xFFFF0000.toInt()
+            }
+        }
+        val redStats = PaddleOcrPostprocess.sampleForegroundColorStats(ArrayVisionFrame(w, h, redPhasePixels), 0, 0, w, h)
+        assertFalse("Red phase header must NOT be misclassified as grey bypassed: $redStats", redStats.isGreyBypassed)
+        assertTrue(redStats.fgChromaMean > 38f)
     }
 
     @Test

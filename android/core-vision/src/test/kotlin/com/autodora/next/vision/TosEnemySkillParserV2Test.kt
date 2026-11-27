@@ -1,22 +1,35 @@
 package com.autodora.next.vision
 
 import com.autodora.next.model.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 
 class TosEnemySkillParserV2Test {
 
-    private fun loadParser(): TosEnemySkillParserV2 {
+    private fun resolveRepoFile(relativePath: String): File? {
         var dir: File? = File(".").absoluteFile
         while (dir != null) {
-            val candidate1 = File(dir, "app/src/main/assets/tos_enemy_skill_rules_v2.json")
-            if (candidate1.isFile) return TosEnemySkillParserV2.fromJson(candidate1.readText(Charsets.UTF_8))
-            val candidate2 = File(dir, "android/app/src/main/assets/tos_enemy_skill_rules_v2.json")
-            if (candidate2.isFile) return TosEnemySkillParserV2.fromJson(candidate2.readText(Charsets.UTF_8))
+            val f = File(dir, relativePath)
+            if (f.isFile) return f
             dir = dir.parentFile
         }
-        error("Could not locate tos_enemy_skill_rules_v2.json from ${File(".").absolutePath}")
+        return null
+    }
+
+    private fun loadParser(): TosEnemySkillParserV2 {
+        val rulesFile = resolveRepoFile("app/src/main/assets/tos_enemy_skill_rules_v2.json")
+            ?: resolveRepoFile("android/app/src/main/assets/tos_enemy_skill_rules_v2.json")
+            ?: error("Could not locate tos_enemy_skill_rules_v2.json from ${File(".").absolutePath}")
+        return TosEnemySkillParserV2.fromJson(rulesFile.readText(Charsets.UTF_8))
     }
 
     @Test
@@ -209,5 +222,212 @@ class TosEnemySkillParserV2Test {
         val realRes = parser.parseLines(realPopup)
         assertTrue(TosEnemySkillParserV2.isAuthenticEnemySkillScreen(realPopup, DarkModalKind.ENEMY_LONG_PRESS_POPUP, realRes))
         assertTrue(realRes.combinedHints.hasSticky)
+    }
+
+    @Test
+    fun `unwraps split titles and game layout breaks, fixes A1 and A4 rules, and avoids false positives`() {
+        val parser = loadParser()
+
+        // 1. Smart layout unwrap + split 【Title\nContinuation】 repair + • bullet stays attached to ▼ title
+        val splitOcrLines = listOf(
+            OcrTextLine("▼ 【T字限盾 (≥3 組)】", 20, 40, 420, 68, 0.99f),
+            OcrTextLine("• 以【T】形首批消除", 20, 74, 380, 100, 0.98f),
+            OcrTextLine("≥3 組 5 粒光符石", 20, 104, 320, 130, 0.98f),
+            OcrTextLine("⇒ 才能對敵人造成傷害", 20, 134, 420, 160, 0.98f),
+            OcrTextLine("AVE3", 20, 164, 120, 186, 0.90f),
+            OcrTextLine("【十之詛咒 10%·", 20, 220, 340, 246, 0.99f),
+            OcrTextLine("生命禁咒】", 20, 250, 220, 276, 0.99f),
+            OcrTextLine("每以【十】形首批消除1組≥5粒符石扣除召喚師10%生命力", 20, 280, 780, 306, 0.97f)
+        )
+        val splitRes = parser.parseLines(splitOcrLines)
+        assertEquals(2, splitRes.allBlocks.size)
+        val tBlk = splitRes.allBlocks[0]
+        assertTrue(tBlk.rawBodyZhTw.contains("• 以【T】形首批消除≥3 組 5 粒光符石"))
+        assertFalse(tBlk.rawBodyZhTw.contains("AVE3"))
+        val tChip = tBlk.chips.firstOrNull { it.id == "t_shape" }
+        assertNotNull(tChip)
+        assertEquals(0, tChip!!.paramInt)
+        assertEquals(Element.LIGHT.bitMask, tChip.paramElementMask)
+
+        val curseBlk = splitRes.allBlocks[1]
+        assertEquals("十之詛咒 10%·生命禁咒", curseBlk.titleZhTw)
+        assertEquals(EnemySkillParseStatus.NON_BOARD_KNOWN, curseBlk.parseStatus)
+        assertFalse("十之詛咒 must NEVER emit cross_shield!", curseBlk.chips.any { it.id == "cross_shield" })
+
+        // 2. Fullwidth ASCII + OCR pipe artifact + variant kanji chrome
+        val pipeRes = parser.parsePlainText("【終結倒|數】\n敵人倒|數 2 回合後消耗召喚師 100% 生命力")
+        assertEquals(EnemySkillParseStatus.NON_BOARD_KNOWN, pipeRes.allBlocks.single().parseStatus)
+
+        val fwRes = parser.parsePlainText("ＣＤ２\n【固定連擊盾】\n首批消除 ５ 連擊 (Combo) 才會造成傷害")
+        assertEquals(5, fwRes.activeChips.first { it.id == "exact_first_combo" }.paramInt)
+
+        // 3. Previously failing A1 / A4 rules
+        val clearWater = parser.parsePlainText("【全消水盾】\n首批消除場上所有水符石")
+        assertEquals(Element.WATER.bitMask, clearWater.activeChips.first { it.id == "clear_all_element" }.paramElementMask)
+
+        val unmatchHeart = parser.parsePlainText("【消心禁咒】\n無法消除心符石。")
+        assertEquals(Element.HEART.bitMask, unmatchHeart.activeChips.first { it.id == "unmatchable_elements" }.paramElementMask)
+        assertFalse("消心禁咒 must NOT emit forbid_all!", unmatchHeart.activeChips.any { it.id == "forbid_all" })
+
+        val step50 = parser.parsePlainText("【50步限制】\n每回合只能移動50步，步數用盡時將停止移動符石")
+        assertEquals(50, step50.activeChips.first { it.id == "step_limit" }.paramInt)
+
+        val eq5 = parser.parsePlainText("【五屬連擊相等盾】\n同時首批消除相同組數的五屬符石，才能對敵人造成傷害")
+        assertEquals(0x100 or 0x1F, eq5.activeChips.first { it.id == "equal_pair_light_dark" }.paramElementMask)
+
+        val shield60 = parser.parsePlainText("【60 粒符石護盾】\n累積首批消除60粒符石 ⇒ 可扣除敵人100%生命力")
+        assertFalse("Cumulative 60-orb shield must NOT emit exactFirstWaveTotalOrbs!", shield60.activeChips.any { it.id == "digital_orb_count" })
+        assertTrue(shield60.combinedHints.hasSpecialMarkOrFruit)
+
+        val woodArmor = parser.parsePlainText("【木符石護盾 30 粒】\n累積消除 30 粒木符石")
+        val woodBurst = woodArmor.activeChips.firstOrNull { it.id == "elem_burst_shield" }
+        assertNotNull(woodBurst)
+        assertEquals(Element.WOOD.bitMask, woodBurst!!.paramElementMask)
+
+        val raceExempt = parser.parsePlainText("【轉化符石技能無效】\n所有轉化符石技能效果無效（轉化種族符石而不改變符石種類的技能除外）。")
+        assertEquals(EnemySkillParseStatus.NON_BOARD_KNOWN, raceExempt.allBlocks.single().parseStatus)
+        assertFalse(raceExempt.activeChips.any { it.id == "race_orb_shield" })
+
+        val crossTypo = parser.parsePlainText("【个子限盾】\n• 以【十】形首批消除≥1組5粒木符石\n⇒ 才能對敵人造成傷害")
+        assertEquals(Element.WOOD.bitMask, crossTypo.activeChips.first { it.id == "cross_shield" }.paramElementMask)
+
+        // 4. Visual-hint & non-board A1 skills
+        assertTrue(parser.parsePlainText("【毒果凝實 - 木(3x3)】\n以【正方3x3】形首批消除≥1組9粒木符石").combinedHints.hasSpecialMarkOrFruit)
+        assertTrue(parser.parsePlainText("【隱匿之途 - 6格】\n敵人會將移動符石時所觸碰的符石轉化為隱藏符石").combinedHints.hasHiddenOrbs)
+        assertEquals(
+            EnemySkillParseStatus.NON_BOARD_KNOWN,
+            parser.parsePlainText("【生命枯竭 (靈魂值)】\n每當敵人發動攻擊 ⇒ 扣除召喚師指定靈魂值").allBlocks.single().parseStatus
+        )
+        assertEquals(
+            EnemySkillParseStatus.NON_BOARD_KNOWN,
+            parser.parsePlainText("【淨世】\n進場時消除所有附加效果，相關技能CD將被重置。").allBlocks.single().parseStatus
+        )
+        assertEquals(
+            EnemySkillParseStatus.NON_BOARD_KNOWN,
+            parser.parsePlainText("【光之佑律】\n進場時、每回合結束時及每次發動主動技能 ⇒ 所有被移除及引爆的符石 ⇒ 以光符石代替").allBlocks.single().parseStatus
+        )
+    }
+
+    @Test
+    fun `matches A4 380-case benchmark and cleaned unified authoritative master`() {
+        val parser = loadParser()
+        val json = Json { ignoreUnknownKeys = true }
+
+        val a4File = resolveRepoFile("backups/phase4_v2_inbox/enemy_text_bench/enemy_skill_text_bench.json")
+        if (a4File != null) {
+            val root = json.parseToJsonElement(a4File.readText(Charsets.UTF_8)).jsonObject
+            val cases = root["cases"]!!.jsonArray
+
+            var paramTotal = 0
+            var paramPass = 0
+            var greyTotal = 0
+            var greyPass = 0
+            var advTotal = 0
+            var advPass = 0
+            var encTotal = 0
+            var encUnparsed = 0
+            val failures = ArrayList<String>()
+
+            for (el in cases) {
+                val c = el.jsonObject
+                val caseId = c["case_id"]!!.jsonPrimitive.content
+                val suite = c["suite"]!!.jsonPrimitive.content
+                val input = c["input_text_zh_tw"]!!.jsonPrimitive.content
+                val res = parser.parsePlainText(input)
+
+                when (suite) {
+                    "parameterized_high_difficulty" -> {
+                        paramTotal++
+                        val expChips = (c["expected_active_chips"] as? JsonArray).orEmpty()
+                        val gotOk = expChips.all { ecEl ->
+                            val ec = ecEl.jsonObject
+                            val id = ec["id"]!!.jsonPrimitive.content
+                            val pInt = ec["paramInt"]?.jsonPrimitive?.intOrNull ?: 0
+                            val pMask = ec["paramElementMask"]?.jsonPrimitive?.intOrNull ?: 0
+                            res.activeChips.any { g -> g.id == id && g.paramInt == pInt && g.paramElementMask == pMask }
+                        } && res.allBlocks.none { it.parseStatus == EnemySkillParseStatus.UNPARSED }
+                        if (gotOk) paramPass++ else failures.add("PARAM $caseId got=${res.activeChips.map { "${it.id}(${it.paramInt},${it.paramElementMask})" }}")
+                    }
+                    "grey_bypassed_calibration" -> {
+                        greyTotal++
+                        val expBlocks = c["expected_archived_block_count"]!!.jsonPrimitive.intOrNull ?: 0
+                        val expActive = c["expected_active_chip_ids"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
+                        val expByp = c["expected_bypassed_chip_ids"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
+                        val gotActive = res.activeChips.map { it.id }.toSet()
+                        val gotByp = res.bypassedBlocks.flatMap { it.chips }.map { it.id }.toSet()
+                        val ok = res.allBlocks.size == expBlocks && expActive.all { it in gotActive } && expByp.all { it in gotByp } && expByp.none { it in gotActive }
+                        if (ok) greyPass++ else failures.add("GREY $caseId act=$gotActive byp=$gotByp")
+                    }
+                    "adversarial_zero_collapse_noise" -> {
+                        advTotal++
+                        val expStatus = c["expected_parse_status"]!!.jsonPrimitive.content
+                        val expIds = c["expected_active_chip_ids"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
+                        val gotIds = res.activeChips.map { it.id }.toSet()
+                        val ok = when (expStatus) {
+                            "NO_SKILL" -> res.hasNoSkillBanner && gotIds.isEmpty()
+                            "NOISE_REJECTED" -> !TosEnemySkillParserV2.isAuthenticEnemySkillScreen(
+                                input.lines().filter { it.isNotBlank() }.map { OcrTextLine(it, 10, 10, 400, 36, 0.99f) },
+                                DarkModalKind.ENEMY_LONG_PRESS_POPUP,
+                                res
+                            )
+                            else -> res.allBlocks.isNotEmpty() &&
+                                res.allBlocks.none { it.parseStatus == EnemySkillParseStatus.UNPARSED } &&
+                                expIds.all { it in gotIds } &&
+                                ("zero_combo" in expIds || "zero_combo" !in gotIds)
+                        }
+                        if (ok) advPass++ else failures.add("ADV $caseId gotIds=$gotIds blocks=${res.allBlocks.map { it.parseStatus }}")
+                    }
+                    "encyclopedia_98" -> {
+                        encTotal++
+                        if (res.allBlocks.isEmpty() || res.allBlocks.any { it.parseStatus == EnemySkillParseStatus.UNPARSED }) {
+                            encUnparsed++
+                            failures.add("ENC $caseId UNPARSED")
+                        }
+                    }
+                }
+            }
+
+            assertTrue("A4 failures:\n${failures.joinToString("\n")}", failures.isEmpty())
+            assertEquals(106, paramPass)
+            assertEquals(36, greyPass)
+            assertEquals(20, advPass)
+            assertEquals(98, encTotal)
+            assertEquals(0, encUnparsed)
+        }
+
+        val masterFile = resolveRepoFile("ml/datasets/enemy_skill_master_clean/unified_enemy_skill_master.json")
+        if (masterFile != null) {
+            val root = json.parseToJsonElement(masterFile.readText(Charsets.UTF_8)).jsonObject
+            val skills = root["skills"]!!.jsonArray
+            var total = 0
+            var unparsed = 0
+            var falseZero = 0
+            var falseRace = 0
+            val unparsedSamples = ArrayList<String>()
+            for (el in skills) {
+                val s = el.jsonObject
+                val title = s["title_zh_tw"]!!.jsonPrimitive.content
+                val body = s["clean_body_zh_tw"]!!.jsonPrimitive.content
+                val full = "$title\n$body".trim()
+                val res = parser.parsePlainText(full)
+                total++
+                if (res.allBlocks.isEmpty() || res.allBlocks.any { it.parseStatus == EnemySkillParseStatus.UNPARSED }) {
+                    unparsed++
+                    unparsedSamples.add("$title || ${body.take(50)}")
+                }
+                if (res.activeChips.any { it.id == "zero_combo" } && !full.contains("連擊") && !full.lowercase().contains("combo") && !full.contains("任何符石")) {
+                    falseZero++
+                }
+                if (res.activeChips.any { it.id == "race_orb_shield" } && title.contains("轉化符石技能無效")) {
+                    falseRace++
+                }
+            }
+            assertEquals("False zero_combo in unified master", 0, falseZero)
+            assertEquals("False race_orb_shield in unified master", 0, falseRace)
+            assertTrue(
+                "Too many UNPARSED in unified master ($unparsed/$total): ${unparsedSamples.take(15)}",
+                unparsed <= (total * 0.02).toInt().coerceAtLeast(5)
+            )
+        }
     }
 }

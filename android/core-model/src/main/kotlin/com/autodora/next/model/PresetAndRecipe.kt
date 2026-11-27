@@ -317,7 +317,8 @@ object RuleComposer {
                 }
                 "l_shape" -> {
                     // Official Skill #16 (L字限盾): strict exact 5 orbs!
-                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireLCount = maxOf(cfg.shapeShield.requireLCount, 1), strictShape = true))
+                    val cnt = if (chip.paramInt > 0) chip.paramInt.coerceIn(1, 3) else 1
+                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireLCount = maxOf(cfg.shapeShield.requireLCount, cnt), strictShape = true))
                     val em = chip.paramElementMask and 0x3F
                     if (em != 0) {
                         cfg = cfg.copy(requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or em)
@@ -327,7 +328,8 @@ object RuleComposer {
                 }
                 "t_shape" -> {
                     // Official Skill #15 (T字限盾): strict exact 5 orbs!
-                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireTCount = maxOf(cfg.shapeShield.requireTCount, 1), strictShape = true))
+                    val cnt = if (chip.paramInt > 0) chip.paramInt.coerceIn(1, 3) else 1
+                    cfg = cfg.copy(shapeShield = cfg.shapeShield.copy(requireTCount = maxOf(cfg.shapeShield.requireTCount, cnt), strictShape = true))
                     val em = chip.paramElementMask and 0x3F
                     if (em != 0) {
                         cfg = cfg.copy(requiredFirstWaveElementsMask = cfg.requiredFirstWaveElementsMask or em)

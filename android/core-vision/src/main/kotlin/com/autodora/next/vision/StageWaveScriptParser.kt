@@ -203,9 +203,15 @@ object StageWaveScriptParser {
         return rawStages.filter { it.waves.isNotEmpty() }.map { rawStage ->
             val waves = rawStage.waves.map { rw ->
                 val body = buildString {
-                    if (rw.rawText.isNotBlank()) appendLine(rw.rawText)
+                    if (rw.rawText.isNotBlank()) {
+                        appendLine(rw.rawText.trim())
+                        appendLine()
+                    }
                     for (s in rw.skills) {
-                        if (s.isNotBlank()) appendLine(s)
+                        if (s.isNotBlank()) {
+                            appendLine(s.trim())
+                            appendLine()
+                        }
                     }
                 }
                 val parsed = parser.parsePlainText(body)

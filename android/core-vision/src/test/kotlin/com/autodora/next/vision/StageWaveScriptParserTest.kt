@@ -137,4 +137,25 @@ class StageWaveScriptParserTest {
         assertTrue(parsed.script.waves[0].visualHints.hasElectrified)
         assertEquals(5, parsed.script.waves[1].chips.first { it.id == "min_combo" }.paramInt)
     }
+
+    @Test
+    fun `parses compiled A1 stage wiki import bundle cleanly when present locally`() {
+        val parser = loadParser()
+        var dir: File? = File(".").absoluteFile
+        var bundleFile: File? = null
+        while (dir != null) {
+            val cand = File(dir, "ml/datasets/enemy_skill_master_clean/tos_stage_wiki_import_bundle.json")
+            if (cand.isFile) {
+                bundleFile = cand
+                break
+            }
+            dir = dir.parentFile
+        }
+        if (bundleFile == null) return
+
+        val scripts = StageWaveScriptParser.parseStageWikiJson(bundleFile.readText(Charsets.UTF_8), parser)
+        assertTrue("Expected non-empty compiled stage scripts", scripts.size >= 50)
+        assertTrue(scripts.all { it.stageKey.isNotBlank() && it.stageName.isNotBlank() && it.waves.isNotEmpty() })
+        assertTrue(scripts.any { st -> st.waves.any { it.isBoss && it.chips.isNotEmpty() } })
+    }
 }

@@ -2,10 +2,10 @@
 
 > **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
 
-[![Version](https://img.shields.io/badge/version-v0.7.1-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.7.1)
+[![Version](https://img.shields.io/badge/version-v0.7.2-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases/tag/v0.7.2)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
-[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%20105%20JVM%20%2B%204%20ML%20Passing-2E7D32.svg)](#快速构建与测试)
+[![Tests](https://img.shields.io/badge/Tests-52%20C%2B%2B%20%2B%20108%20JVM%20%2B%209%20ML%20Passing-2E7D32.svg)](#快速构建与测试)
 [![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#多语言主题与应用内更新)
 
 ---
@@ -159,6 +159,7 @@ AutoDora-NEXT/
 - [x] **Phase 4.2 非素材闭环、采集门控修复与知识库完整管理（`v0.7.0` – `v0.7.1` · 当前 `dev` 版本）**：
   - `v0.7.0`：完成 **`StageWaveScriptParser` + Room `v3` 全波次剧本 & Wiki JSON 导入**（悬浮窗 `‹ W2/5 ›` 步进器）、**`WaveTransitionDetector` 上方敌区 dHash 无黑屏直切双保险换波检测**、**`BoardVisualHints` 视觉联动**（幽闭空间 AI 灰度判色增强 & 移形换影一键编排）、主控台热更新/离线文案试算器，以及 PC 端 **`ml/` 数据回流加权与 `BoardMasterGridNet` / `EnemyIconNet` ONNX 训练导出脚手架**。
   - `v0.7.1`：新增 **`BoardCaptureQualityGate` + `BoardTurnStabilityTracker` 静止双帧稳定门控**（每回合仅采 1 对清晰可操作双帧，彻底拒绝消珠黑格/天降 Combo 爆炸/暗化回合末与选战友误采）、收紧 `PaddleOcrOnnxEngine` ROI 避开悬浮条与 Toast 并将敌技落盘移至 `isAuthenticEnemySkillScreen` 强校验之后、修复 `【X連撃零化】` / `【≥N連撃盾】` / `【電撃之水】` 解析与长按识别明确 Toast 反馈；设置页采集抽屉改用独立 **`Rose` 玫瑰红** 区分 `Teal`，并上线 **敌技知识库完整增删改查管理面板（`+ 新增` / 编辑 / 删除 / 搜索 / 状态筛选 / `清理噪音` / `全部重算` / `清空`）**。
+  - `v0.7.2`：**唯一权威敌技清洗统一 + 全量 A4 380 条基准与 A1 实爬规则对齐 + A2 灰字阈值实测标定（`p92 ≤ 178`, `fgChroma ≤ 38`）+ 关前剧本编译器** — 端侧 `TosEnemySkillParserV2` 同步游戏排版智能去换行与跨行 `【标题】` 修复（彻底修正 `•` 子条款碎片化与 `40連撃盾` 零 Combo 误判），扩展 `tos_enemy_skill_rules_v2.json` (`2026.11-v2.1`) 与 `BoardVisualHints`（新增隐藏/冻石/风化炸弹/印记圣果 4 维标志）以及 `KNOWN_NON_BOARD_KEYWORDS`，新增 PC 端 [build_unified_enemy_skill_master.py](./ml/tools/build_unified_enemy_skill_master.py)（A1 实爬最高权威 + 百科 98 项去重兜底，当前清洗整合 `394` 条）与 [compile_stage_wiki_bundle.py](./ml/tools/compile_stage_wiki_bundle.py)（一键编译 `stage_wiki_db` 为 App 剧本包并自动拆解多阶段 Boss）。
 - [ ] **Phase 4 后续规划（`v0.8.x` – `v1.0.0`）**：素材回流后训练并接入 `BoardMasterGridNet` 与 `EnemyIconNet` ONNX 权重、R8 / ABI 瘦身（Phase D）、可选 Shizuku 触控引擎与 `v1.0.0` 正式发布。
 
 ---
@@ -167,7 +168,7 @@ AutoDora-NEXT/
 
 ### 1. 直接安装预编译 APK
 
-前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.5.0-release.apk`；`dev` 分支持续演进版本可本地构建 `AutoDora-NEXT-v0.7.1-release.apk`），安装后：
+前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（如 `AutoDora-NEXT-v0.5.0-release.apk`；`dev` 分支持续演进版本可本地构建 `AutoDora-NEXT-v0.7.2-release.apk`），安装后：
 1. 在「概览 → 运行权限检查」依次授予 **悬浮窗**、**无障碍自动转珠** 与 **屏幕采集（选择「整个屏幕」）** 三项权限；
 2. 若在 Android 13+ / HyperOS / One UI / ColorOS 遇到无障碍开关受限，按概览页「无障碍受限设置指引」点击「应用详情 → 右上角 `⋮` → 允许受限设置」后即可开启；
 3. 后续版本可直接在 App 内「设置 → 关于与版本 → 检查更新 → 下载并安装」一键原地升级。
@@ -178,7 +179,7 @@ AutoDora-NEXT/
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 3. Android 全模块 JVM 单测（105/105）与 APK 构建
+### 3. Android 全模块 JVM 单测（108/108）与 APK 构建
 
 ```powershell
 # 运行全部模块单元测试并构建 Debug APK
@@ -188,7 +189,7 @@ powershell -ExecutionPolicy Bypass -File android/build-android.ps1 core-model:te
 powershell -ExecutionPolicy Bypass -File android/build-android.ps1 app:assembleRelease --max-workers=1
 ```
 
-### 4. PC 端 ML 数据回流与 ONNX 导出单测（4/4）
+### 4. PC 端权威库清洗、关卡剧本编译与 ML 管线单测（9/9）
 
 ```powershell
 ml\.venv\Scripts\python.exe -m unittest discover -s ml\tests -v
