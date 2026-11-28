@@ -335,14 +335,16 @@ class FlashRevealMemoryTracker(
             val textRatio = if (totalInteriorPx > 0) readableTextPx.toFloat() / totalInteriorPx else 0f
             if (textRatio < 0.004f || textRatio > 0.38f) return DarkModalKind.NONE
 
-            // Distinguish Stage Info full-screen dark backdrop / bottom teal buttons from in-battle popup
+            // Distinguish full-screen Stage Info modals (top header + covered portrait/HP strip + bottom teal buttons)
+            // from in-battle Enemy Long-Press Popups on dark/abyss battle backgrounds (where portraits/HP strip remain visible).
             val ux0 = (w * 0.15f).toInt()
             val ux1 = (w * 0.85f).toInt()
-            val uy0 = (h * 0.14f).toInt()
-            val uy1 = (h * 0.32f).toInt()
+            val uy0 = (h * 0.09f).toInt()
+            val uy1 = (h * 0.28f).toInt()
             val uStepX = max(2, (ux1 - ux0) / 16)
             val uStepY = max(2, (uy1 - uy0) / 10)
             var upperDark = 0
+            var upperVivid = 0
             var upperTotal = 0
             y = uy0
             while (y <= uy1) {
@@ -355,12 +357,46 @@ class FlashRevealMemoryTracker(
                     val maxC = max(r, max(g, b))
                     val minC = min(r, min(g, b))
                     if (maxC <= 62 && (maxC - minC) <= 24) upperDark++
+                    else if (maxC >= 115 && (maxC - minC) >= 48) upperVivid++
                     upperTotal++
                     x += uStepX
                 }
                 y += uStepY
             }
             val upperDarkRatio = if (upperTotal > 0) upperDark.toFloat() / upperTotal else 0f
+            val upperVividRatio = if (upperTotal > 0) upperVivid.toFloat() / upperTotal else 0f
+
+            // Check battle team-portrait & pink HP bar strip [0.33..0.41]:
+            // In-battle long-press popups sit over the board while team portraits / HP bar stay vivid above the popup;
+            // full-screen Stage Info modals cover [0.06..0.93] with dark neutral list rows.
+            val mx0 = (w * 0.08f).toInt()
+            val mx1 = (w * 0.92f).toInt()
+            val my0 = (h * 0.33f).toInt()
+            val my1 = (h * 0.41f).toInt()
+            val mStepX = max(2, (mx1 - mx0) / 20)
+            val mStepY = max(2, (my1 - my0) / 6)
+            var midDark = 0
+            var midVivid = 0
+            var midTotal = 0
+            y = my0
+            while (y <= my1) {
+                var x = mx0
+                while (x <= mx1) {
+                    val argb = frame.getArgb(x, y)
+                    val r = (argb ushr 16) and 0xFF
+                    val g = (argb ushr 8) and 0xFF
+                    val b = argb and 0xFF
+                    val maxC = max(r, max(g, b))
+                    val minC = min(r, min(g, b))
+                    if (maxC <= 65 && (maxC - minC) <= 26) midDark++
+                    else if (maxC >= 120 && (maxC - minC) >= 50) midVivid++
+                    midTotal++
+                    x += mStepX
+                }
+                y += mStepY
+            }
+            val midDarkRatio = if (midTotal > 0) midDark.toFloat() / midTotal else 0f
+            val midVividRatio = if (midTotal > 0) midVivid.toFloat() / midTotal else 0f
 
             val bx0 = (w * 0.12f).toInt()
             val bx1 = (w * 0.88f).toInt()
@@ -387,7 +423,14 @@ class FlashRevealMemoryTracker(
             }
             val tealRatio = if (botTotal > 0) tealButtons.toFloat() / botTotal else 0f
 
-            return if (upperDarkRatio >= 0.55f || tealRatio >= 0.08f) {
+            val isFullScreenStageModal = tealRatio >= 0.08f || (
+                upperDarkRatio >= 0.72f &&
+                    upperVividRatio <= 0.06f &&
+                    midDarkRatio >= 0.62f &&
+                    midVividRatio <= 0.08f
+                )
+
+            return if (isFullScreenStageModal) {
                 DarkModalKind.STAGE_INFO_MODAL
             } else {
                 DarkModalKind.ENEMY_LONG_PRESS_POPUP

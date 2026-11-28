@@ -45,5 +45,29 @@ class EnemyIconOnnxClassifierTest {
         assertEquals(listOf("ICON_EXACT_COMBO", "ICON_CROSS_SHIELD", "ICON_MONOCHROME_DISGUISE"), res.detectedClasses)
         assertEquals(listOf("cross_shield"), res.chips.map { it.id })
         assertTrue(res.hints.hasMonochrome)
+        assertFalse(res.hints.hasElectrified)
+        assertFalse(res.hints.hasFrozenOrPetrified)
+    }
+
+    @Test
+    fun `fillStripNchw masks out overlapping floating UI excludeRect and rejects peaks inside excludeRect`() {
+        val brightTopFrame = object : VisionFrame {
+            override val width: Int = 576
+            override val height: Int = 1280
+            override fun getArgb(x: Int, y: Int): Int = 0xFFF0D040.toInt()
+        }
+        val exRect = intArrayOf(0, 0, 576, 600)
+        val nchw = EnemyIconStripPreprocessor.fillStripNchw(brightTopFrame, exRect)
+        // Entire upper strip [0.08..0.42] falls inside y in [0..600], so all pixels must equal neutral dark mask (18, 20, 26)
+        assertEquals(18f / 255f, nchw[0], 0.01f)
+
+        val thMap = EnemyIconMetaConfig.DEFAULT_CLASSES.associateWith { 0.75f }
+        val cfg = EnemyIconMetaConfig(EnemyIconMetaConfig.DEFAULT_CLASSES, thMap)
+        val probs = FloatArray(EnemyIconMetaConfig.DEFAULT_CLASSES.size) { 0.1f }
+        val tIdx = EnemyIconMetaConfig.DEFAULT_CLASSES.indexOf("ICON_T_SHAPE")
+        probs[tIdx] = 0.95f
+        val peaks = Array(EnemyIconMetaConfig.DEFAULT_CLASSES.size) { floatArrayOf(4f, 2f) }
+        val res = EnemyIconChipMapper.mapDetections(probs, cfg, peaks, brightTopFrame, exRect)
+        assertTrue("Peak inside floating toolbar excludeRect must be suppressed!", res.chips.isEmpty())
     }
 }

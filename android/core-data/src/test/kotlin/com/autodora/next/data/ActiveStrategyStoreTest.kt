@@ -140,7 +140,7 @@ class ActiveStrategyStoreTest {
     }
 
     @Test
-    fun `mergeBoardDerivedSignals closes S2 to S1 feedback loop while respecting dismissals and manual overrides`() {
+    fun `mergeBoardDerivedSignals avoids electrified self-feedback loop and gates unconfirmed puzzle fallback`() {
         val cells = List(30) { idx ->
             CellState(
                 element = Element.MATCHABLE[idx % 6],
@@ -163,19 +163,47 @@ class ActiveStrategyStoreTest {
             startingBuoyElement = Element.WOOD
         )
 
-        val added = ActiveStrategyStore.mergeBoardDerivedSignals(board)
-        assertEquals(3, added)
+        // Single unconfirmed frame: must NOT emit puzzle_shield and must NEVER pollute activeVisualHints.hasElectrified!
+        val addedUnconfirmed = ActiveStrategyStore.mergeBoardDerivedSignals(board, allowPuzzleFallback = false)
+        assertEquals(2, addedUnconfirmed)
         assertTrue(ActiveStrategyStore.activeVisualHints.value.hasMonochrome)
-        assertTrue(ActiveStrategyStore.activeVisualHints.value.hasElectrified)
-        val ids = ActiveStrategyStore.activeChips.value.map { it.id }.toSet()
-        assertTrue(ids.containsAll(setOf("starting_buoy_shield", "traffic_light", "puzzle_shield")))
+        assertFalse("Board electrified noise must NOT feed back into activeVisualHints!", ActiveStrategyStore.activeVisualHints.value.hasElectrified)
+        assertFalse(ActiveStrategyStore.activeChips.value.any { it.id == "puzzle_shield" })
+
+        // 2-tick static confirmed frame: emits loose puzzle_shield(paramInt=0), which upgrades cleanly when OCR brings Water Strict Puzzle!
+        val addedConfirmed = ActiveStrategyStore.mergeBoardDerivedSignals(board, allowPuzzleFallback = true)
+        assertEquals(1, addedConfirmed)
+        val p0 = ActiveStrategyStore.activeChips.value.first { it.id == "puzzle_shield" }
+        assertEquals(0, p0.paramInt)
+
+        val waterStrict = WaveShieldChip(
+            "puzzle_shield",
+            "严格拼图盾·水",
+            ShieldCategory.SHAPE_AND_PUZZLE,
+            autoDetected = true,
+            paramInt = 1 or ((Element.WATER.code + 1) shl 2)
+        )
+        assertEquals(1, ActiveStrategyStore.applyAutoDetectedChips(listOf(waterStrict)))
+        assertEquals(waterStrict.paramInt, ActiveStrategyStore.activeChips.value.first { it.id == "puzzle_shield" }.paramInt)
 
         // User dismisses monochrome hint & puzzle_shield -> must NOT re-trigger on next board tick in same wave!
         ActiveStrategyStore.dismissVisualHint("monochrome")
         ActiveStrategyStore.removeChip("puzzle_shield")
-        val reAdded = ActiveStrategyStore.mergeBoardDerivedSignals(board)
+        val reAdded = ActiveStrategyStore.mergeBoardDerivedSignals(board, allowPuzzleFallback = true)
         assertEquals(0, reAdded)
         assertFalse(ActiveStrategyStore.activeVisualHints.value.hasMonochrome)
         assertFalse(ActiveStrategyStore.activeChips.value.any { it.id == "puzzle_shield" })
+    }
+
+    @Test
+    fun `applyAutoDetectedChips merges multi-enemy element masks within the same wave`() {
+        val fireClear = WaveShieldChip("clear_all_element", "首消全火", ShieldCategory.COUNT_AND_ELEMENT, autoDetected = true, paramElementMask = Element.FIRE.bitMask)
+        val woodClear = WaveShieldChip("clear_all_element", "首消全木", ShieldCategory.COUNT_AND_ELEMENT, autoDetected = true, paramElementMask = Element.WOOD.bitMask)
+
+        assertEquals(1, ActiveStrategyStore.applyAutoDetectedChips(listOf(fireClear)))
+        assertEquals(1, ActiveStrategyStore.applyAutoDetectedChips(listOf(woodClear)))
+
+        val merged = ActiveStrategyStore.activeChips.value.single { it.id == "clear_all_element" }
+        assertEquals(Element.FIRE.bitMask or Element.WOOD.bitMask, merged.paramElementMask)
     }
 }

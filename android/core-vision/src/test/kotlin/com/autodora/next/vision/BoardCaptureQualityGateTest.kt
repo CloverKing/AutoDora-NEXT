@@ -118,6 +118,43 @@ class BoardCaptureQualityGateTest {
         val glowEval = BoardCaptureQualityGate.evaluateBoardCaptureQuality(glowFrame, pair4.first, pair4.second, hasHpBar = true)
         assertFalse(glowEval.isCleanStaticPlayable)
         assertEquals("COMBO_EXPLOSION_GLOW", glowEval.rejectReason)
+
+        // 5. System / screen-recording white pill Toast occluding lower board rows
+        val (toastFrame, pair5) = makeCleanBoardAndFrame()
+        toastFrame.fillRect(65, 300, 295, 345, 0xFFF4F5F7.toInt())
+        val toastEval = BoardCaptureQualityGate.evaluateBoardCaptureQuality(toastFrame, pair5.first, pair5.second, hasHpBar = true)
+        assertFalse(toastEval.isCleanStaticPlayable)
+        assertEquals("SYSTEM_TOAST_OCCLUSION", toastEval.rejectReason)
+    }
+
+    @Test
+    fun `classifyDarkModalForCapture separates dark-sky in-battle enemy popup from full-screen stage info modal`() {
+        // Dark night/cave battle background (y in 0..0.32 is dark!), vivid team portraits/HP strip at y in [0.33..0.41],
+        // and dark enemy skill popup covering board [0.42..0.84] with readable white skill lines.
+        val popupFrame = ArrayVisionFrame(576, 1280, 0xFF14161C.toInt())
+        // Vivid team portraits + pink HP bar in [0.34..0.41]
+        popupFrame.fillRect(40, (1280 * 0.34f).toInt(), 536, (1280 * 0.405f).toInt(), 0xFFE84898.toInt())
+        // Dark popup body + white skill text stripes
+        popupFrame.fillRect(48, (1280 * 0.41f).toInt(), 528, (1280 * 0.84f).toInt(), 0xFF121318.toInt())
+        popupFrame.fillRect(100, (1280 * 0.52f).toInt(), 460, (1280 * 0.54f).toInt(), 0xFFEAECEF.toInt())
+        popupFrame.fillRect(100, (1280 * 0.62f).toInt(), 440, (1280 * 0.64f).toInt(), 0xFFEAECEF.toInt())
+
+        assertEquals(
+            DarkModalKind.ENEMY_LONG_PRESS_POPUP,
+            FlashRevealMemoryTracker.classifyDarkModalForCapture(popupFrame)
+        )
+
+        // Full-screen Stage Info modal covers [0.06..0.94] (hiding portraits/HP strip) + bottom teal action button
+        val stageModalFrame = ArrayVisionFrame(576, 1280, 0xFF12141A.toInt())
+        stageModalFrame.fillRect(100, (1280 * 0.48f).toInt(), 460, (1280 * 0.51f).toInt(), 0xFFEAECEF.toInt())
+        stageModalFrame.fillRect(100, (1280 * 0.56f).toInt(), 460, (1280 * 0.59f).toInt(), 0xFFEAECEF.toInt())
+        stageModalFrame.fillRect(100, (1280 * 0.64f).toInt(), 440, (1280 * 0.67f).toInt(), 0xFFEAECEF.toInt())
+        stageModalFrame.fillRect(120, (1280 * 0.90f).toInt(), 456, (1280 * 0.94f).toInt(), 0xFF1E7898.toInt())
+
+        assertEquals(
+            DarkModalKind.STAGE_INFO_MODAL,
+            FlashRevealMemoryTracker.classifyDarkModalForCapture(stageModalFrame)
+        )
     }
 
     @Test

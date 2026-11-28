@@ -1,7 +1,7 @@
 # 《神魔之塔》13 年全机制、敌技、特殊符石与盘面规则全景调研手册（2013–2026）
 
 > **调研与核验渠道**：游戏内官方 **《神魔百科》全量 98 项敵人技能 + 22 项符石狀態（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）**（详表见 [enemy_skill_audit.md](./enemy_skill_audit.md) 与 [runestone_status_audit.md](./runestone_status_audit.md)）、Tower of Saviors Fandom 繁中维基（`tos.fandom.com/zh`）、官方版本更新公告与实战录像标定。  
-> **同步基线**：状态栏已按 **`AutoDora-NEXT v0.9.1`**（`55` 项 C++20 引擎单测 + `125` 项 Android JVM 单测 + `9` 项 Python ML 单测共 `189` 项全通过，覆盖非瀑布多得分 CV + 24×24 黑白轮廓 `MonochromeOrbMatcher`、Stage 2A `BoardMasterGridNetV2` & Stage 2B 36 类 CenterNet `EnemyIconNetV2` + 关键点数值徽标 OCR、`S2→S1` 盘面反哺策略闭环、499 权威敌技闭环、6×5 双向同步单属性矩阵与第 6 组蓝色自定义操作硬约束编排）的真实落地情况全面刷新。
+> **同步基线**：状态栏已按 **`AutoDora-NEXT v0.9.1+ (dev)`**（`55` 项 C++20 引擎单测 + `128` 项 Android JVM 单测 + `9` 项 Python ML 单测共 `192` 项全通过，覆盖非瀑布多得分 CV + 24×24 黑白轮廓 `MonochromeOrbMatcher`、Stage 2A `BoardMasterGridNetV2` & Stage 2B 36 类 CenterNet `EnemyIconNetV2` 盒式抗混叠与自遮罩 + 关键点数值/颜色直读、防自激稳态 `S2→S1` 盘面反哺、复合敌技无损升级与双端策略抽屉自动回显、499 权威敌技闭环、6×5 双向同步单属性矩阵与第 6 组蓝色自定义操作硬约束编排）的真实落地情况全面刷新。
 
 ---
 

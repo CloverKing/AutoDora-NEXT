@@ -263,6 +263,9 @@ object BoardCaptureQualityGate {
         if (emptyHoleCount >= 2 || (emptyHoleCount >= 1 && recognition.averageConfidence < 0.90f)) {
             return BoardQualityEvaluation(false, "MID_CLEAR_EMPTY_HOLES", emptyHoleCount, glowRatio, p90CenterV)
         }
+        if (hasSystemToastBannerOcclusion(frame, geometry)) {
+            return BoardQualityEvaluation(false, "SYSTEM_TOAST_OCCLUSION", emptyHoleCount, glowRatio, p90CenterV)
+        }
         if (glowRatio >= 0.22f) {
             return BoardQualityEvaluation(false, "COMBO_EXPLOSION_GLOW", emptyHoleCount, glowRatio, p90CenterV)
         }
@@ -280,6 +283,47 @@ object BoardCaptureQualityGate {
         }
 
         return BoardQualityEvaluation(true, "OK", emptyHoleCount, glowRatio, p90CenterV)
+    }
+
+    /**
+     * Detects bright white/light-grey Android/HyperOS horizontal Toast pills (e.g. "已开始录屏...")
+     * or wide white banner overlays occluding lower board rows (`y in [0.54..0.92]` of the board).
+     */
+    private fun hasSystemToastBannerOcclusion(frame: VisionFrame, geometry: BoardGeometry): Boolean {
+        val boardW = (geometry.rightPx - geometry.leftPx).coerceAtLeast(1f)
+        val boardH = (geometry.bottomPx - geometry.topPx).coerceAtLeast(1f)
+        val x0 = (geometry.leftPx + boardW * 0.22f).roundToInt().coerceIn(0, frame.width - 2)
+        val x1 = (geometry.leftPx + boardW * 0.78f).roundToInt().coerceIn(x0 + 1, frame.width - 1)
+        val y0 = (geometry.topPx + boardH * 0.54f).roundToInt().coerceIn(0, frame.height - 2)
+        val y1 = (geometry.topPx + boardH * 0.92f).roundToInt().coerceIn(y0 + 1, frame.height - 1)
+        val stepX = max(2, (x1 - x0) / 32)
+        val stepY = max(2, (y1 - y0) / 14)
+        var bannerRows = 0
+        var y = y0
+        while (y <= y1) {
+            var neutralWhitePx = 0
+            var rowTotal = 0
+            var x = x0
+            while (x <= x1) {
+                val argb = frame.getArgb(x, y)
+                val r = (argb ushr 16) and 0xFF
+                val g = (argb ushr 8) and 0xFF
+                val b = argb and 0xFF
+                val minC = min(r, min(g, b))
+                val maxC = max(r, max(g, b))
+                if (minC >= 212 && (maxC - minC) <= 22) {
+                    neutralWhitePx++
+                }
+                rowTotal++
+                x += stepX
+            }
+            if (rowTotal > 0 && neutralWhitePx.toFloat() / rowTotal >= 0.46f) {
+                bannerRows++
+                if (bannerRows >= 2) return true
+            }
+            y += stepY
+        }
+        return false
     }
 
     private fun measureBottomRightComboGlowRatio(frame: VisionFrame, geometry: BoardGeometry): Float {

@@ -307,6 +307,22 @@ class TosEnemySkillParserV2Test {
             EnemySkillParseStatus.NON_BOARD_KNOWN,
             parser.parsePlainText("【光之佑律】\n進場時、每回合結束時及每次發動主動技能 ⇒ 所有被移除及引爆的符石 ⇒ 以光符石代替").allBlocks.single().parseStatus
         )
+
+        // 5. Compound shields from real-device blind videos (v07 【水限制形狀盾】, v08 unnumbered 【指定連擊法印】, 2x2 + element)
+        val waterStrictPuzzle = parser.parsePlainText(
+            "【水限制形狀盾】\n首批須以指定形狀消除相連的水符石 (不可連同形狀外旁邊的水符石消除)，才會對敵人造成攻擊傷害"
+        ).activeChips.first { it.id == "puzzle_shield" }
+        assertEquals(1, waterStrictPuzzle.paramInt and 1)
+        assertEquals(Element.WATER.code + 1, (waterStrictPuzzle.paramInt ushr 2) and 0x0F)
+
+        val unnumberedSeal = parser.parsePlainText(
+            "【指定連擊法印】\n首批消除指定連擊數 (Combo)，才會對敵人造成攻擊傷害；反之連擊數愈偏差，敵人攻擊力愈高"
+        ).activeChips.firstOrNull { it.id == "exact_first_combo" }
+        assertNotNull("Unnumbered 指定連擊法印 must emit default 5C exact_first_combo!", unnumberedSeal)
+        assertEquals(5, unnumberedSeal!!.paramInt)
+
+        val sq2Elem = parser.parsePlainText("【水田字盾】\n以 2×2 田字形消除水符石").activeChips.first { it.id == "square_2x2" }
+        assertEquals(Element.WATER.bitMask, sq2Elem.paramElementMask)
     }
 
     @Test

@@ -94,6 +94,7 @@ class OverlayTuningDrawerController(
     private var burstOrbsVal = 15
     private var maxElemOrbsVal = 5
     private var elemLimitMode = 0
+    private var lastAutoExpandedSig: String = ""
     private var digitalOrbsVal = 18
     private var stepLimitVal = 15
     private var exactStepsVal = 20
@@ -258,6 +259,42 @@ class OverlayTuningDrawerController(
                 stepRangeMinVal = lo
                 stepRangeMaxVal = hi
             }
+        }
+
+        fun limitMaskOf(baseId: String): Int {
+            var m = byId[baseId]?.paramElementMask ?: 0
+            for (e in 0..5) if (byId.containsKey("${baseId}_$e")) m = m or (1 shl e)
+            return m
+        }
+        val limitBaseIds = listOf(
+            "anti_first_wave",
+            "forbid_all",
+            "clear_all_element",
+            "keep_element_at_least_one",
+            "unmatchable_elements"
+        )
+        val limitMasks = limitBaseIds.map { limitMaskOf(it) }
+        if (limitMasks.getOrElse(elemLimitMode) { 0 } == 0) {
+            val nextMode = limitBaseIds.indices.firstOrNull { idx ->
+                limitMasks[idx] != 0 && byId[limitBaseIds[idx]]?.autoDetected == true
+            } ?: limitMasks.indexOfFirst { it != 0 }.takeIf { it >= 0 }
+            if (nextMode != null) {
+                elemLimitMode = nextMode
+            }
+        }
+
+        val autoChips = activeChips.filter { it.autoDetected }
+        val autoSig = autoChips.sortedBy { it.id }
+            .joinToString("|") { "${it.id}:${it.paramInt}:${it.paramElementMask}" }
+        if (autoSig.isNotEmpty() && autoSig != lastAutoExpandedSig) {
+            lastAutoExpandedSig = autoSig
+            val autoIdSet = autoChips.map { it.id }.toSet()
+            val targetCard = resolveStrategyCardForIds(autoIdSet)
+            if (targetCard != null) {
+                expandedCardByTab[1] = targetCard
+            }
+        } else if (autoSig.isEmpty()) {
+            lastAutoExpandedSig = ""
         }
 
         if (rootView.visibility == View.VISIBLE) {
@@ -494,8 +531,14 @@ class OverlayTuningDrawerController(
             ).apply { bottomMargin = dp(8) }
         }
         val topBar = hRow(bottomMarginDp = if (activeChips.isNotEmpty()) 5 else 0)
+        val activeBarSummary = if (activeChips.isNotEmpty()) {
+            val shieldBrief = activeChips.take(2).joinToString(" / ") { LocaleHelper.formatWaveChipLabel(lctx, it) }
+            "${s(R.string.unified_strategy_bar_title)} · $goalLabel · $shieldBrief"
+        } else {
+            "${s(R.string.unified_strategy_bar_title)} · $goalLabel"
+        }
         topBar.addView(TextView(context).apply {
-            text = "${s(R.string.unified_strategy_bar_title)} · $goalLabel"
+            text = activeBarSummary
             textSize = 10.5f
             typeface = Typeface.DEFAULT_BOLD
             maxLines = 2
@@ -521,8 +564,7 @@ class OverlayTuningDrawerController(
         })
         topCard.addView(topBar)
 
-        val hasAnyHint = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise ||
-            activeVisualHints.hasElectrified || activeVisualHints.hasFrozenOrPetrified
+        val hasAnyHint = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise
         if (activeChips.isNotEmpty() || bypassedGreySkills.isNotEmpty() || hasAnyHint) {
             if (activeChips.isNotEmpty()) {
                 val chipScroll = HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false }
@@ -573,16 +615,6 @@ class OverlayTuningDrawerController(
                     extraRow.addView(makeChip("×", padH = 5) {
                         ActiveStrategyStore.dismissVisualHint("disguise")
                     }.also { styleChip(it, p.secondaryContainer, p.onSecondaryContainer, ACCENT_AMBER) })
-                }
-                if (activeVisualHints.hasElectrified) {
-                    extraRow.addView(makeChip("${s(R.string.ov_hint_elec_pill)} ×", padH = 6) {
-                        ActiveStrategyStore.dismissVisualHint("electrified")
-                    }.also { styleChip(it, p.secondaryContainer, p.onSecondaryContainer, ACCENT_BLUE) })
-                }
-                if (activeVisualHints.hasFrozenOrPetrified) {
-                    extraRow.addView(makeChip("${s(R.string.ov_hint_frozen_pill)} ×", padH = 6) {
-                        ActiveStrategyStore.dismissVisualHint("frozen_petrified")
-                    }.also { styleChip(it, p.secondaryContainer, p.onSecondaryContainer, ACCENT_TEAL) })
                 }
                 for (sk in bypassedGreySkills) {
                     extraRow.addView(makeChip("⊘ ${sk.titleZhTw.ifBlank { sk.chips.joinToString { it.label } }}", padH = 6) {
@@ -708,7 +740,7 @@ class OverlayTuningDrawerController(
 
         // ==================== CARD ⑤: 预算与起手 (Blue) ====================
         addAccordionGroupCard(4, s(R.string.ov_card_budget_start), card4Summary, card4Highlight, ACCENT_BLUE, p, R.string.help_basic_steps_title, R.string.help_budget_start_full_body)?.let { body ->
-            buildBudgetAndStartCardBody(body, cfg, activeIds, p)
+            buildBudgetAndStartCardBody(body, cfg, byId, activeIds, p)
         }
 
         // ==================== CARD ⑥: 队长与特性 (Purple) ====================
@@ -821,17 +853,18 @@ class OverlayTuningDrawerController(
             }
             ActiveStrategyStore.replaceGroup(WaveShieldCatalog.COMBO_EXCLUSIVE_IDS, chip)
         }
+        fun isAi(id: String): Boolean = byId[id]?.autoDetected == true
         val cRow1 = hRow(bottomMarginDp = 4)
         listOf("none" to s(R.string.combo_type_none), "min_combo" to s(R.string.combo_type_min_total), "min_first_combo" to s(R.string.combo_type_min_first), "min_first_elem_combo" to s(R.string.combo_type_min_first_elem))
-            .forEachIndexed { i, (id, lbl) -> cRow1.addView(makeToggle(lbl, curComboMode == id, p, weight = 1f, marginEndDp = if (i == 3) 0 else 3) { applyCombo(id) }) }
+            .forEachIndexed { i, (id, lbl) -> cRow1.addView(makeToggle(lbl, curComboMode == id, p, weight = 1f, marginEndDp = if (i == 3) 0 else 3, aiHighlighted = id != "none" && curComboMode == id && isAi(id)) { applyCombo(id) }) }
         body.addView(cRow1)
         val cRow2 = hRow(bottomMarginDp = 4)
         listOf("max_combo" to s(R.string.combo_type_max_total), "exact_combo" to s(R.string.combo_type_exact_total), "exact_first_combo" to s(R.string.combo_type_exact_first), "zero_combo" to s(R.string.combo_type_zero))
-            .forEachIndexed { i, (id, lbl) -> cRow2.addView(makeToggle(lbl, curComboMode == id, p, weight = 1f, marginEndDp = if (i == 3) 0 else 3) { applyCombo(id) }) }
+            .forEachIndexed { i, (id, lbl) -> cRow2.addView(makeToggle(lbl, curComboMode == id, p, weight = 1f, marginEndDp = if (i == 3) 0 else 3, aiHighlighted = curComboMode == id && isAi(id)) { applyCombo(id) }) }
         body.addView(cRow2)
         val cRow3 = hRow(bottomMarginDp = 4)
         listOf("wave1_same_kind" to s(R.string.combo_type_wave1_same_kind), "wave1_distinct_kind" to s(R.string.combo_type_wave1_distinct_kind), "odd_combo" to s(R.string.combo_type_odd), "even_combo" to s(R.string.combo_type_even))
-            .forEachIndexed { i, (id, lbl) -> cRow3.addView(makeToggle(lbl, curComboMode == id, p, weight = 1f, marginEndDp = if (i == 3) 0 else 3) { applyCombo(id) }) }
+            .forEachIndexed { i, (id, lbl) -> cRow3.addView(makeToggle(lbl, curComboMode == id, p, weight = 1f, marginEndDp = if (i == 3) 0 else 3, aiHighlighted = curComboMode == id && isAi(id)) { applyCombo(id) }) }
         body.addView(cRow3)
 
         if (curComboMode in setOf("min_combo", "max_combo", "min_first_combo", "min_first_elem_combo", "exact_combo", "exact_first_combo", "wave1_same_kind", "wave1_distinct_kind")) {
@@ -872,24 +905,24 @@ class OverlayTuningDrawerController(
         if (curComboMode != "zero_combo") {
             body.addView(makeSubLabel(s(R.string.combo_extra_header), p))
             val exRow1 = hRow(bottomMarginDp = 4)
-            exRow1.addView(makeToggle(s(R.string.combo_extra_same_c), "same_combo_elements" in activeIds, p, weight = 1f) {
+            exRow1.addView(makeToggle(s(R.string.combo_extra_same_c), "same_combo_elements" in activeIds, p, weight = 1f, aiHighlighted = isAi("same_combo_elements")) {
                 onToggleWaveChip(WaveShieldChip("same_combo_elements", s(R.string.combo_extra_same_c), ShieldCategory.COMBO))
             })
-            exRow1.addView(makeToggle(s(R.string.shield_no_cascade), "no_cascade" in activeIds, p, weight = 1f) {
+            exRow1.addView(makeToggle(s(R.string.shield_no_cascade), "no_cascade" in activeIds, p, weight = 1f, aiHighlighted = isAi("no_cascade")) {
                 onToggleWaveChip(WaveShieldChip("no_cascade", s(R.string.shield_no_cascade), ShieldCategory.COMBO))
             })
-            exRow1.addView(makeToggle(s(R.string.combo_extra_second_wave, secondWaveVal), "second_wave_combo" in activeIds, p, weight = 1f, marginEndDp = 0) {
+            exRow1.addView(makeToggle(s(R.string.combo_extra_second_wave, secondWaveVal), "second_wave_combo" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("second_wave_combo")) {
                 onToggleWaveChip(WaveShieldChip("second_wave_combo", s(R.string.combo_extra_second_wave, secondWaveVal), ShieldCategory.COMBO, paramInt = secondWaveVal))
             })
             body.addView(exRow1)
             val exRow2 = hRow(bottomMarginDp = 4)
             val sameMask = if (sameElemTarget in 0..5) (1 shl sameElemTarget) else 0
-            exRow2.addView(makeToggle(s(R.string.combo_extra_same_elem, sameElemGroupsVal), "same_elem_combos" in activeIds, p, weight = 1f) {
+            exRow2.addView(makeToggle(s(R.string.combo_extra_same_elem, sameElemGroupsVal), "same_elem_combos" in activeIds, p, weight = 1f, aiHighlighted = isAi("same_elem_combos")) {
                 onToggleWaveChip(WaveShieldChip("same_elem_combos", s(R.string.combo_extra_same_elem, sameElemGroupsVal), ShieldCategory.COMBO, paramInt = sameElemGroupsVal, paramElementMask = sameMask))
             })
             val eqJoined = (0..5).filter { (equalElemsMask and (1 shl it)) != 0 }.joinToString("=") { LocaleHelper.elementLabel(lctx, it) }
             val eqLbl = s(R.string.combo_extra_equal_multi_fmt, eqJoined)
-            exRow2.addView(makeToggle(eqLbl, "equal_pair_light_dark" in activeIds, p, weight = 1f, marginEndDp = 0) {
+            exRow2.addView(makeToggle(eqLbl, "equal_pair_light_dark" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("equal_pair_light_dark")) {
                 onToggleWaveChip(WaveShieldChip("equal_pair_light_dark", eqLbl, ShieldCategory.COMBO, paramElementMask = 0x100 or equalElemsMask))
             })
             body.addView(exRow2)
@@ -897,7 +930,7 @@ class OverlayTuningDrawerController(
                 val eqRow = hRow(bottomMarginDp = 4)
                 for (e in 0..5) {
                     val bit = 1 shl e
-                    eqRow.addView(makeElementBtn(e, (equalElemsMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3) {
+                    eqRow.addView(makeElementBtn(e, (equalElemsMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = isAi("equal_pair_light_dark")) {
                         val next = equalElemsMask xor bit
                         if (Integer.bitCount(next) >= 2) {
                             equalElemsMask = next
@@ -976,13 +1009,16 @@ class OverlayTuningDrawerController(
             }
         }
 
+        fun isAi(id: String): Boolean = byId[id]?.autoDetected == true
+        val reqAi = listOf("require_elements", "three_elements", "five_elements", "five_elements_enchanted").any { isAi(it) }
+
         // Sub-group A: Min Distinct + Required + Per-Color Enchanted
         body.addView(makeSubLabel(s(R.string.elem_min_distinct_label), p))
         val curMinDist = byId["min_distinct_elements"]?.paramInt ?: 0
         val distRow = hRow(bottomMarginDp = 4)
         listOf(0, 2, 3, 4, 5, 6).forEachIndexed { idx, cnt ->
             val lbl = if (cnt == 0) s(R.string.elem_min_distinct_any) else s(R.string.elem_min_distinct_fmt, cnt)
-            distRow.addView(makeToggle(lbl, curMinDist == cnt, p, weight = 1f, marginEndDp = if (idx == 5) 0 else 3) {
+            distRow.addView(makeToggle(lbl, curMinDist == cnt, p, weight = 1f, marginEndDp = if (idx == 5) 0 else 3, aiHighlighted = cnt > 0 && curMinDist == cnt && isAi("min_distinct_elements")) {
                 if (curMinDist != cnt) ActiveStrategyStore.replaceGroup(legacyReqIds, null)
                 if (cnt == 0) ActiveStrategyStore.removeChip("min_distinct_elements")
                 else onUpsertWaveChip(WaveShieldChip("min_distinct_elements", s(R.string.elem_min_distinct_fmt, cnt), ShieldCategory.COUNT_AND_ELEMENT, paramInt = cnt))
@@ -1009,7 +1045,7 @@ class OverlayTuningDrawerController(
         val reqRow = hRow(bottomMarginDp = 3)
         for (e in 0..5) {
             val bit = 1 shl e
-            reqRow.addView(makeElementBtn(e, (effReq and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3) {
+            reqRow.addView(makeElementBtn(e, (effReq and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = reqAi) {
                 val nReq = effReq xor bit
                 val adding = (nReq and bit) != 0
                 val nEnch = if (adding) effEnch else (effEnch and bit.inv())
@@ -1022,7 +1058,7 @@ class OverlayTuningDrawerController(
         for (e in 0..5) {
             val bit = 1 shl e
             val on = (effEnch and bit) != 0
-            enchRow.addView(makeElementBtn(e, on, p, suffix = "+", weight = 1f, marginEndDp = if (e == 5) 0 else 3) {
+            enchRow.addView(makeElementBtn(e, on, p, suffix = "+", weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = reqAi) {
                 val turningOn = !on
                 val nReq = if (turningOn) (effReq or bit) else effReq
                 val nEnch = if (turningOn) (effEnch or bit) else (effEnch and bit.inv())
@@ -1047,7 +1083,7 @@ class OverlayTuningDrawerController(
         val bRow = hRow(bottomMarginDp = if (burstMask != 0) 4 else 3)
         for (e in 0..5) {
             val bit = 1 shl e
-            bRow.addView(makeElementBtn(e, (burstMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3) {
+            bRow.addView(makeElementBtn(e, (burstMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = isAi("elem_burst_shield")) {
                 saveBurst(burstMask xor bit, burstOrbsVal)
             })
         }
@@ -1072,7 +1108,7 @@ class OverlayTuningDrawerController(
         val mxRow = hRow(bottomMarginDp = if (maxOrbsMask != 0) 4 else 2)
         for (e in 0..5) {
             val bit = 1 shl e
-            mxRow.addView(makeElementBtn(e, (maxOrbsMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3) {
+            mxRow.addView(makeElementBtn(e, (maxOrbsMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = isAi("max_element_orbs")) {
                 saveMaxElemOrbs(maxOrbsMask xor bit, maxElemOrbsVal)
             })
         }
@@ -1088,23 +1124,27 @@ class OverlayTuningDrawerController(
         // Sub-group C: Attribute Limits (Anti-1st / Forbid All / Clear All 1st / Keep ≥1 / Unmatchable)
         body.addView(makeSubDivider(p))
         body.addView(makeSubLabel(s(R.string.elem_forbid_label), p))
+        fun fmtLimTab(baseLbl: String, mask: Int): String {
+            val cnt = Integer.bitCount(mask and 0x3F)
+            return if (cnt > 0) "$baseLbl($cnt)" else baseLbl
+        }
         val limTabs1 = hRow(bottomMarginDp = 3)
         listOf(
-            0 to s(R.string.elem_limit_anti),
-            1 to s(R.string.elem_limit_forbid),
-            2 to s(R.string.elem_limit_clear_all)
-        ).forEachIndexed { idx, (modeId, lbl) ->
-            limTabs1.addView(makeToggle(lbl, elemLimitMode == modeId, p, weight = 1f, marginEndDp = if (idx == 2) 0 else 3) {
+            Triple(0, fmtLimTab(s(R.string.elem_limit_anti), antiMask), antiMask != 0 && isAi("anti_first_wave")),
+            Triple(1, fmtLimTab(s(R.string.elem_limit_forbid), forbidMask), forbidMask != 0 && isAi("forbid_all")),
+            Triple(2, fmtLimTab(s(R.string.elem_limit_clear_all), clearMask), clearMask != 0 && isAi("clear_all_element"))
+        ).forEachIndexed { idx, (modeId, lbl, modeAi) ->
+            limTabs1.addView(makeToggle(lbl, elemLimitMode == modeId, p, weight = 1f, marginEndDp = if (idx == 2) 0 else 3, aiHighlighted = modeAi) {
                 elemLimitMode = modeId; rebuildContent(preserveScroll = true)
             })
         }
         body.addView(limTabs1)
         val limTabs2 = hRow(bottomMarginDp = 3)
         listOf(
-            3 to s(R.string.elem_limit_keep_one),
-            4 to s(R.string.elem_limit_unmatchable)
-        ).forEachIndexed { idx, (modeId, lbl) ->
-            limTabs2.addView(makeToggle(lbl, elemLimitMode == modeId, p, weight = 1f, marginEndDp = if (idx == 1) 0 else 3) {
+            Triple(3, fmtLimTab(s(R.string.elem_limit_keep_one), keepOneMask), keepOneMask != 0 && isAi("keep_element_at_least_one")),
+            Triple(4, fmtLimTab(s(R.string.elem_limit_unmatchable), unmatchMask), unmatchMask != 0 && isAi("unmatchable_elements"))
+        ).forEachIndexed { idx, (modeId, lbl, modeAi) ->
+            limTabs2.addView(makeToggle(lbl, elemLimitMode == modeId, p, weight = 1f, marginEndDp = if (idx == 1) 0 else 3, aiHighlighted = modeAi) {
                 elemLimitMode = modeId; rebuildContent(preserveScroll = true)
             })
         }
@@ -1112,10 +1152,17 @@ class OverlayTuningDrawerController(
         val curLimMask = when (elemLimitMode) {
             0 -> antiMask; 1 -> forbidMask; 2 -> clearMask; 3 -> keepOneMask; else -> unmatchMask
         }
+        val curLimAi = when (elemLimitMode) {
+            0 -> isAi("anti_first_wave")
+            1 -> isAi("forbid_all")
+            2 -> isAi("clear_all_element")
+            3 -> isAi("keep_element_at_least_one")
+            else -> isAi("unmatchable_elements")
+        }
         val limRow = hRow(bottomMarginDp = 4)
         for (e in 0..5) {
             val bit = 1 shl e
-            limRow.addView(makeElementBtn(e, (curLimMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3) {
+            limRow.addView(makeElementBtn(e, (curLimMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = curLimAi) {
                 val nxt = curLimMask xor bit
                 val on = (nxt and bit) != 0
                 when (elemLimitMode) {
@@ -1163,7 +1210,7 @@ class OverlayTuningDrawerController(
             ActiveStrategyStore.removeChip("first_wave_full_clear"); ActiveStrategyStore.removeChip("zero_combo")
             onUpsertWaveChip(WaveShieldChip("digital_orb_count", s(R.string.shield_digital_orbs_fmt, digitalOrbsVal), ShieldCategory.COUNT_AND_ELEMENT, paramInt = digitalOrbsVal))
         }.also { styleChip(it, p.chipOffBg, p.onSurface, p.chipOffStroke) })
-        cntRow1.addView(makeToggle(s(R.string.shield_digital_orbs_fmt, digitalOrbsVal), "digital_orb_count" in activeIds, p, weight = 1f) {
+        cntRow1.addView(makeToggle(s(R.string.shield_digital_orbs_fmt, digitalOrbsVal), "digital_orb_count" in activeIds, p, weight = 1f, aiHighlighted = isAi("digital_orb_count")) {
             if ("digital_orb_count" in activeIds) ActiveStrategyStore.removeChip("digital_orb_count")
             else {
                 ActiveStrategyStore.removeChip("first_wave_full_clear"); ActiveStrategyStore.removeChip("zero_combo")
@@ -1175,7 +1222,7 @@ class OverlayTuningDrawerController(
             ActiveStrategyStore.removeChip("first_wave_full_clear"); ActiveStrategyStore.removeChip("zero_combo")
             onUpsertWaveChip(WaveShieldChip("digital_orb_count", s(R.string.shield_digital_orbs_fmt, digitalOrbsVal), ShieldCategory.COUNT_AND_ELEMENT, paramInt = digitalOrbsVal))
         }.also { styleChip(it, p.chipOffBg, p.onSurface, p.chipOffStroke) })
-        cntRow1.addView(makeToggle(s(R.string.shield_full_clear), "first_wave_full_clear" in activeIds, p, weight = 1f, marginEndDp = 0) {
+        cntRow1.addView(makeToggle(s(R.string.shield_full_clear), "first_wave_full_clear" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("first_wave_full_clear")) {
             if ("first_wave_full_clear" in activeIds) ActiveStrategyStore.removeChip("first_wave_full_clear")
             else {
                 ActiveStrategyStore.removeChip("digital_orb_count"); ActiveStrategyStore.removeChip("zero_combo")
@@ -1185,25 +1232,25 @@ class OverlayTuningDrawerController(
         body.addView(cntRow1)
 
         val spRow1 = hRow(bottomMarginDp = 4)
-        spRow1.addView(makeToggle(s(R.string.shield_any_enchanted_orb), "any_enchanted_orb_shield" in activeIds, p, weight = 1f) {
+        spRow1.addView(makeToggle(s(R.string.shield_any_enchanted_orb), "any_enchanted_orb_shield" in activeIds, p, weight = 1f, aiHighlighted = isAi("any_enchanted_orb_shield")) {
             onToggleWaveChip(WaveShieldChip("any_enchanted_orb_shield", s(R.string.shield_any_enchanted_orb), ShieldCategory.COUNT_AND_ELEMENT))
         })
-        spRow1.addView(makeToggle(s(R.string.shield_race_orb), "race_orb_shield" in activeIds, p, weight = 1f) {
+        spRow1.addView(makeToggle(s(R.string.shield_race_orb), "race_orb_shield" in activeIds, p, weight = 1f, aiHighlighted = isAi("race_orb_shield")) {
             onToggleWaveChip(WaveShieldChip("race_orb_shield", s(R.string.shield_race_orb), ShieldCategory.COUNT_AND_ELEMENT))
         })
-        spRow1.addView(makeToggle(s(R.string.shield_char_orb_first), "char_orb_first_wave" in activeIds, p, weight = 1f, marginEndDp = 0) {
+        spRow1.addView(makeToggle(s(R.string.shield_char_orb_first), "char_orb_first_wave" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("char_orb_first_wave")) {
             onToggleWaveChip(WaveShieldChip("char_orb_first_wave", s(R.string.shield_char_orb_first), ShieldCategory.COUNT_AND_ELEMENT))
         })
         body.addView(spRow1)
 
         val spRow2 = hRow(bottomMarginDp = 4)
-        spRow2.addView(makeToggle(s(R.string.shield_starting_buoy), "starting_buoy_shield" in activeIds, p, weight = 1f) {
+        spRow2.addView(makeToggle(s(R.string.shield_starting_buoy), "starting_buoy_shield" in activeIds, p, weight = 1f, aiHighlighted = isAi("starting_buoy_shield")) {
             onToggleWaveChip(WaveShieldChip("starting_buoy_shield", s(R.string.shield_starting_buoy), ShieldCategory.COUNT_AND_ELEMENT))
         })
-        spRow2.addView(makeToggle(s(R.string.shield_forbid_weakened), "forbid_weakened_orb" in activeIds, p, weight = 1f) {
+        spRow2.addView(makeToggle(s(R.string.shield_forbid_weakened), "forbid_weakened_orb" in activeIds, p, weight = 1f, aiHighlighted = isAi("forbid_weakened_orb")) {
             onToggleWaveChip(WaveShieldChip("forbid_weakened_orb", s(R.string.shield_forbid_weakened), ShieldCategory.COUNT_AND_ELEMENT))
         })
-        spRow2.addView(makeToggle(s(R.string.shield_luminous_orb), "luminous_orb_shield" in activeIds, p, weight = 1f, marginEndDp = 0) {
+        spRow2.addView(makeToggle(s(R.string.shield_luminous_orb), "luminous_orb_shield" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("luminous_orb_shield")) {
             onToggleWaveChip(WaveShieldChip("luminous_orb_shield", s(R.string.shield_luminous_orb), ShieldCategory.COUNT_AND_ELEMENT))
         })
         body.addView(spRow2)
@@ -1308,16 +1355,21 @@ class OverlayTuningDrawerController(
             }
             val condSummary = if (condParts.isEmpty()) s(R.string.min_match_fmt, 3) else condParts.joinToString("·")
             val hasCustomCond = condParts.isNotEmpty()
+            val shapeAi = dispShape != (if (baseEr.clearAllFirstWave) TargetShape.CLEAR_ALL else baseEr.targetShape)
+            val prioAi = effEr.priority != baseEr.priority
+            val timingAi = dispTiming != baseEr.timing
+            val condAi = effEr.minTotalOrbs != baseEr.minTotalOrbs || effEr.maxTotalOrbs != baseEr.maxTotalOrbs ||
+                effEr.requireEnchanted != baseEr.requireEnchanted
             val isShapeOpen = expandedShapeElemIdx == e
             val isCondOpen = expandedCondElemIdx == e
             val row = hRow(bottomMarginDp = if (e == 5 && !isShapeOpen && !isCondOpen) 0 else 3)
             row.addView(makeElementBtn(e, true, p, weight = 0.62f, marginEndDp = 3) {})
-            row.addView(makeToggle(LocaleHelper.targetShapeLabel(lctx, dispShape), dispShape != TargetShape.ANY || isShapeOpen, p, weight = 1.05f, marginEndDp = 3) {
+            row.addView(makeToggle(LocaleHelper.targetShapeLabel(lctx, dispShape), dispShape != TargetShape.ANY || isShapeOpen, p, weight = 1.05f, marginEndDp = 3, aiHighlighted = shapeAi) {
                 expandedCondElemIdx = null
                 expandedShapeElemIdx = if (isShapeOpen) null else e
                 rebuildContent(preserveScroll = true)
             })
-            row.addView(makeToggle(LocaleHelper.elementPriorityLabel(lctx, effEr.priority), effEr.priority != ElementPriority.NORMAL, p, weight = 0.92f, marginEndDp = 3) {
+            row.addView(makeToggle(LocaleHelper.elementPriorityLabel(lctx, effEr.priority), effEr.priority != ElementPriority.NORMAL, p, weight = 0.92f, marginEndDp = 3, aiHighlighted = prioAi) {
                 val nxt = when (effEr.priority) {
                     ElementPriority.NORMAL -> ElementPriority.HIGH
                     ElementPriority.HIGH -> ElementPriority.KEEP_AT_LEAST_ONE
@@ -1330,7 +1382,7 @@ class OverlayTuningDrawerController(
                     cur.copy(elementRules = cur.elementRules.toMutableList().also { it[e] = baseEr.copy(priority = nxt) })
                 }
             })
-            row.addView(makeToggle(LocaleHelper.matchTimingLabel(lctx, dispTiming), dispTiming != MatchTiming.ANY, p, weight = 0.92f, marginEndDp = 3) {
+            row.addView(makeToggle(LocaleHelper.matchTimingLabel(lctx, dispTiming), dispTiming != MatchTiming.ANY, p, weight = 0.92f, marginEndDp = 3, aiHighlighted = timingAi) {
                 val nxt = when (dispTiming) {
                     MatchTiming.ANY -> MatchTiming.MUST_FIRST_WAVE
                     MatchTiming.MUST_FIRST_WAVE -> MatchTiming.FORBID_FIRST_WAVE_ALLOW_CASCADE
@@ -1343,7 +1395,7 @@ class OverlayTuningDrawerController(
                     cur.copy(elementRules = cur.elementRules.toMutableList().also { it[e] = baseEr.copy(timing = nxt) })
                 }
             })
-            row.addView(makeToggle("$condSummary▾", hasCustomCond || isCondOpen, p, weight = 0.98f, marginEndDp = 0) {
+            row.addView(makeToggle("$condSummary▾", hasCustomCond || isCondOpen, p, weight = 0.98f, marginEndDp = 0, aiHighlighted = condAi) {
                 expandedShapeElemIdx = null
                 expandedCondElemIdx = if (isCondOpen) null else e
                 rebuildContent(preserveScroll = true)
@@ -1523,19 +1575,21 @@ class OverlayTuningDrawerController(
             val packed = (if (mode == 2) 1 else 0) or (if (ench) 2 else 0) or (if (elem in 0..5) ((elem + 1) shl 2) else 0) or ((shape and 0x0F) shl 8)
             ActiveStrategyStore.replaceGroup(WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS, WaveShieldChip("puzzle_shield", s(if (mode == 2) R.string.puzzle_mode_strict else R.string.puzzle_mode_normal), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = packed))
         }
+        fun isAi(id: String): Boolean = byId[id]?.autoDetected == true
+        val puzAi = WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS.any { isAi(it) }
         val pzRow = hRow(bottomMarginDp = 4)
         pzRow.addView(makeToggle(s(R.string.puzzle_mode_off), pMode == 0, p, weight = 0.8f) { savePuz(0, false, -1, 0) })
-        pzRow.addView(makeToggle(s(R.string.puzzle_mode_normal), pMode == 1, p, weight = 1f) { savePuz(1, pEnch, pElem, pShape) })
-        pzRow.addView(makeToggle(s(R.string.puzzle_mode_strict), pMode == 2, p, weight = 1f, marginEndDp = if (pMode > 0) 4 else 0) { savePuz(2, pEnch, pElem, pShape) })
+        pzRow.addView(makeToggle(s(R.string.puzzle_mode_normal), pMode == 1, p, weight = 1f, aiHighlighted = pMode == 1 && puzAi) { savePuz(1, pEnch, pElem, pShape) })
+        pzRow.addView(makeToggle(s(R.string.puzzle_mode_strict), pMode == 2, p, weight = 1f, marginEndDp = if (pMode > 0) 4 else 0, aiHighlighted = pMode == 2 && puzAi) { savePuz(2, pEnch, pElem, pShape) })
         if (pMode > 0) {
-            pzRow.addView(makeToggle(s(R.string.ov_puzzle_ench), pEnch, p, weight = 0.9f, marginEndDp = 0) { savePuz(pMode, !pEnch, pElem, pShape) })
+            pzRow.addView(makeToggle(s(R.string.ov_puzzle_ench), pEnch, p, weight = 0.9f, marginEndDp = 0, aiHighlighted = pEnch && puzAi) { savePuz(pMode, !pEnch, pElem, pShape) })
         }
         body.addView(pzRow)
         if (pMode > 0) {
             val pzColRow = hRow(bottomMarginDp = 4)
             pzColRow.addView(makeToggle(s(R.string.puzzle_elem_any), pElem < 0, p, weight = 1.45f) { savePuz(pMode, pEnch, -1, pShape) })
             for (e in 0..5) {
-                pzColRow.addView(makeElementBtn(e, pElem == e, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3) { savePuz(pMode, pEnch, e, pShape) })
+                pzColRow.addView(makeElementBtn(e, pElem == e, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = puzAi) { savePuz(pMode, pEnch, e, pShape) })
             }
             body.addView(pzColRow)
         }
@@ -1545,6 +1599,7 @@ class OverlayTuningDrawerController(
         body.addView(makeSubLabel(s(R.string.shape_shield_label), p))
         val forbidCrossOn = "forbid_cross" in activeIds
         val crossChip = byId["cross_shield"] ?: byId["cross_shield_2"] ?: byId["cross_shield_3"]
+        val crossAi = WaveShieldCatalog.CROSS_EXCLUSIVE_IDS.any { isAi(it) }
         val cCnt = if (forbidCrossOn) 0 else ((crossChip?.paramInt ?: 0) and 0x0F)
         val cDist = ((crossChip?.paramInt ?: 0) and 0x20) != 0
         val cColors = (crossChip?.paramElementMask ?: 0) and 0x3F
@@ -1557,12 +1612,12 @@ class OverlayTuningDrawerController(
         }
         val crRow = hRow(bottomMarginDp = 4)
         listOf(0 to s(R.string.cross_off), 1 to s(R.string.cross_1), 2 to s(R.string.cross_2), 3 to s(R.string.cross_3)).forEachIndexed { i, (n, lbl) ->
-            crRow.addView(makeToggle(lbl, !forbidCrossOn && cCnt == n, p, weight = 1f, marginEndDp = if (i == 3) 0 else 3) { saveCross(n, cDist, cColors) })
+            crRow.addView(makeToggle(lbl, !forbidCrossOn && cCnt == n, p, weight = 1f, marginEndDp = if (i == 3) 0 else 3, aiHighlighted = n > 0 && !forbidCrossOn && cCnt == n && crossAi) { saveCross(n, cDist, cColors) })
         }
         body.addView(crRow)
         val fcRow = hRow(bottomMarginDp = 4)
         val forbidCrossLbl = s(R.string.shield_forbid_cross)
-        fcRow.addView(makeToggle(forbidCrossLbl, forbidCrossOn, p, weight = 1f, marginEndDp = 0) {
+        fcRow.addView(makeToggle(forbidCrossLbl, forbidCrossOn, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("forbid_cross")) {
             if (forbidCrossOn) ActiveStrategyStore.removeChip("forbid_cross")
             else ActiveStrategyStore.replaceGroup(
                 WaveShieldCatalog.CROSS_EXCLUSIVE_IDS,
@@ -1573,13 +1628,13 @@ class OverlayTuningDrawerController(
         if (cCnt > 0) {
             if (cCnt >= 2) {
                 val cdRow = hRow(bottomMarginDp = 3)
-                cdRow.addView(makeToggle(s(R.string.cross_distinct_switch), cDist, p, weight = 1f, marginEndDp = 0) { saveCross(cCnt, !cDist, cColors) })
+                cdRow.addView(makeToggle(s(R.string.cross_distinct_switch), cDist, p, weight = 1f, marginEndDp = 0, aiHighlighted = cDist && crossAi) { saveCross(cCnt, !cDist, cColors) })
                 body.addView(cdRow)
             }
             val ccRow = hRow(bottomMarginDp = 4)
             for (e in 0..5) {
                 val bit = 1 shl e
-                ccRow.addView(makeElementBtn(e, (cColors and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3) {
+                ccRow.addView(makeElementBtn(e, (cColors and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = crossAi) {
                     val nxt = cColors xor bit
                     if ((nxt and bit) == 0 || Integer.bitCount(nxt) <= cCnt) saveCross(cCnt, cDist, nxt)
                 })
@@ -1587,13 +1642,13 @@ class OverlayTuningDrawerController(
             body.addView(ccRow)
         }
         val shRow1 = hRow(bottomMarginDp = 4)
-        shRow1.addView(makeToggle(s(R.string.shield_l_shape), "l_shape" in activeIds, p, weight = 1f) { onToggleWaveChip(WaveShieldChip("l_shape", s(R.string.shield_l_shape), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1)) })
-        shRow1.addView(makeToggle(s(R.string.shield_t_shape), "t_shape" in activeIds, p, weight = 1f) { onToggleWaveChip(WaveShieldChip("t_shape", s(R.string.shield_t_shape), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1)) })
-        shRow1.addView(makeToggle(s(R.string.shield_sq_2x2), "square_2x2" in activeIds, p, weight = 1f, marginEndDp = 0) { onToggleWaveChip(WaveShieldChip("square_2x2", s(R.string.shield_sq_2x2), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1)) })
+        shRow1.addView(makeToggle(s(R.string.shield_l_shape), "l_shape" in activeIds, p, weight = 1f, aiHighlighted = isAi("l_shape")) { onToggleWaveChip(WaveShieldChip("l_shape", s(R.string.shield_l_shape), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1)) })
+        shRow1.addView(makeToggle(s(R.string.shield_t_shape), "t_shape" in activeIds, p, weight = 1f, aiHighlighted = isAi("t_shape")) { onToggleWaveChip(WaveShieldChip("t_shape", s(R.string.shield_t_shape), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1)) })
+        shRow1.addView(makeToggle(s(R.string.shield_sq_2x2), "square_2x2" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("square_2x2")) { onToggleWaveChip(WaveShieldChip("square_2x2", s(R.string.shield_sq_2x2), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1)) })
         body.addView(shRow1)
         val shRow2 = hRow(bottomMarginDp = 4)
-        shRow2.addView(makeToggle(s(R.string.shield_sq_3x3), "square_3x3" in activeIds, p, weight = 1f) { onToggleWaveChip(WaveShieldChip("square_3x3", s(R.string.shield_sq_3x3), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1)) })
-        shRow2.addView(makeToggle(s(R.string.shield_all_cols), "all_columns_ameliorate" in activeIds, p, weight = 1.15f, marginEndDp = 0) { onToggleWaveChip(WaveShieldChip("all_columns_ameliorate", s(R.string.shield_all_cols), ShieldCategory.SHAPE_AND_PUZZLE)) })
+        shRow2.addView(makeToggle(s(R.string.shield_sq_3x3), "square_3x3" in activeIds, p, weight = 1f, aiHighlighted = isAi("square_3x3")) { onToggleWaveChip(WaveShieldChip("square_3x3", s(R.string.shield_sq_3x3), ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1)) })
+        shRow2.addView(makeToggle(s(R.string.shield_all_cols), "all_columns_ameliorate" in activeIds, p, weight = 1.15f, marginEndDp = 0, aiHighlighted = isAi("all_columns_ameliorate")) { onToggleWaveChip(WaveShieldChip("all_columns_ameliorate", s(R.string.shield_all_cols), ShieldCategory.SHAPE_AND_PUZZLE)) })
         body.addView(shRow2)
 
         val activeGeoChip = listOf("l_shape", "t_shape", "square_2x2", "square_3x3").firstOrNull { it in activeIds }?.let { byId[it] }
@@ -1606,7 +1661,7 @@ class OverlayTuningDrawerController(
             })
             for (e in 0..5) {
                 val bit = 1 shl e
-                geoRow.addView(makeElementBtn(e, (geoMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3) {
+                geoRow.addView(makeElementBtn(e, (geoMask and bit) != 0, p, weight = 1f, marginEndDp = if (e == 5) 0 else 3, aiHighlighted = activeGeoChip.autoDetected) {
                     onUpsertWaveChip(activeGeoChip.copy(paramElementMask = geoMask xor bit, autoDetected = false))
                 })
             }
@@ -1669,12 +1724,13 @@ class OverlayTuningDrawerController(
         activeIds: Set<String>,
         p: OverlayPalette
     ) {
+        fun isAi(id: String): Boolean = byId[id]?.autoDetected == true
         val burnChip = byId["zero_trail_burning"]
         val burnOn = burnChip != null
         val burnLen = (burnChip?.paramInt ?: 0) and 0xFF
         val burnHurts = ((burnChip?.paramInt ?: 0) ushr 8) and 0xFF
         val ptRow1 = hRow(bottomMarginDp = 4)
-        ptRow1.addView(makeToggle(s(R.string.ov_burn_path), burnOn, p, weight = 1.1f, marginEndDp = if (burnOn) 4 else 0) {
+        ptRow1.addView(makeToggle(s(R.string.ov_burn_path), burnOn, p, weight = 1.1f, marginEndDp = if (burnOn) 4 else 0, aiHighlighted = isAi("zero_trail_burning")) {
             if (burnOn) ActiveStrategyStore.removeChip("zero_trail_burning")
             else onUpsertWaveChip(WaveShieldChip("zero_trail_burning", s(R.string.burn_path_title), ShieldCategory.HAZARD_AND_PATH, paramInt = 0))
         })
@@ -1705,21 +1761,21 @@ class OverlayTuningDrawerController(
 
         body.addView(makeSubDivider(p))
         val ptRowTl = hRow(bottomMarginDp = 4)
-        ptRowTl.addView(makeToggle(s(R.string.shield_traffic_light), "traffic_light" in activeIds, p, weight = 1f) {
+        ptRowTl.addView(makeToggle(s(R.string.shield_traffic_light), "traffic_light" in activeIds, p, weight = 1f, aiHighlighted = isAi("traffic_light")) {
             onToggleWaveChip(WaveShieldChip("traffic_light", s(R.string.shield_traffic_light), ShieldCategory.HAZARD_AND_PATH))
         })
-        ptRowTl.addView(makeToggle(s(R.string.shield_trail_corrosion), "trail_corrosion" in activeIds, p, weight = 1f, marginEndDp = 0) {
+        ptRowTl.addView(makeToggle(s(R.string.shield_trail_corrosion), "trail_corrosion" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("trail_corrosion")) {
             onToggleWaveChip(WaveShieldChip("trail_corrosion", s(R.string.shield_trail_corrosion), ShieldCategory.HAZARD_AND_PATH, paramInt = 15))
         })
         body.addView(ptRowTl)
         val ptRow2 = hRow(bottomMarginDp = 4)
-        ptRow2.addView(makeToggle(s(R.string.shield_step_hurt), "step_hurt_minimize" in activeIds, p, weight = 1f) {
+        ptRow2.addView(makeToggle(s(R.string.shield_step_hurt), "step_hurt_minimize" in activeIds, p, weight = 1f, aiHighlighted = isAi("step_hurt_minimize")) {
             onToggleWaveChip(WaveShieldChip("step_hurt_minimize", s(R.string.shield_step_hurt), ShieldCategory.HAZARD_AND_PATH))
         })
-        ptRow2.addView(makeToggle(s(R.string.shield_char_terrain), "char_orb_terrain" in activeIds, p, weight = 1f) {
+        ptRow2.addView(makeToggle(s(R.string.shield_char_terrain), "char_orb_terrain" in activeIds, p, weight = 1f, aiHighlighted = isAi("char_orb_terrain")) {
             onToggleWaveChip(WaveShieldChip("char_orb_terrain", s(R.string.shield_char_terrain), ShieldCategory.HAZARD_AND_PATH))
         })
-        ptRow2.addView(makeToggle(s(R.string.shield_weijian_burst), "weijian_burst" in activeIds, p, weight = 1f, marginEndDp = 0) {
+        ptRow2.addView(makeToggle(s(R.string.shield_weijian_burst), "weijian_burst" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("weijian_burst")) {
             onToggleWaveChip(WaveShieldChip("weijian_burst", s(R.string.shield_weijian_burst), ShieldCategory.HAZARD_AND_PATH))
         })
         body.addView(ptRow2)
@@ -1760,9 +1816,11 @@ class OverlayTuningDrawerController(
     private fun buildBudgetAndStartCardBody(
         body: LinearLayout,
         cfg: RuleConfig,
+        byId: Map<String, WaveShieldChip>,
         activeIds: Set<String>,
         p: OverlayPalette
     ) {
+        fun isAi(id: String): Boolean = byId[id]?.autoDetected == true
         val effSteps = if (cfg.useSystemSteps) settings.maxSteps else cfg.maxSteps
         val stepsHdrRow = hRow(bottomMarginDp = 3)
         stepsHdrRow.addView(TextView(context).apply {
@@ -1785,21 +1843,21 @@ class OverlayTuningDrawerController(
 
         // 4-Mode Wave Hard Step Controller (≤N步 | A~B步 | 恰好=N步)
         val limStepRow = hRow(bottomMarginDp = 4)
-        limStepRow.addView(makeToggle(s(R.string.shield_step_limit_fmt, stepLimitVal), "step_limit" in activeIds, p, weight = 1f) {
+        limStepRow.addView(makeToggle(s(R.string.shield_step_limit_fmt, stepLimitVal), "step_limit" in activeIds, p, weight = 1f, aiHighlighted = isAi("step_limit")) {
             if ("step_limit" in activeIds) ActiveStrategyStore.removeChip("step_limit")
             else ActiveStrategyStore.replaceGroup(
                 WaveShieldCatalog.STEP_EXCLUSIVE_IDS,
                 WaveShieldChip("step_limit", s(R.string.shield_step_limit_fmt, stepLimitVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepLimitVal)
             )
         })
-        limStepRow.addView(makeToggle(s(R.string.shield_step_range_fmt, stepRangeMinVal, stepRangeMaxVal), "step_range" in activeIds, p, weight = 1.1f) {
+        limStepRow.addView(makeToggle(s(R.string.shield_step_range_fmt, stepRangeMinVal, stepRangeMaxVal), "step_range" in activeIds, p, weight = 1.1f, aiHighlighted = isAi("step_range")) {
             if ("step_range" in activeIds) ActiveStrategyStore.removeChip("step_range")
             else ActiveStrategyStore.replaceGroup(
                 WaveShieldCatalog.STEP_EXCLUSIVE_IDS,
                 WaveShieldChip("step_range", s(R.string.shield_step_range_fmt, stepRangeMinVal, stepRangeMaxVal), ShieldCategory.HAZARD_AND_PATH, paramInt = stepRangeMinVal or (stepRangeMaxVal shl 8))
             )
         })
-        limStepRow.addView(makeToggle(s(R.string.shield_exact_steps_fmt, exactStepsVal), "exact_steps" in activeIds, p, weight = 1f, marginEndDp = 0) {
+        limStepRow.addView(makeToggle(s(R.string.shield_exact_steps_fmt, exactStepsVal), "exact_steps" in activeIds, p, weight = 1f, marginEndDp = 0, aiHighlighted = isAi("exact_steps")) {
             if ("exact_steps" in activeIds) ActiveStrategyStore.removeChip("exact_steps")
             else ActiveStrategyStore.replaceGroup(
                 WaveShieldCatalog.STEP_EXCLUSIVE_IDS,
@@ -1887,7 +1945,7 @@ class OverlayTuningDrawerController(
             }
         body.addView(stRow)
         val tlRow = hRow(bottomMarginDp = 4)
-        tlRow.addView(makeToggle(s(R.string.shield_traffic_light), "traffic_light" in activeIds, p, weight = 1f) {
+        tlRow.addView(makeToggle(s(R.string.shield_traffic_light), "traffic_light" in activeIds, p, weight = 1f, aiHighlighted = isAi("traffic_light")) {
             onToggleWaveChip(WaveShieldChip("traffic_light", s(R.string.shield_traffic_light), ShieldCategory.HAZARD_AND_PATH))
         })
         tlRow.addView(makeToggle(s(R.string.char_auto_buoy), cfg.autoDetectStartingBuoy, p, weight = 1f, marginEndDp = 0) {
@@ -2580,18 +2638,82 @@ class OverlayTuningDrawerController(
         setOnClickListener { onClick() }
     }
 
-    private fun makeToggle(label: String, selected: Boolean, p: OverlayPalette, weight: Float = 0f, marginEndDp: Int = 4, onClick: () -> Unit): TextView =
-        makeChip(label, weight = weight, marginEndDp = marginEndDp, onClick = onClick).also {
-            if (selected) styleChip(it, p.primaryContainer, p.onPrimaryContainer, p.primary)
-            else styleChip(it, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+    private fun resolveStrategyCardForIds(ids: Set<String>): Int? {
+        val card1Ids = setOf(
+            "min_distinct_elements", "require_elements", "three_elements", "five_elements", "five_elements_enchanted",
+            "elem_burst_shield", "max_element_orbs", "keep_element_at_least_one",
+            "anti_first_wave", "forbid_all", "clear_all_element", "unmatchable_elements",
+            "digital_orb_count", "first_wave_full_clear", "any_enchanted_orb_shield", "race_orb_shield",
+            "char_orb_first_wave", "starting_buoy_shield", "forbid_weakened_orb", "luminous_orb_shield"
+        )
+        val card2Ids = setOf(
+            "puzzle_shield", "strict_puzzle", "loose_puzzle", "enchanted_puzzle",
+            "cross_shield", "cross_shield_2", "cross_shield_3", "forbid_cross",
+            "l_shape", "t_shape", "square_2x2", "square_3x3", "all_columns_ameliorate"
+        )
+        val card3Ids = setOf(
+            "traffic_light", "zero_trail_burning", "trail_corrosion", "step_hurt_minimize", "char_orb_terrain", "weijian_burst"
+        )
+        val card4Ids = setOf("step_limit", "step_range", "exact_steps")
+        val card0Ids = setOf(
+            "min_combo", "max_combo", "min_first_combo", "min_first_elem_combo",
+            "exact_combo", "exact_first_combo", "wave1_same_kind", "wave1_distinct_kind",
+            "zero_combo", "odd_combo", "even_combo", "no_cascade",
+            "same_combo_elements", "second_wave_combo", "same_elem_combos", "equal_pair_light_dark"
+        )
+        return when {
+            ids.any { it in card1Ids } -> 1
+            ids.any { it in card2Ids } -> 2
+            ids.any { it in card3Ids } -> 3
+            ids.any { it in card4Ids } -> 4
+            ids.any { it in card0Ids } -> 0
+            else -> null
         }
+    }
 
-    private fun makeElementBtn(elemIndex: Int, selected: Boolean, p: OverlayPalette, suffix: String = "", weight: Float = 1f, marginEndDp: Int = 3, onClick: () -> Unit): TextView {
-        val lbl = LocaleHelper.elementLabel(lctx, elemIndex) + suffix
+    private fun makeToggle(
+        label: String,
+        selected: Boolean,
+        p: OverlayPalette,
+        weight: Float = 0f,
+        marginEndDp: Int = 4,
+        aiHighlighted: Boolean = false,
+        onClick: () -> Unit
+    ): TextView {
+        val dispLabel = if (selected && aiHighlighted && !label.startsWith("✦")) "✦ $label" else label
+        return makeChip(dispLabel, weight = weight, marginEndDp = marginEndDp, onClick = onClick).also {
+            when {
+                selected && aiHighlighted -> {
+                    val aiBg = if (p.isDark) Color.rgb(20, 58, 68) else Color.rgb(224, 247, 250)
+                    val aiFg = if (p.isDark) Color.rgb(156, 239, 248) else Color.rgb(0, 86, 98)
+                    styleChip(it, aiBg, aiFg, Color.rgb(0, 188, 212))
+                }
+                selected -> styleChip(it, p.primaryContainer, p.onPrimaryContainer, p.primary)
+                else -> styleChip(it, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+            }
+        }
+    }
+
+    private fun makeElementBtn(
+        elemIndex: Int,
+        selected: Boolean,
+        p: OverlayPalette,
+        suffix: String = "",
+        weight: Float = 1f,
+        marginEndDp: Int = 3,
+        aiHighlighted: Boolean = false,
+        onClick: () -> Unit
+    ): TextView {
+        val baseLbl = LocaleHelper.elementLabel(lctx, elemIndex) + suffix
+        val lbl = if (selected && aiHighlighted) "✦$baseLbl" else baseLbl
         val badgeCol = LocaleHelper.elementBadgeArgb(elemIndex)
         return makeChip(lbl, padH = 3, weight = weight, marginEndDp = marginEndDp, onClick = onClick).also {
-            if (selected) styleChip(it, badgeCol, Color.WHITE, badgeCol)
-            else styleChip(it, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+            if (selected) {
+                val stroke = if (aiHighlighted) Color.rgb(128, 236, 255) else badgeCol
+                styleChip(it, badgeCol, Color.WHITE, stroke)
+            } else {
+                styleChip(it, p.chipOffBg, p.chipOffText, p.chipOffStroke)
+            }
         }
     }
 
