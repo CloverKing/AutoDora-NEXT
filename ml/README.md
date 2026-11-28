@@ -1,6 +1,6 @@
-# AutoDora-NEXT 端侧多头轻量 CNN 与双 ONNX 训练管线（`ml/` · `v0.9.1` Stage 2A + 2B 全量重训升级）
+# AutoDora-NEXT 端侧多头轻量 CNN 与双 ONNX 训练管线（`ml/` · `v0.9.2` Stage 2A + 2B 全量重训与抗混叠升级）
 
-本目录实现了 Phase 4 端侧多代 AI 模型训练与导出流水线：① `v0.5.0` LiteRT 兜底/自定义基线 **`AutoDoraOrbNetV1`**（`orb_multihead_v1.tflite`, `340.4 KB`）；② `v0.9.1` 主力 Stage 2A 双帧全盘面动态 ONNX **`BoardMasterGridNetV2`**（`board_master_v2.onnx`, `2,125.2 KB`, `BoardMasterOnnxClassifier`）与 Stage 2B 战中 36 类 Anchor-Free CenterNet 敌技图标 ONNX **`EnemyIconNetV2`**（`enemy_icon_v1.onnx`, `1,774.2 KB`, 双输出 `icon_probs + icon_peaks`，联动 `EnemyBadgeDigitExtractor` 关键点数值徽标 OCR），均已未压缩打包正式集成进 `android/core-vision` 与 `android/app`。
+本目录实现了 Phase 4 端侧多代 AI 模型训练与导出流水线：① `v0.5.0` LiteRT 兜底/自定义基线 **`AutoDoraOrbNetV1`**（`orb_multihead_v1.tflite`, `340.4 KB`）；② `v0.9.1–v0.9.2` 主力 Stage 2A 双帧全盘面动态 ONNX **`BoardMasterGridNetV2`**（`board_master_v2.onnx`, `2,125.2 KB`, `BoardMasterOnnxClassifier`）与 Stage 2B 战中 36 类 Anchor-Free CenterNet 敌技图标 ONNX **`EnemyIconNetV2`**（`enemy_icon_v1.onnx`, `1,780.4 KB`, 双输出 `icon_probs + icon_peaks`，联动 `EnemyBadgeDigitExtractor` 关键点数值徽标 OCR），均已未压缩打包正式集成进 `android/core-vision` 与 `android/app`。
 
 ## 1. 训练与导出流水线
 

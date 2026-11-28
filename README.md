@@ -2,7 +2,7 @@
 
 > **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
 
-[![Version](https://img.shields.io/badge/version-v0.9.1-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases)
+[![Version](https://img.shields.io/badge/version-v0.9.2-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
 [![Tests](https://img.shields.io/badge/Tests-55%20C%2B%2B%20%2B%20128%20JVM%20%2B%209%20ML%20Passing-2E7D32.svg)](#快速安装构建与测试)
@@ -166,11 +166,11 @@ AutoDora-NEXT/
   - **权威敌技库与关前剧本同步扩容**：唯一权威敌技库扩充至 **`499` 条**（`429` A1 实爬 + `70` 百科兜底），同步补全 `TosEnemySkillParserV2` 形状盾（`【火限制形狀盾】` 等）与 `精靈守護 / 符石淨化 / 能力繼承` 解析；`compile_stage_wiki_bundle.py` 编译刷新至 **`140` 关 / `498` 波 / `101` Boss 阶段 / `1,255` 条敌技**。
 - [x] **Phase 4.4 启动台 4-Tab 重构 + 敌技中枢 + 悬浮抽屉 1:1 同步（`v0.8.1`）**：
   - **启动台 4-Tab 重构（`概览 / 策略 / 敌技 / 设置`）** 与游戏内悬浮抽屉 `✦ 立即扫描敌技/图标`、分页剧本选择及 `⊘` 灰字撤回策略一键恢复。
-- [x] **Phase 4.5 全界面紧凑零截断重构 + 499 敌技闭环 + 双 ONNX 全量清洗重训与协同闭环（`v0.9.0` – `v0.9.1` · 当前正式版）**：
+- [x] **Phase 4.5 全界面紧凑零截断重构 + 499 敌技闭环 + 双 ONNX 全量清洗重训与协同闭环（`v0.9.0` – `v0.9.2` · 当前正式版）**：
   - **M1 & M8 全局紧凑排版、零 `...` 截断与全抽屉 `(?)` 帮助体系**：重构启动页 4-Tab、悬浮抽屉 3-Tab 与盘面编排 6 抽屉，全交互按钮/胶囊/矩阵单元格零省略号截断，四语言同步扩充至 **`864` 项词条**并为全部抽屉配备结构化 `(?)` 实战帮助指南。
-  - **M2 非瀑布多得分视觉 + 黑白珠双模 100% 复色 + 稳态门控与防自激闭环（`v0.9.1+` 升级）**：`CvBoardRecognizer` 升级为独立多得分仲裁、内置 24×24 官方图鉴轮廓高通匹配器 [`MonochromeOrbMatcher`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/MonochromeOrbMatcher.kt)，并与全量清洗重训的 `BoardMasterGridNetV2`（真实双调黑白精灵增广，`BLACK_WHITE` 检出率 `100%`）执行 `50/50` 概率融合（实机盲测黑白拼图盘纯 CV 与混合模式均达 **`30/30 = 100%`** 复色精度）；`BoardCaptureQualityGate` 新增系统录屏/通知白色横条 Toast 遮挡拦截（`SYSTEM_TOAST_OCCLUSION`）与双帧静态稳定门控，`ActiveStrategyStore.mergeBoardDerivedSignals` 严格仅在连续 `≥2` 帧静止有效盘面反哺真实棋盘结构机制（黑白幽闭空间、起动浮标、起结有序与双帧确认拼图框），彻底切断单帧连击闪光/过场横幅伪拼图幻觉与电击/冰冻先验标签自激闭环。
+  - **M2 非瀑布多得分视觉 + 黑白珠双模 100% 复色 + 稳态门控与防自激闭环（`v0.9.1–v0.9.2` 升级）**：`CvBoardRecognizer` 升级为独立多得分仲裁、内置 24×24 官方图鉴轮廓高通匹配器 [`MonochromeOrbMatcher`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/MonochromeOrbMatcher.kt)，并与全量清洗重训的 `BoardMasterGridNetV2`（真实双调黑白精灵增广，`BLACK_WHITE` 检出率 `100%`）执行 `50/50` 概率融合（实机盲测黑白拼图盘纯 CV 与混合模式均达 **`30/30 = 100%`** 复色精度）；`BoardCaptureQualityGate` 新增系统录屏/通知白色横条 Toast 遮挡拦截（`SYSTEM_TOAST_OCCLUSION`）与双帧静态稳定门控，`ActiveStrategyStore.mergeBoardDerivedSignals` 严格仅在连续 `≥2` 帧静止有效盘面反哺真实棋盘结构机制（黑白幽闭空间、起动浮标、起结有序与双帧确认拼图框），彻底切断单帧连击闪光/过场横幅伪拼图幻觉与电击/冰冻先验标签自激闭环。
   - **M3 499 敌技缺口闭环 + 复合敌技全参数升级 + 双端策略标签自动回显**：C++20 与双端策略补齐 `max_combo ≤N`、`square_3x3`（正方 3×3）、`forbid_cross`（十之诅咒）、`keep_element_at_least_one`（符石加护留底≥1）、`max_element_orbs ≤N`、`rowRules` 1–5 横排、四态步数盾（含 `exact_steps =N`）、燃烧/瘴气容错、分项障碍必清开关与单策略斜转覆盖；`TosEnemySkillParserV2` 完整提取 `【X限制形狀盾】`（严格+强化+指定色）、无数字 `【指定連擊法印】`、属性田字/L/T 形盾与同属多组连击盾，支持同波多怪属性掩码自动合并（如 `全消火 + 全消木 → 首消全清:火木`）与局部盾牌无损升级（`拼图 → 严格拼图·水`）；双端「策略」分页在 AI 检出敌技后自动展开对应手风琴卡片、自动切换属性消除限制子模式（`反首消 / 禁消 / 首消全清 / 留底≥1 / 禁咒`）并全域高亮 `✦` AI 回显控件。
-  - **M4, M6 & M7 多源敌技协同识别（36 类 CenterNet `EnemyIconNetV2` + 盒式抗混叠与自遮罩 + 关键点数值/颜色直读）+ 内嵌三级剧本/499 敌技库（`v0.9.1+` 升级）**：升级 Stage 2B [`EnemyIconOnnxClassifier`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemyIconOnnxClassifier.kt) 为 `[1, 3, 160, 256]` 36 类 Anchor-Free CenterNet（双输出 `icon_probs` + `icon_peaks` 亚像素峰值坐标，加入盒式面积抗混叠下采样、悬浮栏 `excludeRect` 自遮罩与锐利怪物躯干硬负样本重训，验证集宏 F1 `0.6175`、`neg_fp = 0/450`、零误报激活 **`25/36`** 类），联动 [`EnemyBadgeDigitExtractor`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemyBadgeDigitExtractor.kt) + `PP-OCRv5` 数字白名单 CTC 与峰值 HSV 元素判色免长按直读战中徽标（如 `≥5 COM → min_combo(5)`、`NUM 17 → digital_orb_count(17)`、单色反首消/全消/相等连击）；同时修复暗色背景关卡弹窗分类（联立队伍头像/血条可见度区分战中长按弹窗与全屏关卡资讯，弹窗检测自动切入 `130ms` 快轮询），配合 [`EnemySkillKnowledgeMatcher`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemySkillKnowledgeMatcher.kt) 四级重水合、Room `v4` 内嵌 `140` 关剧本与 `499` 条权威敌技。
+  - **M4, M6 & M7 多源敌技协同识别（36 类 CenterNet `EnemyIconNetV2` + 盒式抗混叠与自遮罩 + 关键点数值/颜色直读）+ 内嵌三级剧本/499 敌技库（`v0.9.1–v0.9.2` 升级）**：升级 Stage 2B [`EnemyIconOnnxClassifier`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemyIconOnnxClassifier.kt) 为 `[1, 3, 160, 256]` 36 类 Anchor-Free CenterNet（双输出 `icon_probs` + `icon_peaks` 亚像素峰值坐标，加入盒式面积抗混叠下采样、悬浮栏 `excludeRect` 自遮罩与锐利怪物躯干硬负样本重训，验证集宏 F1 `0.6175`、`neg_fp = 0/450`、零误报激活 **`25/36`** 类），联动 [`EnemyBadgeDigitExtractor`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemyBadgeDigitExtractor.kt) + `PP-OCRv5` 数字白名单 CTC 与峰值 HSV 元素判色免长按直读战中徽标（如 `≥5 COM → min_combo(5)`、`NUM 17 → digital_orb_count(17)`、单色反首消/全消/相等连击）；同时修复暗色背景关卡弹窗分类（联立队伍头像/血条可见度区分战中长按弹窗与全屏关卡资讯，弹窗检测自动切入 `130ms` 快轮询），配合 [`EnemySkillKnowledgeMatcher`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemySkillKnowledgeMatcher.kt) 四级重水合、Room `v4` 内嵌 `140` 关剧本与 `499` 条权威敌技。
   - **M5 自定义必消/保留硬约束 + 第 6 组蓝色「自定义操作」编排抽屉**：C++20 `Priority`（必消）与 `Reserve`（保留）升级为 `-100,000` 硬约束并附同色排斥护盾；盘面编排新增蓝色「自定义操作」抽屉（含顺序途经 `①~④`、跨回合锁定、仅清自定义操作与点主栏「算/行」自动保存），结果卡片新增 `✓ 编排必消×N` / `✓ 编排保留×N` 核验。
 - [ ] **Phase 4 后续规划（`v0.9.x` – `v1.0.0`）**：持续收集长尾稀疏样本强化小种族与 C 类异态召回、R8 / ABI 瘦身（Phase D）、可选 Shizuku 触控引擎与 `v1.0.0` 正式发布。
 
@@ -180,7 +180,7 @@ AutoDora-NEXT/
 
 ### 1. 直接安装预编译 APK
 
-前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（`AutoDora-NEXT-v0.9.1-release.apk`），安装后：
+前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（`AutoDora-NEXT-v0.9.2-release.apk`），安装后：
 1. 在「概览 → 运行权限检查」依次授予 **悬浮窗**、**无障碍自动转珠** 与 **屏幕采集（选择「整个屏幕」）** 三项权限；
 2. 若在 Android 13+ / HyperOS / One UI / ColorOS 遇到无障碍开关受限，按概览页「无障碍受限设置指引」点击「应用详情 → 右上角 `⋮` → 允许受限设置」后即可开启；
 3. 后续版本可直接在 App 内「设置 → 关于与版本 → 检查更新 → 下载并安装」一键原地升级。

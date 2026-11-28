@@ -9,7 +9,7 @@
 - **本次审计新发现并已补全/修正 (`UPGRADED`)**：`20` 项
 - **纯视觉干扰 / 印记类（已支持画笔标注，待后续端侧模型增强，`CV_PARTIAL`)**：`6` 项
 - **非盘面转珠机制（血量/CD/EP/减伤/隐身等，`NON_BOARD`)**：`35` 项
-- **端侧自动识别闭环（`v0.6.0–v0.9.1+`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json v2026.11-v2.2`，全面补齐 `十之詛咒(forbid_cross)`、`連擊上限盾(max_combo)`、`正方3×3(square_3x3)`、`符石加護留底≥1(keep_element_at_least_one)`、`單屬限消≤N粒(max_element_orbs)`、精确步数盾 `exact_steps`、无数字 `【指定連擊法印】` 及复合属性拼图/形状盾）联合 `EnemySkillKnowledgeMatcher`（**Tier-0 `MANUAL_EDIT` 用户手动覆写 + Tier-2 内置 `499` 条权威敌技库 `{属性}/{数字}` 骨架模糊兜底与现场参数重水合 `✦库`**）、`PaddleOcrOnnxEngine`（支持暗色背景队伍头像带区分战前关卡资讯与战中长按弹窗，`130ms` 快速触发）、`StageWaveScriptParser`（内置 `140` 关三级游戏入口分类剧本包 `tos_stage_wiki_bundle_140.json`，Room `v4` 内嵌 `6` 条/页检索）以及 **稳态门控 Stage 2B 36 类 CenterNet `EnemyIconOnnxClassifier`（盒式抗混叠 + 悬浮栏自遮罩 + 锐利怪物硬负样本重训，激活 `25/36` 类，`neg_fp = 0/450`）+ `EnemyBadgeDigitExtractor` 关键点数值/颜色直读**，实现文本、图标、剧本与本地知识库四源协同闭环及双端策略标签页自动展开回显。
+- **端侧自动识别闭环（`v0.6.0–v0.9.2`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json v2026.11-v2.2`，全面补齐 `十之詛咒(forbid_cross)`、`連擊上限盾(max_combo)`、`正方3×3(square_3x3)`、`符石加護留底≥1(keep_element_at_least_one)`、`單屬限消≤N粒(max_element_orbs)`、精确步数盾 `exact_steps`、无数字 `【指定連擊法印】` 及复合属性拼图/形状盾）联合 `EnemySkillKnowledgeMatcher`（**Tier-0 `MANUAL_EDIT` 用户手动覆写 + Tier-2 内置 `499` 条权威敌技库 `{属性}/{数字}` 骨架模糊兜底与现场参数重水合 `✦库`**）、`PaddleOcrOnnxEngine`（支持暗色背景队伍头像带区分战前关卡资讯与战中长按弹窗，`130ms` 快速触发）、`StageWaveScriptParser`（内置 `140` 关三级游戏入口分类剧本包 `tos_stage_wiki_bundle_140.json`，Room `v4` 内嵌 `6` 条/页检索）以及 **稳态门控 Stage 2B 36 类 CenterNet `EnemyIconOnnxClassifier`（盒式抗混叠 + 悬浮栏自遮罩 + 锐利怪物硬负样本重训，激活 `25/36` 类，`neg_fp = 0/450`）+ `EnemyBadgeDigitExtractor` 关键点数值/颜色直读**，实现文本、图标、剧本与本地知识库四源协同闭环及双端策略标签页自动展开回显。
 
 ## 二、本次审计发现并落地的核心算法、规则与 UI 升级
 
