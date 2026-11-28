@@ -88,6 +88,103 @@ _YY64, _XX64 = np.mgrid[0:64, 0:64]
 _ORB_CIRC = ((_XX64 - 31.5) ** 2 + (_YY64 - 31.5) ** 2) <= (24.5 ** 2)
 _CORNER_MASK = ((_XX64 - 31.5) ** 2 + (_YY64 - 31.5) ** 2) >= (33.5 ** 2)
 
+
+def detect_race_medallion_cell64(cell64: np.ndarray) -> tuple[bool, bool]:
+    """
+    Shift-tolerant circular Race Medallion detector for 64x64 cells across all 7 ToS races
+    (GOD, DEMON, HUMAN, BEAST, DRAGON, ELF, MACHINA).
+    Returns `(has_medallion, confident_no_medallion)`.
+    """
+    _, ss, vv = rgb_to_hsv_np(cell64)
+    best_iv = 0.0
+    for cy_m in (10, 13, 16):
+        for cx_m in (47, 51, 55):
+            r2 = (_XX64 - cx_m) ** 2 + (_YY64 - cy_m) ** 2
+            disc = r2 <= (7.4 ** 2)
+            core = r2 <= (5.3 ** 2)
+            dk = float((vv[disc] <= 0.38).mean())
+            iv = float(((vv[core] >= 0.64) & (ss[core] <= 0.42)).mean())
+            viv = float(((ss[disc] >= 0.52) & (vv[disc] >= 0.46)).mean())
+            if dk >= 0.24 and iv >= 0.10 and viv <= 0.38:
+                return True, False
+            if iv > best_iv:
+                best_iv = iv
+    return False, (best_iv < 0.05)
+
+
+def has_6x5_grid_periodicity(board_rgb: np.ndarray) -> tuple[bool, float]:
+    """Verifies authentic 6x5 (384x320) 64px cell periodicity and rejects text slides / zoomed crops."""
+    if board_rgb[:, :10].mean() < 8.0 or board_rgb[:, -10:].mean() < 8.0:
+        return False, -1.0
+    _, ss, vv = rgb_to_hsv_np(board_rgb)
+    inter_v = [float(vv[r * 64 - 4:r * 64 + 4, c * 64 - 4:c * 64 + 4].mean()) for r in range(1, 5) for c in range(1, 6)]
+    center_v = [float(vv[r * 64 + 22:r * 64 + 42, c * 64 + 22:c * 64 + 42].mean()) for r in range(5) for c in range(6)]
+    col_v = vv.mean(axis=0)
+    c_peaks = float(np.mean([col_v[c * 64 + 20:c * 64 + 44].mean() for c in range(6)]))
+    c_seams = float(np.mean([col_v[c * 64 - 4:c * 64 + 4].mean() for c in range(1, 6)]))
+    row_v = vv.mean(axis=1)
+    r_peaks = float(np.mean([row_v[r * 64 + 20:r * 64 + 44].mean() for r in range(5)]))
+    r_seams = float(np.mean([row_v[r * 64 - 4:r * 64 + 4].mean() for r in range(1, 5)]))
+    dark_inters = sum(1 for v in inter_v if v < 0.44)
+    score = (c_peaks - c_seams) + (r_peaks - r_seams) + 0.02 * dark_inters
+    ok = (
+        dark_inters >= 13
+        and float(np.median(center_v)) >= float(np.median(inter_v)) * 1.28
+        and c_peaks >= c_seams + 0.038
+        and r_peaks >= r_seams + 0.038
+    )
+    return ok, score
+
+
+def load_refined_6x5_board(board_path: Path) -> np.ndarray | None:
+    """
+    Re-refines `(width, cx, top)` from sibling `frames/*.png` when available to eliminate 16:9
+    YouTube sidebar horizontal shift, falling back to `board_path` when periodicity is already valid.
+    """
+    frame_path = board_path.parents[1] / "frames" / board_path.name.replace("_board.png", ".png")
+    if frame_path.is_file():
+        try:
+            im = Image.open(frame_path).convert("RGB")
+            rgb = np.asarray(im)
+            h, w, _ = rgb.shape
+            box = detect_tos_board(rgb)
+            if box is not None:
+                bw0 = box.width
+                cx0 = 0.5 * (box.left + box.right)
+                best_arr: np.ndarray | None = None
+                best_sc = -1e9
+                for w_scale in (0.94, 0.98, 1.00, 1.02, 1.06):
+                    bw = int(round(bw0 * w_scale))
+                    bh = int(round(bw * 5.0 / 6.0))
+                    if bw < 160 or bh > h:
+                        continue
+                    for dx_frac in (-0.04, -0.02, 0.0, 0.02, 0.04):
+                        x0 = int(round(cx0 - bw * 0.5 + dx_frac * bw0))
+                        x1 = x0 + bw
+                        if x0 < 0 or x1 > w:
+                            continue
+                        for dy_frac in (-0.02, 0.0, 0.02):
+                            y0 = int(round(box.top + dy_frac * bh))
+                            y1 = y0 + bh
+                            if y0 < 0 or y1 > h:
+                                continue
+                            cand = np.asarray(
+                                im.crop((x0, y0, x1, y1)).resize((BOARD_W, BOARD_H), Image.Resampling.BILINEAR),
+                                dtype=np.uint8,
+                            )
+                            ok, sc = has_6x5_grid_periodicity(cand)
+                            if ok and sc > best_sc:
+                                best_sc = sc
+                                best_arr = cand
+                if best_arr is not None:
+                    return best_arr
+        except Exception:
+            pass
+    cand = _load_board_rgb(board_path)
+    if cand is not None and has_6x5_grid_periodicity(cand)[0]:
+        return cand
+    return None
+
 # Visually distinct hazards safe to mark negative (0.0) on verified clean colored boards
 _CLEAN_BOARD_NEG_HAZARDS = [
     HAZARD_TO_IDX["ICE_SEALED"],
@@ -323,14 +420,26 @@ def _pack_phase4_v1_split(store: BoardSampleStore, npz_path: Path, is_val: bool)
     groups = z["groups"]
 
     by_group: dict[str, list[int]] = defaultdict(list)
+    neg_tiles: list[np.ndarray] = []
+    # Exclude 2 corrupted phase4_v1 race groups: `p4_demon_race_v2` (cropped boss floor/portraits) & `vb_menglie` (black sidebars + mislabeled race)
+    skip_v1_groups = {"p4_demon_race_v2", "vb_menglie"}
     for i, g in enumerate(groups.tolist()):
-        by_group[str(g)].append(i)
+        gs = str(g)
+        if gs in skip_v1_groups:
+            continue
+        if float(is_rune[i]) < 0.5:
+            neg_tiles.append(images[i])
+        else:
+            by_group[gs].append(i)
 
     added = 0
-    # Promote selected multi-board v1 groups to val so QUESTION, THORN, PUZZLE, STORM, SHATTERED all have real val support
-    promote_v1_val = {"u2_lizhi_wq30", "thorn_img1", "p4_puzzle_L", "vb_shattered"}
+    # Promote selected multi-board v1 groups to val so THORN, PUZZLE, SHATTERED all have real val support
+    # (`q30_dark_teal` is already in val for QUESTION; keep `u2_lizhi_wq30` in train so Weathered `?` teaches BLACK_WHITE=0!)
+    promote_v1_val = {"thorn_img1", "p4_puzzle_L", "vb_shattered"}
+    machina_idx = RACE_TO_IDX["MACHINA"]
     for grp, idxs in by_group.items():
         grp_val = is_val or (grp in promote_v1_val)
+        is_unannotated_yt = grp.startswith("ytdiv_")
         for start in range(0, len(idxs), NUM_CELLS):
             chunk = idxs[start:start + NUM_CELLS]
             board_img = np.zeros((BOARD_H, BOARD_W, 3), dtype=np.uint8)
@@ -344,7 +453,8 @@ def _pack_phase4_v1_split(store: BoardSampleStore, npz_path: Path, is_val: bool)
 
             for ci, sidx in enumerate(chunk):
                 r, c = divmod(ci, 6)
-                board_img[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64] = images[sidx]
+                tile_im = images[sidx]
+                board_img[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64] = tile_im
                 ir = float(is_rune[sidx])
                 tgt[ci, SLICE_IS_RUNE[0]] = ir
                 rm_is_rune[ci] = 1.0
@@ -358,8 +468,16 @@ def _pack_phase4_v1_split(store: BoardSampleStore, npz_path: Path, is_val: bool)
                         tgt[ci, SLICE_VARIANT[0] + va] = 1.0
                         rm_var[ci] = 1.0
                     if bool(race_known[sidx]) and 0 <= int(race[sidx]) < NUM_RACES:
-                        tgt[ci, SLICE_RACE[0] + int(race[sidx])] = 1.0
-                        rm_race[ci] = 1.0
+                        r_val = machina_idx if grp == "vb_race_demon" else int(race[sidx])
+                        # Prevent unannotated `ytdiv_*` race badges from poisoning `RACE = NONE`!
+                        if is_unannotated_yt and r_val == 0:
+                            _, conf_no_badge = detect_race_medallion_cell64(tile_im)
+                            if conf_no_badge:
+                                tgt[ci, SLICE_RACE[0]] = 1.0
+                                rm_race[ci] = 1.0
+                        else:
+                            tgt[ci, SLICE_RACE[0] + r_val] = 1.0
+                            rm_race[ci] = 1.0
                     tgt[ci, SLICE_HAZARDS[0]:SLICE_HAZARDS[1]] = hazards[sidx]
                     rm_haz[ci] = hmask[sidx]
                     tgt[ci, SLICE_TILE_OVERLAY[0]:SLICE_TILE_OVERLAY[1]] = overlays[sidx]
@@ -387,6 +505,31 @@ def _pack_phase4_v1_split(store: BoardSampleStore, npz_path: Path, is_val: bool)
                 val=grp_val,
             )
             added += 1
+
+    # Pack UI negative tiles cleanly into dedicated 30-cell `is_rune = 0` boards
+    for nstart in range(0, len(neg_tiles), NUM_CELLS):
+        nchunk = neg_tiles[nstart:nstart + NUM_CELLS]
+        neg_board = np.zeros((BOARD_H, BOARD_W, 3), dtype=np.uint8)
+        for ci in range(NUM_CELLS):
+            r, c = divmod(ci, 6)
+            neg_board[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64] = nchunk[ci % len(nchunk)]
+        z1 = np.zeros((NUM_CELLS,), dtype=np.float32)
+        store.add_board(
+            neg_board,
+            None,
+            np.zeros((NUM_CELLS, OUTPUT_DIM), dtype=np.float32),
+            np.ones((NUM_CELLS,), dtype=np.float32),
+            z1,
+            z1,
+            z1,
+            np.zeros((NUM_CELLS, NUM_HAZARDS), dtype=np.float32),
+            np.zeros((NUM_CELLS, NUM_TILE_OVERLAYS), dtype=np.float32),
+            weight=2.0,
+            group=f"v1/neg_pack_{nstart // NUM_CELLS}",
+            source="phase4_v1_neg",
+            val=is_val,
+        )
+        added += 1
     return added
 
 
@@ -569,7 +712,9 @@ def _label_track_b_board(
             ci = r * 6 + c
             tgt[ci, SLICE_IS_RUNE[0]] = 1.0
             cx, cy = (c + 0.5) * CELL_PX, (r + 0.5) * CELL_PX
-            el_name, el_conf, star_cnt, has_race = hsv_base_classify_cell(img_a, cx, cy, CELL_PX, CELL_PX)
+            cell64 = img_a[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64]
+            el_name, el_conf, star_cnt, _ = hsv_base_classify_cell(img_a, cx, cy, CELL_PX, CELL_PX)
+            has_medallion, conf_no_medallion = detect_race_medallion_cell64(cell64)
 
             if scoped_cue and cue_pos[ci]:
                 if scoped_cue in HAZARD_TO_IDX:
@@ -604,16 +749,16 @@ def _label_track_b_board(
                         rm_ov[ci, oi] = 1.0
 
             if race_label:
-                if has_race:
+                if has_medallion:
                     any_has_race = True
                     tgt[ci, SLICE_RACE[0] + RACE_TO_IDX[race_label]] = 1.0
                     rm_race[ci] = 1.0
                     tgt[ci, SLICE_VARIANT[0] + VARIANT_TO_IDX["RACE"]] = 1.0
                     rm_var[ci] = 1.0
-                elif el_conf >= 0.72:
+                elif conf_no_medallion and el_conf >= 0.74:
                     tgt[ci, SLICE_RACE[0] + RACE_TO_IDX["NONE"]] = 1.0
                     rm_race[ci] = 1.0
-            elif mark_clean_negatives and not has_race and el_conf >= 0.76:
+            elif mark_clean_negatives and conf_no_medallion and el_conf >= 0.76:
                 tgt[ci, SLICE_RACE[0] + RACE_TO_IDX["NONE"]] = 1.0
                 rm_race[ci] = 1.0
                 va_name = "ENCHANTED" if star_cnt >= 7 else "NORMAL"
@@ -934,7 +1079,7 @@ def build_phase4_v2_dataset(
                 group="mono/enc_skill048",
                 source="tos_encyclopedia/skill_048/slide_1.png",
                 is_val=False,
-                weight=6.0,
+                weight=8.5,
                 sprite_collector=mono_sprites,
             )
             mono_tr += 1
@@ -953,7 +1098,7 @@ def build_phase4_v2_dataset(
             _add_explicit_monochrome_board(
                 store, f1, f2,
                 ["D H G G G G", "H G G H D W", "L W G H W D", "L L D G F D", "W F H D G L"],
-                group="mono/mw2_pair1", source="yt_moon_wolf2/f001_f002", is_val=False, weight=5.5,
+                group="mono/mw2_pair1", source="yt_moon_wolf2/f001_f002", is_val=False, weight=8.0,
                 enchanted_cells={(0, 0), (1, 4), (2, 5), (3, 2), (3, 4), (3, 5), (4, 1), (4, 3)},
                 weakened_cells={(0, 2), (0, 3), (0, 4), (0, 5), (1, 1), (1, 2), (2, 2), (3, 3), (4, 4)},
                 sprite_collector=mono_sprites,
@@ -963,7 +1108,7 @@ def build_phase4_v2_dataset(
             _add_explicit_monochrome_board(
                 store, f4, f5,
                 ["H L L G G G", "L G G L H L", "L W W L W W", "L L H G F W", "W F L L H L"],
-                group="mono/mw2_pair2", source="yt_moon_wolf2/f004_f005", is_val=False, weight=5.5,
+                group="mono/mw2_pair2", source="yt_moon_wolf2/f004_f005", is_val=False, weight=8.0,
                 weakened_cells={(0, 2), (0, 3), (0, 4), (0, 5), (1, 1), (1, 2), (3, 1), (3, 3)},
                 sprite_collector=mono_sprites,
             )
@@ -972,7 +1117,7 @@ def build_phase4_v2_dataset(
             _add_explicit_monochrome_board(
                 store, f3, None,
                 ["H L L G G G", "L G G L H L", "L W W L W W", "L L H G F W", "W F L L H L"],
-                group="mono/mw2_spark", source="yt_moon_wolf2/f003", is_val=False, weight=4.5,
+                group="mono/mw2_spark", source="yt_moon_wolf2/f003", is_val=False, weight=7.0,
                 weakened_cells={(0, 2), (0, 3), (0, 4), (0, 5), (1, 1), (1, 2), (3, 1), (3, 3)},
             )
             mono_tr += 1
@@ -1052,13 +1197,13 @@ def build_phase4_v2_dataset(
             with_badge: list[tuple[Path, np.ndarray]] = []
             without_badge: list[tuple[Path, np.ndarray]] = []
             for p in paths:
-                img = _load_board_rgb(p)
+                img = load_refined_6x5_board(p)
                 if img is not None and is_clean_static_6x5_board(img):
                     kept_track_b += 1
-                    has_any_b = any(
-                        hsv_base_classify_cell(img, (cc + 0.5) * 64, (rr + 0.5) * 64, 64, 64)[3]
-                        for rr in range(5) for cc in range(6)
-                    )
+                    has_any_b = sum(
+                        1 for rr in range(5) for cc in range(6)
+                        if detect_race_medallion_cell64(img[rr * 64:(rr + 1) * 64, cc * 64:(cc + 1) * 64])[0]
+                    ) >= 2
                     (with_badge if has_any_b else without_badge).append((p, img))
                 else:
                     rejected_track_b += 1
@@ -1291,6 +1436,89 @@ def build_phase4_v2_dataset(
             pair_tr += 1
             clean_tr_pool.append(ia)
 
+    # 10b. Track B `topup_v090_low_recall` (549 raw -> ~270 periodicity-refined static 6x5 boards across 33 videos!)
+    topup_tr = topup_va = 0
+    topup_dir = inbox_dir / "topup_v090_low_recall"
+    topup_video_meta: dict[str, tuple[str | None, str | None]] = {
+        # Verified per-video `(leader_race_label, scoped_cue)` audited against video titles & team leaders:
+        "yt_9YK8Mur3sj8": ("BEAST", None),
+        "yt_J7zNtCsRy8U": ("BEAST", None),
+        "yt_wCy68XsXik4": ("BEAST", None),
+        "yt_CeAh8f74yMY": ("BEAST", None),
+        "yt_rgZlNTruMTI": ("BEAST", None),
+        "yt_apM8_xUQKWA": ("MACHINA", None),
+        "yt_GEQ23bfKMCI": ("MACHINA", None),
+        "yt_J3NhPUD3qfM": ("MACHINA", None),
+        "yt_AbTsoyWb7dg": ("DRAGON", "STORM"),
+        "yt_bqSntx55VfU": ("DRAGON", "STORM"),
+        "yt_OvhiEpvZruY": ("DRAGON", None),
+        "yt_gqv_QDUZ7Co": ("GOD", None),
+        "yt_QpbaoWcKSWk": ("GOD", None),
+        "yt_1nslJYE6nUk": ("GOD", None),
+        "yt_svYn5lHowrk": ("ELF", None),
+        "yt_2cT1vdr8Fps": ("ELF", None),
+        "yt_b8FekYr7WCg": ("ELF", None),
+        "yt_DUjopJA9Re0": ("HUMAN", None),
+        "yt_xo6NoRjSdZ4": ("HUMAN", None),
+        "yt_Mzf3fEnn65w": ("HUMAN", None),
+        "yt_CXhhf2g3HyA": ("HUMAN", "PURGATORY_FIRE"),
+        "yt_B_BtnA5G3cg": (None, "PURGATORY_FIRE"),
+        "yt_JnpnDR0Te8w": ("HUMAN", "TRAFFIC_LIGHT_MARKER"),
+        "yt_YXvo8y8mleo": ("HUMAN", "TRAFFIC_LIGHT_MARKER"),
+    }
+    if topup_dir.is_dir():
+        for bdir in sorted(topup_dir.rglob("boards")):
+            sub_dir = bdir.parent
+            sub_tag = sub_dir.name
+            cat_name = sub_dir.parent.name
+            vid_prefix = "_".join(sub_tag.split("_")[:2])
+            race_lbl: str | None = None
+            scoped_cue: str | None = None
+            for k_vid, (r_l, s_c) in topup_video_meta.items():
+                if sub_tag.startswith(k_vid):
+                    race_lbl, scoped_cue = r_l, s_c
+                    break
+            allow_holes = ("storm" in cat_name) or ("shatter" in cat_name) or (scoped_cue in ("STORM", "SHATTERED"))
+
+            valid_boards: list[tuple[Path, np.ndarray]] = []
+            for bp in sorted(bdir.glob("*.png")):
+                img = load_refined_6x5_board(bp)
+                if img is None or is_board_truly_monochrome(img):
+                    rejected_track_b += 1
+                    continue
+                if not is_clean_static_6x5_board(img, allow_dark_holes=allow_holes):
+                    rejected_track_b += 1
+                    continue
+                kept_track_b += 1
+                valid_boards.append((bp, img))
+
+            if not valid_boards:
+                continue
+            v_cut = max(1, round(len(valid_boards) * 0.22)) if len(valid_boards) >= 3 else 0
+            for bi, (bp, img) in enumerate(valid_boards):
+                is_v = (v_cut > 0) and (bi >= len(valid_boards) - v_cut)
+                _label_track_b_board(
+                    store,
+                    img,
+                    None,
+                    group=f"topup090/{cat_name}/{vid_prefix}/{'v' if is_v else 't'}",
+                    source=f"topup_v090/{cat_name}/{sub_tag}/{bp.name}",
+                    is_val=is_v,
+                    weight=2.8 if race_lbl in ("BEAST", "MACHINA", "GOD", "ELF", "DRAGON") else 2.0,
+                    race_label=race_lbl,
+                    scoped_cue=scoped_cue,
+                    elem_conf_min=0.72,
+                    mark_clean_negatives=(scoped_cue is None),
+                )
+                if is_v:
+                    topup_va += 1
+                    if scoped_cue is None:
+                        clean_va_pool.append(img)
+                else:
+                    topup_tr += 1
+                    if scoped_cue is None:
+                        clean_tr_pool.append(img)
+
     # 11. Official `runestone_statuses_clean` composite boards for rare hazards
     comp_tr, comp_va = _add_encyclopedia_status_composites(store, enc_dir, clean_tr_pool, clean_va_pool, rng)
 
@@ -1399,6 +1627,7 @@ def build_phase4_v2_dataset(
             "hazards_p1_multiscene": {"train": p1_tr, "val": p1_va},
             "collab_skins": {"train": col_tr, "val": col_va},
             "board_static_pairs": {"train": pair_tr, "val": pair_va},
+            "topup_v090_low_recall": {"train": topup_tr, "val": topup_va},
             "neg_a2_popups": {"train": neg_tr, "val": neg_va},
         },
         "races_val_cells": {

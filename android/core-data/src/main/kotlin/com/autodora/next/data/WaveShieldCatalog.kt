@@ -284,18 +284,115 @@ object ActiveStrategyStore {
 
             val sameIdx = current.indexOfFirst { it.id == chip.id }
             if (sameIdx >= 0) {
-                if (current[sameIdx] != chip) {
-                    current[sameIdx] = chip
+                val prev = current[sameIdx]
+                val merged = if (prev.autoDetected) mergeSameWaveAutoChip(prev, chip, preferIncoming = true) else prev
+                if (merged != prev) {
+                    current[sameIdx] = merged
                     appliedCount++
                 }
             } else {
-                current.removeAll { it.autoDetected && it.id in groupIds }
-                current.add(chip)
-                appliedCount++
+                val groupAutoIdx = current.indexOfFirst { it.autoDetected && it.id in groupIds }
+                if (groupAutoIdx >= 0 && chip.id == "puzzle_shield" && current[groupAutoIdx].id in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS) {
+                    val upgraded = mergeSameWaveAutoChip(current[groupAutoIdx], chip, preferIncoming = true)
+                    current.removeAll { it.autoDetected && it.id in groupIds }
+                    current.add(upgraded)
+                    appliedCount++
+                } else {
+                    current.removeAll { it.autoDetected && it.id in groupIds }
+                    current.add(chip)
+                    appliedCount++
+                }
             }
         }
         _activeChips.value = current
         return appliedCount
+    }
+
+    /**
+     * Merges same-wave multi-enemy element masks (`全消火` + `全消木` -> `全消火木`) and upgrades partial
+     * compound shields (`严格拼图` + `水限制形状盾` -> `严格拼图·水`) without losing already-detected attributes.
+     */
+    private fun mergeSameWaveAutoChip(
+        existing: WaveShieldChip,
+        incoming: WaveShieldChip,
+        preferIncoming: Boolean
+    ): WaveShieldChip {
+        if (incoming.id in SAME_WAVE_MASK_MERGE_IDS && (existing.paramElementMask != 0 || incoming.paramElementMask != 0)) {
+            if (incoming.id == "require_elements") {
+                val reqMask = (existing.paramElementMask and 0x3F) or (incoming.paramElementMask and 0x3F)
+                val enchMask = ((existing.paramElementMask ushr 8) and 0x3F) or
+                    ((incoming.paramElementMask ushr 8) and 0x3F) or
+                    (if ((existing.paramInt and 1) != 0) (existing.paramElementMask and 0x3F) else 0) or
+                    (if ((incoming.paramInt and 1) != 0) (incoming.paramElementMask and 0x3F) else 0)
+                val mergedInt = (existing.paramInt or incoming.paramInt) and (if (enchMask == reqMask && reqMask != 0) 3 else 2)
+                return incoming.copy(
+                    autoDetected = true,
+                    paramInt = mergedInt,
+                    paramElementMask = reqMask or ((enchMask and 0x3F) shl 8)
+                )
+            }
+            val mergedMask = existing.paramElementMask or incoming.paramElementMask
+            val mergedInt = if (preferIncoming && incoming.paramInt > 0) incoming.paramInt else maxOf(existing.paramInt, incoming.paramInt)
+            return (if (preferIncoming) incoming else existing).copy(
+                autoDetected = true,
+                paramInt = mergedInt,
+                paramElementMask = mergedMask
+            )
+        }
+        if (incoming.id == "puzzle_shield" && existing.id in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS) {
+            val exInt = when (existing.id) {
+                "strict_puzzle" -> 1
+                "enchanted_puzzle" -> 3
+                else -> existing.paramInt
+            }
+            val inElem = (incoming.paramInt ushr 2) and 0x0F
+            val exElem = (exInt ushr 2) and 0x0F
+            val finalElem = if (preferIncoming) {
+                if (inElem != 0) inElem else exElem
+            } else {
+                if (exElem != 0) exElem else inElem
+            }
+            val shapeBits = if ((exInt ushr 8) != 0) (exInt and 0xF00) else (incoming.paramInt and 0xF00)
+            val flags = (exInt and 3) or (incoming.paramInt and 3)
+            val packed = flags or (finalElem shl 2) or shapeBits
+            if (!preferIncoming && existing.id == "puzzle_shield" && packed == existing.paramInt) {
+                return existing
+            }
+            return incoming.copy(
+                id = "puzzle_shield",
+                label = if ((packed and 1) != 0) "严格拼图盾" else "普通拼图盾",
+                autoDetected = true,
+                paramInt = packed
+            )
+        }
+        if (incoming.id in setOf("cross_shield", "l_shape", "t_shape", "square_2x2", "square_3x3", "race_orb_shield")) {
+            val mergedMask = if (preferIncoming && incoming.paramElementMask != 0) {
+                existing.paramElementMask or incoming.paramElementMask
+            } else {
+                if (existing.paramElementMask != 0) existing.paramElementMask else incoming.paramElementMask
+            }
+            val mergedInt = if (preferIncoming && incoming.paramInt != 0) incoming.paramInt else maxOf(existing.paramInt, incoming.paramInt)
+            return (if (preferIncoming) incoming else existing).copy(
+                autoDetected = true,
+                paramInt = mergedInt,
+                paramElementMask = mergedMask
+            )
+        }
+        if (incoming.id == "equal_pair_light_dark") {
+            val inMask = incoming.paramElementMask and 0x3F
+            val exMask = existing.paramElementMask and 0x3F
+            val finalMask = when {
+                preferIncoming && Integer.bitCount(inMask) >= 2 -> 0x100 or inMask
+                Integer.bitCount(exMask) >= 2 -> 0x100 or exMask
+                Integer.bitCount(inMask) >= 2 -> 0x100 or inMask
+                else -> existing.paramElementMask
+            }
+            return (if (preferIncoming) incoming else existing).copy(
+                autoDetected = true,
+                paramElementMask = finalMask
+            )
+        }
+        return if (preferIncoming) incoming.copy(autoDetected = true) else existing
     }
 
     /**
@@ -337,12 +434,21 @@ object ActiveStrategyStore {
                 val chip = rawChip.copy(autoDetected = true)
                 if (chip.id in dismissedAutoChipIds) continue
                 val familyIds = iconConflictFamilyFor(chip.id)
-                val alreadyCovered = current.any { existing ->
+                val existingIdx = current.indexOfFirst { existing ->
                     existing.id == chip.id || existing.id in familyIds
                 }
-                if (!alreadyCovered) {
+                if (existingIdx < 0) {
                     current.add(chip)
                     added++
+                } else {
+                    val existing = current[existingIdx]
+                    if (existing.autoDetected && (existing.id == chip.id || chip.id == "puzzle_shield")) {
+                        val upgraded = mergeSameWaveAutoChip(existing, chip, preferIncoming = false)
+                        if (upgraded != existing) {
+                            current[existingIdx] = upgraded
+                            added++
+                        }
+                    }
                 }
             }
             if (added > 0) {
@@ -358,30 +464,23 @@ object ActiveStrategyStore {
         return added
     }
 
+    private val SAME_WAVE_MASK_MERGE_IDS = setOf(
+        "elem_burst_shield", "require_elements", "anti_first_wave",
+        "forbid_all", "clear_all_element", "unmatchable_elements",
+        "keep_element_at_least_one"
+    )
+
     /**
-     * `S2 -> S1` Board-to-Strategy Closed-Loop Feedback (`v0.9.0` Tier-4 Arbitration):
-     * Propagates unmistakable board-resident states (`BLACK_WHITE` monochrome disguise, Starting Buoy,
-     * Traffic Light Start+End, Puzzle polygon, Electrified/Frozen/Burning/Scorching/Sticky/Bloodbath/Shattered)
-     * back into [_activeVisualHints] and [_activeChips] even when upper enemy skill icons are occluded or disabled.
-     *
-     * Strictly respects Tier 1..3 precedence (never overwrites user/OCR/Icon chips and honors wave dismissals).
+     * `S2 -> S1` Board-to-Strategy Closed-Loop Feedback (`v0.9.2` Tier-4 Arbitration):
+     * Propagates ONLY genuine structural board mechanics (`BLACK_WHITE` monochrome >=40% board,
+     * Starting Buoy, Traffic Light Start+End, and multi-frame-confirmed Puzzle polygons) without
+     * feeding per-cell hazard noise (`ELECTRIFIED`/`FROZEN`) back into [_activeVisualHints].
      */
     @Synchronized
-    fun mergeBoardDerivedSignals(board: BoardState): Int {
+    fun mergeBoardDerivedSignals(board: BoardState, allowPuzzleFallback: Boolean = false): Int {
         if (board.cells.isEmpty()) return 0
 
         var bwCount = 0
-        var elecCount = 0
-        var frozPetCount = 0
-        var weathBombCount = 0
-        var purgCount = 0
-        var hiddenCount = 0
-        var burnCount = 0
-        var scorchCount = 0
-        var stickyCount = 0
-        var bbCount = 0
-        var bhCount = 0
-        var shatCount = 0
         var puzzle1Count = 0
         var hasTlStart = false
         var hasTlEnd = false
@@ -390,36 +489,13 @@ object ActiveStrategyStore {
             val h = board.cells[i].hazards
             val f = board.tileFlags.getOrElse(i) { TileFlagBits.NONE }
             if ((h and HazardBits.BLACK_WHITE) != 0) bwCount++
-            if ((h and HazardBits.ELECTRIFIED) != 0) elecCount++
-            if ((h and (HazardBits.FROZEN or HazardBits.ICE_SEALED or HazardBits.PETRIFIED)) != 0) frozPetCount++
-            if ((h and (HazardBits.WEATHERED or HazardBits.BOMB)) != 0) weathBombCount++
-            if ((h and HazardBits.PURGATORY_FIRE) != 0) purgCount++
-            if ((h and HazardBits.QUESTION) != 0 || board.cells[i].element == Element.HIDDEN) hiddenCount++
-
-            if ((f and TileFlagBits.BURNING_TILE) != 0) burnCount++
-            if ((f and TileFlagBits.SCORCHING_TILE) != 0) scorchCount++
-            if ((f and TileFlagBits.STICKY_TILE) != 0) stickyCount++
-            if ((f and TileFlagBits.END_FORBIDDEN) != 0) bbCount++
-            if ((f and TileFlagBits.BLACK_HOLE) != 0) bhCount++
-            if ((f and TileFlagBits.SHATTERED) != 0) shatCount++
             if ((f and TileFlagBits.PUZZLE_1) != 0) puzzle1Count++
             if ((f and TileFlagBits.START_ALLOWED) != 0) hasTlStart = true
             if ((f and TileFlagBits.END_REQUIRED) != 0) hasTlEnd = true
         }
 
         val boardHints = BoardVisualHints(
-            hasMonochrome = bwCount >= maxOf(8, (board.cells.size * 0.35f).toInt()),
-            hasBurning = burnCount > 0,
-            hasScorching = scorchCount > 0,
-            hasElectrified = elecCount > 0,
-            hasSticky = stickyCount > 0,
-            hasPurgatoryFire = purgCount > 0,
-            hasHiddenOrbs = hiddenCount >= 4,
-            hasFrozenOrPetrified = frozPetCount > 0,
-            hasWeatheredOrBomb = weathBombCount > 0,
-            hasBloodbath = bbCount > 0,
-            hasBlackHole = bhCount > 0,
-            hasShattered = shatCount > 0
+            hasMonochrome = bwCount >= maxOf(12, (board.cells.size * 0.42f).toInt())
         )
 
         val derivedChips = ArrayList<WaveShieldChip>(3)
@@ -443,14 +519,14 @@ object ActiveStrategyStore {
                 )
             )
         }
-        if (puzzle1Count >= 3) {
+        if (allowPuzzleFallback && puzzle1Count >= 3) {
             derivedChips.add(
                 WaveShieldChip(
                     id = "puzzle_shield",
                     label = "拼图盾(盘面)",
                     category = ShieldCategory.SHAPE_AND_PUZZLE,
                     autoDetected = true,
-                    paramInt = 1
+                    paramInt = 0
                 )
             )
         }

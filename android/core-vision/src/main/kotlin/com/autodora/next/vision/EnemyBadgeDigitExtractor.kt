@@ -414,4 +414,142 @@ object EnemyBadgeDigitExtractor {
             else -> null
         }
     }
+
+    private val ELEMENT_NAMES_CN = arrayOf("水", "火", "木", "光", "暗", "心")
+
+    fun elementCodeNameCn(code: Int): String = ELEMENT_NAMES_CN.getOrElse(code) { "" }
+
+    /**
+     * Inspects the CenterNet spatial peak of an elemental enemy skill icon (`ICON_ANTI_FIRST_WAVE`,
+     * `ICON_FORBID_ALL`, `ICON_PUZZLE`, `ICON_CROSS_SHIELD`, `ICON_L_SHAPE`, `ICON_T_SHAPE`, `ICON_SQUARE_2X2`)
+     * and extracts its dominant ToS orb element code (`0..5` = Water/Fire/Wood/Light/Dark/Heart, or `-1` if generic).
+     */
+    fun extractSingleElementFromIcon(
+        frame: VisionFrame,
+        iconClass: String,
+        cxRatio: Float,
+        cyRatio: Float,
+        excludeRect: IntArray? = null
+    ): Int {
+        if (frame.width < 64 || frame.height < 64) return -1
+        val cx = cxRatio * frame.width
+        val cy = cyRatio * frame.height
+        val iw = frame.width * 0.056f
+        val x0 = (cx - iw * 0.44f).roundToInt().coerceIn(0, frame.width - 2)
+        val x1 = (cx + iw * 0.44f).roundToInt().coerceIn(x0 + 2, frame.width - 1)
+        val y0 = (cy - iw * 0.44f).roundToInt().coerceIn(0, frame.height - 2)
+        val y1 = (cy + iw * 0.44f).roundToInt().coerceIn(y0 + 2, frame.height - 1)
+
+        val votes = FloatArray(6)
+        var vividTotal = 0f
+        for (y in y0..y1) {
+            for (x in x0..x1) {
+                if (excludeRect != null && excludeRect.size >= 4 &&
+                    x in excludeRect[0] until excludeRect[2] &&
+                    y in excludeRect[1] until excludeRect[3]
+                ) continue
+                val argb = frame.getArgb(x, y)
+                val code = classifyIconPixelElement(argb, iconClass == "ICON_ANTI_FIRST_WAVE")
+                if (code in 0..5) {
+                    val mx = max((argb ushr 16) and 0xFF, max((argb ushr 8) and 0xFF, argb and 0xFF)) / 255f
+                    votes[code] += mx
+                    vividTotal += mx
+                }
+            }
+        }
+        if (vividTotal < 6f) return -1
+        var bestCode = -1
+        var bestVote = 0f
+        for (e in 0..5) {
+            if (votes[e] > bestVote) {
+                bestVote = votes[e]
+                bestCode = e
+            }
+        }
+        val domRatio = bestVote / vividTotal
+        // Generic Puzzle / Cross / L / T icons use warm gold-amber metallic frames (Light hue),
+        // so only accept non-Light colors on shape/puzzle icons unless strongly saturated non-gold.
+        if (iconClass in setOf("ICON_PUZZLE", "ICON_CROSS_SHIELD", "ICON_L_SHAPE", "ICON_T_SHAPE", "ICON_SQUARE_2X2")) {
+            if (bestCode == 3 || domRatio < 0.56f) return -1
+        } else if (domRatio < 0.42f) {
+            return -1
+        }
+        return bestCode
+    }
+
+    /**
+     * Extracts multi-element bitmask (`2..6` colors) from `ICON_EQUAL_COMBO` (`水木光 = COM`, `光暗 = COM`, etc.).
+     */
+    fun extractEqualComboMask(
+        frame: VisionFrame,
+        cxRatio: Float,
+        cyRatio: Float,
+        excludeRect: IntArray? = null
+    ): Int {
+        if (frame.width < 64 || frame.height < 64) return 0
+        val cx = cxRatio * frame.width
+        val cy = cyRatio * frame.height
+        val iw = frame.width * 0.066f
+        val x0 = (cx - iw * 0.52f).roundToInt().coerceIn(0, frame.width - 2)
+        val x1 = (cx + iw * 0.52f).roundToInt().coerceIn(x0 + 2, frame.width - 1)
+        val y0 = (cy - iw * 0.56f).roundToInt().coerceIn(0, frame.height - 2)
+        val y1 = (cy + iw * 0.08f).roundToInt().coerceIn(y0 + 2, frame.height - 1)
+
+        val votes = IntArray(6)
+        var totalHits = 0
+        for (y in y0..y1) {
+            for (x in x0..x1) {
+                if (excludeRect != null && excludeRect.size >= 4 &&
+                    x in excludeRect[0] until excludeRect[2] &&
+                    y in excludeRect[1] until excludeRect[3]
+                ) continue
+                val code = classifyIconPixelElement(frame.getArgb(x, y), ignorePureRedSlash = false)
+                if (code in 0..5) {
+                    votes[code]++
+                    totalHits++
+                }
+            }
+        }
+        if (totalHits < 10) return 0
+        val minPerElem = max(4, (totalHits * 0.12f).toInt())
+        var mask = 0
+        for (e in 0..5) {
+            if (votes[e] >= minPerElem) {
+                mask = mask or (1 shl e)
+            }
+        }
+        return if (Integer.bitCount(mask) >= 2) mask else 0
+    }
+
+    private fun classifyIconPixelElement(argb: Int, ignorePureRedSlash: Boolean): Int {
+        val r = (argb ushr 16) and 0xFF
+        val g = (argb ushr 8) and 0xFF
+        val b = argb and 0xFF
+        val maxC = max(r, max(g, b))
+        val minC = min(r, min(g, b))
+        val delta = maxC - minC
+        if (maxC < 72 || delta < 28) return -1
+        val s = delta.toFloat() / maxC.toFloat()
+        val v = maxC / 255f
+        if (s < 0.30f) return -1
+        val rawH = when (maxC) {
+            r -> 60f * (((g - b).toFloat() / delta) % 6f)
+            g -> 60f * (((b - r).toFloat() / delta) + 2f)
+            else -> 60f * (((r - g).toFloat() / delta) + 4f)
+        }
+        val h = if (rawH < 0f) rawH + 360f else rawH
+        return when {
+            h in 176f..242f && v >= 0.42f -> 0 // WATER
+            (h >= 350f || h <= 24f) && v >= 0.48f && s >= 0.45f -> {
+                // On anti_first_wave, crimson prohibition slash has low G (h ~ 352..4, s > 0.78, g < 48);
+                // genuine Fire orb core has warm orange-gold highlights (h in 8..24 or g >= 58).
+                if (ignorePureRedSlash && (h >= 352f || h <= 5f) && g < 52) -1 else 1
+            }
+            h in 84f..158f && v >= 0.38f -> 2 // WOOD
+            h in 38f..66f && v >= 0.56f && s >= 0.36f -> 3 // LIGHT
+            h in 256f..306f && v >= 0.30f && s >= 0.28f -> 4 // DARK
+            h in 312f..346f && v >= 0.48f && s >= 0.34f -> 5 // HEART
+            else -> -1
+        }
+    }
 }

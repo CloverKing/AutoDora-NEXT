@@ -212,7 +212,7 @@ CANONICAL_MUST_TRAIN_IDS = {
     "ICON099", "ENC_skill_048", "ICON202", "ENC_skill_049",
     "ICON092", "ICON093", "ICON187", "ENC_skill_005", "ENC_skill_006",
     "ICON051", "ENC_skill_001", "ICON1427", "ENC_skill_013", "ICON1376",
-    "ICON153", "ENC_skill_030", "ICON432", "ICON1339",
+    "ICON153", "ENC_skill_030", "ICON432", "ICON1339", "ICON1472",
     "ICON103", "ICON104", "ICON105", "ICON106", "ICON163", "ICON164", "ICON165",
 }
 
@@ -254,29 +254,97 @@ def _draw_outlined_text(
     draw.text((x, y), text, font=font, fill=fill)
 
 
+def _scrub_full_width_enemy_band_528x384(arr: np.ndarray) -> np.ndarray:
+    """
+    Scrubs pre-existing enemy `CD` & mini-icons strictly inside the upper icon band `y in [24..246]`
+    across the full width `x in [0..528]`, while preserving `y in [250..384]` (lower monster bodies,
+    glowing shells/tentacles, enemy HP bars, companion sprite, and team portraits) 100% RAZOR-SHARP!
+    """
+    blurred = np.asarray(
+        Image.fromarray(arr).filter(ImageFilter.GaussianBlur(radius=9.5)),
+        dtype=np.float32,
+    )
+    orig = arr.astype(np.float32)
+    alpha_y = np.zeros((384, 1, 1), dtype=np.float32)
+    alpha_y[26:236, 0, 0] = 1.0
+    alpha_y[12:26, 0, 0] = np.linspace(0.0, 1.0, 14, dtype=np.float32)
+    alpha_y[236:254, 0, 0] = np.linspace(1.0, 0.0, 18, dtype=np.float32)
+    mixed = np.clip(orig * (1.0 - alpha_y) + blurred * alpha_y, 0.0, 255.0).astype(np.uint8)
+    out = Image.fromarray(mixed).resize((STRIP_W, STRIP_H), Image.Resampling.BOX)
+    return np.asarray(out, dtype=np.uint8)
+
+
 def _extract_clean_upper_bg_160x256(img_path: Path) -> np.ndarray | None:
+    """
+    Uses exact periodicity-verified board `[x0, x1]` on 16:9 YouTube frames (and full width on
+    native portrait frames `w <= 0.72*h`) so `[0.04..0.96] x [0.08..0.42]` matches the live phone
+    aspect ratio 1:1 and full-width scrubbing removes 100% of real in-battle CD & shield icons!
+    """
+    from ml.tools.extract_tos_dataset import detect_tos_board  # noqa: E402
+    from ml.tools.build_phase4_v2_board_dataset import has_6x5_grid_periodicity  # noqa: E402
+
     try:
         im = Image.open(img_path).convert("RGB")
     except Exception:
         return None
-    w, h = im.size
-    if w < 200 or h < 320:
+    fw, fh = im.size
+    if fw < 200 or fh < 320:
         return None
 
-    crop = im.crop((int(w * 0.04), int(h * 0.08), int(w * 0.96), int(h * 0.42))).resize(
+    if fw <= int(fh * 0.72):
+        vx0, vx1 = 0, fw
+    else:
+        rgb_full = np.asarray(im, dtype=np.uint8)
+        box = detect_tos_board(rgb_full)
+        if box is None:
+            return None
+        bw0 = box.width
+        cx0 = 0.5 * (box.left + box.right)
+        best_span: tuple[int, int] | None = None
+        best_sc = -1e9
+        for w_scale in (0.94, 0.98, 1.00, 1.02, 1.06):
+            bw = int(round(bw0 * w_scale))
+            bh = int(round(bw * 5.0 / 6.0))
+            if bw < 160 or bh > fh:
+                continue
+            for dx_frac in (-0.04, -0.02, 0.0, 0.02, 0.04):
+                x0 = int(round(cx0 - bw * 0.5 + dx_frac * bw0))
+                x1 = x0 + bw
+                if x0 < 0 or x1 > fw or box.top + bh > fh:
+                    continue
+                cand = np.asarray(
+                    im.crop((x0, box.top, x1, box.top + bh)).resize((384, 320), Image.Resampling.BILINEAR),
+                    dtype=np.uint8,
+                )
+                ok, sc = has_6x5_grid_periodicity(cand)
+                if ok and sc > best_sc:
+                    best_sc = sc
+                    best_span = (x0, x1)
+        if best_span is None:
+            return None
+        vx0, vx1 = best_span
+
+    vp = im.crop((vx0, 0, vx1, fh))
+    w, h = vp.size
+    crop = vp.crop((int(w * 0.04), int(h * 0.08), int(w * 0.96), int(h * 0.42))).resize(
         (528, 384), Image.Resampling.BILINEAR
     )
     arr = np.asarray(crop, dtype=np.uint8).copy()
-    src_patch = arr[36:330, 340:495][:, ::-1]
-    feathered_x = np.linspace(1.0, 0.0, 25, dtype=np.float32)[None, :, None]
-    arr[36:330, :130] = src_patch[:, :130]
-    arr[36:330, 130:155] = np.clip(
-        src_patch[:, 130:155] * feathered_x + arr[36:330, 130:155] * (1.0 - feathered_x), 0, 255
-    ).astype(np.uint8)
-    mid_zone = Image.fromarray(arr[55:280, 155:310]).filter(ImageFilter.GaussianBlur(radius=3.2))
-    arr[55:280, 155:310] = np.asarray(mid_zone, dtype=np.uint8)
-    out = Image.fromarray(arr).resize((STRIP_W, STRIP_H), Image.Resampling.BILINEAR)
-    return np.asarray(out, dtype=np.uint8)
+    if arr.mean() < 10.0 or arr.mean() > 242.0:
+        return None
+    return _scrub_full_width_enemy_band_528x384(arr)
+
+
+def _scrub_precropped_upper_strip(strip_path: Path) -> np.ndarray | None:
+    """Loads a pre-cropped `upper_strips/*_strip.{png,webp}` and scrubs the full enemy icon band."""
+    try:
+        im = Image.open(strip_path).convert("RGB").resize((528, 384), Image.Resampling.BILINEAR)
+    except Exception:
+        return None
+    arr = np.asarray(im, dtype=np.uint8).copy()
+    if arr.mean() < 10.0 or arr.mean() > 242.0:
+        return None
+    return _scrub_full_width_enemy_band_528x384(arr)
 
 
 def _clean_enc_icon_rgba(im: Image.Image) -> np.ndarray:
@@ -325,9 +393,9 @@ def _rasterize_strip_sprite(cls_name: str, base_48: np.ndarray, rng: random.Rand
     Renders an icon (including authentic right-side `[NUM] 17` and `>=5 COM` badges) downsampled
     to exact `[160, 256]` strip dimensions inside a `[20, 32, 4]` buffer.
     """
-    sw = rng.randint(11, 17)
-    aspect_ratio = rng.uniform(1.04, 1.34)
-    sh = max(9, min(17, int(round(sw / aspect_ratio))))
+    sw = rng.randint(9, 18)
+    aspect_ratio = rng.uniform(1.04, 1.36)
+    sh = max(8, min(17, int(round(sw / aspect_ratio))))
     buf = np.zeros((SPRITE_H_BOX, SPRITE_W_BOX, 4), dtype=np.uint8)
 
     if cls_name == "ICON_DIGITAL_COUNT" and rng.random() < 0.80:
@@ -404,18 +472,64 @@ def composite_strip_sample_fast(
     if rng.random() < 0.28:
         _draw_boss_lightning_np(canvas, rng)
 
-    top_y_min = 12
-    if rng.random() < 0.32:
-        hh = rng.randint(15, 28)
-        canvas[1:1 + hh, 6:STRIP_W - 6] = canvas[1:1 + hh, 6:STRIP_W - 6] * 0.22 + np.array([22.0, 25.0, 32.0], dtype=np.float32) * 0.78
-        px = 10
+    # Paste 1..3 razor-sharp zoomed monster-torso / armor / companion patches from the icon-free
+    # lower band `bg_u8[106:152, :]` into the upper enemy zone `y in [18..102]` so EnemyIconNetV2
+    # never mistakes sharp boss art, glowing emblems, or tentacles for enemy skill icons!
+    if rng.random() < 0.72:
         for _ in range(rng.randint(1, 3)):
-            pw = rng.randint(18, 34)
-            pcol = rng.choice([(235.0, 185.0, 45.0), (225.0, 85.0, 65.0), (45.0, 165.0, 110.0), (75.0, 130.0, 230.0)])
-            if px + pw < STRIP_W - 12:
-                canvas[hh - 8:hh - 1, px:px + pw] = pcol
+            pw_src = rng.randint(44, 110)
+            ph_src = rng.randint(26, 42)
+            sx0 = rng.randint(0, max(0, STRIP_W - pw_src))
+            sy0 = rng.randint(106, max(106, 152 - ph_src))
+            patch_u8 = bg_u8[sy0:sy0 + ph_src, sx0:sx0 + pw_src]
+            if rng.random() < 0.5:
+                patch_u8 = patch_u8[:, ::-1]
+            dw = min(STRIP_W - 8, int(round(pw_src * rng.uniform(1.15, 1.55))))
+            dh = min(84, int(round(ph_src * rng.uniform(1.15, 1.55))))
+            zoomed = np.asarray(
+                Image.fromarray(patch_u8).resize((dw, dh), Image.Resampling.BILINEAR),
+                dtype=np.float32,
+            ) * rng.uniform(0.82, 1.15)
+            dx0 = rng.randint(4, max(4, STRIP_W - dw - 4))
+            dy0 = rng.randint(16, max(16, 106 - dh))
+            # Softly feather 4px border so no artificial hard box edge is created
+            wy = np.ones((dh, 1, 1), dtype=np.float32)
+            wx = np.ones((1, dw, 1), dtype=np.float32)
+            f = min(5, dh // 3, dw // 3)
+            if f >= 2:
+                ramp = np.linspace(0.0, 1.0, f, dtype=np.float32)
+                wy[:f, 0, 0] = ramp
+                wy[-f:, 0, 0] = ramp[::-1]
+                wx[0, :f, 0] = ramp
+                wx[0, -f:, 0] = ramp[::-1]
+            w2d = wy * wx
+            roi = canvas[dy0:dy0 + dh, dx0:dx0 + dw]
+            canvas[dy0:dy0 + dh, dx0:dx0 + dw] = np.clip(roi * (1.0 - w2d) + zoomed * w2d, 0.0, 255.0)
+
+    top_y_min = 12
+    if rng.random() < 0.42:
+        hh = rng.randint(14, 34)
+        hy = rng.randint(0, 18) if rng.random() < 0.7 else rng.randint(36, 95)
+        hx0 = rng.randint(2, 24)
+        hx1 = min(STRIP_W - 2, hx0 + rng.randint(120, STRIP_W - 8))
+        bg_bar = np.array(rng.choice([(22.0, 25.0, 32.0), (242.0, 244.0, 248.0), (34.0, 30.0, 48.0)]), dtype=np.float32)
+        canvas[hy:min(STRIP_H - 2, hy + hh), hx0:hx1] = (
+            canvas[hy:min(STRIP_H - 2, hy + hh), hx0:hx1] * 0.16 + bg_bar * 0.84
+        )
+        px = hx0 + 6
+        pill_y0 = min(STRIP_H - 6, hy + max(2, hh - 9))
+        pill_y1 = min(STRIP_H - 2, pill_y0 + 6)
+        for _ in range(rng.randint(2, 6)):
+            pw = rng.randint(14, 30)
+            pcol = rng.choice([
+                (235.0, 185.0, 45.0), (225.0, 85.0, 65.0), (45.0, 165.0, 110.0),
+                (75.0, 130.0, 230.0), (165.0, 85.0, 215.0), (0.0, 180.0, 205.0),
+            ])
+            if px + pw < hx1 - 4 and pill_y1 > pill_y0:
+                canvas[pill_y0:pill_y1, px:px + pw] = pcol
             px += pw + 3
-        top_y_min = hh + 10
+        if hy < 24:
+            top_y_min = max(top_y_min, hy + hh + 6)
 
     chosen: list[tuple[int | None, np.ndarray, int, int]] = []
     if not force_negative and pos_items:
@@ -457,7 +571,7 @@ def composite_strip_sample_fast(
             ax = rng.randint(x_lo, max(x_lo, x_hi))
             stack_h = sum(it[3] + gap for it in grp) if vertical else max(it[3] for it in grp)
             y_lo = max(top_y_min + 11, 28)
-            y_hi = max(y_lo, STRIP_H - stack_h - 8)
+            y_hi = max(y_lo, min(104, STRIP_H - 46) - stack_h)
             ay = rng.randint(y_lo, y_hi)
 
             if rng.random() < 0.88 and ay - 11 >= 2 and ax + 24 < STRIP_W:
@@ -594,7 +708,10 @@ def build_dataset(
             v_items = items[:max(1, len(items) // 2)] if items else []
 
         # Also include 1 scale-augmented canonical icon in val for classes whose core archetype is unique
-        if must_tr and cls_name in ("ICON_MONOCHROME_DISGUISE", "ICON_THREE_ELEMENTS", "ICON_DIGITAL_COUNT", "ICON_SQUARE_2X2", "ICON_TRAFFIC_LIGHT"):
+        if must_tr and cls_name in (
+            "ICON_MONOCHROME_DISGUISE", "ICON_THREE_ELEMENTS", "ICON_DIGITAL_COUNT",
+            "ICON_SQUARE_2X2", "ICON_TRAFFIC_LIGHT", "ICON_EXACT_COMBO",
+        ):
             v_items = list(v_items) + must_tr[:1]
 
         k_tr_vars = max(4, 32 // max(1, len(t_items)))
@@ -639,27 +756,57 @@ def build_dataset(
             tr_neg_wh.append((sw, sh))
 
     scene_frames: dict[str, list[Path]] = defaultdict(list)
+    precropped_strips: dict[str, list[Path]] = defaultdict(list)
     for p in (inbox_dir / "board_static_pairs").rglob("pair_*_a.png"):
         if "_board_" not in p.name:
             scene_frames[f"pair/{p.stem.rsplit('_', 2)[0]}"].append(p)
     for sub in ("race_missing", "hazards_p0", "overlays_p0", "hazards_p1_multiscene", "collab_skins"):
         for p in (inbox_dir / sub).rglob("frames/*.png"):
             scene_frames[str(p.parents[1].relative_to(inbox_dir))].append(p)
+    # Include verified `topup_v090_low_recall` frames (cropped strictly to portrait `[vx0, vx1]` via `_extract_clean_upper_bg_160x256`!)
+    from ml.tools.build_phase4_v2_board_dataset import load_refined_6x5_board  # noqa: E402
+    topup_dir = inbox_dir / "topup_v090_low_recall"
+    if topup_dir.is_dir():
+        for fdir in sorted(topup_dir.rglob("frames")):
+            rel_key = f"topup090/{fdir.parent.relative_to(topup_dir)}"
+            for fp in sorted(fdir.glob("*.png")):
+                bp = fdir.parent / "boards" / f"{fp.stem}_board.png"
+                if bp.is_file() and load_refined_6x5_board(bp) is not None:
+                    scene_frames[rel_key].append(fp)
     for yt_sub in ("20261125_yt_verified_batch", "20261125_yt_user_batch2", "20261125_yt_user_batch3"):
         ydir = media_dir / yt_sub
         if ydir.is_dir():
             for p in ydir.rglob("*.png"):
                 scene_frames[f"utm/{yt_sub}/{p.parent.name}"].append(p)
 
-    scene_keys = sorted(scene_frames.keys())
-    rng.shuffle(scene_keys)
-    val_scenes = set(scene_keys[:max(8, len(scene_keys) // 5)])
+    for corpus_sub in ("youtube_mechanic_v1", "youtube_broad_corpus_v1"):
+        sdir = inbox_dir / corpus_sub / "upper_strips"
+        if sdir.is_dir():
+            for sp in sorted(sdir.iterdir()):
+                if sp.suffix.lower() in (".png", ".webp", ".jpg"):
+                    vid_key = "_".join(sp.stem.split("_")[:2])
+                    precropped_strips[f"{corpus_sub}/{vid_key}"].append(sp)
+
+    all_keys = sorted(scene_frames.keys())
+    rng.shuffle(all_keys)
+    val_scenes = set(all_keys[:max(10, len(all_keys) // 5)])
+
+    strip_keys = sorted(precropped_strips.keys())
+    rng.shuffle(strip_keys)
+    val_strip_scenes = set(strip_keys[:max(8, len(strip_keys) // 5)])
 
     bg_train_list, bg_val_list = [], []
-    for sk in scene_keys:
+    for sk in all_keys:
         target_list = bg_val_list if sk in val_scenes else bg_train_list
         for fp in sorted(scene_frames[sk])[:8]:
             bg = _extract_clean_upper_bg_160x256(fp)
+            if bg is not None:
+                target_list.append(bg)
+
+    for sk in strip_keys:
+        target_list = bg_val_list if sk in val_strip_scenes else bg_train_list
+        for sp in sorted(precropped_strips[sk])[:6]:
+            bg = _scrub_precropped_upper_strip(sp)
             if bg is not None:
                 target_list.append(bg)
 

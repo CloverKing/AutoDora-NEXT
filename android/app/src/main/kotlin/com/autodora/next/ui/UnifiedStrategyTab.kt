@@ -125,6 +125,35 @@ internal fun UnifiedStrategyTab(
     LaunchedEffect(byId["wave1_same_kind"]?.paramInt, byId["wave1_distinct_kind"]?.paramInt) {
         (byId["wave1_same_kind"] ?: byId["wave1_distinct_kind"])?.paramInt?.let { if (it in 1..10) wave1KindVal = it }
     }
+    LaunchedEffect(byId["odd_combo"]?.paramInt, byId["even_combo"]?.paramInt) {
+        (byId["odd_combo"] ?: byId["even_combo"])?.let { parityFirstOnly = it.paramInt != 1 }
+    }
+    LaunchedEffect(byId["second_wave_combo"]?.paramInt) {
+        byId["second_wave_combo"]?.paramInt?.let { if (it in 1..6) secondWaveVal = it }
+    }
+    LaunchedEffect(byId["same_elem_combos"]?.paramInt, byId["same_elem_combos"]?.paramElementMask) {
+        byId["same_elem_combos"]?.let { c ->
+            if (c.paramInt in 2..6) sameElemGroupsVal = c.paramInt
+            sameElemTarget = if (c.paramElementMask != 0) {
+                (0..5).firstOrNull { (c.paramElementMask and (1 shl it)) != 0 } ?: -1
+            } else -1
+        }
+    }
+    LaunchedEffect(byId["equal_pair_light_dark"]?.paramElementMask) {
+        byId["equal_pair_light_dark"]?.paramElementMask?.let { m ->
+            if ((m and 0x100) != 0 && Integer.bitCount(m and 0x3F) >= 2) {
+                equalElemsMask = m and 0x3F
+            } else if (m != 0) {
+                equalElemsMask = (1 shl (m and 0x0F).coerceIn(0, 5)) or (1 shl ((m ushr 4) and 0x0F).coerceIn(0, 5))
+            }
+        }
+    }
+    LaunchedEffect(byId["zero_trail_burning"]?.paramInt) {
+        byId["zero_trail_burning"]?.paramInt?.let { packed ->
+            maxBurnHurts = (packed ushr 8) and 0xFF
+            burnTrailLen = packed and 0xFF
+        }
+    }
     LaunchedEffect(byId["elem_burst_shield"]?.paramInt) { byId["elem_burst_shield"]?.paramInt?.let { if (it in 3..30) burstOrbsVal = it } }
     LaunchedEffect(byId["max_element_orbs"]?.paramInt) { byId["max_element_orbs"]?.paramInt?.let { if (it in 0..30) maxElemOrbsVal = it } }
     LaunchedEffect(byId["digital_orb_count"]?.paramInt) { byId["digital_orb_count"]?.paramInt?.let { if (it in 6..30) digitalOrbs = it } }
@@ -137,6 +166,28 @@ internal fun UnifiedStrategyTab(
             if (lo in 1..200 && hi in lo..200) {
                 stepRangeMinVal = lo
                 stepRangeMaxVal = hi
+            }
+        }
+    }
+    LaunchedEffect(activeWaveChips) {
+        val limBaseIds = listOf(
+            "anti_first_wave",
+            "forbid_all",
+            "clear_all_element",
+            "keep_element_at_least_one",
+            "unmatchable_elements"
+        )
+        val masks = limBaseIds.map { id ->
+            var m = byId[id]?.paramElementMask ?: 0
+            for (e in 0..5) if ("${id}_$e" in activeIds) m = m or (1 shl e)
+            m
+        }
+        if (masks.getOrElse(elemLimitMode) { 0 } == 0) {
+            val nextMode = limBaseIds.indices.firstOrNull { idx ->
+                masks[idx] != 0 && byId[limBaseIds[idx]]?.autoDetected == true
+            } ?: masks.indexOfFirst { it != 0 }.takeIf { it >= 0 }
+            if (nextMode != null) {
+                elemLimitMode = nextMode
             }
         }
     }
@@ -283,8 +334,7 @@ internal fun UnifiedStrategyTab(
         }
 
         // ==================== Visual Prior Pills & Bypassed Grey Skill Restore ====================
-        val hasHintPills = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise ||
-            activeVisualHints.hasElectrified || activeVisualHints.hasFrozenOrPetrified
+        val hasHintPills = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise
         if (hasHintPills || bypassedGreySkills.isNotEmpty()) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -315,22 +365,6 @@ internal fun UnifiedStrategyTab(
                                     accent = DrawerAccentColors.Amber,
                                     isDark = isDark,
                                     onDismiss = { ActiveStrategyStore.dismissVisualHint("disguise") }
-                                )
-                            }
-                            if (activeVisualHints.hasElectrified) {
-                                CompactDismissibleTag(
-                                    label = stringResource(R.string.ov_hint_elec_pill),
-                                    accent = DrawerAccentColors.Blue,
-                                    isDark = isDark,
-                                    onDismiss = { ActiveStrategyStore.dismissVisualHint("electrified") }
-                                )
-                            }
-                            if (activeVisualHints.hasFrozenOrPetrified) {
-                                CompactDismissibleTag(
-                                    label = stringResource(R.string.ov_hint_frozen_pill),
-                                    accent = DrawerAccentColors.Teal,
-                                    isDark = isDark,
-                                    onDismiss = { ActiveStrategyStore.dismissVisualHint("frozen_petrified") }
                                 )
                             }
                         }
@@ -1136,15 +1170,17 @@ internal fun UnifiedStrategyTab(
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 listOf(
-                    Triple(0, stringResource(R.string.elem_limit_anti), Integer.bitCount(antiMask)),
-                    Triple(1, stringResource(R.string.elem_limit_forbid), Integer.bitCount(forbidMask)),
-                    Triple(2, stringResource(R.string.elem_limit_clear_all), Integer.bitCount(clearMask)),
-                    Triple(3, stringResource(R.string.elem_limit_keep_one), Integer.bitCount(keepOneMask)),
-                    Triple(4, stringResource(R.string.elem_limit_unmatchable), Integer.bitCount(unmatchMask))
-                ).forEach { (idx, lbl, cnt) ->
+                    Triple(0, stringResource(R.string.elem_limit_anti), Integer.bitCount(antiMask) to isAiChip("anti_first_wave")),
+                    Triple(1, stringResource(R.string.elem_limit_forbid), Integer.bitCount(forbidMask) to isAiChip("forbid_all")),
+                    Triple(2, stringResource(R.string.elem_limit_clear_all), Integer.bitCount(clearMask) to isAiChip("clear_all_element")),
+                    Triple(3, stringResource(R.string.elem_limit_keep_one), Integer.bitCount(keepOneMask) to isAiChip("keep_element_at_least_one")),
+                    Triple(4, stringResource(R.string.elem_limit_unmatchable), Integer.bitCount(unmatchMask) to isAiChip("unmatchable_elements"))
+                ).forEach { (idx, lbl, meta) ->
+                    val (cnt, modeAi) = meta
                     CompactChoicePill(
                         label = if (cnt > 0) "$lbl($cnt)" else lbl,
                         selected = elemLimitMode == idx,
+                        aiHighlighted = cnt > 0 && modeAi,
                         onClick = { elemLimitMode = idx }
                     )
                 }

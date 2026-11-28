@@ -296,21 +296,31 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
         // A. Puzzle Shield (#1 指定形狀盾 / 強化拼圖盾 / 嚴格拼圖 / 屬性拼圖 / 屬性限制形狀盾)
         if (norm.contains("拼图") || norm.contains("指定形状") || norm.contains("形状盾") || norm.contains("指定位置消除")) {
             val strict = norm.contains("不可黏连") || norm.contains("不可相连") || norm.contains("不可连同") ||
-                norm.contains("严格") || norm.contains("限制形状盾") ||
+                norm.contains("严格") || norm.contains("限制形状") || norm.contains("同属以外") ||
+                norm.contains("指定形状以外") ||
                 Regex("拼图盾\\s*[-·]?\\s*限").containsMatchIn(norm) || norm.contains("指定形状")
             val ench = norm.contains("强化")
-            val elemMatch = Regex("([水火木光暗心])(?:属性)?(?:强化|限制){0,2}[^\\n]{0,14}?(?:拼图|指定形状|形状盾)|(?:拼图|指定形状|形状盾|指定位置消除)[^\\n]{0,14}?([水火木光暗心])(?:属性|强化)?符石")
-                .find(norm)
+            val elemMatch = Regex(
+                "([水火木光暗心])(?:属性|符石)?(?:强化|限制){0,2}[^\\n]{0,16}?(?:拼图|指定形状|形状盾)" +
+                    "|(?:拼图|指定形状|形状盾|指定位置消除)[^\\n]{0,22}?([水火木光暗心])(?:属性|强化)?符石" +
+                    "|【[^】]*?([水火木光暗心])[^】]*?(?:拼图|指定形状|限制形状|形状盾)" +
+                    "|仅限([水火木光暗心])(?:属性|强化)?符石"
+            ).find(norm)
             val elemChar = elemMatch?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.firstOrNull()
             val elemCode = elemChar?.let { charToElementCode(it) } ?: -1
             val packed = (if (strict) 1 else 0) or
                 (if (ench) 2 else 0) or
                 (if (elemCode in 0..5) ((elemCode + 1) shl 2) else 0)
+            val puzLabel = buildList {
+                add(if (strict) "严格拼图盾" else "普通拼图盾")
+                if (ench) add("强化")
+                if (elemCode in 0..5) add(formatElementsCn(1 shl elemCode))
+            }.joinToString("·")
             matchedIds.add("typed_puzzle_shield")
             chips.add(
                 WaveShieldChip(
                     id = "puzzle_shield",
-                    label = if (strict) "严格拼图盾" else "普通拼图盾",
+                    label = puzLabel,
                     category = ShieldCategory.SHAPE_AND_PUZZLE,
                     autoDetected = true,
                     paramInt = packed
@@ -577,7 +587,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             )
         }
         val hasShapeExplicitCount = Regex("(?:≥|>=)[ \\t]*([23])[ \\t]*组").containsMatchIn(norm)
-        if (Regex("(?:(?<![a-zA-Z])l[ \\t]*[形字])(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
+        if (Regex("(?:(?<![a-zA-Z])l[ \\t]*(?:字形|形|字))(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
             val em = extractElementMaskNearKeywords(norm)
             if (em != 0 || hasShapeExplicitCount) {
                 matchedIds.add("typed_l_shape_elem")
@@ -593,7 +603,7 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
                 )
             }
         }
-        if (Regex("(?:(?<![a-zA-Z])t[ \\t]*[形字])(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
+        if (Regex("(?:(?<![a-zA-Z])t[ \\t]*(?:字形|形|字))(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
             val em = extractElementMaskNearKeywords(norm)
             if (em != 0 || hasShapeExplicitCount) {
                 matchedIds.add("typed_t_shape_elem")
@@ -608,6 +618,59 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
                     )
                 )
             }
+        }
+        if (Regex("(?:田字(?:形)?|2\\s*[x×]\\s*2\\s*(?:田字)?)(?:限?盾|消除)", RegexOption.IGNORE_CASE).containsMatchIn(norm)) {
+            val em = extractElementMaskNearKeywords(norm)
+            if (em != 0 || hasShapeExplicitCount) {
+                matchedIds.add("typed_square_2x2_elem")
+                chips.add(
+                    WaveShieldChip(
+                        id = "square_2x2",
+                        label = "${if (em != 0) formatElementsCn(em) + " " else ""}田字 2×2 盾",
+                        category = ShieldCategory.SHAPE_AND_PUZZLE,
+                        autoDetected = true,
+                        paramInt = 0,
+                        paramElementMask = em
+                    )
+                )
+            }
+        }
+        val sameElemComboMatch = Regex(
+            "(?:([水火木光暗心])(?:属性)?符石\\s*([2-6])\\s*(?:组|连击)盾|首[批消]消除\\s*(?:≥|>=|至少)?\\s*([2-6])\\s*组([水火木光暗心])(?:属性)?符石)"
+        ).find(norm)
+        if (sameElemComboMatch != null) {
+            val g = sameElemComboMatch.groupValues
+            val elCh = (g[1].ifEmpty { g[4] }).firstOrNull()
+            val cntVal = (g[2].ifEmpty { g[3] }).toIntOrNull()?.coerceIn(2, 6)
+            val elCode = elCh?.let { charToElementCode(it) } ?: -1
+            if (cntVal != null && elCode in 0..5) {
+                matchedIds.add("typed_same_elem_combos")
+                chips.add(
+                    WaveShieldChip(
+                        id = "same_elem_combos",
+                        label = "同属 ${cntVal} 组·${elCh}",
+                        category = ShieldCategory.COMBO,
+                        autoDetected = true,
+                        paramInt = cntVal,
+                        paramElementMask = 1 shl elCode
+                    )
+                )
+            }
+        }
+        // Unnumbered 【指定連擊法印】 / 【固定連擊法印】 (where combo count is shown as orbiting spheres on boss)
+        if ((norm.contains("指定连击法印") || norm.contains("固定连击法印") || norm.contains("首批消除指定连击数")) &&
+            !Regex("\\d+\\s*(?:连击法印|combo|c(?![a-zA-Z])|连击)", RegexOption.IGNORE_CASE).containsMatchIn(norm)
+        ) {
+            matchedIds.add("typed_unnumbered_combo_seal")
+            chips.add(
+                WaveShieldChip(
+                    id = "exact_first_combo",
+                    label = "首消 5 Combo",
+                    category = ShieldCategory.COMBO,
+                    autoDetected = true,
+                    paramInt = 5
+                )
+            )
         }
 
         // J. #64 凝護, Max Combo Cap (連擊上限盾), 3x3 Square, Max Element Orbs & Elemental Orb Armor Shield
@@ -752,8 +815,11 @@ class TosEnemySkillParserV2(ruleSet: EnemySkillRuleSet) {
             if (entry.chipId == "five_elements" && ("five_elements_enchanted" in currentIds || "five_elements" in currentIds)) continue
             if (entry.chipId == "cross_shield" && ("cross_shield" in currentIds || "forbid_cross" in currentIds)) continue
             if (entry.chipId == "square_3x3" && "square_3x3" in currentIds) continue
+            if (entry.chipId == "square_2x2" && "square_2x2" in currentIds) continue
             if (entry.chipId == "l_shape" && "l_shape" in currentIds) continue
             if (entry.chipId == "t_shape" && "t_shape" in currentIds) continue
+            if (entry.chipId == "same_elem_combos" && "same_elem_combos" in currentIds) continue
+            if (entry.chipId == "exact_first_combo" && "exact_first_combo" in currentIds) continue
             if (entry.chipId == "exact_combo" && "exact_first_combo" in currentIds) continue
             if (entry.chipId == "min_combo" && ("min_first_combo" in currentIds || "max_combo" in currentIds)) continue
             if (entry.chipId == "max_combo" && "max_combo" in currentIds) continue

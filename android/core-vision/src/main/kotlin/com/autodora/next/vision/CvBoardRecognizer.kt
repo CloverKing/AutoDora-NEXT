@@ -2034,7 +2034,7 @@ class CvBoardRecognizer : BoardRecognizer {
             }
         }
 
-        // Global internal-seam sanity gate:
+        // Global internal-seam sanity gate (preserves monochrome/dimmed puzzle boards like t_6200ms.png!):
         // Even a 2x2 corner or 3-cell edge bar has >= 4 internal perimeter walls, while non-puzzle
         // internal seams stay dark (>= 32% dark, <= 48% bright — rejects white UI screens & bright maps!).
         if (strongIntSeams < 4 || totalIntSeams <= 0) return 0
@@ -2275,7 +2275,7 @@ class CvBoardRecognizer : BoardRecognizer {
                         st.outerCount <= st.intCount + 2 &&
                         st.intMeanWall >= 0.72f &&
                         st.intStrongRatio >= 0.75f &&
-                        meanInt <= 0.45f
+                        meanInt <= 0.44f
                     ) {
                         validComps.add(comp)
                         for (u in comp) cleanMask[u] = true

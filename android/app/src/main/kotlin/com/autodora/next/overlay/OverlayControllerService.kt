@@ -226,6 +226,10 @@ class OverlayControllerService : Service() {
     private var pendingIconClassKey: String = ""
     private var consecutiveIconMatchTicks: Int = 0
     private var lastAppliedIconWaveKey: String = ""
+    private var prevSettledPlayableHash: Long = 0L
+    private var settledPlayableBoardTicks: Int = 0
+    private var prevPuzzleMaskSignature: Long = 0L
+    private var confirmedStaticPuzzleTicks: Int = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -446,6 +450,30 @@ class OverlayControllerService : Service() {
         pendingStaticBoardFrame?.let { if (!it.isRecycled) it.recycle() }
         pendingStaticBoardFrame = null
         boardTurnStabilityTracker.reset()
+        prevSettledPlayableHash = 0L
+        settledPlayableBoardTicks = 0
+        prevPuzzleMaskSignature = 0L
+        confirmedStaticPuzzleTicks = 0
+    }
+
+    private fun computeControlRootScreenRect(): IntArray? {
+        if (!::controlRoot.isInitialized || controlRoot.visibility != View.VISIBLE) return null
+        val w = controlRoot.width
+        val h = controlRoot.height
+        if (w <= 0 || h <= 0) return null
+        val loc = IntArray(2)
+        runCatching { controlRoot.getLocationOnScreen(loc) }.onFailure { return null }
+        return intArrayOf(loc[0] - dp(2), loc[1] - dp(2), loc[0] + w + dp(2), loc[1] + h + dp(2))
+    }
+
+    private fun computePuzzleMaskSignature(board: BoardState): Long {
+        var sig = 0L
+        for (i in board.tileFlags.indices) {
+            if ((board.tileFlags[i] and TileFlagBits.PUZZLE_1) != 0 && i < 62) {
+                sig = sig or (1L shl i)
+            }
+        }
+        return sig
     }
 
     override fun onDestroy() {
@@ -1407,8 +1435,9 @@ class OverlayControllerService : Service() {
                 // Same-frame collaborative Stage 2B EnemyIconNetV2 + Keypoint Badge OCR (~4-6ms) BEFORE board
                 // recognition & solving so parameterized shields (e.g. >=5 COM, NUM 17) & monochrome priors guide this solve!
                 if (settings.autoEnemyIconDetectEnabled) {
+                    val uiExclude = computeControlRootScreenRect()
                     val (iconRes, badgeChips) = withContext(Dispatchers.Default) {
-                        val ir = enemyIconOnnxClassifier.classifyBitmap(frames.first())
+                        val ir = enemyIconOnnxClassifier.classifyBitmap(frames.first(), uiExclude)
                         val bc = if (ir != null) {
                             paddleOcrOnnxEngine.recognizeEnemyNumericBadges(frames, ir)
                         } else emptyList()
@@ -1492,9 +1521,19 @@ class OverlayControllerService : Service() {
                     boardToSolve
                 }
                 val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(boardWithLockedOps)
-                // S2 -> S1 closed-loop feedback: board-detected monochrome, starting buoy, traffic light, or puzzle
-                // automatically updates visual hints & missing Tier-4 chips before composing RuleConfig!
-                ActiveStrategyStore.mergeBoardDerivedSignals(effectiveBoard)
+                // S2 -> S1 closed-loop feedback: board-detected monochrome, starting buoy, traffic light, or verified puzzle
+                val solveBoardClean = withContext(Dispatchers.Default) {
+                    BoardCaptureQualityGate.evaluateBoardCaptureQuality(
+                        frame = DirectBitmapVisionFrame(frames.first()),
+                        geometry = geom,
+                        recognition = liveRec,
+                        hasHpBar = AutoGridDetector.hasHpBarBarrier(frames.first(), geom) || geom.isWeijianExpanded
+                    ).isCleanStaticPlayable
+                }
+                ActiveStrategyStore.mergeBoardDerivedSignals(
+                    board = effectiveBoard,
+                    allowPuzzleFallback = solveBoardClean && liveRec.puzzleCellsDetected >= 3
+                )
                 activeWaveChips = ActiveStrategyStore.activeChips.value
                 activeVisualHints = ActiveStrategyStore.activeVisualHints.value
                 (boardRecognizer as? HybridBoardRecognizer)?.activeVisualHints = activeVisualHints
@@ -2388,10 +2427,10 @@ class OverlayControllerService : Service() {
             var consecutiveMassQuestionTicks = 0
             var consecutiveBlankTicks = 0
             while (isActive) {
-                val loopDelayMs = if (CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY) {
-                    900L
-                } else {
-                    340L
+                val loopDelayMs = when {
+                    CaptureRouter.effectiveMode(settings.captureMode) == CaptureMode.ACCESSIBILITY -> 900L
+                    consecutiveEnemyModalTicks >= 1 -> 130L
+                    else -> 340L
                 }
                 delay(loopDelayMs)
                 if (currentPhase != OverlayPhase.IDLE || calibrationMode || boardEditorMode || tuningDrawerOpen) {
@@ -2555,7 +2594,29 @@ class OverlayControllerService : Service() {
                                                         }
                                                     )
                                                 }
-                                                if (modalKind == DarkModalKind.ENEMY_LONG_PRESS_POPUP) {
+                                                val stageParsed = if (modalKind == DarkModalKind.STAGE_INFO_MODAL && allowPreBattleStageOcr) {
+                                                    StageWaveScriptParser.parseStageInfoLines(ocrRes.lines, parser)
+                                                } else null
+
+                                                if (stageParsed != null) {
+                                                    stageWaveScriptRepository.saveScript(stageParsed.script)
+                                                    val entry = ActiveStageScriptStore.activateScript(
+                                                        stageParsed.script,
+                                                        stageParsed.detectedCurrentWave ?: 1
+                                                    )
+                                                    waveTransitionDetector.reset()
+                                                    withContext(Dispatchers.Main) {
+                                                        toast(
+                                                            lctx.getString(
+                                                                R.string.ov_toast_stage_script_loaded_fmt,
+                                                                stageParsed.script.waves.size,
+                                                                entry?.waveIndex ?: 1
+                                                            )
+                                                        )
+                                                    }
+                                                } else if (modalKind == DarkModalKind.ENEMY_LONG_PRESS_POPUP ||
+                                                    (allowInBattleEnemyOcr && (parseRes.activeChips.isNotEmpty() || parseRes.bypassedBlocks.isNotEmpty() || parseRes.combinedHints.hasAny()))
+                                                ) {
                                                     if (!allowInBattleEnemyOcr) return@launch
                                                     val bypassedInputs = parseRes.bypassedBlocks
                                                         .filter { it.chips.isNotEmpty() }
@@ -2594,29 +2655,9 @@ class OverlayControllerService : Service() {
                                                             }
                                                         }
                                                     }
-                                                } else {
-                                                    if (!allowPreBattleStageOcr) return@launch
-                                                    val stageParsed = StageWaveScriptParser.parseStageInfoLines(ocrRes.lines, parser)
-                                                    if (stageParsed != null) {
-                                                        stageWaveScriptRepository.saveScript(stageParsed.script)
-                                                        val entry = ActiveStageScriptStore.activateScript(
-                                                            stageParsed.script,
-                                                            stageParsed.detectedCurrentWave ?: 1
-                                                        )
-                                                        waveTransitionDetector.reset()
-                                                        withContext(Dispatchers.Main) {
-                                                            toast(
-                                                                lctx.getString(
-                                                                    R.string.ov_toast_stage_script_loaded_fmt,
-                                                                    stageParsed.script.waves.size,
-                                                                    entry?.waveIndex ?: 1
-                                                                )
-                                                            )
-                                                        }
-                                                    } else if (parseRes.allBlocks.isNotEmpty()) {
-                                                        withContext(Dispatchers.Main) {
-                                                            toast(lctx.getString(R.string.ov_toast_ocr_stage_archived_fmt, parseRes.allBlocks.size))
-                                                        }
+                                                } else if (allowPreBattleStageOcr && parseRes.allBlocks.isNotEmpty()) {
+                                                    withContext(Dispatchers.Main) {
+                                                        toast(lctx.getString(R.string.ov_toast_ocr_stage_archived_fmt, parseRes.allBlocks.size))
                                                     }
                                                 }
                                             } catch (_: Throwable) {
@@ -2693,55 +2734,10 @@ class OverlayControllerService : Service() {
                                         handleWaveAdvanced()
                                     }
                                 }
-                                // Collaborative Stage 2B EnemyIconNetV2 + Keypoint Badge OCR runs alongside Stage Scripts & Popup OCR!
-                                if (settings.autoEnemyIconDetectEnabled &&
-                                    !boardEditorMode &&
-                                    !calibrationMode
-                                ) {
-                                    val nowIconMs = System.currentTimeMillis()
-                                    if ((nowIconMs - lastIconScanTimeMs) >= 1800L) {
-                                        lastIconScanTimeMs = nowIconMs
-                                        val (iconRes, badgeChips) = withContext(Dispatchers.Default) {
-                                            val ir = enemyIconOnnxClassifier.classifyBitmap(bmp)
-                                            val bc = if (ir != null) {
-                                                paddleOcrOnnxEngine.recognizeEnemyNumericBadges(listOf(bmp), ir)
-                                            } else emptyList()
-                                            ir to bc
-                                        }
-                                        val combinedIconChips = if (iconRes != null) {
-                                            (badgeChips + iconRes.chips).distinctBy { it.id }
-                                        } else emptyList()
-                                        if (iconRes != null && (combinedIconChips.isNotEmpty() || iconRes.hints.hasAny())) {
-                                            val chipSig = combinedIconChips.sortedBy { it.id }.joinToString(",") { "${it.id}:${it.paramInt}" }
-                                            val key = iconRes.detectedClasses.sorted().joinToString(",") + "|" + chipSig
-                                            if (key == pendingIconClassKey) {
-                                                consecutiveIconMatchTicks++
-                                            } else {
-                                                pendingIconClassKey = key
-                                                consecutiveIconMatchTicks = 1
-                                            }
-                                            if (consecutiveIconMatchTicks >= 2 && key != lastAppliedIconWaveKey) {
-                                                lastAppliedIconWaveKey = key
-                                                ActiveStrategyStore.mergeCollaborativeIconDetections(combinedIconChips, iconRes.hints)
-                                            }
-                                        } else {
-                                            pendingIconClassKey = ""
-                                            consecutiveIconMatchTicks = 0
-                                        }
-                                    }
-                                }
-                                // S2 -> S1 continuous board-to-strategy feedback (e.g. Monochrome `◐ 幽闭AI` pill, Buoy, Puzzle)
-                                if (!boardEditorMode && !calibrationMode) {
-                                    ActiveStrategyStore.mergeBoardDerivedSignals(rec.board)
-                                }
-                                if (!showPath &&
-                                    !boardEditorMode &&
-                                    !calibrationMode &&
-                                    !usedMemorizedSnapshot &&
-                                    lastSolveOutput == null &&
-                                    settings.trainingDataCollectionEnabled
-                                ) {
-                                    val (qEval, curHash, madVsPrev) = withContext(Dispatchers.Default) {
+                                // Evaluate static playable board quality FIRST so EnemyIconNet, S2->S1 board feedback,
+                                // and idle sample capture NEVER run during combo explosions, VICTORY/Battle banners, or Toasts!
+                                val (qEval, curHash, madVsPrev) = if (!boardEditorMode && !calibrationMode) {
+                                    withContext(Dispatchers.Default) {
                                         val vf = DirectBitmapVisionFrame(bmp)
                                         val q = BoardCaptureQualityGate.evaluateBoardCaptureQuality(
                                             frame = vf,
@@ -2762,14 +2758,105 @@ class OverlayControllerService : Service() {
                                         }
                                         Triple(q, dHash, mad)
                                     }
-                                    if (!qEval.isCleanStaticPlayable) {
-                                        if (qEval.rejectReason == "MID_CLEAR_EMPTY_HOLES" ||
-                                            qEval.rejectReason == "COMBO_EXPLOSION_GLOW" ||
-                                            qEval.rejectReason == "NO_HP_BAR"
-                                        ) {
-                                            resetIdleBoardStabilityCache()
+                                } else {
+                                    Triple(com.autodora.next.vision.BoardQualityEvaluation(false, "EDITOR_OR_CALIB", 0, 0f, 0f), 0L, null)
+                                }
+
+                                if (!qEval.isCleanStaticPlayable) {
+                                    settledPlayableBoardTicks = 0
+                                    prevSettledPlayableHash = 0L
+                                    confirmedStaticPuzzleTicks = 0
+                                    prevPuzzleMaskSignature = 0L
+                                    pendingIconClassKey = ""
+                                    consecutiveIconMatchTicks = 0
+                                    if (qEval.rejectReason == "MID_CLEAR_EMPTY_HOLES" ||
+                                        qEval.rejectReason == "COMBO_EXPLOSION_GLOW" ||
+                                        qEval.rejectReason == "NO_HP_BAR"
+                                    ) {
+                                        resetIdleBoardStabilityCache()
+                                    }
+                                } else {
+                                    val hashDist = if (prevSettledPlayableHash != 0L) {
+                                        java.lang.Long.bitCount(curHash xor prevSettledPlayableHash)
+                                    } else 0
+                                    if (prevSettledPlayableHash == 0L || (hashDist <= 3 && (madVsPrev == null || madVsPrev <= 8.5f))) {
+                                        settledPlayableBoardTicks++
+                                    } else {
+                                        settledPlayableBoardTicks = 1
+                                        confirmedStaticPuzzleTicks = 0
+                                    }
+                                    prevSettledPlayableHash = curHash
+
+                                    val pSig = computePuzzleMaskSignature(rec.board)
+                                    if (pSig != 0L && java.lang.Long.bitCount(pSig) >= 3) {
+                                        if (pSig == prevPuzzleMaskSignature) {
+                                            confirmedStaticPuzzleTicks++
+                                        } else {
+                                            prevPuzzleMaskSignature = pSig
+                                            confirmedStaticPuzzleTicks = 1
                                         }
                                     } else {
+                                        prevPuzzleMaskSignature = 0L
+                                        confirmedStaticPuzzleTicks = 0
+                                    }
+                                }
+
+                                // Collaborative Stage 2B EnemyIconNetV2 + Keypoint Badge OCR runs ONLY on settled clean static battle boards!
+                                if (settings.autoEnemyIconDetectEnabled &&
+                                    !boardEditorMode &&
+                                    !calibrationMode &&
+                                    qEval.isCleanStaticPlayable &&
+                                    settledPlayableBoardTicks >= 2
+                                ) {
+                                    val nowIconMs = System.currentTimeMillis()
+                                    val iconIntervalMs = if (lastAppliedIconWaveKey.isEmpty()) 420L else 1800L
+                                    if ((nowIconMs - lastIconScanTimeMs) >= iconIntervalMs) {
+                                        lastIconScanTimeMs = nowIconMs
+                                        val uiExclude = computeControlRootScreenRect()
+                                        val (iconRes, badgeChips) = withContext(Dispatchers.Default) {
+                                            val ir = enemyIconOnnxClassifier.classifyBitmap(bmp, uiExclude)
+                                            val bc = if (ir != null) {
+                                                paddleOcrOnnxEngine.recognizeEnemyNumericBadges(listOf(bmp), ir)
+                                            } else emptyList()
+                                            ir to bc
+                                        }
+                                        val combinedIconChips = if (iconRes != null) {
+                                            (badgeChips + iconRes.chips).distinctBy { it.id }
+                                        } else emptyList()
+                                        if (iconRes != null && (combinedIconChips.isNotEmpty() || iconRes.hints.hasAny())) {
+                                            val chipSig = combinedIconChips.sortedBy { it.id }.joinToString(",") { "${it.id}:${it.paramInt}:${it.paramElementMask}" }
+                                            val key = iconRes.detectedClasses.sorted().joinToString(",") + "|" + chipSig
+                                            if (key == pendingIconClassKey) {
+                                                consecutiveIconMatchTicks++
+                                            } else {
+                                                pendingIconClassKey = key
+                                                consecutiveIconMatchTicks = 1
+                                            }
+                                            if (consecutiveIconMatchTicks >= 2 && key != lastAppliedIconWaveKey) {
+                                                lastAppliedIconWaveKey = key
+                                                ActiveStrategyStore.mergeCollaborativeIconDetections(combinedIconChips, iconRes.hints)
+                                            }
+                                        } else {
+                                            pendingIconClassKey = ""
+                                            consecutiveIconMatchTicks = 0
+                                        }
+                                    }
+                                }
+                                // S2 -> S1 continuous board-to-strategy feedback ONLY on >=2 settled static battle ticks!
+                                if (!boardEditorMode && !calibrationMode && qEval.isCleanStaticPlayable && settledPlayableBoardTicks >= 2) {
+                                    ActiveStrategyStore.mergeBoardDerivedSignals(
+                                        board = rec.board,
+                                        allowPuzzleFallback = confirmedStaticPuzzleTicks >= 2
+                                    )
+                                }
+                                if (!showPath &&
+                                    !boardEditorMode &&
+                                    !calibrationMode &&
+                                    !usedMemorizedSnapshot &&
+                                    lastSolveOutput == null &&
+                                    settings.trainingDataCollectionEnabled
+                                ) {
+                                    if (qEval.isCleanStaticPlayable) {
                                         when (boardTurnStabilityTracker.onStableFrameCheck(curHash, madVsPrev)) {
                                             StabilityDecision.WAIT_FIRST_FRAME,
                                             StabilityDecision.BOARD_CHANGED_RESET -> {
@@ -2799,8 +2886,10 @@ class OverlayControllerService : Service() {
                                             StabilityDecision.ALREADY_CAPTURED_THIS_TURN -> Unit
                                         }
                                     }
-                                } else {
-                                    resetIdleBoardStabilityCache()
+                                } else if (showPath || boardEditorMode || calibrationMode || usedMemorizedSnapshot || lastSolveOutput != null) {
+                                    pendingStaticBoardFrame?.let { if (!it.isRecycled) it.recycle() }
+                                    pendingStaticBoardFrame = null
+                                    boardTurnStabilityTracker.reset()
                                 }
 
                                 // Always-On Full-Screen Question Orb Memory:
@@ -3223,8 +3312,7 @@ class OverlayControllerService : Service() {
         val hasSaved = savedEditedBoard != null || (settings.lockCustomBoardOpsAcrossTurns && lockedCustomOpsTemplate != null)
         val hasBypassed = bypassedGreySkills.isNotEmpty()
         val hasScript = activeStageScript != null
-        val hasVisualBadges = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise ||
-            activeVisualHints.hasElectrified || activeVisualHints.hasFrozenOrPetrified
+        val hasVisualBadges = activeVisualHints.hasMonochrome || activeVisualHints.hasDisguise
         if ((activeWaveChips.isEmpty() && !hasSaved && !hasBypassed && !hasScript && !hasVisualBadges) || !toolbarExpanded) {
             activeShieldScroll.visibility = View.GONE
             clampControlWindowToScreen(anchorRight)
@@ -3329,24 +3417,6 @@ class OverlayControllerService : Service() {
                 setOnClickListener { ActiveStrategyStore.dismissVisualHint("disguise") }
             })
             activeShieldRow.addView(dWrap)
-        }
-        if (activeVisualHints.hasElectrified) {
-            addDismissibleHintPill(
-                lctx.getString(R.string.ov_hint_elec_pill),
-                if (p.isDark) Color.rgb(20, 46, 68) else Color.rgb(227, 242, 253),
-                if (p.isDark) Color.rgb(144, 202, 249) else Color.rgb(13, 71, 161),
-                Color.rgb(33, 150, 243),
-                "electrified"
-            )
-        }
-        if (activeVisualHints.hasFrozenOrPetrified) {
-            addDismissibleHintPill(
-                lctx.getString(R.string.ov_hint_frozen_pill),
-                if (p.isDark) Color.rgb(18, 52, 54) else Color.rgb(224, 247, 250),
-                if (p.isDark) Color.rgb(128, 222, 234) else Color.rgb(0, 96, 100),
-                Color.rgb(0, 172, 193),
-                "frozen_petrified"
-            )
         }
         if (hasSaved) {
             val savedBg = if (p.isDark) Color.rgb(72, 46, 12) else Color.rgb(255, 243, 224)
@@ -3553,8 +3623,9 @@ class OverlayControllerService : Service() {
                     else -> toast(lctx.getString(R.string.ov_toast_manual_scan_none))
                 }
             } else {
+                val uiExclude = computeControlRootScreenRect()
                 val (iconRes, badgeChips) = withContext(Dispatchers.Default) {
-                    val ir = enemyIconOnnxClassifier.classifyBitmap(bmp)
+                    val ir = enemyIconOnnxClassifier.classifyBitmap(bmp, uiExclude)
                     val bc = if (ir != null) {
                         paddleOcrOnnxEngine.recognizeEnemyNumericBadges(listOf(bmp), ir)
                     } else emptyList()

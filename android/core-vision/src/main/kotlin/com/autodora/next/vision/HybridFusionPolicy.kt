@@ -329,10 +329,13 @@ object HybridFusionPolicy {
 
             when {
                 isMono && hasCvMonoProbs && cnnMatchProb >= 0.35f -> {
+                    val cnnBwProb = pred.hazardProbs.getOrElse(OrbNetSchema.IDX_HAZ_BLACK_WHITE) { 0f }.coerceIn(0f, 1f)
+                    val cnnWeight = 0.12f + 0.38f * cnnBwProb
+                    val monoWeight = 1.0f - cnnWeight
                     var bestE = 0
                     var bestJoint = -1f
                     for (e in 0 until 6) {
-                        val jp = 0.50f * pred.elementProbs[e] + 0.50f * cvMonoProbs!![e]
+                        val jp = cnnWeight * pred.elementProbs[e] + monoWeight * cvMonoProbs!![e]
                         if (jp > bestJoint) {
                             bestJoint = jp
                             bestE = e
