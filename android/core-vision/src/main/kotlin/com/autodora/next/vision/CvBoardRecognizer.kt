@@ -304,6 +304,36 @@ class CvBoardRecognizer : BoardRecognizer {
             }
         }
 
+        // Board-wide Monochrome (`幽閉空間` / `黑白符石`) 24x24 canonical silhouette & core-luminance recovery:
+        val bwCandidateCount = cells.count { (it.hazards and HazardBits.BLACK_WHITE) != 0 }
+        val isBoardMono = bwCandidateCount >= (total * 0.50f).toInt().coerceAtLeast(10) ||
+            (visualHints.hasMonochrome && bwCandidateCount >= 6) ||
+            MonochromeOrbMatcher.isBoardMonochrome(evalFrames.first(), geometry)
+        val monoProbsPerCell: ArrayList<FloatArray>? = if (isBoardMono) ArrayList(total) else null
+        if (isBoardMono) {
+            val primaryFrame = evalFrames.first()
+            for (idx in 0 until total) {
+                val r = idx / cols
+                val c = idx % cols
+                val flags = tileFlags[idx]
+                val cur = cells[idx]
+                val isSkip = (flags and (TileFlagBits.STORM or TileFlagBits.SHATTERED)) != 0 ||
+                    (cur.hazards and HazardBits.PETRIFIED) != 0
+                if (isSkip) {
+                    monoProbsPerCell?.add(FloatArray(6))
+                    continue
+                }
+                val probs6 = MonochromeOrbMatcher.classifyMonochromeCellProbs(primaryFrame, geometry, r, c)
+                monoProbsPerCell?.add(probs6)
+                val (monoEl, monoConf) = MonochromeOrbMatcher.bestElementFromProbs(probs6)
+                cells[idx] = cur.copy(
+                    element = monoEl,
+                    hazards = (cur.hazards and HazardBits.QUESTION.inv()) or HazardBits.BLACK_WHITE,
+                    confidence = max(cur.confidence, monoConf)
+                )
+            }
+        }
+
         // Normalize Storm cells and compute summary metrics after full-column Storm & terrain refinement:
         for (idx in 0 until total) {
             val isStorm = (tileFlags[idx] and TileFlagBits.STORM) != 0
@@ -358,7 +388,8 @@ class CvBoardRecognizer : BoardRecognizer {
             trafficLightEndCount = tlEndCount,
             startingBuoyCol = buoyCol,
             startingBuoyElement = buoyElement,
-            isDimmedBoard = isDimmedBoard
+            isDimmedBoard = isDimmedBoard,
+            monochromeCellProbs = monoProbsPerCell
         )
     }
 

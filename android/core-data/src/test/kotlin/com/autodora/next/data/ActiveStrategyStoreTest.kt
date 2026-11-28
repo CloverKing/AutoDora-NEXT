@@ -138,4 +138,44 @@ class ActiveStrategyStoreTest {
         ActiveStrategyStore.removeElementFromChip("forbid_all", Element.FIRE.code)
         assertTrue(ActiveStrategyStore.activeChips.value.isEmpty())
     }
+
+    @Test
+    fun `mergeBoardDerivedSignals closes S2 to S1 feedback loop while respecting dismissals and manual overrides`() {
+        val cells = List(30) { idx ->
+            CellState(
+                element = Element.MATCHABLE[idx % 6],
+                hazards = if (idx < 24) HazardBits.BLACK_WHITE else HazardBits.ELECTRIFIED
+            )
+        }
+        val flags = MutableList(30) { TileFlagBits.NONE }.apply {
+            this[0] = TileFlagBits.PUZZLE_1
+            this[1] = TileFlagBits.PUZZLE_1
+            this[2] = TileFlagBits.PUZZLE_1
+            this[6] = TileFlagBits.START_ALLOWED
+            this[29] = TileFlagBits.END_REQUIRED
+        }
+        val board = BoardState(
+            cols = 6,
+            rows = 5,
+            cells = cells,
+            tileFlags = flags,
+            startingBuoyCol = 2,
+            startingBuoyElement = Element.WOOD
+        )
+
+        val added = ActiveStrategyStore.mergeBoardDerivedSignals(board)
+        assertEquals(3, added)
+        assertTrue(ActiveStrategyStore.activeVisualHints.value.hasMonochrome)
+        assertTrue(ActiveStrategyStore.activeVisualHints.value.hasElectrified)
+        val ids = ActiveStrategyStore.activeChips.value.map { it.id }.toSet()
+        assertTrue(ids.containsAll(setOf("starting_buoy_shield", "traffic_light", "puzzle_shield")))
+
+        // User dismisses monochrome hint & puzzle_shield -> must NOT re-trigger on next board tick in same wave!
+        ActiveStrategyStore.dismissVisualHint("monochrome")
+        ActiveStrategyStore.removeChip("puzzle_shield")
+        val reAdded = ActiveStrategyStore.mergeBoardDerivedSignals(board)
+        assertEquals(0, reAdded)
+        assertFalse(ActiveStrategyStore.activeVisualHints.value.hasMonochrome)
+        assertFalse(ActiveStrategyStore.activeChips.value.any { it.id == "puzzle_shield" })
+    }
 }

@@ -15,9 +15,9 @@ class EnemyIconOnnxClassifierTest {
     }
 
     @Test
-    fun `fillStripNchw crops upper battle band to 1x3x96x256 in NCHW planar RGB`() {
+    fun `fillStripNchw crops upper battle band to 1x3x160x256 in NCHW planar RGB`() {
         val nchw = EnemyIconStripPreprocessor.fillStripNchw(GradientFrame())
-        val planeSize = 96 * 256
+        val planeSize = EnemyIconStripPreprocessor.STRIP_H * EnemyIconStripPreprocessor.STRIP_W
         assertEquals(3 * planeSize, nchw.size)
         // Upper battle band lies strictly in y in [0.08..0.42] -> purely top half (0x20, 0x80, 0xC0)
         assertEquals(0x20 / 255f, nchw[0], 0.01f)

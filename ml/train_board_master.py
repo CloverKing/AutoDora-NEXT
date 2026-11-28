@@ -6,9 +6,12 @@ Features:
  - Per-cell, per-head/bit validity masking (`element_mask`, `variant_mask`, `race_mask`, `hazard_mask[17]`, `overlay_mask[8]`)
  - On-the-fly dual-frame augmentations:
      * Synthetic flicker jitter between A & B when `has_real_pair == False`
-     * 15% synthetic full-board monochrome conversion (`BLACK_WHITE=1` preserving exact base element targets!)
-     * 12% dimmed-board brightness darkening (training robust low-light / Buoy recovery)
- - Near-zero-FP per-class threshold calibration on `val_boards.npz` -> exports `board_master_v2.onnx` (verified 6x5 & 6x8 parity < 1e-4) + `board_master_meta.json`.
+     * Authentic ToS dual-tone monochrome sprite-bank replacement (`mono_sprite_bank.npz`, applied to ALL
+       eligible boards without aborting on unmasked cells, preserving golden Puzzle borders, Burning/Scorching
+       overlays, Race badges, and exact base elements — zero anti-training naive linear grayscale!)
+     * Dimmed-board brightness darkening (training robust low-light / Buoy recovery)
+ - Strict zero-FP per-class threshold calibration on `val_boards.npz` ->
+   exports `board_master_v2.onnx` (verified 6x5 & 6x8 parity < 1e-4) + `board_master_meta.json`.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +50,11 @@ from ml.schema import (
     SLICE_VARIANT,
     TILE_OVERLAY_NAMES,
 )
+
+_YY64, _XX64 = np.mgrid[0:64, 0:64]
+_MONO_ORB_ALPHA = np.clip((29.0 - np.sqrt((_XX64 - 31.5) ** 2 + (_YY64 - 31.5) ** 2)) / 3.2, 0.0, 1.0)[..., None].astype(np.float32)
+_MONO_RACE_SAFE_ALPHA = _MONO_ORB_ALPHA.copy()
+_MONO_RACE_SAFE_ALPHA[2:25, 39:62, :] = 0.0
 
 
 class DualFrameBoardDataset(Dataset):
@@ -97,7 +106,9 @@ def compute_board_master_loss(
 
     def weighted_ce(pred_logits: torch.Tensor, tgt_onehot: torch.Tensor, head_mask: torch.Tensor) -> torch.Tensor:
         tgt_idx = tgt_onehot.argmax(dim=-1)
-        loss_raw = F.cross_entropy(pred_logits.reshape(-1, pred_logits.size(-1)), tgt_idx.reshape(-1), reduction="none").view(b, k)
+        loss_raw = F.cross_entropy(
+            pred_logits.reshape(-1, pred_logits.size(-1)), tgt_idx.reshape(-1), reduction="none"
+        ).view(b, k)
         m = head_mask.view(b, 1) * sw
         return (loss_raw * m).sum() / m.sum().clamp_min(1.0)
 
@@ -119,7 +130,9 @@ def train_one_run(
     device_str: str = "auto",
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    device = torch.device("cuda" if (device_str == "auto" and torch.cuda.is_available()) else ("cpu" if device_str == "auto" else device_str))
+    device = torch.device(
+        "cuda" if (device_str == "auto" and torch.cuda.is_available()) else ("cpu" if device_str == "auto" else device_str)
+    )
     ds = DualFrameBoardDataset(train_npz)
     sampler = WeightedRandomSampler(ds.weights.tolist(), num_samples=len(ds), replacement=True)
     loader = DataLoader(ds, batch_size=min(batch_size, len(ds)), sampler=sampler, drop_last=False)
@@ -156,9 +169,9 @@ def train_one_run(
 
 
 class Phase4V2BoardDataset(Dataset):
-    """Per-cell/per-head masked dual-frame board dataset with online monochrome/dim/flicker augmentation."""
+    """Per-cell/per-head masked dual-frame board dataset with authentic ToS monochrome/puzzle/dim/flicker augmentation."""
 
-    def __init__(self, npz_path: Path, augment: bool = False, seed: int = 42) -> None:
+    def __init__(self, npz_path: Path, mono_bank_path: Path | None = None, augment: bool = False, seed: int = 42) -> None:
         z = np.load(npz_path, allow_pickle=False)
         self.boards_a = z["boards_a"]
         self.boards_b = z["boards_b"]
@@ -175,18 +188,118 @@ class Phase4V2BoardDataset(Dataset):
         self.augment = augment
         self.rng = np.random.default_rng(seed)
 
+        self.mono_by_el_va: dict[tuple[int, int], list[np.ndarray]] = defaultdict(list)
+        self.mono_by_el: dict[int, list[np.ndarray]] = defaultdict(list)
+        self.all_mono_patches: list[np.ndarray] = []
+        if mono_bank_path is not None and mono_bank_path.is_file():
+            mb = np.load(mono_bank_path, allow_pickle=False)
+            for el_i, va_i, patch in zip(mb["el_idx"].tolist(), mb["va_idx"].tolist(), mb["patches"]):
+                p_f32 = patch.astype(np.float32) / 255.0
+                self.mono_by_el_va[(int(el_i), int(va_i))].append(p_f32)
+                self.mono_by_el[int(el_i)].append(p_f32)
+                self.all_mono_patches.append(p_f32)
+
     def __len__(self) -> int:
         return len(self.boards_a)
+
+    def _apply_authentic_monochrome(
+        self,
+        a: np.ndarray,
+        b: np.ndarray,
+        tgt: np.ndarray,
+        em: np.ndarray,
+        hm: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Converts ANY playable board (>= 18 matchable cells, 0 obscure hazards) into an authentic
+        full-30-cell ToS dual-tone monochrome board using `mono_sprite_bank.npz`, without aborting
+        when a few cells have `em[ci] == 0` (those cells get random authentic monochrome sprites with `em=0`)!
+        """
+        if not self.mono_by_el:
+            return a, b
+        bw_idx = HAZARD_TO_IDX["BLACK_WHITE"]
+        has_any_haz = float(tgt[:, SLICE_HAZARDS[0]:SLICE_HAZARDS[1]].sum()) > 0.5
+        valid_6_cnt = sum(
+            1 for ci in range(30)
+            if em[ci] > 0.5 and int(tgt[ci, SLICE_ELEMENT[0]:SLICE_ELEMENT[1]].argmax()) < 6
+        )
+        if has_any_haz or valid_6_cnt < 18:
+            return a, b
+
+        board_gain = float(self.rng.uniform(0.86, 1.12))
+        add_puzzle = self.rng.random() < 0.42
+        pr0 = int(self.rng.integers(0, 4))
+        pc0 = int(self.rng.integers(0, 4))
+        pr1 = min(5, pr0 + int(self.rng.integers(2, 4)))
+        pc1 = min(6, pc0 + int(self.rng.integers(2, 4)))
+
+        for r in range(5):
+            for c in range(6):
+                ci = r * 6 + c
+                el_idx = int(tgt[ci, SLICE_ELEMENT[0]:SLICE_ELEMENT[1]].argmax())
+                va_idx = int(tgt[ci, SLICE_VARIANT[0]:SLICE_VARIANT[1]].argmax())
+                has_race = int(tgt[ci, SLICE_RACE[0]:SLICE_RACE[1]].argmax()) > 0
+
+                if em[ci] > 0.5 and el_idx < 6:
+                    cands = self.mono_by_el_va.get((el_idx, va_idx)) or self.mono_by_el[el_idx]
+                    sp = cands[int(self.rng.integers(0, len(cands)))]
+                else:
+                    # Unlabeled cell on board: fill with authentic monochrome sprite and keep `em[ci] = 0`!
+                    sp = self.all_mono_patches[int(self.rng.integers(0, len(self.all_mono_patches)))]
+                    em[ci] = 0.0
+
+                dx = int(self.rng.integers(-2, 3))
+                dy = int(self.rng.integers(-2, 3))
+                if dx != 0 or dy != 0:
+                    sp = np.roll(np.roll(sp, dy, axis=0), dx, axis=1)
+                sp_scaled = np.clip(sp * board_gain * float(self.rng.uniform(0.94, 1.06)), 0.0, 1.0)
+                alpha = _MONO_RACE_SAFE_ALPHA if has_race else _MONO_ORB_ALPHA
+                if has_race:
+                    tr_a = a[r * 64 + 2:r * 64 + 25, c * 64 + 39:c * 64 + 62]
+                    tr_b = b[r * 64 + 2:r * 64 + 25, c * 64 + 39:c * 64 + 62]
+                    ga = np.repeat(np.dot(tr_a, [0.299, 0.587, 0.114])[..., None], 3, axis=-1)
+                    gb = np.repeat(np.dot(tr_b, [0.299, 0.587, 0.114])[..., None], 3, axis=-1)
+                    a[r * 64 + 2:r * 64 + 25, c * 64 + 39:c * 64 + 62] = ga
+                    b[r * 64 + 2:r * 64 + 25, c * 64 + 39:c * 64 + 62] = gb
+
+                pa = a[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64]
+                pb = b[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64]
+                a[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64] = pa * (1.0 - alpha) + sp_scaled * alpha
+                b[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64] = pb * (1.0 - alpha) + np.clip(sp_scaled * float(self.rng.uniform(0.97, 1.03)), 0.0, 1.0) * alpha
+
+                if add_puzzle and pr0 <= r < pr1 and pc0 <= c < pc1:
+                    gold_col = np.array([0.86, 0.72, 0.24], dtype=np.float32) * float(self.rng.uniform(0.85, 1.08))
+                    for arr in (a, b):
+                        cell = arr[r * 64:(r + 1) * 64, c * 64:(c + 1) * 64]
+                        if r == pr0:
+                            cell[:4, :] = cell[:4, :] * 0.25 + gold_col * 0.75
+                        if r == pr1 - 1:
+                            cell[60:, :] = cell[60:, :] * 0.25 + gold_col * 0.75
+                        if c == pc0:
+                            cell[:, :4] = cell[:, :4] * 0.25 + gold_col * 0.75
+                        if c == pc1 - 1:
+                            cell[:, 60:] = cell[:, 60:] * 0.25 + gold_col * 0.75
+                        cell[4:60, 4:60] = np.clip(cell[4:60, 4:60] * 0.90 + np.array([0.08, 0.06, 0.01], dtype=np.float32), 0.0, 1.0)
+
+                tgt[ci, SLICE_HAZARDS[0] + bw_idx] = 1.0
+                hm[ci, bw_idx] = 1.0
+        return a, b
 
     def __getitem__(self, idx: int):
         a = self.boards_a[idx].astype(np.float32) / 255.0
         b = self.boards_b[idx].astype(np.float32) / 255.0
         tgt = self.targets[idx].copy()
+        em = self.element_mask[idx].copy()
         hm = self.hazard_mask[idx].copy()
         is_neg_board = float(tgt[:, SLICE_IS_RUNE[0]].max()) < 0.5
+        bw_idx = HAZARD_TO_IDX["BLACK_WHITE"]
+        already_bw = float(tgt[:, SLICE_HAZARDS[0] + bw_idx].max()) > 0.5
 
         if self.augment:
-            # Global brightness/dimming augmentation
+            # Authentic ToS dual-tone monochrome augmentation ONLY (zero anti-training linear grayscale!)
+            if not is_neg_board and not already_bw and self.mono_by_el and self.rng.random() < 0.22:
+                a, b = self._apply_authentic_monochrome(a, b, tgt, em, hm)
+
             gain = float(self.rng.uniform(0.52, 0.78)) if self.rng.random() < 0.14 else float(self.rng.uniform(0.90, 1.10))
             a = np.clip(a * gain, 0.0, 1.0)
             if self.has_real_pair[idx]:
@@ -196,18 +309,6 @@ class Phase4V2BoardDataset(Dataset):
                 if self.rng.random() < 0.45:
                     b = np.clip(b + self.rng.normal(0.0, 0.015, size=b.shape).astype(np.float32), 0.0, 1.0)
 
-            # Synthetic full-board monochrome conversion teaching color recovery from orb shape!
-            if not is_neg_board and self.rng.random() < 0.14:
-                bw_a = np.dot(a, [0.299, 0.587, 0.114])[..., None]
-                bw_b = np.dot(b, [0.299, 0.587, 0.114])[..., None]
-                a = np.repeat(bw_a, 3, axis=-1).astype(np.float32)
-                b = np.repeat(bw_b, 3, axis=-1).astype(np.float32)
-                bw_idx = HAZARD_TO_IDX["BLACK_WHITE"]
-                tgt[:, SLICE_HAZARDS[0] + bw_idx] = 1.0
-                hm[:, bw_idx] = 1.0
-
-            # Horizontal flip preserves grid validity? No — top-right Race/Mark badges are orientation-sensitive!
-            # Instead apply slight Gaussian sensor noise only.
             if self.rng.random() < 0.30:
                 a = np.clip(a + self.rng.normal(0.0, 0.012, size=a.shape).astype(np.float32), 0.0, 1.0)
                 b = np.clip(b + self.rng.normal(0.0, 0.012, size=b.shape).astype(np.float32), 0.0, 1.0)
@@ -217,7 +318,7 @@ class Phase4V2BoardDataset(Dataset):
             torch.from_numpy(dual),
             torch.from_numpy(tgt),
             torch.from_numpy(self.is_rune_mask[idx]),
-            torch.from_numpy(self.element_mask[idx]),
+            torch.from_numpy(em),
             torch.from_numpy(self.variant_mask[idx]),
             torch.from_numpy(self.race_mask[idx]),
             torch.from_numpy(hm),
@@ -265,11 +366,11 @@ def compute_masked_phase4_v2_loss(
         return (raw * eff).sum() / eff.sum().clamp_min(1.0)
 
     loss = 1.0 * masked_bce_1d(logits["is_rune"], tgt[:, :, SLICE_IS_RUNE[0]:SLICE_IS_RUNE[1]], m_rune)
-    loss = loss + 2.0 * masked_ce(logits["element"], tgt[:, :, SLICE_ELEMENT[0]:SLICE_ELEMENT[1]], m_elem)
+    loss = loss + 2.2 * masked_ce(logits["element"], tgt[:, :, SLICE_ELEMENT[0]:SLICE_ELEMENT[1]], m_elem)
     loss = loss + 1.0 * masked_ce(logits["variant"], tgt[:, :, SLICE_VARIANT[0]:SLICE_VARIANT[1]], m_var)
-    loss = loss + 1.3 * masked_ce(logits["race"], tgt[:, :, SLICE_RACE[0]:SLICE_RACE[1]], m_race, race_class_weight)
-    loss = loss + 1.4 * masked_bce_nd(logits["hazards"], tgt[:, :, SLICE_HAZARDS[0]:SLICE_HAZARDS[1]], m_haz, haz_pos_weight)
-    loss = loss + 1.4 * masked_bce_nd(logits["tile_overlay"], tgt[:, :, SLICE_TILE_OVERLAY[0]:SLICE_TILE_OVERLAY[1]], m_ov, ov_pos_weight)
+    loss = loss + 1.5 * masked_ce(logits["race"], tgt[:, :, SLICE_RACE[0]:SLICE_RACE[1]], m_race, race_class_weight)
+    loss = loss + 1.5 * masked_bce_nd(logits["hazards"], tgt[:, :, SLICE_HAZARDS[0]:SLICE_HAZARDS[1]], m_haz, haz_pos_weight)
+    loss = loss + 1.5 * masked_bce_nd(logits["tile_overlay"], tgt[:, :, SLICE_TILE_OVERLAY[0]:SLICE_TILE_OVERLAY[1]], m_ov, ov_pos_weight)
     return loss
 
 
@@ -278,6 +379,7 @@ def _calibrate_binary_thresholds(
     targets: np.ndarray,
     masks: np.ndarray,
     names: list[str],
+    disable_names: set[str] = frozenset(),
 ) -> tuple[dict[str, float], dict[str, dict[str, Any]]]:
     thresholds: dict[str, float] = {}
     stats: dict[str, dict[str, Any]] = {}
@@ -292,8 +394,9 @@ def _calibrate_binary_thresholds(
         best_fp = 0
         found = False
         best_cand: tuple[float, int, int] | None = None
-        if pos_cnt >= 4:
-            for th in np.linspace(0.40, 0.98, 59):
+        min_floor = 0.90 if cname in ("BOMB", "ICE_SEALED", "ELECTRIFIED") else 0.58
+        if cname not in disable_names and pos_cnt >= 4:
+            for th in np.linspace(min_floor, 0.99, 45):
                 pred = yp >= th
                 tp = int(np.sum(pred & yt))
                 fp = int(np.sum(pred & ~yt))
@@ -301,7 +404,7 @@ def _calibrate_binary_thresholds(
                 if fp == 0 and tp >= 3:
                     best_th, best_tp, best_fp, found = float(round(th, 2)), tp, fp, True
                     break
-                if tp >= 5 and fp <= 1 and prec >= 0.95 and best_cand is None:
+                if tp >= 6 and fp <= 1 and prec >= 0.96 and best_cand is None:
                     best_cand = (float(round(th, 2)), tp, fp)
 
         if not found and best_cand is not None:
@@ -330,26 +433,31 @@ def train_phase4_v2(
     run_dir: Path = Path("ml/runs/board_master_v2"),
     onnx_out: Path = Path("android/app/src/main/assets/models/board_master_v2.onnx"),
     meta_out: Path = Path("android/app/src/main/assets/models/board_master_meta.json"),
-    epochs: int = 38,
+    epochs: int = 42,
     batch_size: int = 16,
-    lr: float = 1e-3,
+    lr: float = 1.1e-3,
     embed_dim: int = 128,
 ) -> dict[str, Any]:
     run_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = device.type == "cuda"
 
-    tr_ds = Phase4V2BoardDataset(data_dir / "train_boards.npz", augment=True, seed=42)
-    va_ds = Phase4V2BoardDataset(data_dir / "val_boards.npz", augment=False, seed=42)
+    mono_bank_path = data_dir / "mono_sprite_bank.npz"
+    tr_ds = Phase4V2BoardDataset(data_dir / "train_boards.npz", mono_bank_path=mono_bank_path, augment=True, seed=42)
+    va_ds = Phase4V2BoardDataset(data_dir / "val_boards.npz", mono_bank_path=None, augment=False, seed=42)
 
-    # Compute bounded pos_weight per hazard & overlay bit
+    bw_idx = HAZARD_TO_IDX["BLACK_WHITE"]
     tr_haz_y = tr_ds.targets[:, :, SLICE_HAZARDS[0]:SLICE_HAZARDS[1]]
     tr_haz_m = tr_ds.hazard_mask
     haz_pw = []
     for hi in range(NUM_HAZARDS):
+        if hi == bw_idx:
+            # Online monochrome augmentation already sets 22% of boards to BLACK_WHITE=1 -> pos_weight=1.0 prevents FPs!
+            haz_pw.append(1.0)
+            continue
         pos = float(((tr_haz_y[:, :, hi] > 0.5) & (tr_haz_m[:, :, hi] > 0.5)).sum())
         neg = float(((tr_haz_y[:, :, hi] < 0.5) & (tr_haz_m[:, :, hi] > 0.5)).sum())
-        haz_pw.append(float(np.clip(neg / max(1.0, pos), 1.5, 16.0)))
+        haz_pw.append(float(np.clip(neg / max(1.0, pos), 1.5, 12.0)))
 
     tr_ov_y = tr_ds.targets[:, :, SLICE_TILE_OVERLAY[0]:SLICE_TILE_OVERLAY[1]]
     tr_ov_m = tr_ds.overlay_mask
@@ -357,21 +465,22 @@ def train_phase4_v2(
     for oi in range(NUM_TILE_OVERLAYS):
         pos = float(((tr_ov_y[:, :, oi] > 0.5) & (tr_ov_m[:, :, oi] > 0.5)).sum())
         neg = float(((tr_ov_y[:, :, oi] < 0.5) & (tr_ov_m[:, :, oi] > 0.5)).sum())
-        ov_pw.append(float(np.clip(neg / max(1.0, pos), 1.5, 16.0)))
+        ov_pw.append(float(np.clip(neg / max(1.0, pos), 1.5, 12.0)))
 
     haz_pw_t = torch.tensor(haz_pw, dtype=torch.float32, device=device)
     ov_pw_t = torch.tensor(ov_pw, dtype=torch.float32, device=device)
 
-    # Bounded inverse-sqrt weights for rare races (NONE capped at 0.7 so rare races learn strongly)
+    # Inverse-frequency balancing for 7 rare Races against dominant NONE (~12,000 cells)
     tr_race_valid = tr_ds.race_mask > 0.5
     tr_race_cls = tr_ds.targets[:, :, SLICE_RACE[0]:SLICE_RACE[1]].argmax(axis=-1)[tr_race_valid]
     total_race_cells = max(1, len(tr_race_cls))
     race_w_list = []
     for ri in range(NUM_RACES):
-        rc_cnt = float((tr_race_cls == ri).sum())
-        w_r = float(np.clip((total_race_cells / (NUM_RACES * max(1.0, rc_cnt))) ** 0.5, 0.6, 8.0))
         if ri == 0:
-            w_r = min(w_r, 0.7)
+            race_w_list.append(0.16)
+            continue
+        rc_cnt = float((tr_race_cls == ri).sum())
+        w_r = float(np.clip((total_race_cells / (NUM_RACES * max(1.0, rc_cnt))) ** 0.72, 2.0, 12.0))
         race_w_list.append(w_r)
     race_w_t = torch.tensor(race_w_list, dtype=torch.float32, device=device)
 
@@ -379,7 +488,6 @@ def train_phase4_v2(
     tr_loader = DataLoader(tr_ds, batch_size=batch_size, sampler=sampler, num_workers=0, drop_last=False)
     va_loader = DataLoader(va_ds, batch_size=batch_size, shuffle=False, num_workers=0, drop_last=False)
 
-    bw_idx = HAZARD_TO_IDX["BLACK_WHITE"]
     v1_rows = np.array([str(s) == "phase4_v1" for s in va_ds.sources], dtype=bool)
     v1_em_val = va_ds.element_mask[v1_rows] > 0.5
     v1_etrue_2d = va_ds.targets[v1_rows, :, SLICE_ELEMENT[0]:SLICE_ELEMENT[1]].argmax(axis=-1)
@@ -414,14 +522,13 @@ def train_phase4_v2(
             steps += 1
         scheduler.step()
 
-        # Evaluate on held-out val_boards.npz
         model.eval()
         all_probs = []
         with torch.no_grad():
             for batch in va_loader:
                 bx = batch[0].to(device, non_blocking=True)
                 all_probs.append(model(bx).cpu().numpy())
-        vp = np.concatenate(all_probs, axis=0)  # [N_val, 30, 47]
+        vp = np.concatenate(all_probs, axis=0)
 
         em_valid = va_ds.element_mask > 0.5
         em_pred = vp[:, :, SLICE_ELEMENT[0]:SLICE_ELEMENT[1]].argmax(axis=-1)
@@ -430,6 +537,9 @@ def train_phase4_v2(
 
         clean_6 = em_valid & (em_true < 6)
         clean6_acc = float((em_pred[clean_6] == em_true[clean_6]).mean()) if clean_6.any() else elem_acc
+
+        bw_cells = em_valid & (em_true < 6) & (va_ds.targets[:, :, SLICE_HAZARDS[0] + bw_idx] > 0.5)
+        mono_elem_acc = float((em_pred[bw_cells] == em_true[bw_cells]).mean()) if bw_cells.any() else 0.0
 
         if v1_rows.any():
             v1_ep = em_pred[v1_rows]
@@ -452,28 +562,28 @@ def train_phase4_v2(
         ir_valid = va_ds.is_rune_mask > 0.5
         ir_acc = float(((vp[:, :, 0] >= 0.5) == (va_ds.targets[:, :, 0] >= 0.5))[ir_valid].mean())
 
-        score = clean6_acc * 0.35 + v1_clean6_acc * 0.25 + race_macro_recall * 0.25 + ir_acc * 0.15
+        score = clean6_acc * 0.28 + v1_clean6_acc * 0.20 + mono_elem_acc * 0.24 + race_macro_recall * 0.18 + ir_acc * 0.10
         history.append({
             "epoch": ep,
             "train_loss": round(tr_loss / max(1, steps), 4),
             "val_is_rune_acc": round(ir_acc, 4),
             "val_elem_acc": round(elem_acc, 4),
             "val_clean6_acc": round(clean6_acc, 4),
+            "val_mono_elem_acc": round(mono_elem_acc, 4),
             "val_v1_clean6_acc": round(v1_clean6_acc, 4),
             "val_race_acc": round(race_acc, 4),
             "val_race_macro_recall": round(race_macro_recall, 4),
         })
         print(
             f"[BoardMaster ep {ep:02d}/{epochs}] loss={tr_loss/max(1,steps):.4f} "
-            f"rune={ir_acc:.4f} clean6={clean6_acc:.4f} v1_c6={v1_clean6_acc:.4f} "
-            f"race={race_acc:.4f} race_mac={race_macro_recall:.4f}",
+            f"rune={ir_acc:.4f} clean6={clean6_acc:.4f} mono={mono_elem_acc:.4f} "
+            f"v1_c6={v1_clean6_acc:.4f} race_mac={race_macro_recall:.4f}",
             flush=True,
         )
         if score > best_score:
             best_score = score
             torch.save({"model_state": model.state_dict(), "epoch": ep, "metrics": history[-1]}, best_ckpt)
 
-    # Load best checkpoint -> full evaluation, calibration & ONNX export
     state = torch.load(best_ckpt, map_location="cpu", weights_only=True)
     model.cpu().load_state_dict(state["model_state"])
     model.eval()
@@ -483,7 +593,6 @@ def train_phase4_v2(
             all_probs.append(model(batch[0]).numpy())
     vp = np.concatenate(all_probs, axis=0)
 
-    # Flatten valid cells for summary metrics
     flat_vp = vp.reshape(-1, vp.shape[-1])
     flat_vt = va_ds.targets.reshape(-1, va_ds.targets.shape[-1])
     flat_em = va_ds.element_mask.reshape(-1) > 0.5
@@ -495,6 +604,7 @@ def train_phase4_v2(
     em_pred = flat_vp[:, SLICE_ELEMENT[0]:SLICE_ELEMENT[1]].argmax(axis=-1)
     em_true = flat_vt[:, SLICE_ELEMENT[0]:SLICE_ELEMENT[1]].argmax(axis=-1)
     clean6 = flat_em & (em_true < 6)
+    mono_val_mask = clean6 & (flat_vt[:, SLICE_HAZARDS[0] + bw_idx] > 0.5)
 
     v1_em = v1_em_val.reshape(-1)
     v1_vp = vp[v1_rows].reshape(-1, vp.shape[-1])
@@ -528,6 +638,7 @@ def train_phase4_v2(
         flat_vt[:, SLICE_HAZARDS[0]:SLICE_HAZARDS[1]],
         flat_hm,
         HAZARD_NAMES,
+        disable_names={"FROZEN"},
     )
     ov_ths, ov_metrics = _calibrate_binary_thresholds(
         flat_vp[:, SLICE_TILE_OVERLAY[0]:SLICE_TILE_OVERLAY[1]],
@@ -538,7 +649,6 @@ def train_phase4_v2(
 
     max_diff = export_board_master_to_onnx(model, onnx_out, rows=5, cols=6)
 
-    # Benchmark CPU latency for both 6x5 and 6x8
     sess_opts = ort.SessionOptions()
     sess_opts.intra_op_num_threads = 4
     sess = ort.InferenceSession(str(onnx_out), sess_opts, providers=["CPUExecutionProvider"])
@@ -574,6 +684,8 @@ def train_phase4_v2(
             "is_rune_acc": round(float(((flat_vp[:, 0] >= 0.5) == (flat_vt[:, 0] >= 0.5))[va_ds.is_rune_mask.reshape(-1) > 0.5].mean()), 4),
             "element_acc": round(float((em_pred[flat_em] == em_true[flat_em]).mean()), 4),
             "clean_6color_element_acc": round(float((em_pred[clean6] == em_true[clean6]).mean()), 4),
+            "monochrome_val_element_acc": round(float((em_pred[mono_val_mask] == em_true[mono_val_mask]).mean()), 4) if mono_val_mask.any() else 0.0,
+            "monochrome_val_cells": int(mono_val_mask.sum()),
             "phase4_v1_val_element_acc": round(float((v1_epred[v1_em] == v1_etrue[v1_em]).mean()), 4) if v1_em.any() else 0.0,
             "phase4_v1_val_clean6_acc": round(float((v1_epred[v1_c6_nonbw] == v1_etrue[v1_c6_nonbw]).mean()), 4) if v1_c6_nonbw.any() else 0.0,
             "phase4_v1_val_all_clean6_acc": round(float((v1_epred[v1_c6_all] == v1_etrue[v1_c6_all]).mean()), 4) if v1_c6_all.any() else 0.0,
@@ -601,9 +713,9 @@ def main() -> None:
     parser.add_argument("--phase4-v2", action="store_true", help="Train on ml/datasets/phase4_v2 and export ONNX")
     parser.add_argument("--train-npz", help="Legacy single-split .npz path")
     parser.add_argument("--out", default="ml/runs/board_master", help="Run output directory")
-    parser.add_argument("--epochs", type=int, default=38)
+    parser.add_argument("--epochs", type=int, default=42)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr", type=float, default=1.1e-3)
     args = parser.parse_args()
 
     if args.phase4_v2:

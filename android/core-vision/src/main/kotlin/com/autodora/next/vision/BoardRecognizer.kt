@@ -38,9 +38,11 @@ data class RecognitionResult(
     },
     val bloodbathTilesDetected: Int = board.tileFlags.count { (it and TileFlagBits.END_FORBIDDEN) != 0 },
     val shatteredTilesDetected: Int = board.tileFlags.count { (it and TileFlagBits.SHATTERED) != 0 },
+    val blackWhiteOrbsDetected: Int = board.cells.count { (it.hazards and HazardBits.BLACK_WHITE) != 0 },
     val startingBuoyCol: Int = board.startingBuoyCol,
     val startingBuoyElement: Element = board.startingBuoyElement,
-    val isDimmedBoard: Boolean = false
+    val isDimmedBoard: Boolean = false,
+    val monochromeCellProbs: List<FloatArray>? = null
 )
 
 /**

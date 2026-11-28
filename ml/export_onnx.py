@@ -13,7 +13,7 @@ import onnxruntime as ort
 import torch
 
 from ml.board_master_arch import BoardMasterGridNet
-from ml.enemy_icon_arch import EnemyIconNet
+from ml.enemy_icon_arch import STRIP_H, STRIP_W, EnemyIconNet
 
 
 def export_board_master_to_onnx(
@@ -58,31 +58,64 @@ def export_board_master_to_onnx(
     return max(diff_5, diff_8)
 
 
+class _EnemyIconOnnxWrapper(torch.nn.Module):
+    """Exports both `[B, 36]` class probabilities AND `[B, 36, 2]` subpixel `(gx, gy)` heatmap peaks."""
+
+    def __init__(self, base: EnemyIconNet) -> None:
+        super().__init__()
+        self.base = base
+        gh = STRIP_H // 8
+        gw = STRIP_W // 8
+        yy, xx = torch.meshgrid(
+            torch.arange(gh, dtype=torch.float32),
+            torch.arange(gw, dtype=torch.float32),
+            indexing="ij",
+        )
+        # Shape [640, 2] -> (gx, gy)
+        coords = torch.stack([xx.reshape(-1), yy.reshape(-1)], dim=-1)
+        self.register_buffer("grid_coords", coords, persistent=False)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        spatial_logits = self.base.forward_spatial_logits(x)  # [B, 36, 20, 32]
+        probs = torch.sigmoid(spatial_logits.amax(dim=(-2, -1)))  # [B, 36]
+        flat_weights = torch.softmax(spatial_logits.flatten(2) * 8.0, dim=-1)  # [B, 36, 640]
+        peaks = torch.matmul(flat_weights, self.grid_coords)  # [B, 36, 2] -> (gx, gy)
+        return probs, peaks
+
+
 def export_enemy_icon_to_onnx(
     model: EnemyIconNet,
     dest_path: Path,
+    strip_h: int = STRIP_H,
+    strip_w: int = STRIP_W,
     opset: int = 17,
 ) -> float:
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    model_cpu = model.eval().cpu()
-    sample = torch.rand(1, 3, 96, 256, dtype=torch.float32)
+    wrapper = _EnemyIconOnnxWrapper(model.eval().cpu()).eval()
+    sample = torch.rand(1, 3, strip_h, strip_w, dtype=torch.float32)
     with torch.no_grad():
-        torch_out = model_cpu(sample).numpy()
+        torch_probs, torch_peaks = wrapper(sample)
+        torch_out = torch_probs.numpy()
+        torch_pk = torch_peaks.numpy()
 
     torch.onnx.export(
-        model_cpu,
+        wrapper,
         (sample,),
         str(dest_path),
         input_names=["upper_strip"],
-        output_names=["icon_probs"],
-        dynamic_axes={"upper_strip": {0: "batch"}, "icon_probs": {0: "batch"}},
+        output_names=["icon_probs", "icon_peaks"],
+        dynamic_axes={
+            "upper_strip": {0: "batch"},
+            "icon_probs": {0: "batch"},
+            "icon_peaks": {0: "batch"},
+        },
         opset_version=opset,
         dynamo=False,
     )
 
     sess = ort.InferenceSession(str(dest_path), providers=["CPUExecutionProvider"])
-    ort_out = sess.run(["icon_probs"], {"upper_strip": sample.numpy()})[0]
-    return float(np.max(np.abs(torch_out - ort_out)))
+    ort_out, ort_pk = sess.run(["icon_probs", "icon_peaks"], {"upper_strip": sample.numpy()})
+    return max(float(np.max(np.abs(torch_out - ort_out))), float(np.max(np.abs(torch_pk - ort_pk))) * 1e-2)
 
 
 def main() -> None:

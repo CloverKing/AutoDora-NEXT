@@ -1404,18 +1404,25 @@ class OverlayControllerService : Service() {
                     return@launch
                 }
 
-                // Same-frame collaborative Stage 2B EnemyIconNetV1 check (~1.7ms) BEFORE board recognition & solving
-                // so newly appeared phase-2 shields or monochrome/hazard priors immediately guide this solve!
+                // Same-frame collaborative Stage 2B EnemyIconNetV2 + Keypoint Badge OCR (~4-6ms) BEFORE board
+                // recognition & solving so parameterized shields (e.g. >=5 COM, NUM 17) & monochrome priors guide this solve!
                 if (settings.autoEnemyIconDetectEnabled) {
-                    val iconRes = withContext(Dispatchers.Default) {
-                        enemyIconOnnxClassifier.classifyBitmap(frames.first())
+                    val (iconRes, badgeChips) = withContext(Dispatchers.Default) {
+                        val ir = enemyIconOnnxClassifier.classifyBitmap(frames.first())
+                        val bc = if (ir != null) {
+                            paddleOcrOnnxEngine.recognizeEnemyNumericBadges(frames, ir)
+                        } else emptyList()
+                        ir to bc
                     }
-                    if (iconRes != null && (iconRes.chips.isNotEmpty() || iconRes.hints.hasAny())) {
-                        ActiveStrategyStore.mergeCollaborativeIconDetections(iconRes.chips, iconRes.hints)
-                        activeWaveChips = ActiveStrategyStore.activeChips.value
-                        activeVisualHints = ActiveStrategyStore.activeVisualHints.value
-                        (boardRecognizer as? HybridBoardRecognizer)?.activeVisualHints = activeVisualHints
-                        refreshActiveShieldStrip()
+                    if (iconRes != null) {
+                        val combinedIconChips = (badgeChips + iconRes.chips).distinctBy { it.id }
+                        if (combinedIconChips.isNotEmpty() || iconRes.hints.hasAny()) {
+                            ActiveStrategyStore.mergeCollaborativeIconDetections(combinedIconChips, iconRes.hints)
+                            activeWaveChips = ActiveStrategyStore.activeChips.value
+                            activeVisualHints = ActiveStrategyStore.activeVisualHints.value
+                            (boardRecognizer as? HybridBoardRecognizer)?.activeVisualHints = activeVisualHints
+                            refreshActiveShieldStrip()
+                        }
                     }
                 }
 
@@ -1485,6 +1492,14 @@ class OverlayControllerService : Service() {
                     boardToSolve
                 }
                 val effectiveBoard = applyPuzzleShapeTemplateIfNeeded(boardWithLockedOps)
+                // S2 -> S1 closed-loop feedback: board-detected monochrome, starting buoy, traffic light, or puzzle
+                // automatically updates visual hints & missing Tier-4 chips before composing RuleConfig!
+                ActiveStrategyStore.mergeBoardDerivedSignals(effectiveBoard)
+                activeWaveChips = ActiveStrategyStore.activeChips.value
+                activeVisualHints = ActiveStrategyStore.activeVisualHints.value
+                (boardRecognizer as? HybridBoardRecognizer)?.activeVisualHints = activeVisualHints
+                refreshActiveShieldStrip()
+
                 currentGeometry = geom
                 lastRecognition = liveRec.copy(board = effectiveBoard)
                 editedBoard = effectiveBoard
@@ -2202,6 +2217,7 @@ class OverlayControllerService : Service() {
                 currentGeometry = geom
                 lastRecognition = liveRec.copy(board = resolvedBoard)
                 editedBoard = resolvedBoard
+                ActiveStrategyStore.mergeBoardDerivedSignals(resolvedBoard)
                 cacheLastBoardSnapshot(
                     frameA = frames.first(),
                     frameB = frames.getOrNull(1),
@@ -2677,7 +2693,7 @@ class OverlayControllerService : Service() {
                                         handleWaveAdvanced()
                                     }
                                 }
-                                // Collaborative Stage 2B EnemyIconNetV1 runs alongside Stage Scripts & Popup OCR!
+                                // Collaborative Stage 2B EnemyIconNetV2 + Keypoint Badge OCR runs alongside Stage Scripts & Popup OCR!
                                 if (settings.autoEnemyIconDetectEnabled &&
                                     !boardEditorMode &&
                                     !calibrationMode
@@ -2685,11 +2701,19 @@ class OverlayControllerService : Service() {
                                     val nowIconMs = System.currentTimeMillis()
                                     if ((nowIconMs - lastIconScanTimeMs) >= 1800L) {
                                         lastIconScanTimeMs = nowIconMs
-                                        val iconRes = withContext(Dispatchers.Default) {
-                                            enemyIconOnnxClassifier.classifyBitmap(bmp)
+                                        val (iconRes, badgeChips) = withContext(Dispatchers.Default) {
+                                            val ir = enemyIconOnnxClassifier.classifyBitmap(bmp)
+                                            val bc = if (ir != null) {
+                                                paddleOcrOnnxEngine.recognizeEnemyNumericBadges(listOf(bmp), ir)
+                                            } else emptyList()
+                                            ir to bc
                                         }
-                                        if (iconRes != null && (iconRes.chips.isNotEmpty() || iconRes.hints.hasAny())) {
-                                            val key = iconRes.detectedClasses.sorted().joinToString(",")
+                                        val combinedIconChips = if (iconRes != null) {
+                                            (badgeChips + iconRes.chips).distinctBy { it.id }
+                                        } else emptyList()
+                                        if (iconRes != null && (combinedIconChips.isNotEmpty() || iconRes.hints.hasAny())) {
+                                            val chipSig = combinedIconChips.sortedBy { it.id }.joinToString(",") { "${it.id}:${it.paramInt}" }
+                                            val key = iconRes.detectedClasses.sorted().joinToString(",") + "|" + chipSig
                                             if (key == pendingIconClassKey) {
                                                 consecutiveIconMatchTicks++
                                             } else {
@@ -2698,13 +2722,17 @@ class OverlayControllerService : Service() {
                                             }
                                             if (consecutiveIconMatchTicks >= 2 && key != lastAppliedIconWaveKey) {
                                                 lastAppliedIconWaveKey = key
-                                                ActiveStrategyStore.mergeCollaborativeIconDetections(iconRes.chips, iconRes.hints)
+                                                ActiveStrategyStore.mergeCollaborativeIconDetections(combinedIconChips, iconRes.hints)
                                             }
                                         } else {
                                             pendingIconClassKey = ""
                                             consecutiveIconMatchTicks = 0
                                         }
                                     }
+                                }
+                                // S2 -> S1 continuous board-to-strategy feedback (e.g. Monochrome `◐ 幽闭AI` pill, Buoy, Puzzle)
+                                if (!boardEditorMode && !calibrationMode) {
+                                    ActiveStrategyStore.mergeBoardDerivedSignals(rec.board)
                                 }
                                 if (!showPath &&
                                     !boardEditorMode &&
@@ -3525,13 +3553,20 @@ class OverlayControllerService : Service() {
                     else -> toast(lctx.getString(R.string.ov_toast_manual_scan_none))
                 }
             } else {
-                val iconRes = withContext(Dispatchers.Default) {
-                    enemyIconOnnxClassifier.classifyBitmap(bmp)
+                val (iconRes, badgeChips) = withContext(Dispatchers.Default) {
+                    val ir = enemyIconOnnxClassifier.classifyBitmap(bmp)
+                    val bc = if (ir != null) {
+                        paddleOcrOnnxEngine.recognizeEnemyNumericBadges(listOf(bmp), ir)
+                    } else emptyList()
+                    ir to bc
                 }
-                if (iconRes != null && (iconRes.chips.isNotEmpty() || iconRes.hints.hasAny())) {
-                    val applied = ActiveStrategyStore.mergeCollaborativeIconDetections(iconRes.chips, iconRes.hints)
+                val combinedIconChips = if (iconRes != null) {
+                    (badgeChips + iconRes.chips).distinctBy { it.id }
+                } else emptyList()
+                if (iconRes != null && (combinedIconChips.isNotEmpty() || iconRes.hints.hasAny())) {
+                    val applied = ActiveStrategyStore.mergeCollaborativeIconDetections(combinedIconChips, iconRes.hints)
                     waveTransitionDetector.reset()
-                    val lblSummary = iconRes.chips.joinToString("·") { it.label }.ifBlank { "视觉提示" }
+                    val lblSummary = combinedIconChips.joinToString("·") { it.label }.ifBlank { "视觉提示" }
                     toast(lctx.getString(R.string.ov_toast_manual_scan_icon_fmt, applied, lblSummary))
                 } else {
                     toast(lctx.getString(R.string.ov_toast_manual_scan_none))

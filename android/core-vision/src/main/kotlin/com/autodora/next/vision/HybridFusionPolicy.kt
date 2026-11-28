@@ -321,10 +321,27 @@ object HybridFusionPolicy {
             val isCvQuestionOrUnknown = !cvCell.element.isMatchable ||
                 (cvCell.hazards and (HazardBits.QUESTION or HazardBits.BLACK_WHITE)) != 0
 
+            val cvMonoProbs = cvResult.monochromeCellProbs?.getOrNull(idx)
+            val hasCvMonoProbs = cvMonoProbs != null && cvMonoProbs.size >= 6 && cvMonoProbs.any { it > 0f }
+
             var fusedElement = cvCell.element
             var fusedConf = cvCell.confidence
 
             when {
+                isMono && hasCvMonoProbs && cnnMatchProb >= 0.35f -> {
+                    var bestE = 0
+                    var bestJoint = -1f
+                    for (e in 0 until 6) {
+                        val jp = 0.50f * pred.elementProbs[e] + 0.50f * cvMonoProbs!![e]
+                        if (jp > bestJoint) {
+                            bestJoint = jp
+                            bestE = e
+                        }
+                    }
+                    fusedElement = Element.fromCode(bestE)
+                    fusedConf = max(cvCell.confidence, max(cnnMatchProb, bestJoint))
+                    fusedHazards = (fusedHazards and HazardBits.QUESTION.inv()) or HazardBits.BLACK_WHITE
+                }
                 isMono && cnnMatchProb >= config.recoverMonochromeElementProb -> {
                     fusedElement = cnnMatchEl
                     fusedConf = max(cvCell.confidence, cnnMatchProb)
@@ -435,7 +452,8 @@ object HybridFusionPolicy {
                 (it and (TileFlagBits.BURNING_TILE or TileFlagBits.SCORCHING_TILE)) != 0
             },
             bloodbathTilesDetected = outFlags.count { (it and TileFlagBits.END_FORBIDDEN) != 0 },
-            shatteredTilesDetected = outFlags.count { (it and TileFlagBits.SHATTERED) != 0 }
+            shatteredTilesDetected = outFlags.count { (it and TileFlagBits.SHATTERED) != 0 },
+            blackWhiteOrbsDetected = fusedBoard.cells.count { (it.hazards and HazardBits.BLACK_WHITE) != 0 }
         )
     }
 }

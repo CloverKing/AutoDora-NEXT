@@ -9,7 +9,7 @@
 - **本次审计新发现并已补全/修正 (`UPGRADED`)**：`20` 项
 - **纯视觉干扰 / 印记类（已支持画笔标注，待后续端侧模型增强，`CV_PARTIAL`)**：`6` 项
 - **非盘面转珠机制（血量/CD/EP/减伤/隐身等，`NON_BOARD`)**：`35` 项
-- **端侧自动识别闭环（`v0.6.0–v0.9.0`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json v2026.11-v2.2`，`v0.9.0` 全面补齐 `十之詛咒(forbid_cross)`、`連擊上限盾(max_combo)`、`正方3×3(square_3x3)`、`符石加護留底≥1(keep_element_at_least_one)`、`單屬限消≤N粒(max_element_orbs)` 及精确步数盾 `exact_steps`）联合 `EnemySkillKnowledgeMatcher`（**Tier-0 `MANUAL_EDIT` 用户手动覆写 + Tier-2 内置 `499` 条权威敌技库 `{属性}/{数字}` 骨架模糊兜底与现场参数重水合 `✦库`**）、`PaddleOcrOnnxEngine`（支持战前关卡资讯与战中敌技拆分双开关）、`StageWaveScriptParser`（内置 `140` 关三级游戏入口分类剧本包 `tos_stage_wiki_bundle_140.json`，Room `v4` 内嵌 `6` 条/页检索）以及 **全时协同 Stage 2B `EnemyIconOnnxClassifier`（后台稳态 + 算前同帧补盾，`neg_fp = 0/300`）**，实现文本、图标、剧本与本地知识库四源协同闭环。
+- **端侧自动识别闭环（`v0.6.0–v0.9.1`）**：`TosEnemySkillParserV2` + `HotReloadEnemySkillParser`（`tos_enemy_skill_rules_v2.json v2026.11-v2.2`，`v0.9.0` 全面补齐 `十之詛咒(forbid_cross)`、`連擊上限盾(max_combo)`、`正方3×3(square_3x3)`、`符石加護留底≥1(keep_element_at_least_one)`、`單屬限消≤N粒(max_element_orbs)` 及精确步数盾 `exact_steps`）联合 `EnemySkillKnowledgeMatcher`（**Tier-0 `MANUAL_EDIT` 用户手动覆写 + Tier-2 内置 `499` 条权威敌技库 `{属性}/{数字}` 骨架模糊兜底与现场参数重水合 `✦库`**）、`PaddleOcrOnnxEngine`（支持战前关卡资讯与战中敌技拆分双开关）、`StageWaveScriptParser`（内置 `140` 关三级游戏入口分类剧本包 `tos_stage_wiki_bundle_140.json`，Room `v4` 内嵌 `6` 条/页检索）以及 **全时协同 Stage 2B 36 类 CenterNet `EnemyIconOnnxClassifier` + `EnemyBadgeDigitExtractor` 关键点数值徽标 OCR（后台稳态 + 算前同帧直读 `≥N COM` / `NUM N`，`neg_fp = 0/450`）**，实现文本、图标、剧本与本地知识库四源协同闭环。
 
 ## 二、本次审计发现并落地的核心算法、规则与 UI 升级
 
@@ -79,7 +79,7 @@
 | 45 | 減傷狀態 | 减伤状态 | `turn_damage_defense` | `non_board_mechanic` | **NON_BOARD** | — Enemy % damage reduction buff. |
 | 46 | 符石連擊零化 | 符石连击零化 | `element_color` | `direct_board_rule` | **FULL** | `anti_first_wave` Wave-1 forbidden orb nullifies team ATK & counterattacks (MatchTiming.ForbidFirstWaveAllowCascade). |
 | 47 | 反饋 | 反馈 | `turn_damage_defense` | `non_board_mechanic` | **NON_BOARD** | — Per-attacker recoil damage. |
-| 48 | 幽閉空間 | 幽闭空间 | `orb_hazard_mark` | `board_hazard_or_mark` | **CV_PARTIAL** | — `HazardBits.BLACK_WHITE` All orbs monochrome grayscale; shape/template CV or Board Editor handles it (documented for future TFLite grayscale head). |
+| 48 | 幽閉空間 | 幽闭空间 | `orb_hazard_mark` | `board_hazard_or_mark` | **UPGRADED** | — `HazardBits.BLACK_WHITE` `EnemyIconNetV2` (`ICON_MONOCHROME_DISGUISE`) + `BoardMasterGridNetV2` + `MonochromeOrbMatcher` 24x24 silhouette/core fusion (verified 30/30 = 100% on live monochrome + puzzle boards) + `S2->S1` auto `◐ 幽闭AI`. |
 | 49 | 移形換影 | 移形换影 | `orb_hazard_mark` | `board_hazard_or_mark` | **CV_PARTIAL** | — Visual orb disguise (e.g. Water looks like Wood); requires player/Board Editor correction. |
 | 50 | 能力點代價 | 能力点代价 | `team_skill_other` | `non_board_mechanic` | **NON_BOARD** | — Ability-point active skill budget. |
 | 51 | 技能重置 | 技能重置 | `team_skill_other` | `non_board_mechanic` | **NON_BOARD** | — Resets member skill CD/EP/turns. |

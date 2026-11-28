@@ -5,6 +5,7 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.graphics.Bitmap
+import com.autodora.next.model.WaveShieldChip
 import java.nio.FloatBuffer
 import java.util.Collections
 import kotlin.math.max
@@ -33,6 +34,12 @@ class PaddleOcrOnnxEngine(private val context: Context) {
 
     @Volatile
     private var vocab: List<String> = emptyList()
+
+    @Volatile
+    private var digitWhitelistIndices: IntArray = IntArray(0)
+
+    @Volatile
+    private var digitWhitelistChars: CharArray = CharArray(0)
 
     @Volatile
     private var detInputName: String = "x"
@@ -64,9 +71,12 @@ class PaddleOcrOnnxEngine(private val context: Context) {
             fullVocab.addAll(loadedChars)
             fullVocab.add(" ")
 
+            val (dIndices, dChars) = EnemyBadgeDigitExtractor.buildDigitWhitelistIndices(fullVocab)
             detSession = dSess
             recSession = rSess
             vocab = fullVocab
+            digitWhitelistIndices = dIndices
+            digitWhitelistChars = dChars
             true
         }.getOrElse {
             false
@@ -282,6 +292,98 @@ class PaddleOcrOnnxEngine(private val context: Context) {
             FloatBuffer.wrap(floats),
             longArrayOf(1L, 3L, h.toLong(), w.toLong())
         )
+    }
+
+    /**
+     * Keypoint-guided numeric badge recognizer for Stage 2B `EnemyIconNetV2`:
+     * When [iconResult] contains parameterized shield icons (`ICON_MIN_COMBO`, `ICON_MAX_COMBO`,
+     * `ICON_EXACT_COMBO`, `ICON_DIGITAL_COUNT`, `ICON_STEP_LIMIT`), crops ONLY the `~48px` digit
+     * sub-region around each icon's CenterNet spatial peak and runs `PP-OCRv5` `recSession`
+     * constrained strictly to `{'blank', '0'..'9'}` (~1.5ms per badge, zero DBNet overhead).
+     */
+    fun recognizeEnemyNumericBadges(
+        frames: List<Bitmap>,
+        iconResult: EnemyIconInferenceResult
+    ): List<WaveShieldChip> {
+        if (!EnemyBadgeDigitExtractor.hasNumericBadgeCandidate(iconResult.detectedClasses)) {
+            return emptyList()
+        }
+        val validFrames = frames
+            .filter { !it.isRecycled && it.width >= 64 && it.height >= 64 }
+            .take(3)
+            .map { DirectBitmapVisionFrame(it) }
+        if (validFrames.isEmpty()) return emptyList()
+        return recognizeEnemyNumericBadgesFromFrames(validFrames, iconResult)
+    }
+
+    fun recognizeEnemyNumericBadgesFromFrames(
+        frames: List<VisionFrame>,
+        iconResult: EnemyIconInferenceResult
+    ): List<WaveShieldChip> {
+        if (frames.isEmpty() || !EnemyBadgeDigitExtractor.hasNumericBadgeCandidate(iconResult.detectedClasses)) {
+            return emptyList()
+        }
+        if (!ensureInitialized()) return emptyList()
+        val ortEnv = env ?: return emptyList()
+        val rSess = recSession ?: return emptyList()
+        val wlIdx = digitWhitelistIndices
+        val wlChars = digitWhitelistChars
+        if (wlIdx.size < 2) return emptyList()
+
+        val outChips = ArrayList<WaveShieldChip>(2)
+        for (cls in iconResult.detectedClasses) {
+            if (cls !in EnemyBadgeDigitExtractor.NUMERIC_BADGE_CLASSES) continue
+            val (cxRatio, cyRatio) = iconResult.classPeaksScreenRatio[cls] ?: continue
+            val frameReads = ArrayList<Pair<String, Float>>(frames.size)
+
+            for (vf in frames) {
+                val roi = EnemyBadgeDigitExtractor.computeBadgeDigitRoi(
+                    frameWidth = vf.width,
+                    frameHeight = vf.height,
+                    iconClass = cls,
+                    cxRatio = cxRatio,
+                    cyRatio = cyRatio
+                ) ?: continue
+                val (nchw, recW) = EnemyBadgeDigitExtractor.buildCleanDigitRecTensor(
+                    frame = vf,
+                    left = roi[0],
+                    top = roi[1],
+                    right = roi[2],
+                    bottom = roi[3]
+                ) ?: continue
+
+                val shape = longArrayOf(1L, 3L, EnemyBadgeDigitExtractor.REC_H.toLong(), recW.toLong())
+                val readPair = runCatching {
+                    OnnxTensor.createTensor(ortEnv, FloatBuffer.wrap(nchw), shape).use { inp ->
+                        rSess.run(Collections.singletonMap(recInputName, inp)).use { res ->
+                            val outTensor = res[0] as OnnxTensor
+                            val outShape = outTensor.info.shape
+                            val seqLen = outShape.getOrElse(1) { 0L }.toInt()
+                            val vocabSize = outShape.getOrElse(2) { vocab.size.toLong() }.toInt()
+                            val buf = outTensor.floatBuffer
+                            val probs = FloatArray(buf.remaining())
+                            buf.get(probs)
+                            EnemyBadgeDigitExtractor.ctcDecodeDigitsWhitelist(
+                                probsAll = probs,
+                                seqLen = seqLen,
+                                vocabSize = vocabSize,
+                                whitelistIndices = wlIdx,
+                                whitelistChars = wlChars
+                            )
+                        }
+                    }
+                }.getOrNull()
+                if (readPair != null && readPair.first.isNotEmpty()) {
+                    frameReads.add(readPair)
+                }
+            }
+
+            val chip = EnemyBadgeDigitExtractor.resolveParameterizedBadgeChip(cls, frameReads)
+            if (chip != null) {
+                outChips.add(chip)
+            }
+        }
+        return outChips
     }
 
     @Synchronized

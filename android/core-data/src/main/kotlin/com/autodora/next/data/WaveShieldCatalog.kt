@@ -358,6 +358,106 @@ object ActiveStrategyStore {
         return added
     }
 
+    /**
+     * `S2 -> S1` Board-to-Strategy Closed-Loop Feedback (`v0.9.0` Tier-4 Arbitration):
+     * Propagates unmistakable board-resident states (`BLACK_WHITE` monochrome disguise, Starting Buoy,
+     * Traffic Light Start+End, Puzzle polygon, Electrified/Frozen/Burning/Scorching/Sticky/Bloodbath/Shattered)
+     * back into [_activeVisualHints] and [_activeChips] even when upper enemy skill icons are occluded or disabled.
+     *
+     * Strictly respects Tier 1..3 precedence (never overwrites user/OCR/Icon chips and honors wave dismissals).
+     */
+    @Synchronized
+    fun mergeBoardDerivedSignals(board: BoardState): Int {
+        if (board.cells.isEmpty()) return 0
+
+        var bwCount = 0
+        var elecCount = 0
+        var frozPetCount = 0
+        var weathBombCount = 0
+        var purgCount = 0
+        var hiddenCount = 0
+        var burnCount = 0
+        var scorchCount = 0
+        var stickyCount = 0
+        var bbCount = 0
+        var bhCount = 0
+        var shatCount = 0
+        var puzzle1Count = 0
+        var hasTlStart = false
+        var hasTlEnd = false
+
+        for (i in board.cells.indices) {
+            val h = board.cells[i].hazards
+            val f = board.tileFlags.getOrElse(i) { TileFlagBits.NONE }
+            if ((h and HazardBits.BLACK_WHITE) != 0) bwCount++
+            if ((h and HazardBits.ELECTRIFIED) != 0) elecCount++
+            if ((h and (HazardBits.FROZEN or HazardBits.ICE_SEALED or HazardBits.PETRIFIED)) != 0) frozPetCount++
+            if ((h and (HazardBits.WEATHERED or HazardBits.BOMB)) != 0) weathBombCount++
+            if ((h and HazardBits.PURGATORY_FIRE) != 0) purgCount++
+            if ((h and HazardBits.QUESTION) != 0 || board.cells[i].element == Element.HIDDEN) hiddenCount++
+
+            if ((f and TileFlagBits.BURNING_TILE) != 0) burnCount++
+            if ((f and TileFlagBits.SCORCHING_TILE) != 0) scorchCount++
+            if ((f and TileFlagBits.STICKY_TILE) != 0) stickyCount++
+            if ((f and TileFlagBits.END_FORBIDDEN) != 0) bbCount++
+            if ((f and TileFlagBits.BLACK_HOLE) != 0) bhCount++
+            if ((f and TileFlagBits.SHATTERED) != 0) shatCount++
+            if ((f and TileFlagBits.PUZZLE_1) != 0) puzzle1Count++
+            if ((f and TileFlagBits.START_ALLOWED) != 0) hasTlStart = true
+            if ((f and TileFlagBits.END_REQUIRED) != 0) hasTlEnd = true
+        }
+
+        val boardHints = BoardVisualHints(
+            hasMonochrome = bwCount >= maxOf(8, (board.cells.size * 0.35f).toInt()),
+            hasBurning = burnCount > 0,
+            hasScorching = scorchCount > 0,
+            hasElectrified = elecCount > 0,
+            hasSticky = stickyCount > 0,
+            hasPurgatoryFire = purgCount > 0,
+            hasHiddenOrbs = hiddenCount >= 4,
+            hasFrozenOrPetrified = frozPetCount > 0,
+            hasWeatheredOrBomb = weathBombCount > 0,
+            hasBloodbath = bbCount > 0,
+            hasBlackHole = bhCount > 0,
+            hasShattered = shatCount > 0
+        )
+
+        val derivedChips = ArrayList<WaveShieldChip>(3)
+        if (board.startingBuoyCol in 0 until board.cols) {
+            derivedChips.add(
+                WaveShieldChip(
+                    id = "starting_buoy_shield",
+                    label = "起动浮标(盘面)",
+                    category = ShieldCategory.COUNT_AND_ELEMENT,
+                    autoDetected = true
+                )
+            )
+        }
+        if (hasTlStart && hasTlEnd) {
+            derivedChips.add(
+                WaveShieldChip(
+                    id = "traffic_light",
+                    label = "起结有序(盘面)",
+                    category = ShieldCategory.HAZARD_AND_PATH,
+                    autoDetected = true
+                )
+            )
+        }
+        if (puzzle1Count >= 3) {
+            derivedChips.add(
+                WaveShieldChip(
+                    id = "puzzle_shield",
+                    label = "拼图盾(盘面)",
+                    category = ShieldCategory.SHAPE_AND_PUZZLE,
+                    autoDetected = true,
+                    paramInt = 1
+                )
+            )
+        }
+
+        return mergeCollaborativeIconDetections(derivedChips, boardHints)
+    }
+
     private fun iconConflictFamilyFor(chipId: String): Set<String> = when (chipId) {
         in WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS -> WaveShieldCatalog.PUZZLE_EXCLUSIVE_IDS
         in WaveShieldCatalog.CROSS_EXCLUSIVE_IDS -> WaveShieldCatalog.CROSS_EXCLUSIVE_IDS

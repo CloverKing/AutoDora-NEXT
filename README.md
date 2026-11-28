@@ -2,10 +2,10 @@
 
 > **面向《神魔之塔》（Tower of Saviors）13 年全机制演进与现代 Android 设备（Android 10 ~ Android 16+）的免 Root、动态棋盘自适应、全组合解盾、1:1 盘面编排、C++20 本地高速引擎驱动的新一代智能转珠辅助工程。**
 
-[![Version](https://img.shields.io/badge/version-v0.9.0-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases)
+[![Version](https://img.shields.io/badge/version-v0.9.1-3F51B5.svg)](https://github.com/CloverKing/AutoDora-NEXT/releases)
 [![Android](https://img.shields.io/badge/Android-10%20~%2016%2B%20(API%2029%E2%80%9335)-3DDC84.svg?logo=android&logoColor=white)](./android)
 [![C++20](https://img.shields.io/badge/Solver-C%2B%2B20%20NDK%2064--bit-00599C.svg?logo=cplusplus&logoColor=white)](./solver-core)
-[![Tests](https://img.shields.io/badge/Tests-55%20C%2B%2B%20%2B%20119%20JVM%20%2B%209%20ML%20Passing-2E7D32.svg)](#快速安装构建与测试)
+[![Tests](https://img.shields.io/badge/Tests-55%20C%2B%2B%20%2B%20125%20JVM%20%2B%209%20ML%20Passing-2E7D32.svg)](#快速安装构建与测试)
 [![i18n](https://img.shields.io/badge/i18n-%E7%AE%80%E4%B8%AD%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20English-7B1FA2.svg)](#5-多语言主题与应用内更新)
 
 ---
@@ -58,7 +58,7 @@
   - **关前全波次剧本、视觉联动与知识库闭环（`v0.7.0`）**：
     - **关前全波次剧本 & Wiki 联动（`StageWaveScript`）**：识别「关卡资讯」时自动按 `WAVE 1..N / BOSS` 切分剧本存入 Room `AutoDoraDatabase v3` 并一键激活，支持悬浮窗 **`‹ W2/5 › ×`** 波次步进器与导入外部爬库 Wiki JSON（自动按现行规则编译解版芯片），实现进关看一次资讯、全程免逐波长按敌人。
     - **`BoardVisualHints` 视觉反哺**：识别「幽闭空间」时自动切换 `HybridFusionPolicy` 灰度判色增强通道（悬浮栏同步显示 `◐ 幽闭AI`）；识别「移形换影」时显示可点击的 **`⚠ 移形换影·编排`** 一键直达 1:1 盘面编排。
-    - **主控台「敌技知识库、热更新与离线试算器」**：实时浏览与筛选本地已采集敌技（`已解析 / 非盘面 / 待补规则`）、一键复制待补新敌技文本、导入/恢复 **`tos_enemy_skill_rules_v2.json` 规则热更新**，并内置离线文案试算器实时预览生成盾牌；PC 端同步补齐 [ml/](file:///c:/Users/wangg/OneDrive/Programs/Antigravity/AutoDora-NEXT/ml/README.md) ZIP 回流加权（P0=4.0×）、视频双帧去重及 Stage 2A `BoardMasterGridNet` / Stage 2B `EnemyIconNet` ONNX 训练导出管线。
+    - **主控台「敌技知识库、热更新与离线试算器」**：实时浏览与筛选本地已采集敌技（`已解析 / 非盘面 / 待补规则`）、一键复制待补新敌技文本、导入/恢复 **`tos_enemy_skill_rules_v2.json` 规则热更新**，并内置离线文案试算器实时预览生成盾牌；PC 端同步补齐 [ml/](./ml/README.md) ZIP 回流加权（P0=4.0×）、视频双帧去重及 Stage 2A `BoardMasterGridNet` / Stage 2B `EnemyIconNet` ONNX 训练导出管线。
   - **全量明显符石状态自动识别（全 6 色笛卡尔积通用去色偏）**：**电击符石（`电`，支持闪光峰值与低亮弱电弧全 6 色双相检测、剥离电光还原底层珠色并豁免红绿灯误起手，永不误判为 `?`）**、**冻结（`冻`）与冰封（`冰`）颜色无关方形晶格检测（6 色全覆盖且与暗珠冰封清晰解耦，同时豁免木/火冻结误报红绿灯）**、**爆破炸弹（`炸`，中心红核+金属灰环+外缘底色还原）**、**邪恶能量（`邪`，放宽至光/心较亮暗化底珠通用）**、**炼狱之火（`狱`，洋红火环主导保护防底色干扰）**、**石化符石（`石`）**、**化血 / 全版 30 颗锁定符石（`血`）**、**荆棘符石（`棘`）**。
   - **盘面地形与盾框自动识别**：**燃烧地形（`燃`，去除光珠高亮偏置全 6 色通用，并收紧拼图金框至纯黄金色 `35°–64°` 彻底杜绝连续 `1×6` 燃烧横行/围城被误判为拼图盾）**、**血浴地形（`浴`）**、**碎裂地形（`碎`，优先区分于暴风雾气）**、暴风区域（`暴风`）、经典金色与现代金属拼图框、**起结有序 V4 识别**（24 角度外环绿芒扫描突破种族角标遮挡、火珠邻格红溢抑制与官方单点绿/红漩涡约束）；所有自动检出状态与地形均在路径预览层同步渲染高对比角标。
   - 结界地形兼容识别，以及非战斗活动列表（强制校验盘面上方血条隔离带，根除自身半透明记忆圆圈自激反馈循环）、关卡转场、`VICTORY` 结算画面与敌技详情弹窗的自动静默拦截，彻底消除非战斗残留浮动识别层。
@@ -113,7 +113,8 @@
 | [docs/enemy_skill_audit.md](./docs/enemy_skill_audit.md) | **《神魔百科 · 敵人技能》98 项全量结构化审计报告**：逐项核验官方正/误示例与引擎落地详情 |
 | [docs/runestone_status_audit.md](./docs/runestone_status_audit.md) | **全量 22 项「符石狀態」物理核验报告**（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）：逐项核验物理细节、CV 标定与编绘画笔映射 |
 | [docs/LEGACY_AUTODORA_ANALYSIS.md](./docs/LEGACY_AUTODORA_ANALYSIS.md) | 旧版 `AutoDora-V3.4.3.apk` 深度拆解与继承升级对照表 |
-| [ml/README.md](./ml/README.md) | Phase 4 端侧 AI 管线说明（LiteRT `AutoDoraOrbNetV1` + Stage 2A `BoardMasterGridNetV2` & Stage 2B `EnemyIconNetV1` ONNX 训练、近零误报校准与融合部署） |
+| [ml/README.md](./ml/README.md) | Phase 4 端侧 AI 管线说明（LiteRT `AutoDoraOrbNetV1` + Stage 2A `BoardMasterGridNetV2` & Stage 2B `EnemyIconNetV2` 36 类 CenterNet + 关键点徽标 OCR 协同部署） |
+| [docs/youtube_low_recall_acquisition_plan.md](./docs/youtube_low_recall_acquisition_plan.md) | 低识别率版面与战中敌技图标 YouTube 补充采集清单与一键抽帧工具说明 |
 
 > **标定与合规原则**：所有棋盘几何探测、视觉色域与特化识别标定均严格基于真实《神魔之塔》游戏画面实测验证；仓库内绝不包含任何受版权保护的第三方游戏截图、角色立绘或原始游戏素材。
 
@@ -164,11 +165,11 @@ AutoDora-NEXT/
   - **权威敌技库与关前剧本同步扩容**：唯一权威敌技库扩充至 **`499` 条**（`429` A1 实爬 + `70` 百科兜底），同步补全 `TosEnemySkillParserV2` 形状盾（`【火限制形狀盾】` 等）与 `精靈守護 / 符石淨化 / 能力繼承` 解析；`compile_stage_wiki_bundle.py` 编译刷新至 **`140` 关 / `498` 波 / `101` Boss 阶段 / `1,255` 条敌技**。
 - [x] **Phase 4.4 启动台 4-Tab 重构 + 敌技中枢 + 悬浮抽屉 1:1 同步（`v0.8.1`）**：
   - **启动台 4-Tab 重构（`概览 / 策略 / 敌技 / 设置`）** 与游戏内悬浮抽屉 `✦ 立即扫描敌技/图标`、分页剧本选择及 `⊘` 灰字撤回策略一键恢复。
-- [x] **Phase 4.5 全界面紧凑零截断重构 + 499 敌技闭环 + 多源协同识别 + 自定义盘面操作（`v0.9.0` · 当前 `dev` 版本）**：
+- [x] **Phase 4.5 全界面紧凑零截断重构 + 499 敌技闭环 + 双 ONNX 全量清洗重训与协同闭环（`v0.9.0` – `v0.9.1` · 当前正式版）**：
   - **M1 & M8 全局紧凑排版、零 `...` 截断与全抽屉 `(?)` 帮助体系**：重构启动页 4-Tab、悬浮抽屉 3-Tab 与盘面编排 6 抽屉，全交互按钮/胶囊/矩阵单元格零省略号截断，四语言同步扩充至 **`864` 项词条**并为全部抽屉配备结构化 `(?)` 实战帮助指南。
-  - **M2 非瀑布多得分视觉 + 波次先验滤波 + 动态 4 帧连拍**：`CvBoardRecognizer` 升级为独立多得分仲裁并联动 18 维 `SkillPriorVisionFilter` 波次敌技先验；`board_master_meta.json` 将 `FROZEN` 置 `1.01` 安全熔断根治水珠误判冻结；电击/隐藏关卡自动升级为 `4` 帧 `70ms` 连拍；`BoardAutoPolicySummary` 独立区分 `解冻结` 与 `解冰封`。
+  - **M2 非瀑布多得分视觉 + 黑白珠双模 100% 复色 + 波次先验滤波 + `S2 → S1` 闭环反哺（`v0.9.1` 升级）**：`CvBoardRecognizer` 升级为独立多得分仲裁、内置 24×24 官方图鉴轮廓高通匹配器 [`MonochromeOrbMatcher`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/MonochromeOrbMatcher.kt)，并与全量清洗重训的 `BoardMasterGridNetV2`（真实双调黑白精灵增广，`BLACK_WHITE` 检出率 `100%`）执行 `50/50` 概率融合（实机盲测黑白拼图盘纯 CV 与混合模式均达 **`30/30 = 100%`** 复色精度）；新增 `ActiveStrategyStore.mergeBoardDerivedSignals` 打通 **`S2 → S1` 盘面反哺策略闭环**（检出黑白珠/起动浮标/起结有序/拼图框即自动激活对应提示与解盾胶囊）。
   - **M3 499 敌技缺口闭环 + 增强 6×5 单属性矩阵双向同步**：C++20 与双端策略补齐 `max_combo ≤N`、`square_3x3`（正方 3×3）、`forbid_cross`（十之诅咒）、`keep_element_at_least_one`（符石加护留底≥1）、`max_element_orbs ≤N`、`rowRules` 1–5 横排、四态步数盾（含 `exact_steps =N`）、燃烧/瘴气容错、分项障碍必清开关与单策略斜转覆盖；6×5 矩阵支持 17 种形态与条件内嵌展开，并与波次胶囊 100% 双向实时联动。
-  - **M4, M6 & M7 多源敌技协同识别 + 内嵌三级剧本/499 敌技库 + 战前/战中独立采集**：新增 [`EnemySkillKnowledgeMatcher`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemySkillKnowledgeMatcher.kt)（`MANUAL_EDIT` Tier-0 覆写 + 实时正则 + 内置 `499` 条权威敌技 `{属性}/{数字}` 骨架模糊兜底重水合 `✦库`）与全时协同 `EnemyIconNetV1`（后台 + 算前同帧补盾）；Room 升级至 `v4`（`MIGRATION_3_4`），「敌技」页改为全内嵌 `6` 条/页浏览，支持三级游戏入口联动筛选、首次自动/一键导入内置 `140` 关剧本包与 `499` 条权威敌技；设置拆分为战前关卡资讯与战中敌技独立实时采集开关。
+  - **M4, M6 & M7 多源敌技协同识别（36 类 CenterNet `EnemyIconNetV2` + 关键点数值徽标 OCR）+ 内嵌三级剧本/499 敌技库（`v0.9.1` 升级）**：升级 Stage 2B [`EnemyIconOnnxClassifier`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemyIconOnnxClassifier.kt) 为 `[1, 3, 160, 256]` 36 类 Anchor-Free CenterNet（双输出 `icon_probs` + `icon_peaks` 亚像素峰值坐标，`neg_fp = 0/450`），联动 [`EnemyBadgeDigitExtractor`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemyBadgeDigitExtractor.kt) + `PP-OCRv5` 数字白名单 CTC 免长按直读战中 `CD` 下方数值徽标（如 `≥5 COM → min_combo(5)`、`NUM 17 → digital_orb_count(17)`，实机盲测置信度 `99%+`）；配合 [`EnemySkillKnowledgeMatcher`](./android/core-vision/src/main/kotlin/com/autodora/next/vision/EnemySkillKnowledgeMatcher.kt) 四级重水合、Room `v4` 内嵌 `140` 关剧本与 `499` 条权威敌技及战前/战中独立采集开关。
   - **M5 自定义必消/保留硬约束 + 第 6 组蓝色「自定义操作」编排抽屉**：C++20 `Priority`（必消）与 `Reserve`（保留）升级为 `-100,000` 硬约束并附同色排斥护盾；盘面编排新增蓝色「自定义操作」抽屉（含顺序途经 `①~④`、跨回合锁定、仅清自定义操作与点主栏「算/行」自动保存），结果卡片新增 `✓ 编排必消×N` / `✓ 编排保留×N` 核验。
 - [ ] **Phase 4 后续规划（`v0.9.x` – `v1.0.0`）**：持续收集长尾稀疏样本强化小种族与 C 类异态召回、R8 / ABI 瘦身（Phase D）、可选 Shizuku 触控引擎与 `v1.0.0` 正式发布。
 
@@ -178,7 +179,7 @@ AutoDora-NEXT/
 
 ### 1. 直接安装预编译 APK
 
-前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（`dev` 分支持续演进版本可本地构建 `AutoDora-NEXT-v0.9.0-release.apk`），安装后：
+前往 [GitHub Releases](https://github.com/CloverKing/AutoDora-NEXT/releases) 下载最新签名安装包（`AutoDora-NEXT-v0.9.1-release.apk`），安装后：
 1. 在「概览 → 运行权限检查」依次授予 **悬浮窗**、**无障碍自动转珠** 与 **屏幕采集（选择「整个屏幕」）** 三项权限；
 2. 若在 Android 13+ / HyperOS / One UI / ColorOS 遇到无障碍开关受限，按概览页「无障碍受限设置指引」点击「应用详情 → 右上角 `⋮` → 允许受限设置」后即可开启；
 3. 后续版本可直接在 App 内「设置 → 关于与版本 → 检查更新 → 下载并安装」一键原地升级。
@@ -189,7 +190,7 @@ AutoDora-NEXT/
 powershell -ExecutionPolicy Bypass -File solver-core/run-tests.ps1
 ```
 
-### 3. Android 全模块 JVM 单测（119/119）与 APK 构建
+### 3. Android 全模块 JVM 单测（125/125）与 APK 构建
 
 ```powershell
 # 运行全部模块单元测试并构建 Debug APK

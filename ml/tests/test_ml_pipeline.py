@@ -16,7 +16,7 @@ import torch
 from PIL import Image
 
 from ml.board_master_arch import BoardMasterGridNet
-from ml.enemy_icon_arch import ENEMY_ICON_CLASSES, EnemyIconNet
+from ml.enemy_icon_arch import ENEMY_ICON_CLASSES, STRIP_H, STRIP_W, EnemyIconNet
 from ml.export_onnx import export_board_master_to_onnx, export_enemy_icon_to_onnx
 from ml.schema import OUTPUT_DIM
 from ml.tools.extract_youtube_frames import deduplicate_frame_sequence
@@ -37,7 +37,7 @@ class MlPipelineTests(unittest.TestCase):
         self.assertEqual(tuple(out8.shape), (1, 48, OUTPUT_DIM))
 
         ei = EnemyIconNet()
-        icon_out = ei(torch.rand(2, 3, 96, 256))
+        icon_out = ei(torch.rand(2, 3, STRIP_H, STRIP_W))
         self.assertEqual(tuple(icon_out.shape), (2, len(ENEMY_ICON_CLASSES)))
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -52,6 +52,14 @@ class MlPipelineTests(unittest.TestCase):
             sess = ort.InferenceSession(str(bm_path), providers=["CPUExecutionProvider"])
             out_dyn_8 = sess.run(["cell_probs"], {"dual_board": x8.numpy()})[0]
             self.assertEqual(tuple(out_dyn_8.shape), (1, 48, OUTPUT_DIM))
+
+            ei_sess = ort.InferenceSession(str(tmp_dir / "ei.onnx"), providers=["CPUExecutionProvider"])
+            ei_probs, ei_peaks = ei_sess.run(
+                ["icon_probs", "icon_peaks"],
+                {"upper_strip": np.zeros((2, 3, STRIP_H, STRIP_W), dtype=np.float32)},
+            )
+            self.assertEqual(tuple(ei_probs.shape), (2, len(ENEMY_ICON_CLASSES)))
+            self.assertEqual(tuple(ei_peaks.shape), (2, len(ENEMY_ICON_CLASSES), 2))
 
     def test_train_one_run_with_p0_weights(self) -> None:
         rng = np.random.default_rng(7)

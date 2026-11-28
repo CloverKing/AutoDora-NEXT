@@ -46,7 +46,19 @@ data class EnemyIconMetaConfig(
             "ICON_STARTING_BUOY",
             "ICON_BURNING_TRAIL",
             "ICON_CORROSION_TRAIL",
-            "ICON_MONOCHROME_DISGUISE"
+            "ICON_MONOCHROME_DISGUISE",
+            "ICON_MAX_COMBO",
+            "ICON_EQUAL_COMBO",
+            "ICON_COLUMN_CLEAR",
+            "ICON_LUMINOUS",
+            "ICON_WEAKENED_FORBID",
+            "ICON_ORB_GROUP_SIZE",
+            "ICON_WAVE1_KIND",
+            "ICON_ELEM_BURST",
+            "ICON_ELECTRIFIED_HINT",
+            "ICON_FROZEN_PETRIFIED_HINT",
+            "ICON_WEATHERED_BOMB_HINT",
+            "ICON_TERRAIN_HAZARD_HINT"
         )
 
         fun fromJson(rawJson: String): EnemyIconMetaConfig {
@@ -77,15 +89,16 @@ data class EnemyIconInferenceResult(
     val detectedClasses: List<String>,
     val chips: List<WaveShieldChip>,
     val hints: BoardVisualHints,
-    val elapsedMs: Double
+    val elapsedMs: Double,
+    val classPeaksScreenRatio: Map<String, Pair<Float, Float>> = emptyMap()
 )
 
 /**
  * Pure Kotlin upper-battle viewport preprocessor for Stage 2B `EnemyIconNet`:
- * crops `x in [0.04..0.96], y in [0.08..0.42]` and resamples to `[1, 3, 96, 256]` NCHW Float32 `[0, 1]`.
+ * crops `x in [0.04..0.96], y in [0.08..0.42]` and resamples to `[1, 3, 160, 256]` NCHW Float32 `[0, 1]`.
  */
 object EnemyIconStripPreprocessor {
-    const val STRIP_H = 96
+    const val STRIP_H = 160
     const val STRIP_W = 256
 
     fun fillStripNchw(frame: VisionFrame): FloatArray {
@@ -162,13 +175,18 @@ object EnemyIconChipMapper {
 
     fun mapDetections(
         probs: FloatArray,
-        config: EnemyIconMetaConfig
+        config: EnemyIconMetaConfig,
+        peaksGrid: Array<FloatArray>? = null
     ): EnemyIconInferenceResult {
         val detected = ArrayList<String>()
         val chips = ArrayList<WaveShieldChip>()
+        val peakMap = LinkedHashMap<String, Pair<Float, Float>>()
         var hasMonochrome = false
         var hasBurning = false
         var hasSticky = false
+        var hasElectrified = false
+        var hasFrozenOrPetrified = false
+        var hasWeatheredOrBomb = false
 
         val count = minOf(probs.size, config.classes.size)
         for (i in 0 until count) {
@@ -176,6 +194,10 @@ object EnemyIconChipMapper {
             val th = config.thresholds[cls] ?: 0.98f
             if (probs[i] < th) continue
             detected.add(cls)
+            val pk = peaksGrid?.getOrNull(i)
+            if (pk != null && pk.size >= 2) {
+                peakMap[cls] = EnemyBadgeDigitExtractor.gridPeakToScreenRatio(pk[0], pk[1])
+            }
 
             when (cls) {
                 "ICON_PUZZLE" -> chips.add(WaveShieldChip("puzzle_shield", "拼图盾(图标)", ShieldCategory.SHAPE_AND_PUZZLE, autoDetected = true))
@@ -190,6 +212,9 @@ object EnemyIconChipMapper {
                 "ICON_TRAFFIC_LIGHT" -> chips.add(WaveShieldChip("traffic_light", "起结有序(图标)", ShieldCategory.HAZARD_AND_PATH, autoDetected = true))
                 "ICON_STARTING_BUOY" -> chips.add(WaveShieldChip("starting_buoy_shield", "起动浮标(图标)", ShieldCategory.COUNT_AND_ELEMENT, autoDetected = true))
                 "ICON_CHAR_ORB_TERRAIN" -> chips.add(WaveShieldChip("char_orb_terrain", "角色地形(图标)", ShieldCategory.HAZARD_AND_PATH, autoDetected = true))
+                "ICON_COLUMN_CLEAR" -> chips.add(WaveShieldChip("all_columns_ameliorate", "纵横轮转/每列消除(图标)", ShieldCategory.SHAPE_AND_PUZZLE, autoDetected = true))
+                "ICON_LUMINOUS" -> chips.add(WaveShieldChip("luminous_orb_shield", "流光符石盾(图标)", ShieldCategory.HAZARD_AND_PATH, autoDetected = true))
+                "ICON_WEAKENED_FORBID" -> chips.add(WaveShieldChip("forbid_weakened_orb", "禁消弱化珠(图标)", ShieldCategory.HAZARD_AND_PATH, autoDetected = true))
                 "ICON_BURNING_TRAIL" -> {
                     chips.add(WaveShieldChip("zero_trail_burning", "燃烧地形(图标)", ShieldCategory.HAZARD_AND_PATH, autoDetected = true))
                     hasBurning = true
@@ -199,19 +224,26 @@ object EnemyIconChipMapper {
                     hasSticky = true
                 }
                 "ICON_MONOCHROME_DISGUISE" -> hasMonochrome = true
+                "ICON_ELECTRIFIED_HINT" -> hasElectrified = true
+                "ICON_FROZEN_PETRIFIED_HINT" -> hasFrozenOrPetrified = true
+                "ICON_WEATHERED_BOMB_HINT" -> hasWeatheredOrBomb = true
             }
         }
 
         val hints = BoardVisualHints(
             hasMonochrome = hasMonochrome,
             hasBurning = hasBurning,
-            hasSticky = hasSticky
+            hasSticky = hasSticky,
+            hasElectrified = hasElectrified,
+            hasFrozenOrPetrified = hasFrozenOrPetrified,
+            hasWeatheredOrBomb = hasWeatheredOrBomb
         )
         return EnemyIconInferenceResult(
             detectedClasses = detected,
             chips = chips.distinctBy { it.id },
             hints = hints,
-            elapsedMs = 0.0
+            elapsedMs = 0.0,
+            classPeaksScreenRatio = peakMap
         )
     }
 }
@@ -299,7 +331,11 @@ class EnemyIconOnnxClassifier(
                     @Suppress("UNCHECKED_CAST")
                     val rawOut = result[0].value as Array<FloatArray>
                     val probs = rawOut.firstOrNull() ?: return null
-                    val mapped = EnemyIconChipMapper.mapDetections(probs, metaConfig)
+                    @Suppress("UNCHECKED_CAST")
+                    val rawPeaks = if (result.size() >= 2) {
+                        runCatching { (result[1].value as? Array<Array<FloatArray>>)?.firstOrNull() }.getOrNull()
+                    } else null
+                    val mapped = EnemyIconChipMapper.mapDetections(probs, metaConfig, rawPeaks)
                     mapped.copy(elapsedMs = (System.nanoTime() - t0) / 1_000_000.0)
                 }
             }
