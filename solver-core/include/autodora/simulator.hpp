@@ -25,6 +25,7 @@ struct MatchGroup {
     bool isLShape = false;
     bool isTShape = false;
     bool isSquare2x2 = false;
+    bool isSquare3x3 = false;    // 包含 3x3 正方九宫
     uint8_t fullRowMask = 0;     // 哪些横行被该组完整覆盖
     uint8_t fullColMask = 0;     // 哪些直行被该组完整覆盖
     std::array<uint8_t, kMaxBoardDim> colMaxRun{}; // 该组在各直行中的最大连续纵向颗数
@@ -59,6 +60,7 @@ struct SimulationResult {
     std::array<uint8_t, kNumElements> totalElementOrbs{};
     std::array<uint8_t, kNumElements> initialElementCounts{};
     std::array<uint8_t, kNumElements> remainingAfterFirstWave{};
+    std::array<uint8_t, kNumElements> settledElementCounts{};
 
     // Hazard clearance tracking
     uint64_t firstWaveClearedMask = 0;

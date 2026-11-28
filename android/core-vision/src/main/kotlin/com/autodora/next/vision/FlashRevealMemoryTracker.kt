@@ -17,6 +17,12 @@ import kotlin.math.min
  *  2) The instant the board flips to mass '?' / Hidden orbs, locks [lockedSnapshot] and seamlessly
  *     provides the remembered real board for translucent overlay rendering and C++20 solving!
  */
+enum class DarkModalKind {
+    NONE,
+    ENEMY_LONG_PRESS_POPUP,
+    STAGE_INFO_MODAL
+}
+
 class FlashRevealMemoryTracker(
     private val maxMemoryAgeMs: Long = 90_000L,
     private val minClearConfidence: Float = 0.68f
@@ -286,6 +292,106 @@ class FlashRevealMemoryTracker(
             //    (where slate-blue '?' orbs and stone-locked orbs keep pureBlack <= 0.30).
             val boardBody = measureDarkRegion(0.16f, 0.84f, 0.54f, 0.84f)
             return boardBody.pureBlackRatio >= 0.58f && boardBody.vividColoredRatio <= 0.08f
+        }
+
+        /**
+         * Classifies whether a detected dark modal frame contains readable text suitable for training capture,
+         * separating full-screen Stage Info modals (top dark backdrop + bottom teal action buttons) from
+         * in-battle enemy long-press skill popups while rejecting pure-black transition/blank screens.
+         */
+        fun classifyDarkModalForCapture(frame: VisionFrame): DarkModalKind {
+            if (!isDarkModalCoveringBoard(frame)) return DarkModalKind.NONE
+            val w = frame.width
+            val h = frame.height
+            if (w < 120 || h < 200) return DarkModalKind.NONE
+
+            // Check modal interior [14%..86%] x [42%..82%] for crisp readable white/grey/yellow skill text lines
+            val ix0 = (w * 0.14f).toInt()
+            val ix1 = (w * 0.86f).toInt()
+            val iy0 = (h * 0.42f).toInt()
+            val iy1 = (h * 0.82f).toInt()
+            val iStepX = max(2, (ix1 - ix0) / 24)
+            val iStepY = max(2, (iy1 - iy0) / 16)
+            var readableTextPx = 0
+            var totalInteriorPx = 0
+            var y = iy0
+            while (y <= iy1) {
+                var x = ix0
+                while (x <= ix1) {
+                    val argb = frame.getArgb(x, y)
+                    val r = (argb ushr 16) and 0xFF
+                    val g = (argb ushr 8) and 0xFF
+                    val b = argb and 0xFF
+                    val maxC = max(r, max(g, b))
+                    val minC = min(r, min(g, b))
+                    if (maxC >= 85 && (maxC - minC) <= 68) {
+                        readableTextPx++
+                    }
+                    totalInteriorPx++
+                    x += iStepX
+                }
+                y += iStepY
+            }
+            val textRatio = if (totalInteriorPx > 0) readableTextPx.toFloat() / totalInteriorPx else 0f
+            if (textRatio < 0.004f || textRatio > 0.38f) return DarkModalKind.NONE
+
+            // Distinguish Stage Info full-screen dark backdrop / bottom teal buttons from in-battle popup
+            val ux0 = (w * 0.15f).toInt()
+            val ux1 = (w * 0.85f).toInt()
+            val uy0 = (h * 0.14f).toInt()
+            val uy1 = (h * 0.32f).toInt()
+            val uStepX = max(2, (ux1 - ux0) / 16)
+            val uStepY = max(2, (uy1 - uy0) / 10)
+            var upperDark = 0
+            var upperTotal = 0
+            y = uy0
+            while (y <= uy1) {
+                var x = ux0
+                while (x <= ux1) {
+                    val argb = frame.getArgb(x, y)
+                    val r = (argb ushr 16) and 0xFF
+                    val g = (argb ushr 8) and 0xFF
+                    val b = argb and 0xFF
+                    val maxC = max(r, max(g, b))
+                    val minC = min(r, min(g, b))
+                    if (maxC <= 62 && (maxC - minC) <= 24) upperDark++
+                    upperTotal++
+                    x += uStepX
+                }
+                y += uStepY
+            }
+            val upperDarkRatio = if (upperTotal > 0) upperDark.toFloat() / upperTotal else 0f
+
+            val bx0 = (w * 0.12f).toInt()
+            val bx1 = (w * 0.88f).toInt()
+            val by0 = (h * 0.89f).toInt()
+            val by1 = (h * 0.95f).toInt()
+            val bStepX = max(2, (bx1 - bx0) / 20)
+            val bStepY = max(2, (by1 - by0) / 6)
+            var tealButtons = 0
+            var botTotal = 0
+            y = by0
+            while (y <= by1) {
+                var x = bx0
+                while (x <= bx1) {
+                    val argb = frame.getArgb(x, y)
+                    val r = (argb ushr 16) and 0xFF
+                    val g = (argb ushr 8) and 0xFF
+                    val b = argb and 0xFF
+                    val maxC = max(r, max(g, b))
+                    if (b > r + 15 && b >= 65 && maxC <= 185) tealButtons++
+                    botTotal++
+                    x += bStepX
+                }
+                y += bStepY
+            }
+            val tealRatio = if (botTotal > 0) tealButtons.toFloat() / botTotal else 0f
+
+            return if (upperDarkRatio >= 0.55f || tealRatio >= 0.08f) {
+                DarkModalKind.STAGE_INFO_MODAL
+            } else {
+                DarkModalKind.ENEMY_LONG_PRESS_POPUP
+            }
         }
     }
 }

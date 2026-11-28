@@ -479,4 +479,68 @@ class RuleComposerTest {
         val vUndetected = ShieldVerdictEvaluator.evaluate(listOf(buoyChip), noBuoyBoard, solPass.copy(usedCharacterOrb = false))
         assertEquals(ShieldVerdictStatus.UNDETECTED, vUndetected.single().status)
     }
+
+    @Test
+    fun `compose and verdicts support v0_9_0 499-skill gap closure and custom priority reserve hard marks`() {
+        val chips = listOf(
+            WaveShieldChip("max_combo", "连击上限 ≤6", ShieldCategory.COMBO, paramInt = 6),
+            WaveShieldChip("forbid_cross", "避消十字(十之诅咒)", ShieldCategory.SHAPE_AND_PUZZLE),
+            WaveShieldChip("square_3x3", "正方 3×3 盾", ShieldCategory.SHAPE_AND_PUZZLE, paramInt = 1, paramElementMask = Element.DARK.bitMask),
+            WaveShieldChip("keep_element_at_least_one", "符石加护:心", ShieldCategory.COUNT_AND_ELEMENT, paramElementMask = Element.HEART.bitMask),
+            WaveShieldChip("max_element_orbs", "限消水 ≤5粒", ShieldCategory.COUNT_AND_ELEMENT, paramInt = 5, paramElementMask = Element.WATER.bitMask),
+            WaveShieldChip("exact_steps", "恰好 20 步", ShieldCategory.HAZARD_AND_PATH, paramInt = 20)
+        )
+        val composed = RuleComposer.compose(TeamBasePreset("default", "Default"), chips)
+        assertEquals(6, composed.maxTotalCombo)
+        assertTrue(composed.crossShield.forbidCross)
+        assertEquals(0, composed.crossShield.requiredCount)
+        assertEquals(1, composed.shapeShield.requireSquare3x3Count)
+        assertEquals(Element.DARK.bitMask, composed.shapeShield.sq3x3ElementsMask)
+        assertEquals(ElementPriority.KEEP_AT_LEAST_ONE, composed.elementRules[Element.HEART.code].priority)
+        assertEquals(5, composed.elementRules[Element.WATER.code].maxTotalOrbs)
+        assertEquals(20, composed.exactSteps)
+        assertEquals(20, composed.minSteps)
+        assertEquals(20, composed.maxSteps)
+
+        // Verify custom PRIORITY & RESERVE verdicts in ShieldVerdictEvaluator
+        val customCells = MutableList(30) { CellState(Element.WATER) }
+        customCells[0] = CellState(Element.FIRE, hazards = HazardBits.PRIORITY)
+        customCells[1] = CellState(Element.FIRE, hazards = HazardBits.PRIORITY)
+        customCells[29] = CellState(Element.HEART, hazards = HazardBits.RESERVE)
+        val customBoard = BoardState(cols = 6, rows = 5, cells = customCells)
+
+        val solPass = SolutionPath(
+            start = CellCoord(0, 0),
+            usedCharacterOrb = false,
+            characterOrbCol = 0,
+            moves = List(20) { Direction.RIGHT },
+            waypoints = listOf(CellCoord(0, 0), CellCoord(0, 1)),
+            stepCount = 20,
+            firstWaveCombo = 5,
+            totalCombo = 5,
+            firstWaveOrbs = 15,
+            totalOrbs = 15,
+            allHardConstraintsMet = true,
+            satisfiedFlags = ShieldStatusBits.COMBO_SHIELD or ShieldStatusBits.CROSS_SHIELD or
+                ShieldStatusBits.SHAPE_SHIELD or ShieldStatusBits.ELEMENT_SHIELD or
+                ShieldStatusBits.STEP_LIMIT or ShieldStatusBits.CUSTOM_PRIORITY_CLEAR or ShieldStatusBits.CUSTOM_RESERVE_KEEP,
+            failedFlags = 0,
+            score = 1200.0,
+            tag = "Best",
+            groups = listOf(
+                MatchSummary(Element.DARK, 9, 1, false),
+                MatchSummary(Element.FIRE, 3, 1, false),
+                MatchSummary(Element.WATER, 3, 1, false)
+            )
+        )
+        val verdicts = ShieldVerdictEvaluator.evaluate(chips, customBoard, solPass).associateBy { it.chipId }
+        assertEquals(ShieldVerdictStatus.PASSED, verdicts.getValue("max_combo").status)
+        assertEquals(ShieldVerdictStatus.PASSED, verdicts.getValue("forbid_cross").status)
+        assertEquals(ShieldVerdictStatus.PASSED, verdicts.getValue("square_3x3").status)
+        assertEquals(ShieldVerdictStatus.PASSED, verdicts.getValue("exact_steps").status)
+        assertEquals(ShieldVerdictStatus.PASSED, verdicts.getValue("board_custom_priority").status)
+        assertEquals("2", verdicts.getValue("board_custom_priority").detailTag)
+        assertEquals(ShieldVerdictStatus.PASSED, verdicts.getValue("board_custom_reserve").status)
+        assertEquals("1", verdicts.getValue("board_custom_reserve").detailTag)
+    }
 }

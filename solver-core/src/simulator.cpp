@@ -135,6 +135,21 @@ void analyzeGroupGeometry(MatchGroup& g, const BoardState& board) noexcept {
         }
     }
 
+    // 3x3 Square (正方 3x3 九宫盾: 毒果/聖果/靈罩 3x3) detection
+    for (uint8_t r = 0; r + 2 < rows; ++r) {
+        for (uint8_t c = 0; c + 2 < cols; ++c) {
+            uint64_t sq3Mask = 0;
+            for (uint8_t dr = 0; dr < 3; ++dr) {
+                for (uint8_t dc = 0; dc < 3; ++dc) {
+                    sq3Mask |= bitOf(cellIndex(static_cast<uint8_t>(r + dr), static_cast<uint8_t>(c + dc), cols));
+                }
+            }
+            if ((mask & sq3Mask) == sq3Mask) {
+                g.isSquare3x3 = true;
+            }
+        }
+    }
+
     // L-shape & T-shape detection (standard 3x3 bounding box, 5 orbs, or generalized L/T)
     const uint8_t hSpan = static_cast<uint8_t>(maxR - minR + 1);
     const uint8_t wSpan = static_cast<uint8_t>(maxC - minC + 1);
@@ -539,6 +554,13 @@ SimulationResult simulateBoard(const BoardState& initialBoard, const RuleConfig&
     res.lightPrisonRemaining = static_cast<uint8_t>(std::popcount(initialLightPrisonMask & ~clearedLightPrison));
     res.priorityOrbsRemaining = static_cast<uint8_t>(std::popcount(initialPriorityMask & ~clearedPriority));
     res.reserveOrbsBroken = static_cast<uint8_t>(std::popcount(brokenReserve));
+    for (uint8_t i = 0; i < totalCells; ++i) {
+        if ((bitOf(i) & cur.validMask) == 0) continue;
+        const Element se = cur.cells[i].element;
+        if (isMatchableElement(se)) {
+            res.settledElementCounts[static_cast<uint8_t>(se)]++;
+        }
+    }
     res.settledBoard = cur;
 
     return res;

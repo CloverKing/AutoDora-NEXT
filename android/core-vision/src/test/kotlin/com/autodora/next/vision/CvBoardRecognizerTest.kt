@@ -2096,4 +2096,54 @@ class CvBoardRecognizerTest {
         assertEquals("Dark modal must trigger 0 Evil Energy FPs", 0, modalRec.evilEnergyOrbsDetected)
         assertEquals("Dark modal must trigger 0 Bloodbath FPs", 0, modalRec.bloodbathTilesDetected)
     }
+
+    @Test
+    fun `classifyDarkModalForCapture separates enemy long-press popup, stage info modal, and blank screen`() {
+        val w = 360
+        val h = 720
+        // 1) Pure black blank frame -> NONE (no readable text lines)
+        val blank = SyntheticBoardFrame(w, h)
+        assertEquals(DarkModalKind.NONE, FlashRevealMemoryTracker.classifyDarkModalForCapture(blank))
+
+        // 2) In-battle enemy long-press popup: bright sky/battle upper half + dark popup covering board with crisp white/grey text
+        val enemyPopup = SyntheticBoardFrame(w, h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val col = when {
+                    y < (h * 0.40f).toInt() -> 0xFF70A8D8.toInt() // Bright battle sky/portraits
+                    y in (h * 0.41f).toInt()..(h * 0.84f).toInt() && x in (w * 0.12f).toInt()..(w * 0.88f).toInt() -> {
+                        // Simulate crisp horizontal white & grey skill text strokes inside dark popup card
+                        val isTextLine = (y == (h * 0.50f).toInt() || y == (h * 0.56f).toInt() || y == (h * 0.62f).toInt()) &&
+                            x in (w * 0.20f).toInt()..(w * 0.72f).toInt()
+                        if (isTextLine) 0xFF9E9E9E.toInt() else 0xFF141418.toInt()
+                    }
+                    else -> 0xFF282018.toInt()
+                }
+                enemyPopup.pixels[y * w + x] = col
+            }
+        }
+        assertEquals(
+            DarkModalKind.ENEMY_LONG_PRESS_POPUP,
+            FlashRevealMemoryTracker.classifyDarkModalForCapture(enemyPopup)
+        )
+
+        // 3) Full-screen Stage Info modal: dark modal extends through upper 14..32% and bottom teal-blue buttons
+        val stageInfo = SyntheticBoardFrame(w, h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val col = when {
+                    y in (h * 0.89f).toInt()..(h * 0.95f).toInt() && x in (w * 0.14f).toInt()..(w * 0.86f).toInt() ->
+                        0xFF1C5C78.toInt() // Teal Stage Info action buttons
+                    y in (h * 0.48f).toInt()..(h * 0.70f).toInt() && (y % 40 in 0..3) && x in (w * 0.20f).toInt()..(w * 0.75f).toInt() ->
+                        0xFFEDEDED.toInt() // Bright white skill description lines
+                    else -> 0xFF101216.toInt()
+                }
+                stageInfo.pixels[y * w + x] = col
+            }
+        }
+        assertEquals(
+            DarkModalKind.STAGE_INFO_MODAL,
+            FlashRevealMemoryTracker.classifyDarkModalForCapture(stageInfo)
+        )
+    }
 }

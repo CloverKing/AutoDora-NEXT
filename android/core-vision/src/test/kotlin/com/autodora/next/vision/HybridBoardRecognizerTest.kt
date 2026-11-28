@@ -226,4 +226,38 @@ class HybridBoardRecognizerTest {
         assertEquals(160f / 255f, g47, 0.02f)
         assertEquals(240f / 255f, b47, 0.02f)
     }
+
+    @Test
+    fun `visualHints hasMonochrome unlocks AI monochrome recovery even without CV BLACK_WHITE bit`() {
+        val total = 30
+        val cvCells = List(total) { i ->
+            CellState(
+                element = if (i == 0) Element.WOOD else Element.MATCHABLE[i % 6],
+                variant = Variant.NORMAL,
+                hazards = HazardBits.NONE,
+                confidence = 0.85f
+            )
+        }
+        val cvResult = RecognitionResult(
+            board = BoardState(cols = 6, rows = 5, cells = cvCells, tileFlags = List(total) { TileFlagBits.NONE }),
+            averageConfidence = 0.85f,
+            lowConfidenceIndices = emptyList(),
+            puzzleCellsDetected = 0,
+            engineName = "CV-Rule-v2.7",
+            elapsedMs = 3.0
+        )
+        val preds = List(total) { i ->
+            if (i == 0) {
+                buildPredictionRow(element = Element.LIGHT, elProb = 0.62f) // below normal override 0.88, above mono recover 0.56!
+            } else {
+                buildPredictionRow(element = Element.MATCHABLE[i % 6], elProb = 0.92f)
+            }
+        }
+
+        val withoutHint = HybridFusionPolicy.fuse(cvResult, preds)
+        assertEquals("Without monochrome hint, CV cell must remain WOOD", Element.WOOD, withoutHint.board.cells[0].element)
+
+        val withMonoHint = HybridFusionPolicy.fuse(cvResult, preds, visualHints = BoardVisualHints(hasMonochrome = true))
+        assertEquals("With hasMonochrome visual hint, AI must recover LIGHT at 0.62", Element.LIGHT, withMonoHint.board.cells[0].element)
+    }
 }

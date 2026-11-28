@@ -1,6 +1,6 @@
-# AutoDora-NEXT 端侧多头轻量 CNN 训练管线（`ml/` · `v0.5.0` Phase 4 首版已落地）
+# AutoDora-NEXT 端侧多头轻量 CNN 与双 ONNX 训练管线（`ml/` · `v0.9.1` Stage 2A + 2B 全量重训升级）
 
-本目录实现了 Phase 4 端侧符石与盘面状态识别模型 **`AutoDoraOrbNetV1`** 的半自动抽帧切珠、数据集构建、PyTorch GPU 训练、近零误报阈值校准与 BN 折叠直出 LiteRT (`.tflite`) 管线，已正式接入 `android/core-vision` (`LiteRtOrbClassifier` + `HybridFusionPolicy` + `HybridBoardRecognizer`) 与 `android/app` Settings 开关。
+本目录实现了 Phase 4 端侧多代 AI 模型训练与导出流水线：① `v0.5.0` LiteRT 兜底/自定义基线 **`AutoDoraOrbNetV1`**（`orb_multihead_v1.tflite`, `340.4 KB`）；② `v0.9.1` 主力 Stage 2A 双帧全盘面动态 ONNX **`BoardMasterGridNetV2`**（`board_master_v2.onnx`, `2,125.2 KB`, `BoardMasterOnnxClassifier`）与 Stage 2B 战中 36 类 Anchor-Free CenterNet 敌技图标 ONNX **`EnemyIconNetV2`**（`enemy_icon_v1.onnx`, `1,774.2 KB`, 双输出 `icon_probs + icon_peaks`，联动 `EnemyBadgeDigitExtractor` 关键点数值徽标 OCR），均已未压缩打包正式集成进 `android/core-vision` 与 `android/app`。
 
 ## 1. 训练与导出流水线
 
@@ -54,6 +54,17 @@ ml\.venv\Scripts\python.exe -m ml.export_litert
   5. `head_hazards` `[22..38]` (17, Sigmoid 多标签)：17 类核心异常/锁定/刺血/炸弹等位
   6. `head_tile_overlay` `[39..46]` (8, Sigmoid 多标签)：拼图 / 暴风 / 碎裂 / 燃烧 / 灼热 / 血浴 / 黑洞 / 红绿灯
 
-## 3. 合规与 Git 卫生约束
+## 3. 端侧无上限双轨采集飞轮、PP-OCRv5 ONNX 离线识字与合规规范（`v0.5.1–v0.6.0`）
 
-- **严禁提交第三方版权素材或大体积训练中间产物**：`backups/`、`ml/datasets/`、`ml/runs/`、`ml/checkpoints/` 与 `ml/.venv/` 均已配置 `.gitignore` 忽略，Git 仓库仅保留纯训练/导出脚本与自主权重的轻量模型资产 `android/app/src/main/assets/models/{orb_multihead_v1.tflite, model_meta.json}`。
+- **App 端侧双轨采集导出格式**：`v0.5.1` 已上线 `TrainingDataRepository` + `Room AutoDoraDatabase v2`，在日常游玩时无上限收集两类高价值样本并一键打包导出 `AutoDora_TrainingData_<ts>.zip`（含根目录 `manifest.json`、`enemy_skills_master.json`、`boards/*_{a,b}.webp`、`viewports/*_upper.webp`、`enemy_popups/*_full.webp` 与 `meta/*.json` 含 P0 人工编排纠错 diff）；导出的 ZIP 可直接解压归档至 `backups/phase4_v2_inbox/device_exports/` 对接下一代 `BoardMasterGridNet` 与 `EnemyPopupParser` 训练。
+- **纯离线 PP-OCRv5 Mobile ONNX 推理资产（`v0.6.0`）**：`android/app/src/main/assets/ocr/` 集成 RapidAI `ch_PP-OCRv5_det_mobile.onnx` (`4,819,576 B`)、`ch_PP-OCRv5_rec_mobile.onnx` (`16,631,306 B`) 与 `ppocrv5_dict.txt` (`18,383` 字表)，由 `ONNX Runtime Mobile 1.32.0` 驱动 `PaddleOcrOnnxEngine` + `TosEnemySkillParserV2`；识别出的全部技能（含灰字无视技能）均按 `skillHash` 实时累积写入 Room `captured_enemy_skills` 知识库（随训练集 ZIP 导出至 `enemy_skills_master.json`）。
+- **PC 端权威敌技整合、关卡百科编译与 Stage 2A / 2B 训练管线（`v0.7.0–v0.8.0`）**：
+  - `ml/tools/build_unified_enemy_skill_master.py`：只读融合 A1 实爬 `authoritative_enemy_skills_dedup.json`（最高权威）与 `docs/enemy_skill_encyclopedia_spec.json`（仅补充未覆盖条目），执行跨行 `【标题】` 修复、排版换行智能连接、场景尾巴剥离、严格近重复合并与 `rules_v2` 前后覆盖率审计，输出唯一权威库到 gitignored `ml/datasets/enemy_skill_master_clean/unified_enemy_skill_master.json`（当前 **`499` 条**：`A1 = 429 + 百科兜底 = 70`）；
+  - `ml/tools/compile_stage_wiki_bundle.py`：只读编译 A1 `tos_current_version_stage_wiki.json`，传播每波 `scene_skill`、将多阶段 Boss (`phases`) 拆分为独立连续波次并生成 App 可直接导入的 `tos_stage_wiki_import_bundle.json`（当前 **`140` 关 / `498` 波 / `101` 阶段 / `1,255` 技能**；随 A1 爬虫增量随时重跑秒级刷新）；
+  - `ml/tools/ingest_device_export.py`：一键解包真机训练 ZIP，按 `BOARD_EDITOR_CORRECTION = 4.0×` / `P1 = 2.0×` / `P2 = 1.0×` 分配采样权重，并与 `tos_enemy_skill_rules_v2.json` 比对输出未覆盖新技能清单 `unparsed_skills_report.json`；
+  - `ml/tools/extract_youtube_frames.py`：提取间距约 `0.35s` 的静止双帧 WebP 配对（保留电击/燃烧/漩涡闪烁态）并执行 64-bit dHash 去重；
+  - `ml/tools/download_low_recall_topup.py`：对照 [docs/youtube_low_recall_acquisition_plan.md](../docs/youtube_low_recall_acquisition_plan.md)，自动检索并下载低召回种族（兽/机械/神/妖/魔）、幽闭黑白、炼狱/荆棘/魔力/刺血及战中 `CD` 敌技条实况视频，同步切出 `boards/` 与 `upper_strips/` 归档至 `backups/phase4_v2_inbox/topup_v090_low_recall/`（首批已入库 `42` 部视频 / `549` 净盘面 + `549` 敌技顶栏）；
+  - **Stage 2A `BoardMasterGridNetV2`（`ml/tools/build_phase4_v2_board_dataset.py` + `ml/train_board_master.py` + `ml/board_master_arch.py`）**：严格执行静态 `6×5` 盘面质量门控剔除 `451` 张残影/爆炸/弹窗污染帧，修正 `hazards_p0/black_white` 标签反转并融合官方百科 `skill_048` + `status_01..20` 精灵库与真实双调黑白精灵替换增广（`mono_sprite_bank.npz`），在 `953` 张高净度盘面（`28,590` 格，`83` 组真实闪烁双帧）上训练导出 `board_master_v2.onnx`（`536,719` 参数，`2,125.2 KB`，动态支持 `6×5`/`6×8` → `[1, Rows×Cols, 47]`，ORT parity `1.67e-06`，桌面 4T CPU `5.77 ms` / `11.46 ms`）；验证集 `is_rune = 0.9919`、`clean_6color_element = 0.9717`、`phase4_v1_clean6 = 0.9566`，零误报激活 **`10/17` 类核心异常 + `BURNING_TILE`**（含 `WEATHERED 0.82`、`ELECTRIFIED 0.90`、`ICE_SEALED 0.95`、`BLOOD_DRAIN_LOCKED 0.58`、`PETRIFIED 0.58`、`BOMB 0.90`、`BLACK_WHITE 0.94`、`COAGULATED 0.97`、`FOAM 0.76`、`LUMINOUS 0.69`、`BLOOD_THORN 0.79`），配合端侧 `MonochromeOrbMatcher` 在盲测黑白拼图视频实现 **`30/30 = 100%`** 复色；
+  - **Stage 2B `EnemyIconNetV2`（`ml/tools/build_enemy_icon_dataset.py` + `ml/train_enemy_icon.py` + `ml/enemy_icon_arch.py`）**：输入升级为各向同性 `[1, 3, 160, 256]`（`x ∈ [0.04..0.96], y ∈ [0.08..0.42]`），类别扩展至 **`36` 类**并采用 `/8` (`20×32`) **Anchor-Free CenterNet 高斯热力图监督**，交叉比对官方百科救回 `ICON099`（幽闭空间）等 16+ 枚误归类官方图标，导出双输出 `enemy_icon_v1.onnx`（`449,388` 参数，`1,774.2 KB`，同时输出 `icon_probs [B, 36]` 与亚像素峰值坐标 `icon_peaks [B, 36, 2]`，ORT parity `1.24e-06`，桌面 4T CPU `4.32 ms`），`450` 条纯负样本零误报（`neg_fp = 0/450`）并激活 `19/36` 类；端侧联动 `EnemyBadgeDigitExtractor` + `PP-OCRv5` 数字白名单 CTC 直读战中 `≥N COM` / `≤N COM` / `NUM N` 数值徽标；
+  - 完整 Python 自动化单测 **`9/9` 通过**（`test_ml_pipeline.py` 4 项含 `6×5`/`6×8` ONNX 检验 + `test_enemy_skill_cleaner.py` 4 项 + `test_stage_wiki_compiler.py` 1 项）。
+- **严禁提交第三方版权素材或大体积训练中间产物**：`backups/`、`ml/datasets/`、`ml/runs/`、`ml/checkpoints/` 与 `ml/.venv/` 均已配置 `.gitignore` 忽略，Git 仓库仅保留纯训练/导出脚本与轻量化自主/公开端侧推理资产（`assets/models/` 与 `assets/ocr/`）。

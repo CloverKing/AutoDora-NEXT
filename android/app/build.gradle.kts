@@ -12,8 +12,8 @@ plugins {
 //  - PATCH: bug fixes, vision/solver calibration, and stability improvements
 // Android versionCode formula: MAJOR * 10000 + MINOR * 100 + PATCH (e.g. 0.3.0 -> 300, 0.3.1 -> 301, 1.0.0 -> 10000)
 val appVersionMajor = 0
-val appVersionMinor = 5
-val appVersionPatch = 0
+val appVersionMinor = 9
+val appVersionPatch = 1
 val appVersionCode = appVersionMajor * 10000 + appVersionMinor * 100 + appVersionPatch
 val appVersionName = "$appVersionMajor.$appVersionMinor.$appVersionPatch"
 
@@ -47,7 +47,7 @@ android {
     }
 
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite", "onnx")
     }
 
     compileOptions {

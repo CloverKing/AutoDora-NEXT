@@ -568,6 +568,26 @@ class PathOverlayView(context: Context) : View(context) {
                 if ((cell.hazards and HazardBits.THORN) != 0) {
                     drawBottomRightHazardTag(Color.argb(225, 141, 110, 99), Color.argb(230, 93, 64, 55), "棘")
                 }
+                if ((cell.hazards and HazardBits.PRIORITY) != 0) {
+                    drawBottomRightHazardTag(Color.argb(245, 0, 230, 118), Color.argb(240, 0, 150, 136), "必", Color.argb(46, 0, 230, 118))
+                }
+                if ((cell.hazards and HazardBits.RESERVE) != 0) {
+                    drawBottomRightHazardTag(Color.argb(245, 255, 213, 79), Color.argb(240, 230, 118, 0), "留", Color.argb(46, 255, 193, 7))
+                }
+                if ((cell.hazards and HazardBits.LOCKED) != 0) {
+                    drawBottomRightHazardTag(Color.argb(240, 144, 164, 174), Color.argb(235, 69, 90, 100), "定")
+                }
+                if ((flags and TileFlagBits.NO_PASS) != 0) {
+                    drawBottomRightHazardTag(Color.argb(245, 255, 23, 68), Color.argb(240, 183, 28, 28), "禁", Color.argb(60, 183, 28, 28))
+                }
+                if ((flags and TileFlagBits.SEALED_STONE) != 0) {
+                    drawBottomRightHazardTag(Color.argb(240, 124, 77, 255), Color.argb(235, 69, 39, 160), "封")
+                }
+                val cpOrder = b.orderedCheckpoints.indexOf(idx)
+                if (cpOrder >= 0) {
+                    val cpSym = when (cpOrder) { 0 -> "①"; 1 -> "②"; 2 -> "③"; 3 -> "④"; else -> "${cpOrder + 1}" }
+                    drawBottomRightHazardTag(Color.argb(245, 41, 182, 246), Color.argb(240, 2, 119, 189), cpSym, Color.argb(44, 41, 182, 246))
+                }
                 if (cell.variant == Variant.RACE) {
                     val tagH = (g.cellWidth * 0.21f).coerceIn(15f, 26f)
                     val tagW = tagH * 1.12f
@@ -687,7 +707,7 @@ class PathOverlayView(context: Context) : View(context) {
                 canvas.drawText("${elementShortZh(cell.element)}$suffix", cx, cy + orbR * 0.30f, textPaint)
 
                 // Compact bottom hazard/terrain tag
-                val tag = buildCellTag(cell.hazards, flags)
+                val tag = buildCellTag(cell.hazards, flags, b.orderedCheckpoints.indexOf(idx))
                 if (tag.isNotEmpty()) {
                     fillPaint.color = Color.argb(215, 20, 20, 26)
                     val tagW = g.cellWidth * 0.84f
@@ -712,8 +732,16 @@ class PathOverlayView(context: Context) : View(context) {
         }
     }
 
-    private fun buildCellTag(hazards: Int, flags: Int): String {
-        val parts = ArrayList<String>(3)
+    private fun buildCellTag(hazards: Int, flags: Int, checkpointOrder: Int = -1): String {
+        val parts = ArrayList<String>(4)
+        if ((hazards and HazardBits.PRIORITY) != 0) parts.add("必")
+        if ((hazards and HazardBits.RESERVE) != 0) parts.add("留")
+        if ((hazards and HazardBits.LOCKED) != 0) parts.add("定")
+        if ((flags and TileFlagBits.NO_PASS) != 0) parts.add("禁")
+        if (checkpointOrder >= 0) {
+            parts.add(when (checkpointOrder) { 0 -> "①"; 1 -> "②"; 2 -> "③"; 3 -> "④"; else -> "${checkpointOrder + 1}" })
+        }
+        if ((flags and TileFlagBits.SEALED_STONE) != 0) parts.add("封")
         if ((flags and TileFlagBits.PUZZLE_1) != 0) parts.add("拼")
         if ((flags and TileFlagBits.START_ALLOWED) != 0) parts.add("起")
         if ((flags and TileFlagBits.END_REQUIRED) != 0) parts.add("终")
@@ -740,9 +768,7 @@ class PathOverlayView(context: Context) : View(context) {
         if ((hazards and HazardBits.THORN) != 0) parts.add("棘")
         if ((hazards and HazardBits.MAGIC_ORB) != 0) parts.add("魔")
         if ((hazards and HazardBits.LUMINOUS) != 0) parts.add("光")
-        if ((hazards and HazardBits.PRIORITY) != 0) parts.add("必")
-        if ((hazards and HazardBits.RESERVE) != 0) parts.add("留")
-        if ((hazards and (HazardBits.LOCKED or HazardBits.LOCKED_HURT)) != 0) parts.add("锁")
+        if ((hazards and HazardBits.LOCKED_HURT) != 0) parts.add("锁")
         return parts.take(3).joinToString("")
     }
 

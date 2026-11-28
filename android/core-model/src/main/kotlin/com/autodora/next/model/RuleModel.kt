@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class ElementPriority(val code: Int) {
+    KEEP_AT_LEAST_ONE(-2),
     RESERVE(-1),
     NORMAL(0),
     HIGH(1)
@@ -34,7 +35,8 @@ enum class TargetShape(val code: Int) {
     L_SHAPE(12),
     T_SHAPE(13),
     SQUARE_2X2(14),
-    CLEAR_ALL(15)
+    CLEAR_ALL(15),
+    SQUARE_3X3(16)
 }
 
 @Serializable
@@ -131,7 +133,10 @@ data class ElementRule(
     val clearAllFirstWave: Boolean = false,
     val exactFirstWaveCombos: Int = -1,
     val exactFirstWaveOrbs: Int = -1,
-    val minFirstWaveOrbs: Int = 0
+    val minFirstWaveOrbs: Int = 0,
+    val minFirstWaveCombos: Int = 0,
+    val maxTotalOrbs: Int = -1,
+    val minTotalOrbs: Int = 0
 )
 
 @Serializable
@@ -163,7 +168,8 @@ data class CrossShieldRule(
     val strict5Orbs: Boolean = true,
     val requiredElement: Int = -1,
     val requireDistinctColors: Boolean = false,
-    val requiredElementsMask: Int = 0
+    val requiredElementsMask: Int = 0,
+    val forbidCross: Boolean = false
 )
 
 @Serializable
@@ -171,6 +177,11 @@ data class ShapeShieldRule(
     val requireLCount: Int = 0,
     val requireTCount: Int = 0,
     val requireSquare2x2Count: Int = 0,
+    val requireSquare3x3Count: Int = 0,
+    val lElementsMask: Int = 0,
+    val tElementsMask: Int = 0,
+    val sq2x2ElementsMask: Int = 0,
+    val sq3x3ElementsMask: Int = 0,
     val strictShape: Boolean = false
 )
 
@@ -183,6 +194,7 @@ data class RuleConfig(
     val goalElementsMask: Int = 0,            // Optional specific element bitmask for N_COLOR_ALL / MULTI_COLOR_X_ORBS
     val useSystemSteps: Boolean = true,       // true = inherit System Settings maxSteps; false = Strategy overrides System
     val useSystemBeam: Boolean = true,        // true = inherit System Settings beamWidth; false = Strategy overrides System
+    val useSystemDiagonal: Boolean = true,    // true = inherit System Settings allowDiagonal; false = Strategy overrides System
     val allowDiagonalMove: Boolean = true,
     val minSteps: Int = 0,
     val maxSteps: Int = 30,

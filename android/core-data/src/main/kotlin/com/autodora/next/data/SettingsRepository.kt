@@ -66,8 +66,13 @@ data class AppSettings(
     val stepDurationMs: Long = 68L,
     val humanMode: Boolean = false,
     val multiFrameCount: Int = 2,
-    val useAiRecognizer: Boolean = true,        // Phase 4 LiteRT + CV Hybrid recognition (falls back to pure CV if off)
+    val useAiRecognizer: Boolean = true,        // Stage 2A BoardMasterGridNetV2 ONNX (+ LiteRT -> pure CV fallback)
+    val autoCapturePreBattleStageInfo: Boolean = true, // Real-time OCR capture of pre-battle Stage Info modal into Stage Scripts
+    val autoCaptureInBattleEnemyInfo: Boolean = true,  // Real-time OCR capture of in-battle long-press Enemy Skill popup
+    val autoEnemyIconDetectEnabled: Boolean = true, // Stage 2B EnemyIconNetV1 collaborative battle icon verifier
+    val trainingDataCollectionEnabled: Boolean = true, // Unlimited dual-track on-device capture (boards + enemy popups)
     val showOrbBadgesOnPath: Boolean = true,    // Show compact recognized orb badges so users verify board accuracy at a glance
+    val lockCustomBoardOpsAcrossTurns: Boolean = false, // Persist custom board priority/reserve/checkpoint marks across turns
     val holdReplanEnabled: Boolean = false,     // Toggle mode: when ON, '行' executes Hold-and-Replan (按住重算)
     val holdReplanDelayMs: Long = 560L,         // Max wait ceiling for '?' flip reveal animation (exits early once revealed!)
     val holdReplanSolveTimeMs: Long = 400L,     // Post-reveal C++20 solve time budget (150..3500ms, default 400ms / max 3.5s)
@@ -76,6 +81,8 @@ data class AppSettings(
     val invertDragY: Boolean = false,
     val activePresetId: String = "builtin_general"
 ) {
+    val autoEnemySkillOcrEnabled: Boolean
+        get() = autoCapturePreBattleStageInfo || autoCaptureInBattleEnemyInfo
     fun toRuleConfig(): RuleConfig {
         val scaledTimeMs = (550 + (maxSteps - 40).coerceAtLeast(0) * 8).coerceIn(550, 2200)
         return RuleConfig(
@@ -124,7 +131,13 @@ class SettingsRepository(private val context: Context) {
         val HUMAN_MODE = booleanPreferencesKey("touch_human_mode")
         val MULTI_FRAME_COUNT = intPreferencesKey("vision_multi_frames")
         val USE_AI_RECOGNIZER = booleanPreferencesKey("vision_use_ai_recognizer")
+        val AUTO_ENEMY_SKILL_OCR_ENABLED = booleanPreferencesKey("vision_auto_enemy_skill_ocr")
+        val AUTO_CAPTURE_PRE_BATTLE_STAGE = booleanPreferencesKey("vision_auto_capture_pre_battle_stage")
+        val AUTO_CAPTURE_IN_BATTLE_ENEMY = booleanPreferencesKey("vision_auto_capture_in_battle_enemy")
+        val AUTO_ENEMY_ICON_DETECT_ENABLED = booleanPreferencesKey("vision_auto_enemy_icon_detect")
+        val TRAINING_DATA_COLLECTION_ENABLED = booleanPreferencesKey("ml_training_data_collection_enabled")
         val SHOW_ORB_BADGES = booleanPreferencesKey("ux_show_orb_badges")
+        val LOCK_CUSTOM_BOARD_OPS = booleanPreferencesKey("ux_lock_custom_board_ops")
 
         val HOLD_REPLAN_ENABLED = booleanPreferencesKey("touch_hold_replan_enabled")
         val HOLD_REPLAN_DELAY_MS = longPreferencesKey("touch_hold_replan_delay_ms")
@@ -162,7 +175,12 @@ class SettingsRepository(private val context: Context) {
         humanMode = p[Keys.HUMAN_MODE] ?: false,
         multiFrameCount = p[Keys.MULTI_FRAME_COUNT] ?: 2,
         useAiRecognizer = p[Keys.USE_AI_RECOGNIZER] ?: true,
+        autoCapturePreBattleStageInfo = p[Keys.AUTO_CAPTURE_PRE_BATTLE_STAGE] ?: (p[Keys.AUTO_ENEMY_SKILL_OCR_ENABLED] ?: true),
+        autoCaptureInBattleEnemyInfo = p[Keys.AUTO_CAPTURE_IN_BATTLE_ENEMY] ?: (p[Keys.AUTO_ENEMY_SKILL_OCR_ENABLED] ?: true),
+        autoEnemyIconDetectEnabled = p[Keys.AUTO_ENEMY_ICON_DETECT_ENABLED] ?: true,
+        trainingDataCollectionEnabled = p[Keys.TRAINING_DATA_COLLECTION_ENABLED] ?: true,
         showOrbBadgesOnPath = p[Keys.SHOW_ORB_BADGES] ?: true,
+        lockCustomBoardOpsAcrossTurns = p[Keys.LOCK_CUSTOM_BOARD_OPS] ?: false,
         holdReplanEnabled = p[Keys.HOLD_REPLAN_ENABLED] ?: false,
         holdReplanDelayMs = (p[Keys.HOLD_REPLAN_DELAY_MS] ?: 560L).coerceIn(240L, 900L),
         holdReplanSolveTimeMs = (p[Keys.HOLD_REPLAN_SOLVE_TIME_MS] ?: 400L).coerceIn(150L, 3500L),
@@ -206,7 +224,13 @@ class SettingsRepository(private val context: Context) {
             p[Keys.HUMAN_MODE] = next.humanMode
             p[Keys.MULTI_FRAME_COUNT] = next.multiFrameCount.coerceIn(1, 3)
             p[Keys.USE_AI_RECOGNIZER] = next.useAiRecognizer
+            p[Keys.AUTO_CAPTURE_PRE_BATTLE_STAGE] = next.autoCapturePreBattleStageInfo
+            p[Keys.AUTO_CAPTURE_IN_BATTLE_ENEMY] = next.autoCaptureInBattleEnemyInfo
+            p[Keys.AUTO_ENEMY_SKILL_OCR_ENABLED] = next.autoEnemySkillOcrEnabled
+            p[Keys.AUTO_ENEMY_ICON_DETECT_ENABLED] = next.autoEnemyIconDetectEnabled
+            p[Keys.TRAINING_DATA_COLLECTION_ENABLED] = next.trainingDataCollectionEnabled
             p[Keys.SHOW_ORB_BADGES] = next.showOrbBadgesOnPath
+            p[Keys.LOCK_CUSTOM_BOARD_OPS] = next.lockCustomBoardOpsAcrossTurns
             p[Keys.HOLD_REPLAN_ENABLED] = next.holdReplanEnabled
             p[Keys.HOLD_REPLAN_DELAY_MS] = next.holdReplanDelayMs.coerceIn(240L, 900L)
             p[Keys.HOLD_REPLAN_SOLVE_TIME_MS] = next.holdReplanSolveTimeMs.coerceIn(150L, 3500L)
