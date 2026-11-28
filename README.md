@@ -113,8 +113,9 @@
 | [docs/enemy_skill_audit.md](./docs/enemy_skill_audit.md) | **《神魔百科 · 敵人技能》98 项全量结构化审计报告**：逐项核验官方正/误示例与引擎落地详情 |
 | [docs/runestone_status_audit.md](./docs/runestone_status_audit.md) | **全量 22 项「符石狀態」物理核验报告**（官方百科 20 项 + 百科外经典锁定/荆棘 2 项）：逐项核验物理细节、CV 标定与编绘画笔映射 |
 | [docs/LEGACY_AUTODORA_ANALYSIS.md](./docs/LEGACY_AUTODORA_ANALYSIS.md) | 旧版 `AutoDora-V3.4.3.apk` 深度拆解与继承升级对照表 |
-| [ml/README.md](./ml/README.md) | Phase 4 端侧 AI 管线说明（LiteRT `AutoDoraOrbNetV1` + Stage 2A `BoardMasterGridNetV2` & Stage 2B `EnemyIconNetV2` 36 类 CenterNet + 关键点徽标 OCR 协同部署） |
+| [ml/README.md](./ml/README.md) | Phase 4 端侧 AI 管线说明（LiteRT `AutoDoraOrbNetV1` + Stage 2A `BoardMasterGridNetV2` 7 种族高召回增量重训 & Stage 2B `EnemyIconNetV2` 36 类 CenterNet + 关键点徽标 OCR） |
 | [docs/youtube_low_recall_acquisition_plan.md](./docs/youtube_low_recall_acquisition_plan.md) | 低识别率版面与战中敌技图标 YouTube 补充采集清单与一键抽帧工具说明 |
+| [docs/youtube_broad_corpus_plan.md](./docs/youtube_broad_corpus_plan.md) | 面向下一代大参数模型（V3）储备的 10 大维度 72 词簇广谱 YouTube 双帧实战语料方案 |
 
 > **标定与合规原则**：所有棋盘几何探测、视觉色域与特化识别标定均严格基于真实《神魔之塔》游戏画面实测验证；仓库内绝不包含任何受版权保护的第三方游戏截图、角色立绘或原始游戏素材。
 

@@ -297,7 +297,7 @@ class Phase4V2BoardDataset(Dataset):
 
         if self.augment:
             # Authentic ToS dual-tone monochrome augmentation ONLY (zero anti-training linear grayscale!)
-            if not is_neg_board and not already_bw and self.mono_by_el and self.rng.random() < 0.22:
+            if not is_neg_board and not already_bw and self.mono_by_el and self.rng.random() < 0.30:
                 a, b = self._apply_authentic_monochrome(a, b, tgt, em, hm)
 
             gain = float(self.rng.uniform(0.52, 0.78)) if self.rng.random() < 0.14 else float(self.rng.uniform(0.90, 1.10))
@@ -394,14 +394,15 @@ def _calibrate_binary_thresholds(
         best_fp = 0
         found = False
         best_cand: tuple[float, int, int] | None = None
-        min_floor = 0.90 if cname in ("BOMB", "ICE_SEALED", "ELECTRIFIED") else 0.58
+        min_floor = 0.90 if cname in ("BOMB", "ICE_SEALED") else (0.85 if cname == "ELECTRIFIED" else 0.58)
+        min_tp = 2 if pos_cnt <= 7 else 3
         if cname not in disable_names and pos_cnt >= 4:
             for th in np.linspace(min_floor, 0.99, 45):
                 pred = yp >= th
                 tp = int(np.sum(pred & yt))
                 fp = int(np.sum(pred & ~yt))
                 prec = tp / max(1, tp + fp)
-                if fp == 0 and tp >= 3:
+                if fp == 0 and tp >= min_tp:
                     best_th, best_tp, best_fp, found = float(round(th, 2)), tp, fp, True
                     break
                 if tp >= 6 and fp <= 1 and prec >= 0.96 and best_cand is None:
@@ -452,8 +453,8 @@ def train_phase4_v2(
     haz_pw = []
     for hi in range(NUM_HAZARDS):
         if hi == bw_idx:
-            # Online monochrome augmentation already sets 22% of boards to BLACK_WHITE=1 -> pos_weight=1.0 prevents FPs!
-            haz_pw.append(1.0)
+            # Balance BLACK_WHITE across expanded 864-board dataset while keeping near-zero FP
+            haz_pw.append(2.8)
             continue
         pos = float(((tr_haz_y[:, :, hi] > 0.5) & (tr_haz_m[:, :, hi] > 0.5)).sum())
         neg = float(((tr_haz_y[:, :, hi] < 0.5) & (tr_haz_m[:, :, hi] > 0.5)).sum())
@@ -580,9 +581,14 @@ def train_phase4_v2(
             f"v1_c6={v1_clean6_acc:.4f} race_mac={race_macro_recall:.4f}",
             flush=True,
         )
-        if score > best_score:
-            best_score = score
-            torch.save({"model_state": model.state_dict(), "epoch": ep, "metrics": history[-1]}, best_ckpt)
+        min_ckpt_ep = max(1, int(epochs * 0.55))
+        if (ep >= min_ckpt_ep or best_score < 0.0) and score > best_score:
+            if ep < min_ckpt_ep:
+                # Track provisional best only until converged window starts
+                torch.save({"model_state": model.state_dict(), "epoch": ep, "metrics": history[-1]}, best_ckpt)
+            else:
+                best_score = score
+                torch.save({"model_state": model.state_dict(), "epoch": ep, "metrics": history[-1]}, best_ckpt)
 
     state = torch.load(best_ckpt, map_location="cpu", weights_only=True)
     model.cpu().load_state_dict(state["model_state"])

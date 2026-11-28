@@ -255,18 +255,84 @@ def _draw_outlined_text(
 
 
 def _extract_clean_upper_bg_160x256(img_path: Path) -> np.ndarray | None:
+    """
+    Uses exact periodicity-verified board `[x0, x1]` on 16:9 YouTube frames (and full width on
+    native portrait frames `w <= 0.72*h`) so `[0.04..0.96] x [0.08..0.42]` matches the live phone
+    aspect ratio 1:1 and scrubbing `x in [0..330]` removes 100% of real in-battle CD icons!
+    """
+    from ml.tools.extract_tos_dataset import detect_tos_board  # noqa: E402
+    from ml.tools.build_phase4_v2_board_dataset import has_6x5_grid_periodicity  # noqa: E402
+
     try:
         im = Image.open(img_path).convert("RGB")
     except Exception:
         return None
-    w, h = im.size
-    if w < 200 or h < 320:
+    fw, fh = im.size
+    if fw < 200 or fh < 320:
         return None
 
-    crop = im.crop((int(w * 0.04), int(h * 0.08), int(w * 0.96), int(h * 0.42))).resize(
+    if fw <= int(fh * 0.72):
+        vx0, vx1 = 0, fw
+    else:
+        rgb_full = np.asarray(im, dtype=np.uint8)
+        box = detect_tos_board(rgb_full)
+        if box is None:
+            return None
+        bw0 = box.width
+        cx0 = 0.5 * (box.left + box.right)
+        best_span: tuple[int, int] | None = None
+        best_sc = -1e9
+        for w_scale in (0.94, 0.98, 1.00, 1.02, 1.06):
+            bw = int(round(bw0 * w_scale))
+            bh = int(round(bw * 5.0 / 6.0))
+            if bw < 160 or bh > fh:
+                continue
+            for dx_frac in (-0.04, -0.02, 0.0, 0.02, 0.04):
+                x0 = int(round(cx0 - bw * 0.5 + dx_frac * bw0))
+                x1 = x0 + bw
+                if x0 < 0 or x1 > fw or box.top + bh > fh:
+                    continue
+                cand = np.asarray(
+                    im.crop((x0, box.top, x1, box.top + bh)).resize((384, 320), Image.Resampling.BILINEAR),
+                    dtype=np.uint8,
+                )
+                ok, sc = has_6x5_grid_periodicity(cand)
+                if ok and sc > best_sc:
+                    best_sc = sc
+                    best_span = (x0, x1)
+        if best_span is None:
+            return None
+        vx0, vx1 = best_span
+
+    vp = im.crop((vx0, 0, vx1, fh))
+    w, h = vp.size
+    crop = vp.crop((int(w * 0.04), int(h * 0.08), int(w * 0.96), int(h * 0.42))).resize(
         (528, 384), Image.Resampling.BILINEAR
     )
     arr = np.asarray(crop, dtype=np.uint8).copy()
+    if arr.mean() < 10.0 or arr.mean() > 242.0:
+        return None
+    src_patch = arr[24:345, 348:508][:, ::-1]
+    feathered_x = np.linspace(1.0, 0.0, 30, dtype=np.float32)[None, :, None]
+    arr[24:345, :130] = src_patch[:, :130]
+    arr[24:345, 130:160] = np.clip(
+        src_patch[:, 130:160] * feathered_x + arr[24:345, 130:160] * (1.0 - feathered_x), 0, 255
+    ).astype(np.uint8)
+    mid_zone = Image.fromarray(arr[40:305, 160:335]).filter(ImageFilter.GaussianBlur(radius=4.5))
+    arr[40:305, 160:335] = np.asarray(mid_zone, dtype=np.uint8)
+    out = Image.fromarray(arr).resize((STRIP_W, STRIP_H), Image.Resampling.BILINEAR)
+    return np.asarray(out, dtype=np.uint8)
+
+
+def _scrub_precropped_upper_strip(strip_path: Path) -> np.ndarray | None:
+    """Loads a pre-cropped `upper_strips/*_strip.{png,webp}` and scrubs the left/mid enemy CD icon zone."""
+    try:
+        im = Image.open(strip_path).convert("RGB").resize((528, 384), Image.Resampling.BILINEAR)
+    except Exception:
+        return None
+    arr = np.asarray(im, dtype=np.uint8).copy()
+    if arr.mean() < 10.0 or arr.mean() > 242.0:
+        return None
     src_patch = arr[36:330, 340:495][:, ::-1]
     feathered_x = np.linspace(1.0, 0.0, 25, dtype=np.float32)[None, :, None]
     arr[36:330, :130] = src_patch[:, :130]
@@ -639,24 +705,35 @@ def build_dataset(
             tr_neg_wh.append((sw, sh))
 
     scene_frames: dict[str, list[Path]] = defaultdict(list)
+    precropped_strips: dict[str, list[Path]] = defaultdict(list)
     for p in (inbox_dir / "board_static_pairs").rglob("pair_*_a.png"):
         if "_board_" not in p.name:
             scene_frames[f"pair/{p.stem.rsplit('_', 2)[0]}"].append(p)
     for sub in ("race_missing", "hazards_p0", "overlays_p0", "hazards_p1_multiscene", "collab_skins"):
         for p in (inbox_dir / sub).rglob("frames/*.png"):
             scene_frames[str(p.parents[1].relative_to(inbox_dir))].append(p)
+    # Include verified `topup_v090_low_recall` frames (cropped strictly to portrait `[vx0, vx1]` via `_extract_clean_upper_bg_160x256`!)
+    from ml.tools.build_phase4_v2_board_dataset import load_refined_6x5_board  # noqa: E402
+    topup_dir = inbox_dir / "topup_v090_low_recall"
+    if topup_dir.is_dir():
+        for fdir in sorted(topup_dir.rglob("frames")):
+            rel_key = f"topup090/{fdir.parent.relative_to(topup_dir)}"
+            for fp in sorted(fdir.glob("*.png")):
+                bp = fdir.parent / "boards" / f"{fp.stem}_board.png"
+                if bp.is_file() and load_refined_6x5_board(bp) is not None:
+                    scene_frames[rel_key].append(fp)
     for yt_sub in ("20261125_yt_verified_batch", "20261125_yt_user_batch2", "20261125_yt_user_batch3"):
         ydir = media_dir / yt_sub
         if ydir.is_dir():
             for p in ydir.rglob("*.png"):
                 scene_frames[f"utm/{yt_sub}/{p.parent.name}"].append(p)
 
-    scene_keys = sorted(scene_frames.keys())
-    rng.shuffle(scene_keys)
-    val_scenes = set(scene_keys[:max(8, len(scene_keys) // 5)])
+    all_keys = sorted(scene_frames.keys())
+    rng.shuffle(all_keys)
+    val_scenes = set(all_keys[:max(10, len(all_keys) // 5)])
 
     bg_train_list, bg_val_list = [], []
-    for sk in scene_keys:
+    for sk in all_keys:
         target_list = bg_val_list if sk in val_scenes else bg_train_list
         for fp in sorted(scene_frames[sk])[:8]:
             bg = _extract_clean_upper_bg_160x256(fp)

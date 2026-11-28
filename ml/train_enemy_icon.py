@@ -125,19 +125,19 @@ def calibrate_near_zero_fp_thresholds(
         min_th = 0.50 if src_icons >= 2 else 0.65
 
         if pos_total > 0 and src_icons >= 1:
-            best_f05 = -1.0
-            for th in np.linspace(max(min_th, 0.56), 0.96, 41):
+            best_f1 = -1.0
+            for th in np.linspace(max(min_th, 0.56), 0.95, 40):
                 pred = yp >= th
                 tp = int(np.sum(pred & yt))
                 fp = int(np.sum(pred & ~yt))
                 neg_fp = int(np.sum(pred & neg_rows))
                 prec = tp / max(1, tp + fp)
                 rec = tp / max(1, pos_total)
-                # Strict 0-FP on all 450 negative/distractor strips + >=92% overall precision, maximizing F_0.5
+                # Strict 0-FP on all 450 negative/distractor strips + >=92% overall precision, maximizing F1 (balanced recall for live video!)
                 if neg_fp == 0 and tp >= 6 and prec >= 0.92:
-                    f05 = (1.25 * prec * rec) / max(1e-6, 0.25 * prec + rec)
-                    if f05 > best_f05:
-                        best_f05 = f05
+                    f1 = (2.0 * prec * rec) / max(1e-6, prec + rec)
+                    if f1 > best_f1:
+                        best_f1 = f1
                         best_th, best_tp, best_fp, found = float(round(th, 2)), tp, fp, True
 
         if not found:
